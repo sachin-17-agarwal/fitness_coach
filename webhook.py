@@ -47,6 +47,7 @@ def health():
     return "Coach is running 💪", 200
 
 if __name__ == "__main__":
-    print("🚀 Webhook server starting on port 5000...")
-    print("Use 'ngrok http 5000' to expose this to Twilio")
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    debug = os.environ.get("RAILWAY_ENVIRONMENT") is None
+    print(f"🚀 Webhook server starting on port {port}...")
+    app.run(host="0.0.0.0", port=port, debug=debug)
