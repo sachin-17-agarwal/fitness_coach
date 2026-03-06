@@ -1,3 +1,9 @@
+import os
+from flask import Flask, request
+from twilio.twiml.messaging_response import MessagingResponse
+from coach import handle_incoming_message
+from memory import load_memory
+
 """
 webhook.py — Flask server that receives incoming WhatsApp messages from Twilio.
 
