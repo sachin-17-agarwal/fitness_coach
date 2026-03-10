@@ -104,20 +104,26 @@ def log_session(session: dict):
         print(f"⚠️  Failed to log session: {e}")
 
 def save_recovery_data(data: dict):
-    """Save daily Apple Health recovery data."""
+    """Save daily Apple Health recovery data using upsert on date."""
     try:
         supabase = get_supabase()
-        supabase.table("recovery").upsert({
-            "date": data.get("date", datetime.now().strftime("%Y-%m-%d")),
-            "sleep_hours": data.get("sleep_hours"),
-            "sleep_quality": data.get("sleep_quality"),
-            "hrv": data.get("hrv"),
-            "hrv_avg_7day": data.get("hrv_avg_7day"),
-            "hrv_status": data.get("hrv_status"),
-            "resting_hr": data.get("resting_hr"),
-            "resting_hr_baseline": data.get("resting_hr_baseline")
-        }).execute()
-        print(f"✅ Recovery data saved for {data.get('date')}")
+        row = {k: v for k, v in {
+            "date":               data.get("date", datetime.now().strftime("%Y-%m-%d")),
+            "sleep_hours":        data.get("sleep_hours"),
+            "hrv":                data.get("hrv"),
+            "hrv_status":         data.get("hrv_status"),
+            "resting_hr":         data.get("resting_hr"),
+            "heart_rate":         data.get("heart_rate"),
+            "steps":              data.get("steps"),
+            "active_energy_kcal": data.get("active_energy_kcal"),
+            "weight_kg":          data.get("weight_kg"),
+            "body_fat_pct":       data.get("body_fat_pct"),
+            "exercise_minutes":   data.get("exercise_minutes"),
+            "respiratory_rate":   data.get("respiratory_rate"),
+            "vo2_max":            data.get("vo2_max"),
+        }.items() if v is not None}
+        supabase.table("recovery").upsert(row, on_conflict="date").execute()
+        print(f"✅ Recovery data saved for {row.get('date')}")
     except Exception as e:
         print(f"⚠️  Failed to save recovery data: {e}")
 
