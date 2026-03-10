@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from anthropic import Anthropic
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from data import get_athlete_context
 from memory import (
     load_memory, save_memory, save_conversation_message,
@@ -108,16 +109,32 @@ def get_recovery_history(days: int = 14) -> str:
         return f"Could not load recovery data: {e}"
 
 def build_context_block(memory: dict) -> str:
-    data = get_athlete_context()
     today = datetime.now().strftime("%A %d %B %Y")
     mesocycle_week = memory.get("mesocycle_week", 1)
     mesocycle_day = memory.get("mesocycle_day", 1)
-    session_history = get_full_session_history(days=30)
-    recovery_history = get_recovery_history(days=14)
-    substitution_history = get_substitution_history()
 
-    # Add workout mode context if active
-    workout_state = get_workout_state()
+    # Run all Supabase queries in parallel
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(get_athlete_context): "data",
+            executor.submit(get_full_session_history, 30): "session_history",
+            executor.submit(get_recovery_history, 14): "recovery_history",
+            executor.submit(get_substitution_history): "substitution_history",
+            executor.submit(get_workout_state): "workout_state",
+        }
+        results = {}
+        for future, key in futures.items():
+            try:
+                results[key] = future.result(timeout=5)
+            except Exception as e:
+                print(f"Context fetch failed ({key}): {e}")
+                results[key] = None
+
+    data = results.get("data") or {}
+    session_history = results.get("session_history") or "No sessions found."
+    recovery_history = results.get("recovery_history") or "No recovery data."
+    substitution_history = results.get("substitution_history") or ""
+    workout_state = results.get("workout_state") or {}
     workout_context = get_workout_context(workout_state)
 
     return f"""
