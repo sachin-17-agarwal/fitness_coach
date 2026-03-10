@@ -81,14 +81,15 @@ def parse_health_export(payload: dict) -> dict:
     hr_vals = get_values_for_date(metric_data.get("heart_rate", []), today)
     heart_rate = round(sum(hr_vals) / len(hr_vals), 1) if hr_vals else None
 
-    # Sleep — sum of asleep duration for last night
-    # Sleep Analysis sends duration in hours for each segment
-    sleep_vals = get_values_for_date(metric_data.get("sleep_analysis", []), today)
-    # Also check yesterday since sleep spans midnight
+    # Sleep — use most recent sleep session regardless of date
+    # Apple tags sleep with the date it started, which is usually yesterday
+    sleep_raw = metric_data.get("sleep_analysis", [])
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    sleep_vals_yesterday = get_values_for_date(metric_data.get("sleep_analysis", []), yesterday)
-    all_sleep = sleep_vals + sleep_vals_yesterday
-    sleep_hours = round(sum(all_sleep), 2) if all_sleep else None
+    # Try yesterday first, then today
+    sleep_vals = get_values_for_date(sleep_raw, yesterday)
+    if not sleep_vals:
+        sleep_vals = get_values_for_date(sleep_raw, today)
+    sleep_hours = round(sum(sleep_vals), 2) if sleep_vals else None
 
     # Steps — sum for today
     steps_vals = get_values_for_date(metric_data.get("step_count", []), today)
