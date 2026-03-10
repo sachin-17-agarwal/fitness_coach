@@ -127,10 +127,24 @@ def save_recovery_data(data: dict):
     except Exception as e:
         print(f"⚠️  Failed to save recovery data: {e}")
 
+CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
+
+def get_current_session_type(memory: dict) -> str:
+    """Return today's session type based on cycle position."""
+    day = int(memory.get("mesocycle_day", 1)) - 1
+    return CYCLE[day % len(CYCLE)]
+
+def get_next_session_type(memory: dict) -> str:
+    """Return tomorrow's session type."""
+    day = int(memory.get("mesocycle_day", 1))
+    return CYCLE[day % len(CYCLE)]
+
 def advance_mesocycle(memory: dict):
-    """Advance mesocycle day/week after a session."""
-    memory["mesocycle_day"] = memory.get("mesocycle_day", 1) + 1
-    if memory["mesocycle_day"] > 7:
-        memory["mesocycle_day"] = 1
-        memory["mesocycle_week"] = (memory.get("mesocycle_week", 1) % 4) + 1
+    """Advance mesocycle day after a session. 5-day rotating cycle."""
+    current_day = int(memory.get("mesocycle_day", 1))
+    next_day = (current_day % len(CYCLE)) + 1
+    memory["mesocycle_day"] = next_day
+    # Advance week after every full cycle (after Yoga = day 5)
+    if current_day == len(CYCLE):
+        memory["mesocycle_week"] = (int(memory.get("mesocycle_week", 1)) % 4) + 1
     save_memory(memory)
