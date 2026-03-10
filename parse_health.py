@@ -44,6 +44,7 @@ def parse_health_export(payload: dict) -> dict:
 
     # Determine target date — use today's date in local time
     today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     def get_values_for_date(data_points, target_date, metric_type="latest"):
         """Extract values for a specific date from data points."""
@@ -90,7 +91,6 @@ def parse_health_export(payload: dict) -> dict:
     sleep_raw = metric_data.get("sleep_analysis", [])
     sleep_hours = None
     if sleep_raw:
-        # Get most recent sleep session — sorted by date descending
         sorted_sleep = sorted(sleep_raw, key=lambda x: x.get("date", ""), reverse=True)
         latest = sorted_sleep[0]
         total = latest.get("totalSleep")
