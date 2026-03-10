@@ -78,22 +78,24 @@ def parse_health_export(payload: dict) -> dict:
     rhr_vals = get_values_for_date(metric_data.get("resting_heart_rate", []), today)
     resting_hr = rhr_vals[-1] if rhr_vals else latest_value(metric_data.get("resting_heart_rate", []))
 
-    # Heart rate — average for today
+    # Heart rate — average of all readings, fallback to latest
     hr_vals = get_values_for_date(metric_data.get("heart_rate", []), today)
+    if not hr_vals:
+        hr_vals = get_values_for_date(metric_data.get("heart_rate", []), yesterday)
     heart_rate = round(sum(hr_vals) / len(hr_vals), 1) if hr_vals else None
 
     # Sleep — debug raw data
     print(f"Sleep raw sample: {metric_data.get(chr(115)+chr(108)+chr(101)+chr(101)+chr(112)+chr(95)+chr(97)+chr(110)+chr(97)+chr(108)+chr(121)+chr(115)+chr(105)+chr(115), [])[:3]}")
-    # Sleep — use most recent sleep session regardless of date
-    # Apple tags sleep with the date it started, which is usually yesterday
+    # Sleep — Health Auto Export sends summary objects with totalSleep field
     sleep_raw = metric_data.get("sleep_analysis", [])
-    print(f"Sleep sample: {sleep_raw[:3]}")
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    # Try yesterday first, then today
-    sleep_vals = get_values_for_date(sleep_raw, yesterday)
-    if not sleep_vals:
-        sleep_vals = get_values_for_date(sleep_raw, today)
-    sleep_hours = round(sum(sleep_vals), 2) if sleep_vals else None
+    sleep_hours = None
+    if sleep_raw:
+        # Get most recent sleep session — sorted by date descending
+        sorted_sleep = sorted(sleep_raw, key=lambda x: x.get("date", ""), reverse=True)
+        latest = sorted_sleep[0]
+        total = latest.get("totalSleep")
+        if total:
+            sleep_hours = round(float(total), 2)
 
     # Steps — sum for today
     steps_vals = get_values_for_date(metric_data.get("step_count", []), today)
@@ -107,7 +109,7 @@ def parse_health_export(payload: dict) -> dict:
         # Health Auto Export sends in kJ, convert to kcal
         active_energy = round(total / 4.184, 1)
 
-    # Weight — latest reading
+    # Weight — not included in this export, will be None until added to Health Auto Export metrics
     weight_raw = latest_value(metric_data.get("body_mass", []))
     weight_kg = round(weight_raw / 2.205, 2) if weight_raw and weight_raw > 150 else weight_raw
 
