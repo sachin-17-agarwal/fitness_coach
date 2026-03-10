@@ -3,8 +3,7 @@ AI Fitness Coach — Main Script
 """
 
 import os
-import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -12,12 +11,13 @@ from anthropic import Anthropic
 from data import get_athlete_context
 from memory import (
     load_memory, save_memory, save_conversation_message,
-    load_today_conversation, log_session, advance_mesocycle
+    load_today_conversation, log_session, advance_mesocycle, get_supabase
 )
 from whatsapp import send_whatsapp_message
 
 ATHLETE_NAME = "Sachin"
-ATHLETE_BODYWEIGHT_KG = 80
+ATHLETE_CURRENT_WEIGHT_KG = 91
+ATHLETE_GOAL_WEIGHT_KG = 80
 TWILIO_TO_NUMBER = os.environ.get("ATHLETE_WHATSAPP", "whatsapp:+61412345678")
 
 client = Anthropic()
@@ -27,30 +27,111 @@ def load_system_prompt() -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
+def get_full_session_history(days: int = 30) -> str:
+    """Pull full session + set data from Supabase for the last N days."""
+    try:
+        supabase = get_supabase()
+        since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        sessions = supabase.table("sessions")\
+            .select("id, date, type, summary, tonnage_kg, notes")\
+            .gte("date", since)\
+            .order("date", desc=True)\
+            .execute()
+
+        if not sessions.data:
+            return "No sessions logged in the last 30 days."
+
+        lines = []
+        for s in sessions.data:
+            lines.append(f"\n{s['date']} — {s['type']} (tonnage: {s.get('tonnage_kg', '?')}kg)")
+
+            # Get sets for this session
+            sets = supabase.table("sets")\
+                .select("exercise, weight_kg, reps, rpe, notes")\
+                .eq("session_id", s["id"])\
+                .execute()
+
+            if sets.data:
+                # Group by exercise
+                exercises = {}
+                for st in sets.data:
+                    ex = st["exercise"]
+                    if ex not in exercises:
+                        exercises[ex] = []
+                    set_str = f"{st['weight_kg']}kg x {st['reps']}"
+                    if st.get("rpe"):
+                        set_str += f" @RPE{st['rpe']}"
+                    exercises[ex].append(set_str)
+
+                for ex, set_list in exercises.items():
+                    lines.append(f"  {ex}: {' | '.join(set_list)}")
+            elif s.get("summary"):
+                lines.append(f"  {s['summary'][:200]}")
+
+            if s.get("notes"):
+                lines.append(f"  Notes: {s['notes']}")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Could not load session history: {e}"
+
+def get_recovery_history(days: int = 14) -> str:
+    """Pull recent recovery data from Supabase."""
+    try:
+        supabase = get_supabase()
+        since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        result = supabase.table("recovery")\
+            .select("date, sleep_hours, hrv, resting_hr, steps, weight_kg, body_fat_pct, vo2_max")\
+            .gte("date", since)\
+            .order("date", desc=True)\
+            .execute()
+
+        if not result.data:
+            return "No recovery data available."
+
+        lines = []
+        for r in result.data:
+            parts = [r["date"]]
+            if r.get("sleep_hours"): parts.append(f"sleep:{r['sleep_hours']}h")
+            if r.get("hrv"): parts.append(f"HRV:{r['hrv']}")
+            if r.get("resting_hr"): parts.append(f"RHR:{r['resting_hr']}")
+            if r.get("weight_kg"): parts.append(f"weight:{r['weight_kg']}kg")
+            if r.get("body_fat_pct"): parts.append(f"bf:{r['body_fat_pct']}%")
+            if r.get("vo2_max"): parts.append(f"VO2:{r['vo2_max']}")
+            lines.append("  " + " | ".join(parts))
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Could not load recovery data: {e}"
+
 def build_context_block(memory: dict) -> str:
     data = get_athlete_context()
     today = datetime.now().strftime("%A %d %B %Y")
     mesocycle_week = memory.get("mesocycle_week", 1)
     mesocycle_day = memory.get("mesocycle_day", 1)
 
-    recent_sessions = memory.get("recent_sessions", [])
-    sessions_text = "\n".join([
-        f"  - {s['date']}: {s['type']} — {s.get('summary', '')[:80]}"
-        for s in recent_sessions[:7]
-    ]) or "  No recent sessions logged yet."
+    session_history = get_full_session_history(days=30)
+    recovery_history = get_recovery_history(days=14)
 
     return f"""
 [ATHLETE CONTEXT]
-Athlete: {ATHLETE_NAME} | Bodyweight: {ATHLETE_BODYWEIGHT_KG}kg
+Athlete: {ATHLETE_NAME} | Current weight: {ATHLETE_CURRENT_WEIGHT_KG}kg | Goal weight: {ATHLETE_GOAL_WEIGHT_KG}kg
 Date: {today}
 Mesocycle: Week {mesocycle_week} of 4 | Day {mesocycle_day} of cycle
 
-Sleep last night: {data['sleep_hours']} hrs | Quality: {data['sleep_quality']}
-HRV: {data['hrv']} (7-day avg: {data['hrv_avg']}) | Status: {data['hrv_status']}
+TODAY'S RECOVERY:
+Sleep: {data['sleep_hours']} hrs | HRV: {data['hrv']} (7-day avg: {data['hrv_avg']}) | Status: {data['hrv_status']}
 Resting HR: {data['resting_hr']} bpm (baseline: {data['resting_hr_baseline']} bpm)
 
-Recent sessions (last 7):
-{sessions_text}
+LAST 14 DAYS RECOVERY DATA:
+{recovery_history}
+
+LAST 30 DAYS SESSION HISTORY (full sets and weights):
+{session_history}
 
 Known limitations: Slight knee and shoulder issues — see coaching profile.
 [END CONTEXT]
@@ -78,17 +159,17 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict)
     return assistant_message
 
 def send_morning_briefing(memory: dict):
-    print("📤 Sending morning briefing...")
+    print("Sending morning briefing...")
     conversation_history = load_today_conversation()
     message = (
-        "Good morning. Please give me my morning briefing: "
+        "Good morning. Give me my morning briefing: "
         "review my recovery data, tell me today's session with full "
         "exercise list, sets, reps, weights and RPE targets, and flag "
-        "anything I need to know about today."
+        "anything I need to know."
     )
     response = chat_with_coach(message, conversation_history, memory)
     send_whatsapp_message(response, TWILIO_TO_NUMBER)
-    print("✅ Morning briefing sent.")
+    print("Morning briefing sent.")
 
 def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     conversation_history = load_today_conversation()
@@ -104,7 +185,7 @@ if __name__ == "__main__":
         print("Usage:")
         print("  python coach.py morning    — send morning briefing")
         print("  python coach.py terminal   — interactive terminal mode")
-        sys.exit(0)
+        import sys; sys.exit(0)
 
     mode = sys.argv[1]
 
@@ -112,7 +193,7 @@ if __name__ == "__main__":
         send_morning_briefing(memory)
 
     elif mode == "terminal":
-        print("🏋️  AI Fitness Coach — Terminal Mode")
+        print("AI Fitness Coach — Terminal Mode")
         print("Type 'quit' to exit\n")
         conversation_history = load_today_conversation()
         while True:
