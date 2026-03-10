@@ -1,36 +1,45 @@
 """
-webhook.py — Flask server for WhatsApp messages and Apple Health data.
+webhook.py — Flask server for Telegram messages and Apple Health data.
 """
 
 import os
 import json
 from flask import Flask, request, jsonify
-from twilio.twiml.messaging_response import MessagingResponse
 from coach import handle_incoming_message
 from memory import load_memory, save_recovery_data
 from parse_health import parse_health_export
 
 app = Flask(__name__)
 
-# ── WhatsApp ──────────────────────────────────────────────────────────────────
+# ── Telegram ──────────────────────────────────────────────────────────────────
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """Receives incoming WhatsApp messages from Twilio."""
-    incoming_msg = request.values.get("Body", "").strip()
-    sender = request.values.get("From", "")
+    """Receives incoming Telegram messages via webhook."""
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"ok": True})
 
-    print(f"📨 Message from {sender}: {incoming_msg}")
+    message = data.get("message", {})
+    text = message.get("text", "").strip()
+    chat_id = str(message.get("chat", {}).get("id", ""))
+    username = message.get("from", {}).get("first_name", "unknown")
 
-    if not incoming_msg:
-        return str(MessagingResponse())
+    # Only respond to the authorised chat ID
+    allowed_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if allowed_chat_id and chat_id != allowed_chat_id:
+        print(f"⛔ Unauthorised message from chat_id {chat_id}")
+        return jsonify({"ok": True})
+
+    if not text:
+        return jsonify({"ok": True})
+
+    print(f"📨 Message from {username}: {text}")
 
     memory = load_memory()
-    coach_reply = handle_incoming_message(incoming_msg, memory)
+    handle_incoming_message(text, memory)
 
-    resp = MessagingResponse()
-    resp.message(coach_reply)
-    return str(resp)
+    return jsonify({"ok": True})
 
 # ── Apple Health ──────────────────────────────────────────────────────────────
 

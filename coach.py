@@ -8,12 +8,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from anthropic import Anthropic
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from data import get_athlete_context
 from memory import (
     load_memory, save_memory, save_conversation_message,
     load_today_conversation, get_supabase
 )
-from whatsapp import send_whatsapp_message
+from telegram_bot import send_message as send_whatsapp_message
 from workout import (
     get_workout_state, is_workout_active, start_session, end_session,
     log_substitution, get_substitution_history, get_workout_context
@@ -22,7 +23,7 @@ from workout import (
 ATHLETE_NAME = "Sachin"
 ATHLETE_CURRENT_WEIGHT_KG = 91
 ATHLETE_GOAL_WEIGHT_KG = 80
-TWILIO_TO_NUMBER = os.environ.get("ATHLETE_WHATSAPP", "whatsapp:+61412345678")
+# Telegram — chat_id is set in env, send_message uses it by default
 
 client = Anthropic()
 
@@ -108,23 +109,44 @@ def get_recovery_history(days: int = 14) -> str:
         return f"Could not load recovery data: {e}"
 
 def build_context_block(memory: dict) -> str:
-    data = get_athlete_context()
     today = datetime.now().strftime("%A %d %B %Y")
     mesocycle_week = memory.get("mesocycle_week", 1)
-    mesocycle_day = memory.get("mesocycle_day", 1)
-    session_history = get_full_session_history(days=30)
-    recovery_history = get_recovery_history(days=14)
-    substitution_history = get_substitution_history()
+    mesocycle_day = int(memory.get("mesocycle_day", 1))
+    CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
+    today_session = CYCLE[(mesocycle_day - 1) % len(CYCLE)]
+    next_session = CYCLE[mesocycle_day % len(CYCLE)]
 
-    # Add workout mode context if active
-    workout_state = get_workout_state()
+    # Run all Supabase queries in parallel
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(get_athlete_context): "data",
+            executor.submit(get_full_session_history, 30): "session_history",
+            executor.submit(get_recovery_history, 14): "recovery_history",
+            executor.submit(get_substitution_history): "substitution_history",
+            executor.submit(get_workout_state): "workout_state",
+        }
+        results = {}
+        for future, key in futures.items():
+            try:
+                results[key] = future.result(timeout=5)
+            except Exception as e:
+                print(f"Context fetch failed ({key}): {e}")
+                results[key] = None
+
+    data = results.get("data") or {}
+    session_history = results.get("session_history") or "No sessions found."
+    recovery_history = results.get("recovery_history") or "No recovery data."
+    substitution_history = results.get("substitution_history") or ""
+    workout_state = results.get("workout_state") or {}
     workout_context = get_workout_context(workout_state)
 
     return f"""
 [ATHLETE CONTEXT]
 Athlete: {ATHLETE_NAME} | Current weight: {ATHLETE_CURRENT_WEIGHT_KG}kg | Goal weight: {ATHLETE_GOAL_WEIGHT_KG}kg
 Date: {today}
-Mesocycle: Week {mesocycle_week} of 4 | Day {mesocycle_day} of cycle
+Mesocycle: Week {mesocycle_week} of 4 | Cycle day {mesocycle_day}/5
+TODAY'S SESSION TYPE: {today_session}
+NEXT SESSION: {next_session}
 
 TODAY'S RECOVERY:
 Sleep: {data['sleep_hours']} hrs | HRV: {data['hrv']} (7-day avg: {data['hrv_avg']}) | Status: {data['hrv_status']}
@@ -175,13 +197,13 @@ def send_morning_briefing(memory: dict):
         "my recent performance, and flag anything I need to know."
     )
     response = chat_with_coach(message, conversation_history, memory)
-    send_whatsapp_message(response, TWILIO_TO_NUMBER)
+    send_whatsapp_message(response)
     print("Morning briefing sent.")
 
 def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     conversation_history = load_today_conversation()
     response = chat_with_coach(incoming_text, conversation_history, memory)
-    send_whatsapp_message(response, TWILIO_TO_NUMBER)
+    send_whatsapp_message(response)
     return response
 
 if __name__ == "__main__":
