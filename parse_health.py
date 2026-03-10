@@ -40,6 +40,7 @@ def parse_health_export(payload: dict) -> dict:
         name = metric.get("name", "")
         data = metric.get("data", [])
         metric_data[name] = data
+    print(f"Metric names received: {list(metric_data.keys())}")
 
     # Determine target date — use today's date in local time
     today = datetime.now().strftime("%Y-%m-%d")
