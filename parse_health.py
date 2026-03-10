@@ -3,38 +3,16 @@ parse_health.py — Parse Health Auto Export v2 JSON format into flat daily summ
 """
 
 from datetime import datetime, timedelta
-from collections import defaultdict
 
 def parse_health_export(payload: dict) -> dict:
-    """
-    Parse Health Auto Export REST API v2 format into a flat daily summary.
-    
-    Input format:
-    {
-        "data": {
-            "metrics": [
-                {
-                    "name": "heart_rate_variability",
-                    "units": "ms",
-                    "data": [
-                        {"qty": 46.7, "date": "2026-03-10 06:54:00 +1100"},
-                        ...
-                    ]
-                },
-                ...
-            ]
-        }
-    }
-    """
     try:
         metrics = payload.get("data", {}).get("metrics", [])
         if not metrics:
-            # Try flat format (old style)
             return parse_flat_format(payload)
     except:
         return parse_flat_format(payload)
 
-    # Group data by metric name
+    # Build metric lookup
     metric_data = {}
     for metric in metrics:
         name = metric.get("name", "")
@@ -42,91 +20,97 @@ def parse_health_export(payload: dict) -> dict:
         metric_data[name] = data
     print(f"Metric names received: {list(metric_data.keys())}")
 
-    # Determine target date — use today's date in local time
+    # Date references
     today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    def get_values_for_date(data_points, target_date, metric_type="latest"):
-        """Extract values for a specific date from data points."""
+    def get_qty_values(data_points, target_date):
+        """Get qty values for a specific date."""
         values = []
         for point in data_points:
             raw_date = point.get("date", "")
-            # Parse date handling timezone offset
             try:
                 dt = datetime.strptime(raw_date[:19], "%Y-%m-%d %H:%M:%S")
-                point_date = dt.strftime("%Y-%m-%d")
+                if dt.strftime("%Y-%m-%d") == target_date:
+                    qty = point.get("qty")
+                    if qty is not None:
+                        values.append(float(qty))
             except:
                 continue
-            if point_date == target_date:
-                qty = point.get("qty")
-                if qty is not None:
-                    values.append(float(qty))
         return values
 
-    def latest_value(data_points):
-        """Get the most recent value regardless of date."""
-        valid = [(p.get("date", ""), p.get("qty")) for p in data_points if p.get("qty") is not None]
+    def latest_qty(data_points):
+        """Get most recent qty value."""
+        valid = []
+        for p in data_points:
+            qty = p.get("qty")
+            if qty is not None:
+                valid.append((p.get("date", ""), float(qty)))
         if not valid:
             return None
         valid.sort(key=lambda x: x[0], reverse=True)
-        return float(valid[0][1])
+        return valid[0][1]
 
     # HRV — average of today's readings
-    hrv_vals = get_values_for_date(metric_data.get("heart_rate_variability", []), today)
+    hrv_vals = get_qty_values(metric_data.get("heart_rate_variability", []), today)
+    if not hrv_vals:
+        hrv_vals = get_qty_values(metric_data.get("heart_rate_variability", []), yesterday)
     hrv = round(sum(hrv_vals) / len(hrv_vals), 1) if hrv_vals else None
 
-    # Resting HR — latest reading for today
-    rhr_vals = get_values_for_date(metric_data.get("resting_heart_rate", []), today)
-    resting_hr = rhr_vals[-1] if rhr_vals else latest_value(metric_data.get("resting_heart_rate", []))
+    # Resting HR — latest
+    rhr_vals = get_qty_values(metric_data.get("resting_heart_rate", []), today)
+    if not rhr_vals:
+        rhr_vals = get_qty_values(metric_data.get("resting_heart_rate", []), yesterday)
+    resting_hr = rhr_vals[-1] if rhr_vals else latest_qty(metric_data.get("resting_heart_rate", []))
 
-    # Heart rate — average for today
-    hr_vals = get_values_for_date(metric_data.get("heart_rate", []), today)
+    # Heart rate — average
+    hr_vals = get_qty_values(metric_data.get("heart_rate", []), today)
+    if not hr_vals:
+        hr_vals = get_qty_values(metric_data.get("heart_rate", []), yesterday)
     heart_rate = round(sum(hr_vals) / len(hr_vals), 1) if hr_vals else None
 
-    # Sleep — debug raw data
-    print(f"Sleep raw sample: {metric_data.get(chr(115)+chr(108)+chr(101)+chr(101)+chr(112)+chr(95)+chr(97)+chr(110)+chr(97)+chr(108)+chr(121)+chr(115)+chr(105)+chr(115), [])[:3]}")
-    # Sleep — use most recent sleep session regardless of date
-    # Apple tags sleep with the date it started, which is usually yesterday
+    # Sleep — totalSleep field from summary object
     sleep_raw = metric_data.get("sleep_analysis", [])
-    print(f"Sleep sample: {sleep_raw[:3]}")
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    # Try yesterday first, then today
-    sleep_vals = get_values_for_date(sleep_raw, yesterday)
-    if not sleep_vals:
-        sleep_vals = get_values_for_date(sleep_raw, today)
-    sleep_hours = round(sum(sleep_vals), 2) if sleep_vals else None
+    sleep_hours = None
+    if sleep_raw:
+        sorted_sleep = sorted(sleep_raw, key=lambda x: x.get("date", ""), reverse=True)
+        latest = sorted_sleep[0]
+        total = latest.get("totalSleep")
+        if total:
+            sleep_hours = round(float(total), 2)
 
     # Steps — sum for today
-    steps_vals = get_values_for_date(metric_data.get("step_count", []), today)
+    steps_vals = get_qty_values(metric_data.get("step_count", []), today)
     steps = int(sum(steps_vals)) if steps_vals else None
 
-    # Active energy — sum for today, convert kJ to kcal if needed
-    energy_vals = get_values_for_date(metric_data.get("active_energy", []), today)
-    active_energy = None
-    if energy_vals:
-        total = sum(energy_vals)
-        # Health Auto Export sends in kJ, convert to kcal
-        active_energy = round(total / 4.184, 1)
+    # Active energy — sum for today, convert kJ to kcal
+    energy_vals = get_qty_values(metric_data.get("active_energy", []), today)
+    active_energy = round(sum(energy_vals) / 4.184, 1) if energy_vals else None
 
-    # Weight — latest reading
-    weight_raw = latest_value(metric_data.get("body_mass", []))
+    # Weight — latest, convert lbs to kg if needed
+    weight_raw = latest_qty(metric_data.get("weight_body_mass", []))
+    if weight_raw is None:
+        weight_raw = latest_qty(metric_data.get("body_mass", []))
     weight_kg = round(weight_raw / 2.205, 2) if weight_raw and weight_raw > 150 else weight_raw
 
-    # Body fat — latest reading, convert decimal to percentage
-    bf_raw = latest_value(metric_data.get("body_fat_percentage", []))
+    # Body fat — latest, convert decimal to percentage
+    bf_raw = latest_qty(metric_data.get("body_fat_percentage", []))
     body_fat_pct = round(bf_raw * 100, 1) if bf_raw and bf_raw < 1 else bf_raw
 
     # Exercise minutes — sum for today
-    exercise_vals = get_values_for_date(metric_data.get("apple_exercise_time", []), today)
+    exercise_vals = get_qty_values(metric_data.get("apple_exercise_time", []), today)
     exercise_minutes = int(sum(exercise_vals)) if exercise_vals else None
 
-    # Respiratory rate — average for today
-    resp_vals = get_values_for_date(metric_data.get("respiratory_rate", []), today)
+    # Respiratory rate — average
+    resp_vals = get_qty_values(metric_data.get("respiratory_rate", []), today)
+    if not resp_vals:
+        resp_vals = get_qty_values(metric_data.get("respiratory_rate", []), yesterday)
     respiratory_rate = round(sum(resp_vals) / len(resp_vals), 1) if resp_vals else None
 
     # VO2 Max — latest
-    vo2_max = latest_value(metric_data.get("vo2_max", []))
+    vo2_max = latest_qty(metric_data.get("vo2_max", []))
 
-    return {
+    result = {
         "date": today,
         "sleep_hours": sleep_hours,
         "hrv": hrv,
@@ -140,23 +124,21 @@ def parse_health_export(payload: dict) -> dict:
         "respiratory_rate": respiratory_rate,
         "vo2_max": vo2_max,
     }
+    print(f"Parsed: {result}")
+    return result
 
 def parse_flat_format(payload: dict) -> dict:
-    """Handle the old flat JSON format as fallback."""
+    """Handle flat JSON format as fallback."""
     def safe_float(val):
         try: return float(val)
         except: return None
 
     weight_raw = safe_float(payload.get("weight_kg"))
     weight_kg = round(weight_raw / 2.205, 2) if weight_raw and weight_raw > 150 else weight_raw
-
     exercise_raw = safe_float(payload.get("exercise_minutes"))
     exercise_minutes = round(exercise_raw * 60) if exercise_raw and exercise_raw < 24 else exercise_raw
-
     body_fat_raw = safe_float(payload.get("body_fat_pct"))
     body_fat_pct = round(body_fat_raw * 100, 1) if body_fat_raw and body_fat_raw < 1 else body_fat_raw
-
-    respiratory = safe_float(payload.get("respiratory_rate") or payload.get("respiratory_minutes"))
 
     return {
         "date": payload.get("date", datetime.now().strftime("%Y-%m-%d")),
@@ -169,6 +151,6 @@ def parse_flat_format(payload: dict) -> dict:
         "weight_kg": weight_kg,
         "body_fat_pct": body_fat_pct,
         "exercise_minutes": exercise_minutes,
-        "respiratory_rate": respiratory,
+        "respiratory_rate": safe_float(payload.get("respiratory_rate")),
         "vo2_max": safe_float(payload.get("vo2_max")),
     }
