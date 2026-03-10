@@ -11,9 +11,13 @@ from anthropic import Anthropic
 from data import get_athlete_context
 from memory import (
     load_memory, save_memory, save_conversation_message,
-    load_today_conversation, log_session, advance_mesocycle, get_supabase
+    load_today_conversation, get_supabase
 )
 from whatsapp import send_whatsapp_message
+from workout import (
+    get_workout_state, is_workout_active, start_session, end_session,
+    log_substitution, get_substitution_history, get_workout_context
+)
 
 ATHLETE_NAME = "Sachin"
 ATHLETE_CURRENT_WEIGHT_KG = 91
@@ -28,16 +32,22 @@ def load_system_prompt() -> str:
         return f.read()
 
 def get_full_session_history(days: int = 30) -> str:
-    """Pull full session + set data from Supabase for the last N days."""
     try:
         supabase = get_supabase()
         since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-
-        sessions = supabase.table("sessions")\
-            .select("id, date, type, summary, tonnage_kg, notes")\
+        sessions = supabase.table("workout_sessions")\
+            .select("id, date, type, tonnage_kg, notes")\
             .gte("date", since)\
             .order("date", desc=True)\
             .execute()
+
+        if not sessions.data:
+            # Fall back to legacy sessions table
+            sessions = supabase.table("sessions")\
+                .select("id, date, type, summary, tonnage_kg, notes")\
+                .gte("date", since)\
+                .order("date", desc=True)\
+                .execute()
 
         if not sessions.data:
             return "No sessions logged in the last 30 days."
@@ -45,44 +55,35 @@ def get_full_session_history(days: int = 30) -> str:
         lines = []
         for s in sessions.data:
             lines.append(f"\n{s['date']} — {s['type']} (tonnage: {s.get('tonnage_kg', '?')}kg)")
-
-            # Get sets for this session
-            sets = supabase.table("sets")\
-                .select("exercise, weight_kg, reps, rpe, notes")\
-                .eq("session_id", s["id"])\
+            sets = supabase.table("workout_sets")\
+                .select("exercise, set_number, actual_weight_kg, actual_reps, actual_rpe, is_warmup")\
+                .eq("workout_session_id", s["id"])\
+                .eq("is_warmup", False)\
                 .execute()
 
             if sets.data:
-                # Group by exercise
                 exercises = {}
                 for st in sets.data:
                     ex = st["exercise"]
                     if ex not in exercises:
                         exercises[ex] = []
-                    set_str = f"{st['weight_kg']}kg x {st['reps']}"
-                    if st.get("rpe"):
-                        set_str += f" @RPE{st['rpe']}"
+                    set_str = f"{st['actual_weight_kg']}kg x {st['actual_reps']}"
+                    if st.get("actual_rpe"):
+                        set_str += f" @RPE{st['actual_rpe']}"
                     exercises[ex].append(set_str)
-
                 for ex, set_list in exercises.items():
                     lines.append(f"  {ex}: {' | '.join(set_list)}")
             elif s.get("summary"):
                 lines.append(f"  {s['summary'][:200]}")
 
-            if s.get("notes"):
-                lines.append(f"  Notes: {s['notes']}")
-
         return "\n".join(lines)
-
     except Exception as e:
         return f"Could not load session history: {e}"
 
 def get_recovery_history(days: int = 14) -> str:
-    """Pull recent recovery data from Supabase."""
     try:
         supabase = get_supabase()
         since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-
         result = supabase.table("recovery")\
             .select("date, sleep_hours, hrv, resting_hr, steps, weight_kg, body_fat_pct, vo2_max")\
             .gte("date", since)\
@@ -102,9 +103,7 @@ def get_recovery_history(days: int = 14) -> str:
             if r.get("body_fat_pct"): parts.append(f"bf:{r['body_fat_pct']}%")
             if r.get("vo2_max"): parts.append(f"VO2:{r['vo2_max']}")
             lines.append("  " + " | ".join(parts))
-
         return "\n".join(lines)
-
     except Exception as e:
         return f"Could not load recovery data: {e}"
 
@@ -113,9 +112,13 @@ def build_context_block(memory: dict) -> str:
     today = datetime.now().strftime("%A %d %B %Y")
     mesocycle_week = memory.get("mesocycle_week", 1)
     mesocycle_day = memory.get("mesocycle_day", 1)
-
     session_history = get_full_session_history(days=30)
     recovery_history = get_recovery_history(days=14)
+    substitution_history = get_substitution_history()
+
+    # Add workout mode context if active
+    workout_state = get_workout_state()
+    workout_context = get_workout_context(workout_state)
 
     return f"""
 [ATHLETE CONTEXT]
@@ -125,15 +128,19 @@ Mesocycle: Week {mesocycle_week} of 4 | Day {mesocycle_day} of cycle
 
 TODAY'S RECOVERY:
 Sleep: {data['sleep_hours']} hrs | HRV: {data['hrv']} (7-day avg: {data['hrv_avg']}) | Status: {data['hrv_status']}
-Resting HR: {data['resting_hr']} bpm (baseline: {data['resting_hr_baseline']} bpm)
+Resting HR: {data['resting_hr']} bpm
 
-LAST 14 DAYS RECOVERY DATA:
+LAST 14 DAYS RECOVERY:
 {recovery_history}
 
-LAST 30 DAYS SESSION HISTORY (full sets and weights):
+LAST 30 DAYS SESSIONS:
 {session_history}
 
+EXERCISE SUBSTITUTION HISTORY:
+{substitution_history}
+
 Known limitations: Slight knee and shoulder issues — see coaching profile.
+{workout_context}
 [END CONTEXT]
 """
 
@@ -164,8 +171,8 @@ def send_morning_briefing(memory: dict):
     message = (
         "Good morning. Give me my morning briefing: "
         "review my recovery data, tell me today's session with full "
-        "exercise list, sets, reps, weights and RPE targets, and flag "
-        "anything I need to know."
+        "exercise list, sets, reps, weights and RPE targets based on "
+        "my recent performance, and flag anything I need to know."
     )
     response = chat_with_coach(message, conversation_history, memory)
     send_whatsapp_message(response, TWILIO_TO_NUMBER)
@@ -185,7 +192,7 @@ if __name__ == "__main__":
         print("Usage:")
         print("  python coach.py morning    — send morning briefing")
         print("  python coach.py terminal   — interactive terminal mode")
-        import sys; sys.exit(0)
+        sys.exit(0)
 
     mode = sys.argv[1]
 
