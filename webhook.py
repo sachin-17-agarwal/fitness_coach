@@ -8,6 +8,7 @@ from flask import Flask, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
 from coach import handle_incoming_message
 from memory import load_memory, save_recovery_data
+from parse_health import parse_health_export
 
 app = Flask(__name__)
 
@@ -65,27 +66,16 @@ def apple_health():
         if not data:
             return jsonify({"error": "No JSON body"}), 400
 
-        print(f"🍎 Apple Health data received: {json.dumps(data, indent=2)}")
+        print(f"🍎 Apple Health data received")
 
-        # Calculate HRV status vs 7-day baseline (stored in Supabase)
-        hrv = data.get("hrv")
+        # Parse Health Auto Export v2 format (nested metrics) or flat format
+        from parse_health import parse_health_export
+        recovery_data = parse_health_export(data)
+        print(f"Parsed: {recovery_data}")
+
+        hrv = recovery_data.get("hrv")
         hrv_status = _get_hrv_status(hrv)
-
-        recovery_data = {
-            "date":                  data.get("date"),
-            "sleep_hours":           data.get("sleep_hours"),
-            "hrv":                   hrv,
-            "hrv_status":            hrv_status,
-            "resting_hr":            data.get("resting_hr"),
-            "heart_rate":            data.get("heart_rate"),
-            "steps":                 data.get("steps"),
-            "active_energy_kcal":    data.get("active_energy_kcal"),
-            "weight_kg":             data.get("weight_kg"),
-            "body_fat_pct":          data.get("body_fat_pct"),
-            "exercise_minutes":      data.get("exercise_minutes"),
-            "respiratory_rate":      data.get("respiratory_rate"),
-            "vo2_max":               data.get("vo2_max"),
-        }
+        recovery_data["hrv_status"] = hrv_status
 
         save_recovery_data(recovery_data)
         return jsonify({"status": "ok", "date": data.get("date")}), 200
