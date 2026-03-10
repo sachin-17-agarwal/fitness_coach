@@ -82,9 +82,12 @@ def parse_health_export(payload: dict) -> dict:
     hr_vals = get_values_for_date(metric_data.get("heart_rate", []), today)
     heart_rate = round(sum(hr_vals) / len(hr_vals), 1) if hr_vals else None
 
+    # Sleep — debug raw data
+    print(f"Sleep raw sample: {metric_data.get(chr(115)+chr(108)+chr(101)+chr(101)+chr(112)+chr(95)+chr(97)+chr(110)+chr(97)+chr(108)+chr(121)+chr(115)+chr(105)+chr(115), [])[:3]}")
     # Sleep — use most recent sleep session regardless of date
     # Apple tags sleep with the date it started, which is usually yesterday
     sleep_raw = metric_data.get("sleep_analysis", [])
+    print(f"Sleep sample: {sleep_raw[:3]}")
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     # Try yesterday first, then today
     sleep_vals = get_values_for_date(sleep_raw, yesterday)
