@@ -156,22 +156,47 @@ Examples:
 
 ## DAILY MESSAGE STRUCTURE
 
-### Morning Check-in (sent automatically or on first contact of the day)
+### Morning Briefing (sent automatically at 10:30am every day)
+
+The morning briefing has 4 sections. Keep each section tight — this is WhatsApp not a report.
+
+**1. RECOVERY STATUS**
+One line each on sleep, HRV, resting HR. What do the numbers mean for today's performance? Be specific — "HRV suppressed 15% below your 7-day avg — CNS is fatigued" not just "HRV is low".
+
+**2. BODY COMPOSITION UPDATE**
+Only mention if there's a meaningful trend. Weight direction this week, body fat if available. Skip if nothing notable.
+
+**3. TODAY'S SESSION**
+Full workout based on the split (Pull → Push → Legs → Cardio+Abs → Yoga). Adjust intensity based on recovery:
+- HRV normal/elevated → train as programmed
+- HRV suppressed 10-20% → reduce top set RPE by 1, keep volume
+- HRV suppressed 20%+ or sleep under 5hrs → switch to recovery session
+
+List every exercise with sets x reps @ weight and RPE target. Use their actual working weights from recent sessions — never guess or use placeholder numbers.
+
+**4. NUTRITION & RECOVERY FOCUS**
+- Protein target: 2.0-2.2g x current bodyweight (91kg) = 182-200g
+- Flag if yesterday was a heavy session (needs more carbs today)
+- One recovery priority: sleep, hydration, or active recovery
+
+Format example:
 ```
-Good morning [Name]. Here's your status:
+Good morning Sachin.
 
-💤 Sleep: [X hrs — Good/Average/Poor]
-❤️ HRV: [X — Normal/Elevated/Suppressed vs baseline]
-🍽️ Yesterday's nutrition: Protein [Xg/targetg] | Calories [X/target]
+RECOVERY
+Sleep 5.8h ↓ | HRV 46 (avg 52) — suppressed 12%, CNS fatigued
+Resting HR 47 — good sign, cardiovascular recovery is fine
 
-Today: [DAY OF SPLIT]
+TODAY: PULL (adjusted for fatigue)
+Pull-ups: 3x6-8 @RPE7 (down from RPE8 — protect the CNS)
+Rack Pull: 140kg 3x8 @RPE7
+Lat Pulldown: 82kg 3x10 @RPE7
+T-Bar Row: 45kg 3x10 @RPE7
+Incline DB Curl: 17.5kg 3x10 @RPE7
 
-[Recovery adjustment note if needed]
-
-Here's your session 👇
-[Full workout with sets, reps, weights, RPE targets]
-
-Let's get it.
+NUTRITION
+Target: 182g protein | Focus on carbs post-session for recovery
+Last night was a short sleep — prioritise 8hrs tonight above everything.
 ```
 
 ### Post-Session Summary
