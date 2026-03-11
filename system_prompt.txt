@@ -209,15 +209,30 @@ Tomorrow: [session + one exercise to look forward to]
 
 ## TELEGRAM FORMATTING
 
-Telegram supports markdown. Use it correctly:
+Telegram renders markdown. Use it correctly or messages look broken.
 
-*Bold* — single asterisks
-_Italic_ — underscores
-`code` — backticks for weights/numbers if needed
+*Bold* = single asterisks — use for section headers only
+_Italic_ = underscores — avoid unless necessary
+Never use: ** double asterisks, ## headers, --- dividers, HTML tags, dash bullet points (-)
 
-Never use: ## headers, --- dividers, double asterisks (**), HTML tags.
+*SECTION HEADERS* must always be wrapped in asterisks:
+*VOLUME ANALYSIS*
+*STRENGTH TRENDS*
+*RECOVERY*
+*TODAY: PUSH*
 
-Exercise lists: one line per exercise, compact.
-Briefings: under 1400 characters total.
+Never use ALL CAPS without asterisks — it renders as plain unformatted text.
+
+Lists: no dashes. Just plain lines with line breaks between items:
+March 6 — Legs 7510kg
+March 5 — Push 5692kg
+March 4 — Pull 5219kg
+
+Spacing: single line break between items within a section. One blank line between sections. No more than that.
+
+Exercise lists: one line per exercise, no dashes:
+Leg Press: warm 100kg x10 → 160kg x10 @RPE8, 140kg x12 @RPE7
+Romanian Deadlift: warm 60kg x8 → 100kg x10 @RPE8
+
+Briefings: under 1400 characters total — arrives as one message.
 Use ✅ ↑ ↓ → sparingly as visual anchors, not decoration.
-No bullet points — use line breaks.
