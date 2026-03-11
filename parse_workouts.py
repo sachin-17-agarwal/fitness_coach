@@ -1,41 +1,32 @@
 """
 parse_workouts.py — Parse Health Auto Export workout data.
-Handles the workouts format: data.workouts[]
 """
 
 from datetime import datetime
 
 def is_workout_payload(payload: dict) -> bool:
-    """Check if this payload contains workout data rather than health metrics."""
     return "workouts" in payload.get("data", {})
 
 def extract_qty(val) -> float:
-    """Extract numeric value from either a raw number or a {qty, units} dict."""
     if val is None:
         return None
     if isinstance(val, dict):
-        return float(val.get("qty", 0)) if val.get("qty") is not None else None
+        v = val.get("qty")
+        return float(v) if v is not None else None
     try:
         return float(val)
     except:
         return None
 
 def parse_workouts(payload: dict) -> list:
-    """
-    Parse workout records from Health Auto Export.
-    Returns list of workout dicts ready for Supabase.
-    """
     workouts = payload.get("data", {}).get("workouts", [])
     parsed = []
 
-    if workouts:
-        print(f"Workout fields: {list(workouts[0].keys())}")
-        print(f"Sample workout: {workouts[0]}")
     for w in workouts:
         try:
-            # Get workout date from startDate or date field
-            start_raw = w.get("startDate") or w.get("date") or ""
-            end_raw = w.get("endDate") or ""
+            # Dates — use 'start' and 'end' fields
+            start_raw = w.get("start") or w.get("startDate") or ""
+            end_raw = w.get("end") or w.get("endDate") or ""
 
             start_dt = None
             end_dt = None
@@ -49,40 +40,38 @@ def parse_workouts(payload: dict) -> list:
                 pass
 
             date = start_dt.strftime("%Y-%m-%d") if start_dt else datetime.now().strftime("%Y-%m-%d")
-            duration_minutes = None
-            if start_dt and end_dt:
+
+            # Duration — field is in seconds, convert to minutes
+            duration_seconds = extract_qty(w.get("duration"))
+            if duration_seconds:
+                duration_minutes = round(duration_seconds / 60, 1)
+            elif start_dt and end_dt:
                 duration_minutes = round((end_dt - start_dt).total_seconds() / 60, 1)
             else:
-                dur = extract_qty(w.get("duration"))
-                if dur:
-                    duration_minutes = round(dur, 1)
+                duration_minutes = None
 
-            # Heart rate stats
-            hr_data = w.get("heartRateData", [])
-            avg_hr = None
-            min_hr = None
-            max_hr = None
-            if hr_data:
-                avgs = [extract_qty(h.get("Avg")) for h in hr_data if extract_qty(h.get("Avg"))]
-                mins = [extract_qty(h.get("Min")) for h in hr_data if extract_qty(h.get("Min"))]
-                maxs = [extract_qty(h.get("Max")) for h in hr_data if extract_qty(h.get("Max"))]
-                if avgs:
-                    avg_hr = round(sum(avgs) / len(avgs), 1)
-                if mins:
-                    min_hr = min(mins)
-                if maxs:
-                    max_hr = max(maxs)
+            # Heart rate — nested dict format: heartRate.avg.qty
+            hr = w.get("heartRate", {})
+            avg_hr = extract_qty(hr.get("avg")) if hr else None
+            min_hr = extract_qty(hr.get("min")) if hr else None
+            max_hr = extract_qty(hr.get("max")) if hr else None
 
-            # Energy — convert kJ to kcal if needed
-            energy_raw = w.get("activeEnergyBurned") or w.get("totalEnergyBurned") or w.get("energy")
-            energy_kcal = None
-            e = extract_qty(energy_raw)
-            if e:
-                energy_kcal = round(e / 4.184, 1) if e > 500 else round(e, 1)
+            # Fallback to top-level avgHeartRate / maxHeartRate
+            if avg_hr is None:
+                avg_hr = extract_qty(w.get("avgHeartRate"))
+            if max_hr is None:
+                max_hr = extract_qty(w.get("maxHeartRate"))
+
+            # Energy — activeEnergyBurned in kJ, convert to kcal
+            energy_raw = extract_qty(w.get("activeEnergyBurned"))
+            energy_kcal = round(energy_raw / 4.184, 1) if energy_raw else None
+
+            # Workout type — use 'name' field
+            workout_type = w.get("name") or w.get("workoutActivityType") or "Unknown"
 
             parsed.append({
                 "date": date,
-                "workout_type": w.get("workoutActivityType") or w.get("type") or "Unknown",
+                "workout_type": workout_type,
                 "start_time": start_raw[:19] if start_raw else None,
                 "end_time": end_raw[:19] if end_raw else None,
                 "duration_minutes": duration_minutes,
@@ -90,8 +79,7 @@ def parse_workouts(payload: dict) -> list:
                 "min_heart_rate": min_hr,
                 "max_heart_rate": max_hr,
                 "active_energy_kcal": energy_kcal,
-                "source": w.get("source", ""),
-                "metadata": str(w.get("metadata", {})),
+                "source": w.get("source", "Apple Watch"),
             })
         except Exception as e:
             print(f"Failed to parse workout: {e}")
@@ -100,7 +88,6 @@ def parse_workouts(payload: dict) -> list:
     return parsed
 
 def save_workouts(parsed: list):
-    """Save parsed workouts to Supabase apple_workouts table."""
     import os
     from supabase import create_client
     url = os.environ.get("SUPABASE_URL")
@@ -113,6 +100,6 @@ def save_workouts(parsed: list):
             supabase.table("apple_workouts").upsert(
                 w, on_conflict="date,workout_type,start_time"
             ).execute()
-            print(f"✅ Workout saved: {w['workout_type']} on {w['date']} ({w['duration_minutes']}min)")
+            print(f"✅ Workout: {w['workout_type']} | {w['date']} | {w['duration_minutes']}min | avg HR {w['avg_heart_rate']} | {w['active_energy_kcal']}kcal")
         except Exception as e:
             print(f"⚠️ Failed to save workout: {e}")
