@@ -19,6 +19,7 @@ from workout import (
     get_workout_state, is_workout_active, start_session, end_session,
     log_substitution, get_substitution_history, get_workout_context
 )
+from memory import advance_mesocycle
 
 ATHLETE_NAME = "Sachin"
 ATHLETE_CURRENT_WEIGHT_KG = 91
@@ -200,9 +201,32 @@ def send_morning_briefing(memory: dict):
     send_whatsapp_message(response)
     print("Morning briefing sent.")
 
+SESSION_END_PHRASES = ["session done", "session complete", "finished", "that's it", "all done", "workout done", "workout complete", "done for today"]
+
 def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     conversation_history = load_today_conversation()
+
+    # Detect session start
+    start_phrases = ["starting pull", "starting push", "starting legs", "starting cardio", "starting yoga", "workout mode", "at the gym", "let's train", "lets train"]
+    if any(p in incoming_text.lower() for p in start_phrases):
+        session_type = "Unknown"
+        for s in ["pull", "push", "legs", "cardio", "yoga"]:
+            if s in incoming_text.lower():
+                session_type = s.capitalize()
+                break
+        start_session(session_type)
+
     response = chat_with_coach(incoming_text, conversation_history, memory)
+
+    # Detect session end and advance mesocycle
+    if any(p in incoming_text.lower() for p in SESSION_END_PHRASES):
+        state = get_workout_state()
+        session_id = state.get("current_session_id", "")
+        if session_id:
+            end_session(session_id)
+        advance_mesocycle(memory)
+        print(f"✅ Session complete — mesocycle advanced to day {memory.get('mesocycle_day')}")
+
     send_whatsapp_message(response)
     return response
 
