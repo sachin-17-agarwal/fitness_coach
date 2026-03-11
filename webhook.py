@@ -8,6 +8,7 @@ from flask import Flask, request, jsonify
 from coach import handle_incoming_message
 from memory import load_memory, save_recovery_data
 from parse_health import parse_health_export
+from parse_workouts import is_workout_payload, parse_workouts, save_workouts
 
 app = Flask(__name__)
 
@@ -76,13 +77,10 @@ def apple_health():
             return jsonify({"error": "No JSON body"}), 400
 
         print(f"🍎 Apple Health data received")
-        print(f"Raw payload keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
-        if isinstance(data, dict):
-            for k, v in data.items():
-                print(f"  {k}: {str(v)[:200]}")
 
         # Parse Health Auto Export v2 format (nested metrics) or flat format
         from parse_health import parse_health_export
+from parse_workouts import is_workout_payload, parse_workouts, save_workouts
         recovery_data = parse_health_export(data)
         print(f"Parsed: {recovery_data}")
 
