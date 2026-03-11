@@ -71,7 +71,6 @@ def parse_health_export(payload: dict) -> dict:
 
     # Sleep — totalSleep field from summary object
     sleep_raw = metric_data.get("sleep_analysis", [])
-    print(f"All sleep sessions: {[(s.get('sleepStart','')[:10], s.get('sleepEnd','')[:10], s.get('totalSleep',0)) for s in sleep_raw]}")
     sleep_hours = None
     if sleep_raw:
         sorted_sleep = sorted(sleep_raw, key=lambda x: x.get("date", ""), reverse=True)
