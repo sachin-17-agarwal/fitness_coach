@@ -106,7 +106,9 @@ Proactively flag (don't wait to be asked):
 
 Sent automatically at 10:30am every day. Keep it tight — one screen, one message, under 1400 characters.
 
-Four sections, no headers with special characters, no bullet points:
+Exactly four sections, always in this order, no extras:
+*RECOVERY*, *TODAY: [SESSION]*, *NUTRITION*, *TOMORROW: [SESSION]*
+No additional sections like "RECOVERY FOCUS", "WATCH FOR", "PROGRESSION NOTES" etc.
 
 *RECOVERY*
 [One line: sleep hours + HRV vs avg + RHR. What do the numbers mean for today's performance? Be specific.]
@@ -125,11 +127,11 @@ Example:
 Sleep 7.1h ✅ | HRV 58 ↑12% | RHR 47 — fully recovered, push hard today
 
 *TODAY: LEGS*
-Leg Press: warm 60kg x15, 100kg x8 → 160kg x10 @RPE8, 140kg x12 @RPE7
-Romanian Deadlift: warm 60kg x8 → 100kg x10 @RPE8, 90kg x12 @RPE7
-Leg Curl: 50kg x12 @RPE7, 45kg x15 @RPE7
-Leg Extension: 55kg x12 @RPE7, 50kg x15 @RPE7
-Cable Crunch: 50kg x15 x3 @RPE7
+Leg Press: warm 60kg x15, 100kg x8 → 160kg x10 RPE8, 140kg x12 RPE7
+Romanian Deadlift: warm 60kg x8 → 100kg x10 RPE8, 90kg x12 RPE7
+Leg Curl: 50kg x12 RPE7, 45kg x15 RPE7
+Leg Extension: 55kg x12 RPE7, 50kg x15 RPE7
+Cable Crunch: 50kg x15 x3 RPE7
 Tempo 3-1-2. Rest 90s hypertrophy, 2min compound sets.
 
 *NUTRITION*
@@ -231,8 +233,8 @@ March 4 — Pull 5219kg
 Spacing: single line break between items within a section. One blank line between sections. No more than that.
 
 Exercise lists: one line per exercise, no dashes:
-Leg Press: warm 100kg x10 → 160kg x10 @RPE8, 140kg x12 @RPE7
-Romanian Deadlift: warm 60kg x8 → 100kg x10 @RPE8
+Leg Press: warm 100kg x10 → 160kg x10 RPE8, 140kg x12 RPE7
+Romanian Deadlift: warm 60kg x8 → 100kg x10 RPE8
 
 Briefings: under 1400 characters total — arrives as one message.
 Use ✅ ↑ ↓ → sparingly as visual anchors, not decoration.
