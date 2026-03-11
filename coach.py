@@ -82,6 +82,23 @@ def get_full_session_history(days: int = 30) -> str:
     except Exception as e:
         return f"Could not load session history: {e}"
 
+def get_apple_workouts(days: int = 30) -> str:
+    """Fetch recent Apple Watch workout records."""
+    try:
+        supabase = get_supabase()
+        since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        result = supabase.table("apple_workouts")            .select("date, workout_type, duration_minutes, avg_heart_rate, active_energy_kcal")            .gte("date", since)            .order("date", desc=True)            .execute()
+        if not result.data:
+            return "No Apple Watch workouts recorded."
+        lines = []
+        for w in result.data:
+            hr = f" | avg HR {round(w['avg_heart_rate'])}bpm" if w.get("avg_heart_rate") else ""
+            kcal = f" | {round(w['active_energy_kcal'])}kcal" if w.get("active_energy_kcal") else ""
+            lines.append(f"  {w['date']} — {w['workout_type']} {w['duration_minutes']}min{hr}{kcal}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Could not load Apple Watch workouts: {e}"
+
 def get_recovery_history(days: int = 14) -> str:
     try:
         supabase = get_supabase()
@@ -124,6 +141,7 @@ def build_context_block(memory: dict) -> str:
             executor.submit(get_full_session_history, 30): "session_history",
             executor.submit(get_recovery_history, 14): "recovery_history",
             executor.submit(get_substitution_history): "substitution_history",
+            executor.submit(get_apple_workouts, 30): "apple_workouts",
             executor.submit(get_workout_state): "workout_state",
         }
         results = {}
@@ -138,6 +156,7 @@ def build_context_block(memory: dict) -> str:
     session_history = results.get("session_history") or "No sessions found."
     recovery_history = results.get("recovery_history") or "No recovery data."
     substitution_history = results.get("substitution_history") or ""
+    apple_workouts = results.get("apple_workouts") or ""
     workout_state = results.get("workout_state") or {}
     workout_context = get_workout_context(workout_state)
 
@@ -161,6 +180,9 @@ LAST 30 DAYS SESSIONS:
 
 EXERCISE SUBSTITUTION HISTORY:
 {substitution_history}
+
+APPLE WATCH WORKOUTS (last 30 days):
+{apple_workouts}
 
 Known limitations: Slight knee and shoulder issues — see coaching profile.
 {workout_context}
