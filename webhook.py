@@ -76,6 +76,10 @@ def apple_health():
             return jsonify({"error": "No JSON body"}), 400
 
         print(f"🍎 Apple Health data received")
+        print(f"Raw payload keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
+        if isinstance(data, dict):
+            for k, v in data.items():
+                print(f"  {k}: {str(v)[:200]}")
 
         # Parse Health Auto Export v2 format (nested metrics) or flat format
         from parse_health import parse_health_export
