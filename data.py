@@ -27,15 +27,23 @@ def get_athlete_context() -> dict:
         return get_mock_data()
     
     try:
+        today = datetime.now().strftime("%Y-%m-%d")
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        
+
+        # Try today first, fall back to yesterday
         result = supabase.table("recovery")\
             .select("*")\
-            .eq("date", yesterday)\
+            .eq("date", today)\
             .execute()
-        
+
         if not result.data:
-            print("⚠️  No recovery data for yesterday. Using mock data.")
+            result = supabase.table("recovery")\
+                .select("*")\
+                .eq("date", yesterday)\
+                .execute()
+
+        if not result.data:
+            print("⚠️  No recovery data found. Using mock data.")
             return get_mock_data()
         
         row = result.data[0]
