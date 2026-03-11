@@ -28,6 +28,9 @@ def parse_workouts(payload: dict) -> list:
     workouts = payload.get("data", {}).get("workouts", [])
     parsed = []
 
+    if workouts:
+        print(f"Workout fields: {list(workouts[0].keys())}")
+        print(f"Sample workout: {workouts[0]}")
     for w in workouts:
         try:
             # Get workout date from startDate or date field
