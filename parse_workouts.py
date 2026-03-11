@@ -9,6 +9,17 @@ def is_workout_payload(payload: dict) -> bool:
     """Check if this payload contains workout data rather than health metrics."""
     return "workouts" in payload.get("data", {})
 
+def extract_qty(val) -> float:
+    """Extract numeric value from either a raw number or a {qty, units} dict."""
+    if val is None:
+        return None
+    if isinstance(val, dict):
+        return float(val.get("qty", 0)) if val.get("qty") is not None else None
+    try:
+        return float(val)
+    except:
+        return None
+
 def parse_workouts(payload: dict) -> list:
     """
     Parse workout records from Health Auto Export.
@@ -38,8 +49,10 @@ def parse_workouts(payload: dict) -> list:
             duration_minutes = None
             if start_dt and end_dt:
                 duration_minutes = round((end_dt - start_dt).total_seconds() / 60, 1)
-            elif w.get("duration"):
-                duration_minutes = round(float(w.get("duration", 0)), 1)
+            else:
+                dur = extract_qty(w.get("duration"))
+                if dur:
+                    duration_minutes = round(dur, 1)
 
             # Heart rate stats
             hr_data = w.get("heartRateData", [])
@@ -47,9 +60,9 @@ def parse_workouts(payload: dict) -> list:
             min_hr = None
             max_hr = None
             if hr_data:
-                avgs = [h.get("Avg") for h in hr_data if h.get("Avg")]
-                mins = [h.get("Min") for h in hr_data if h.get("Min")]
-                maxs = [h.get("Max") for h in hr_data if h.get("Max")]
+                avgs = [extract_qty(h.get("Avg")) for h in hr_data if extract_qty(h.get("Avg"))]
+                mins = [extract_qty(h.get("Min")) for h in hr_data if extract_qty(h.get("Min"))]
+                maxs = [extract_qty(h.get("Max")) for h in hr_data if extract_qty(h.get("Max"))]
                 if avgs:
                     avg_hr = round(sum(avgs) / len(avgs), 1)
                 if mins:
@@ -60,8 +73,8 @@ def parse_workouts(payload: dict) -> list:
             # Energy — convert kJ to kcal if needed
             energy_raw = w.get("activeEnergyBurned") or w.get("totalEnergyBurned") or w.get("energy")
             energy_kcal = None
-            if energy_raw:
-                e = float(energy_raw)
+            e = extract_qty(energy_raw)
+            if e:
                 energy_kcal = round(e / 4.184, 1) if e > 500 else round(e, 1)
 
             parsed.append({
