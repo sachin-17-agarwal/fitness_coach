@@ -78,9 +78,13 @@ def apple_health():
 
         print(f"🍎 Apple Health data received")
 
+        # Route workout payloads separately
+        if is_workout_payload(data):
+            workouts = parse_workouts(data)
+            save_workouts(workouts)
+            return jsonify({"status": "ok", "type": "workouts", "count": len(workouts)}), 200
+
         # Parse Health Auto Export v2 format (nested metrics) or flat format
-        from parse_health import parse_health_export
-from parse_workouts import is_workout_payload, parse_workouts, save_workouts
         recovery_data = parse_health_export(data)
         print(f"Parsed: {recovery_data}")
 
