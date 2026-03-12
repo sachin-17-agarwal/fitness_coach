@@ -140,11 +140,21 @@ def get_next_session_type(memory: dict) -> str:
     return CYCLE[day % len(CYCLE)]
 
 def advance_mesocycle(memory: dict):
-    """Advance mesocycle day after a session. 5-day rotating cycle."""
-    current_day = int(memory.get("mesocycle_day", 1))
+    """Advance mesocycle day after a session. 5-day rotating cycle.
+    Always reads fresh from DB to avoid advancing from a stale value."""
+    import traceback
+    print(f"⚠️ advance_mesocycle called from:")
+    traceback.print_stack()
+    # Fresh read from DB — never trust the passed-in dict for this
+    fresh_memory = load_memory()
+    current_day = int(fresh_memory.get("mesocycle_day", 1))
     next_day = (current_day % len(CYCLE)) + 1
-    memory["mesocycle_day"] = next_day
+    fresh_memory["mesocycle_day"] = next_day
     # Advance week after every full cycle (after Yoga = day 5)
     if current_day == len(CYCLE):
-        memory["mesocycle_week"] = (int(memory.get("mesocycle_week", 1)) % 4) + 1
-    save_memory(memory)
+        fresh_memory["mesocycle_week"] = (int(fresh_memory.get("mesocycle_week", 1)) % 4) + 1
+    save_memory(fresh_memory)
+    # Sync the passed-in dict so the caller has the updated values
+    memory["mesocycle_day"] = fresh_memory["mesocycle_day"]
+    memory["mesocycle_week"] = fresh_memory["mesocycle_week"]
+    print(f"✅ Mesocycle advanced: day {current_day} → {next_day}")
