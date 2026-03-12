@@ -223,7 +223,7 @@ def send_morning_briefing(memory: dict):
     send_whatsapp_message(response)
     print("Morning briefing sent.")
 
-SESSION_END_PHRASES = ["session done", "session complete", "finished", "that's it", "all done", "workout done", "workout complete", "done for today"]
+SESSION_END_PHRASES = ["session done", "session complete", "workout done", "workout complete", "workout ended", "session ended", "that's all the exercises", "finished the session", "done with the workout"]
 
 def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     conversation_history = load_today_conversation()
@@ -240,14 +240,18 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
 
     response = chat_with_coach(incoming_text, conversation_history, memory)
 
-    # Detect session end and advance mesocycle
+    # Detect session end and advance mesocycle — only if workout was actually active
     if any(p in incoming_text.lower() for p in SESSION_END_PHRASES):
         state = get_workout_state()
         session_id = state.get("current_session_id", "")
-        if session_id:
-            end_session(session_id)
-        advance_mesocycle(memory)
-        print(f"✅ Session complete — mesocycle advanced to day {memory.get('mesocycle_day')}")
+        workout_active = memory.get("workout_mode") == "active"
+        if workout_active or session_id:
+            if session_id:
+                end_session(session_id)
+            advance_mesocycle(memory)
+            print(f"✅ Session complete — mesocycle advanced to day {memory.get('mesocycle_day')}")
+        else:
+            print(f"⚠️ Session end phrase detected but no active workout — mesocycle not advanced")
 
     send_whatsapp_message(response)
     return response
