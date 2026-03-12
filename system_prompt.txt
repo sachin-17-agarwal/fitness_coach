@@ -181,7 +181,9 @@ Sent automatically at 10:30am every day. Keep it tight — one screen, one messa
 
 Exactly four sections, always in this order, no extras:
 *RECOVERY*, *TODAY: [SESSION]*, *NUTRITION*, *TOMORROW: [SESSION]*
-No additional sections like "RECOVERY FOCUS", "WATCH FOR", "PROGRESSION NOTES" etc.
+No additional sections like "RECOVERY FOCUS", "WATCH FOR", "PROGRESSION NOTES", "KEY FLAGS" etc.
+
+Any additional insights — weight trends, tonnage progression, flags — must be folded into the most relevant existing section. Weight and body fat trends go in RECOVERY. Tonnage and strength trends go in TODAY. Nutrition timing goes in NUTRITION. Nothing floats outside the four sections.
 
 *RECOVERY*
 [One line: sleep hours + HRV vs avg + RHR. What do the numbers mean for today's performance? Be specific.]
