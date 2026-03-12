@@ -47,14 +47,27 @@ def get_athlete_context() -> dict:
             return get_mock_data()
         
         row = result.data[0]
+
+        # Calculate 7-day HRV average directly from recovery table
+        seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        hrv_result = supabase.table("recovery")            .select("hrv")            .gte("date", seven_days_ago)            .execute()
+        hrv_readings = [r["hrv"] for r in hrv_result.data if r.get("hrv")]
+        hrv_avg = round(sum(hrv_readings) / len(hrv_readings), 1) if hrv_readings else "N/A"
+
+        # Calculate 7-day RHR baseline
+        rhr_readings = []
+        rhr_result = supabase.table("recovery")            .select("resting_hr")            .gte("date", seven_days_ago)            .execute()
+        rhr_readings = [r["resting_hr"] for r in rhr_result.data if r.get("resting_hr")]
+        rhr_baseline = round(sum(rhr_readings) / len(rhr_readings), 1) if rhr_readings else "N/A"
+
         return {
             "sleep_hours": row.get("sleep_hours", "N/A"),
             "sleep_quality": row.get("sleep_quality", "Unknown"),
             "hrv": row.get("hrv", "N/A"),
-            "hrv_avg": row.get("hrv_avg_7day", "N/A"),
+            "hrv_avg": hrv_avg,
             "hrv_status": row.get("hrv_status", "Unknown"),
             "resting_hr": row.get("resting_hr", "N/A"),
-            "resting_hr_baseline": row.get("resting_hr_baseline", "N/A"),
+            "resting_hr_baseline": rhr_baseline,
         }
 
     except Exception as e:
