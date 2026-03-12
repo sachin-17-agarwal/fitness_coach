@@ -212,7 +212,9 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict)
 
 def send_morning_briefing(memory: dict):
     print("Sending morning briefing...")
-    conversation_history = load_today_conversation()
+    # Morning briefing always starts with empty conversation history
+    # to prevent yesterday's session context bleeding into today's day/session type
+    conversation_history = []
     message = (
         "Good morning. Give me my morning briefing: "
         "review my recovery data, tell me today's session with full "
