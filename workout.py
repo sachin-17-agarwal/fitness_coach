@@ -1,5 +1,5 @@
 """
-workout.py — Workout mode state management.
+workout.py - Workout mode state management.
 Handles session state, set logging, PR detection, fatigue detection,
 substitution memory, and session summaries.
 """
@@ -15,7 +15,7 @@ def get_supabase():
         return None
     return create_client(url, key)
 
-# ── Session State ─────────────────────────────────────────────────────────────
+# -- Session State -------------------------------------------------------------
 
 def get_workout_state() -> dict:
     """Load current workout state from Supabase memory table."""
@@ -39,7 +39,7 @@ def set_workout_state(updates: dict):
                 "key": key,
                 "value": str(value),
                 "updated_at": datetime.now().isoformat()
-            }).execute()
+            }, on_conflict="key").execute()
     except Exception as e:
         print(f"Failed to update workout state: {e}")
 
@@ -50,12 +50,6 @@ def is_workout_active() -> bool:
 def start_session(session_type: str) -> str:
     """Create a new workout session and activate workout mode."""
     try:
-        existing_state = get_workout_state()
-        existing_session_id = existing_state.get("current_session_id", "")
-        if existing_state.get("workout_mode") == "active" and existing_session_id:
-            print(f"Workout already active. Reusing session {existing_session_id}")
-            return existing_session_id
-
         supabase = get_supabase()
         result = supabase.table("workout_sessions").insert({
             "date": datetime.now().strftime("%Y-%m-%d"),
@@ -110,7 +104,7 @@ def end_session(session_id: str) -> dict:
         print(f"Failed to end session: {e}")
         return {}
 
-# ── Set Logging ───────────────────────────────────────────────────────────────
+# -- Set Logging ---------------------------------------------------------------
 
 def log_set(session_id: str, exercise: str, set_number: int,
             actual_weight: float, actual_reps: int, actual_rpe: float = None,
@@ -120,7 +114,6 @@ def log_set(session_id: str, exercise: str, set_number: int,
     """Log a completed set and return PR info."""
     try:
         supabase = get_supabase()
-        pr_info = check_pr(exercise, actual_weight, actual_reps)
         supabase.table("workout_sets").insert({
             "workout_session_id": session_id,
             "date": datetime.now().strftime("%Y-%m-%d"),
@@ -138,12 +131,13 @@ def log_set(session_id: str, exercise: str, set_number: int,
             "logged_at": datetime.now().isoformat()
         }).execute()
 
+        pr_info = check_pr(exercise, actual_weight, actual_reps)
         return pr_info
     except Exception as e:
         print(f"Failed to log set: {e}")
         return {}
 
-# ── PR Detection ──────────────────────────────────────────────────────────────
+# -- PR Detection --------------------------------------------------------------
 
 def check_pr(exercise: str, weight: float, reps: int) -> dict:
     """Check PR across both workout_sets (new) and sets (historical)."""
@@ -155,14 +149,12 @@ def check_pr(exercise: str, weight: float, reps: int) -> dict:
 
         current_1rm = estimated_1rm(weight, reps)
 
-        # New table
         r1 = supabase.table("workout_sets")\
             .select("actual_weight_kg, actual_reps")\
             .eq("exercise", exercise)\
             .eq("is_warmup", False)\
             .execute()
 
-        # Historical table
         r2 = supabase.table("sets")\
             .select("weight_kg, reps")\
             .eq("exercise", exercise)\
@@ -190,7 +182,7 @@ def check_pr(exercise: str, weight: float, reps: int) -> dict:
         print(f"PR check failed: {e}")
         return {"is_pr": False}
 
-# ── Fatigue Detection ─────────────────────────────────────────────────────────
+# -- Fatigue Detection ---------------------------------------------------------
 
 def check_fatigue(session_id: str, exercise: str) -> dict:
     """Detect if reps are dropping faster than expected across sets."""
@@ -221,7 +213,7 @@ def check_fatigue(session_id: str, exercise: str) -> dict:
         print(f"Fatigue check failed: {e}")
         return {"fatigued": False}
 
-# ── Session Time ──────────────────────────────────────────────────────────────
+# -- Session Time --------------------------------------------------------------
 
 def get_session_duration_minutes(state: dict) -> int:
     try:
@@ -233,7 +225,7 @@ def get_session_duration_minutes(state: dict) -> int:
     except:
         return 0
 
-# ── Substitution Memory ───────────────────────────────────────────────────────
+# -- Substitution Memory -------------------------------------------------------
 
 def log_substitution(original: str, substitution: str, reason: str = ""):
     try:
@@ -257,14 +249,14 @@ def get_substitution_history() -> str:
             .execute()
         if not result.data:
             return "No substitutions recorded."
-        lines = [f"  {r['original_exercise']} → {r['substitution']}" +
+        lines = [f"  {r['original_exercise']} -> {r['substitution']}" +
                  (f" ({r['reason']})" if r.get("reason") else "")
                  for r in result.data]
         return "\n".join(lines)
     except:
         return ""
 
-# ── Context for Coach ─────────────────────────────────────────────────────────
+# -- Context for Coach ---------------------------------------------------------
 
 def get_workout_context(state: dict) -> str:
     """Build workout mode context block for injection into coach."""
@@ -303,10 +295,10 @@ def get_workout_context(state: dict) -> str:
 
         duration_warning = ""
         if duration >= 90:
-            duration_warning = f"\n⚠️ SESSION TIME: {duration} minutes — suggest wrapping up"
+            duration_warning = f"\n WARNING SESSION TIME: {duration} minutes - suggest wrapping up"
 
         return f"""
-[WORKOUT MODE — ACTIVE]
+[WORKOUT MODE - ACTIVE]
 Session type: {session_type}
 Exercise index: {exercise_index}
 Current set: {set_number}
@@ -317,4 +309,4 @@ Sets logged this session:
 [END WORKOUT CONTEXT]
 """
     except Exception as e:
-        return f"[WORKOUT MODE — ACTIVE] (context load failed: {e})"
+        return f"[WORKOUT MODE - ACTIVE] (context load failed: {e})"
