@@ -15,7 +15,7 @@ from memory import (
     load_memory, save_memory, save_conversation_message,
     load_today_conversation, get_supabase
 )
-from telegram_bot import send_message as send_whatsapp_message
+from telegram_bot import send_message as send_telegram_message
 from workout import (
     get_workout_state, is_workout_active, start_session, end_session,
     log_substitution, get_substitution_history, get_workout_context,
@@ -27,7 +27,17 @@ ATHLETE_NAME = "Sachin"
 ATHLETE_CURRENT_WEIGHT_KG = 91
 ATHLETE_GOAL_WEIGHT_KG = 80
 
-client = Anthropic()
+client = None
+
+def get_anthropic_client() -> Anthropic:
+    """Create the API client lazily so non-chat code paths can still boot."""
+    global client
+    if client is None:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY is not set")
+        client = Anthropic(api_key=api_key)
+    return client
 
 def load_system_prompt() -> str:
     path = os.path.join(os.path.dirname(__file__), "system_prompt.txt")
@@ -234,7 +244,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict)
     conversation_history.append({"role": "user", "content": user_message})
     save_conversation_message("user", user_message)
 
-    response = client.messages.create(
+    response = get_anthropic_client().messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=1000,
         system=full_system,
@@ -257,7 +267,7 @@ def send_morning_briefing(memory: dict):
         "my recent performance, and flag anything I need to know."
     )
     response = chat_with_coach(message, conversation_history, memory)
-    send_whatsapp_message(response)
+    send_telegram_message(response)
     print("Morning briefing sent.")
 
 # ── Set parsing ───────────────────────────────────────────────────────────────
@@ -273,7 +283,7 @@ def parse_set_from_message(text: str) -> dict | None:
     """
     pattern = re.compile(
         r'(?:^|[\s.,])'
-        r'(\d+(?:\.\d+)?)\s*kg?\s*'
+        r'(\d+(?:\.\d+)?)\s*(?:kg)?\s*'
         r'[xX×]\s*'
         r'(\d+)'
         r'(?:\s*(?:rpe|@)\s*(\d+(?:\.\d+)?))?',
@@ -365,8 +375,8 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
             set_workout_state({"current_set_number": str(current_set)})
 
             if pr_info.get("is_pr"):
-                print(f"🏆 PR detected: {exercise} {set_data['weight']}kg x {set_data['reps']}")
-            print(f"✅ Set logged: {exercise} set{current_set} — {set_data['weight']}kg x {set_data['reps']}" +
+                print(f"PR detected: {exercise} {set_data['weight']}kg x {set_data['reps']}")
+            print(f"Set logged: {exercise} set{current_set} - {set_data['weight']}kg x {set_data['reps']}" +
                   (f" @RPE{set_data['rpe']}" if set_data.get("rpe") else ""))
 
     # ── Get coach response ────────────────────────────────────────────────────
@@ -376,8 +386,14 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
 
     # ── Cardio+Abs and Yoga days ──────────────────────────────────────────────
     if CARDIO_YOGA_END_PHRASE in incoming_text.lower() and mesocycle_day in CARDIO_YOGA_DAYS:
+        state = get_workout_state()
+        session_id = state.get("current_session_id", "")
+        workout_active_flag = state.get("workout_mode") == "active"
+        if workout_active_flag or session_id:
+            if session_id:
+                end_session(session_id)
         advance_mesocycle(memory)
-        print(f"✅ Cardio/Yoga session complete — mesocycle advanced to day {memory.get('mesocycle_day')}")
+        print(f"Cardio/Yoga session complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
 
     # ── PPL days ──────────────────────────────────────────────────────────────
     elif any(p in incoming_text.lower() for p in PPL_END_PHRASES):
@@ -388,11 +404,11 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
             if session_id:
                 end_session(session_id)
             advance_mesocycle(memory)
-            print(f"✅ PPL session complete — mesocycle advanced to day {memory.get('mesocycle_day')}")
+            print(f"PPL session complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
         else:
-            print(f"⚠️ Session end phrase detected but no active workout — mesocycle not advanced")
+            print("Session end phrase detected but no active workout - mesocycle not advanced")
 
-    send_whatsapp_message(response)
+    send_telegram_message(response)
     return response
 
 
@@ -402,8 +418,8 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 2:
         print("Usage:")
-        print("  python coach.py morning    — send morning briefing")
-        print("  python coach.py terminal   — interactive terminal mode")
+        print("  python coach.py morning    - send morning briefing")
+        print("  python coach.py terminal   - interactive terminal mode")
         sys.exit(0)
 
     mode = sys.argv[1]
@@ -412,7 +428,7 @@ if __name__ == "__main__":
         send_morning_briefing(memory)
 
     elif mode == "terminal":
-        print("AI Fitness Coach — Terminal Mode")
+        print("AI Fitness Coach - Terminal Mode")
         print("Type 'quit' to exit\n")
         conversation_history = load_today_conversation()
         while True:

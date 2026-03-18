@@ -1,11 +1,13 @@
 """
-memory.py — Persistent memory using Supabase.
+memory.py - Persistent memory using Supabase.
 Replaces the old memory.json file approach.
 """
 
 import os
 from datetime import datetime
-from supabase import create_client, Client
+
+from supabase import Client, create_client
+
 
 def get_supabase() -> Client:
     url = os.environ.get("SUPABASE_URL")
@@ -14,35 +16,41 @@ def get_supabase() -> Client:
         raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
     return create_client(url, key)
 
+
 def load_memory() -> dict:
     """Load memory from Supabase memory table."""
     try:
         supabase = get_supabase()
         result = supabase.table("memory").select("key, value").execute()
         memory = {row["key"]: row["value"] for row in result.data}
-        
+
         for key in ["mesocycle_week", "mesocycle_day"]:
             if key in memory:
                 memory[key] = int(memory[key])
-        
-        sessions = supabase.table("sessions")\
-            .select("*")\
-            .order("date", desc=True)\
-            .limit(30)\
-            .execute()
-        memory["recent_sessions"] = sessions.data or []
-        
-        print(f"📂 Memory loaded. Mesocycle: Week {memory.get('mesocycle_week', 1)}, Day {memory.get('mesocycle_day', 1)}")
-        return memory
 
+        sessions = (
+            supabase.table("sessions")
+            .select("*")
+            .order("date", desc=True)
+            .limit(30)
+            .execute()
+        )
+        memory["recent_sessions"] = sessions.data or []
+
+        print(
+            f"Memory loaded. Mesocycle: Week {memory.get('mesocycle_week', 1)}, "
+            f"Day {memory.get('mesocycle_day', 1)}"
+        )
+        return memory
     except Exception as e:
-        print(f"⚠️  Supabase memory load failed: {e}. Using defaults.")
+        print(f"Supabase memory load failed: {e}. Using defaults.")
         return {
             "mesocycle_week": 1,
             "mesocycle_day": 1,
             "recent_sessions": [],
-            "conversations": {}
+            "conversations": {},
         }
+
 
 def save_memory(memory: dict):
     """Save key memory values to Supabase."""
@@ -53,10 +61,11 @@ def save_memory(memory: dict):
                 supabase.table("memory").upsert({
                     "key": key,
                     "value": str(memory[key]),
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": datetime.now().isoformat(),
                 }).execute()
     except Exception as e:
-        print(f"⚠️  Supabase memory save failed: {e}")
+        print(f"Supabase memory save failed: {e}")
+
 
 def save_conversation_message(role: str, content: str):
     """Save a single message to the conversations table."""
@@ -66,25 +75,29 @@ def save_conversation_message(role: str, content: str):
             "date": datetime.now().strftime("%Y-%m-%d"),
             "role": role,
             "content": content,
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now().isoformat(),
         }).execute()
     except Exception as e:
-        print(f"⚠️  Failed to save conversation message: {e}")
+        print(f"Failed to save conversation message: {e}")
+
 
 def load_today_conversation() -> list:
     """Load today's conversation history from Supabase."""
     try:
         supabase = get_supabase()
         today = datetime.now().strftime("%Y-%m-%d")
-        result = supabase.table("conversations")\
-            .select("role, content")\
-            .eq("date", today)\
-            .order("created_at")\
+        result = (
+            supabase.table("conversations")
+            .select("role, content")
+            .eq("date", today)
+            .order("created_at")
             .execute()
+        )
         return [{"role": row["role"], "content": row["content"]} for row in result.data]
     except Exception as e:
-        print(f"⚠️  Failed to load conversation: {e}")
+        print(f"Failed to load conversation: {e}")
         return []
+
 
 def log_session(session: dict):
     """Save a completed workout session to Supabase."""
@@ -97,64 +110,68 @@ def log_session(session: dict):
             "tonnage_kg": session.get("tonnage_kg"),
             "notes": session.get("notes", ""),
             "mesocycle_week": session.get("mesocycle_week", 1),
-            "mesocycle_day": session.get("mesocycle_day", 1)
+            "mesocycle_day": session.get("mesocycle_day", 1),
         }).execute()
-        print(f"✅ Session logged: {session.get('type')} on {session.get('date')}")
+        print(f"Session logged: {session.get('type')} on {session.get('date')}")
     except Exception as e:
-        print(f"⚠️  Failed to log session: {e}")
+        print(f"Failed to log session: {e}")
+
 
 def save_recovery_data(data: dict):
     """Save daily Apple Health recovery data using upsert on date."""
     try:
         supabase = get_supabase()
-        row = {k: v for k, v in {
-            "date":               data.get("date", datetime.now().strftime("%Y-%m-%d")),
-            "sleep_hours":        data.get("sleep_hours"),
-            "hrv":                data.get("hrv"),
-            "hrv_status":         data.get("hrv_status"),
-            "resting_hr":         data.get("resting_hr"),
-            "heart_rate":         data.get("heart_rate"),
-            "steps":              data.get("steps"),
-            "active_energy_kcal": data.get("active_energy_kcal"),
-            "weight_kg":          data.get("weight_kg"),
-            "body_fat_pct":       data.get("body_fat_pct"),
-            "exercise_minutes":   data.get("exercise_minutes"),
-            "respiratory_rate":   data.get("respiratory_rate"),
-            "vo2_max":            data.get("vo2_max"),
-        }.items() if v is not None}
+        row = {
+            k: v
+            for k, v in {
+                "date": data.get("date", datetime.now().strftime("%Y-%m-%d")),
+                "sleep_hours": data.get("sleep_hours"),
+                "hrv": data.get("hrv"),
+                "hrv_status": data.get("hrv_status"),
+                "resting_hr": data.get("resting_hr"),
+                "heart_rate": data.get("heart_rate"),
+                "steps": data.get("steps"),
+                "active_energy_kcal": data.get("active_energy_kcal"),
+                "weight_kg": data.get("weight_kg"),
+                "body_fat_pct": data.get("body_fat_pct"),
+                "exercise_minutes": data.get("exercise_minutes"),
+                "respiratory_rate": data.get("respiratory_rate"),
+                "vo2_max": data.get("vo2_max"),
+            }.items()
+            if v is not None
+        }
         supabase.table("recovery").upsert(row, on_conflict="date").execute()
-        print(f"✅ Recovery data saved for {row.get('date')}")
+        print(f"Recovery data saved for {row.get('date')}")
     except Exception as e:
-        print(f"⚠️  Failed to save recovery data: {e}")
+        print(f"Failed to save recovery data: {e}")
+
 
 CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
+
 
 def get_current_session_type(memory: dict) -> str:
     """Return today's session type based on cycle position."""
     day = int(memory.get("mesocycle_day", 1)) - 1
     return CYCLE[day % len(CYCLE)]
 
+
 def get_next_session_type(memory: dict) -> str:
     """Return tomorrow's session type."""
     day = int(memory.get("mesocycle_day", 1))
     return CYCLE[day % len(CYCLE)]
 
+
 def advance_mesocycle(memory: dict):
-    """Advance mesocycle day after a session. 5-day rotating cycle.
-    Always reads fresh from DB to avoid advancing from a stale value."""
-    import traceback
-    print(f"⚠️ advance_mesocycle called from:")
-    traceback.print_stack()
-    # Fresh read from DB — never trust the passed-in dict for this
+    """Advance mesocycle day after a session using fresh DB state."""
     fresh_memory = load_memory()
     current_day = int(fresh_memory.get("mesocycle_day", 1))
     next_day = (current_day % len(CYCLE)) + 1
     fresh_memory["mesocycle_day"] = next_day
-    # Advance week after every full cycle (after Yoga = day 5)
+
     if current_day == len(CYCLE):
         fresh_memory["mesocycle_week"] = (int(fresh_memory.get("mesocycle_week", 1)) % 4) + 1
+
     save_memory(fresh_memory)
-    # Sync the passed-in dict so the caller has the updated values
     memory["mesocycle_day"] = fresh_memory["mesocycle_day"]
     memory["mesocycle_week"] = fresh_memory["mesocycle_week"]
-    print(f"✅ Mesocycle advanced: day {current_day} → {next_day}")
+    print(f"Mesocycle advanced: day {current_day} -> {next_day}")

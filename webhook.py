@@ -3,7 +3,6 @@ webhook.py — Flask server for Telegram messages and Apple Health data.
 """
 
 import os
-import json
 from flask import Flask, request, jsonify
 from coach import handle_incoming_message
 from memory import load_memory, save_recovery_data

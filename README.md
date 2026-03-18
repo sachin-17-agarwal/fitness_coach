@@ -1,161 +1,194 @@
-# AI Fitness Coach 🏋️
+# AI Fitness Coach
 
-A WhatsApp-based AI personal trainer powered by Claude. Reads your Apple Health data,
-MyFitnessPal nutrition, and workout history — then coaches you like a real trainer would.
-
----
+A Telegram-based AI personal trainer powered by Claude and backed by Supabase.
+It ingests Apple Health recovery/workout data, tracks workout state, and coaches
+you through sessions with memory across days.
 
 ## What It Does
 
-- **Morning briefing** sent to your WhatsApp every day: recovery status, today's full workout plan with sets/reps/weights/RPE
-- **Live session coaching**: message back and forth during your workout, it adjusts set by set
-- **Recovery-aware**: uses your sleep and HRV from Apple Health to modify intensity automatically
-- **Nutrition-aware**: checks your MyFitnessPal data and adjusts recommendations
-- **Remembers everything**: session history, mesocycle position, long-term notes
+- Sends a morning briefing with recovery context and the planned session
+- Supports live workout coaching over Telegram
+- Logs completed sets during an active workout
+- Tracks mesocycle position and completed sessions in Supabase
+- Ingests Apple Health recovery metrics and workout exports through webhooks
 
----
+## Current Architecture
 
-## Setup (Step by Step)
+- `coach.py`: main orchestration and chat flow
+- `webhook.py`: Flask server for Telegram and Apple Health webhooks
+- `telegram_bot.py`: Telegram delivery helpers
+- `memory.py`: Supabase-backed memory and recovery persistence
+- `workout.py`: active workout state, set logging, and PR checks
+- `parse_health.py`: Apple Health recovery payload parser
+- `parse_workouts.py`: Apple Health workout payload parser
+- `scheduler.py`: morning briefing job
 
-### Step 1 — Install dependencies
+The current app uses:
+
+- Anthropic for coach responses
+- Telegram Bot API for messages
+- Supabase for memory, recovery, sessions, and workout state
+- Apple Health / Health Auto Export style webhook payloads for data ingestion
+
+## Requirements
+
+- Python 3.11+
+- An Anthropic API key
+- A Supabase project with the required tables
+- A Telegram bot token and your Telegram chat ID
+- Optional: a public HTTPS URL for webhooks
+
+Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 2 — Set up environment variables
+## Environment Setup
+
+Copy the example file and fill in your values:
+
 ```bash
 cp .env.example .env
-# Edit .env with your API keys (see below for where to get them)
 ```
 
-### Step 3 — Add the system prompt
-Copy the contents of `coach_system_prompt.md` into a file called `system_prompt.txt`
-in the same folder as these scripts.
+Expected variables:
 
-### Step 4 — Connect Apple Health → Google Sheets
-1. Download **Health Auto Export** from the iOS App Store (~$5 one-time)
-2. Open the app → select metrics: Sleep, HRV, Resting Heart Rate
-3. Set destination: Google Sheets
-4. It will automatically create and update a sheet in your Google Drive
+- `ANTHROPIC_API_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `HEALTH_WEBHOOK_TOKEN`
+- `PORT` (optional, defaults to `5000`)
 
-### Step 5 — Connect MyFitnessPal → Google Sheets
-**Option A (easiest):** Use Zapier
-- Trigger: New day logged in MyFitnessPal
-- Action: Add row to Google Sheets (Nutrition tab)
-- Map: Date, Calories, Protein, Carbs, Fat
+## System Prompt
 
-**Option B (free):** Manual CSV export weekly
-- MyFitnessPal → Reports → Export → paste into your Nutrition sheet
+The coach reads from `system_prompt.txt` in the repo root.
+That file already exists in this repo, so no extra setup is needed unless you want to edit the coach behavior.
 
-### Step 6 — Google Sheets API credentials
-1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Create a project → Enable "Google Sheets API" and "Google Drive API"
-3. Create a Service Account → Download `credentials.json`
-4. Place `credentials.json` in this folder
-5. Open your Google Sheet → Share it with the service account email
+## Running Locally
 
-### Step 7 — Set up Twilio WhatsApp
-1. Sign up at [twilio.com](https://twilio.com) (free account works)
-2. Go to Messaging → Try it out → Send a WhatsApp message
-3. Follow sandbox setup (takes 2 mins — you send a code to a number)
-4. Add your TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to .env
+Interactive terminal mode:
 
-### Step 8 — Test it
 ```bash
-# Test with mock data (no Google Sheets needed)
 python coach.py terminal
+```
 
-# Send a manual morning briefing
+Send a morning briefing:
+
+```bash
 python coach.py morning
-
-# Simulate an incoming message
-python coach.py chat "Done. Bench press 90kg x 8, felt solid"
 ```
 
-### Step 9 — Run the webhook (to receive your WhatsApp messages)
+Run the webhook server:
+
 ```bash
-# Terminal 1: start the webhook server
 python webhook.py
-
-# Terminal 2: expose it to the internet
-ngrok http 5000
-
-# Copy the ngrok URL (e.g. https://abc123.ngrok.io)
-# In Twilio dashboard: Messaging → Sandbox → Webhook URL → paste https://abc123.ngrok.io/webhook
 ```
 
-### Step 10 — Schedule morning briefings
+Run the scheduler job manually:
+
 ```bash
-# Keep running in background
 python scheduler.py
-
-# Or add to crontab (fires at 7am daily)
-# crontab -e
-# 0 7 * * * cd /path/to/fitness_coach && python coach.py morning
 ```
 
----
+Run regression tests:
 
-## File Structure
-
-```
-fitness_coach/
-├── coach.py          # Main entry point — orchestrates everything
-├── data.py           # Fetches Apple Health + nutrition data from Google Sheets
-├── memory.py         # Persistent memory (sessions, mesocycle position, notes)
-├── whatsapp.py       # Sends messages via Twilio
-├── webhook.py        # Flask server — receives your WhatsApp replies
-├── scheduler.py      # Sends morning briefing automatically each day
-├── system_prompt.txt # The coach's brain (copy from coach_system_prompt.md)
-├── memory.json       # Auto-created — stores your history
-├── credentials.json  # Google service account (you create this)
-├── .env              # Your API keys (never commit this)
-└── requirements.txt
+```bash
+python -m unittest discover -s tests -v
 ```
 
----
+## Telegram Setup
 
-## Logging a Session
+1. Create a bot with BotFather in Telegram.
+2. Put the bot token into `TELEGRAM_BOT_TOKEN`.
+3. Put your personal chat ID into `TELEGRAM_CHAT_ID`.
+4. Expose your local app with a public HTTPS URL if you want webhook delivery.
+5. Point Telegram webhook traffic to:
 
-After each workout, log it so the coach remembers it:
-
-```python
-from coach import log_session
-from memory import load_memory
-
-memory = load_memory()
-log_session({
-    "type": "Push",
-    "date": "2024-01-15",
-    "summary": "Incline DB 3x10 @ 32kg, Cable chest 3x12 @ 50kg, Tricep pushdown 4x12",
-    "tonnage_kg": 3800,
-    "notes": "Shoulder felt fine, good pump"
-}, memory)
+```text
+https://your-domain.example/webhook
 ```
 
-Or just tell the coach in WhatsApp: *"Session done. Log it."* and it will ask you for the details.
+The app only responds to the configured `TELEGRAM_CHAT_ID`.
 
----
+## Apple Health Webhook Setup
 
-## Cost Estimate
+The recovery endpoint is:
 
-| Component | Cost |
-|-----------|------|
-| Claude API (Sonnet) | ~$0.05–0.20/day |
-| Twilio WhatsApp | ~$0.005/message |
-| Health Auto Export app | $5 one-time |
-| Zapier (MFP sync) | Free tier works |
-| Server (optional) | $0 on Railway free tier |
-| **Total** | **~$2–5/month** |
+```text
+POST /apple-health
+```
 
----
+If `HEALTH_WEBHOOK_TOKEN` is set, send it in the `X-Health-Token` header.
+
+Supported payload styles:
+
+- Flat daily recovery JSON
+- Nested Health Auto Export style metrics payload
+- Workout payloads under `data.workouts`
+
+Example flat payload:
+
+```json
+{
+  "date": "2026-03-17",
+  "sleep_hours": 7.2,
+  "hrv": 58,
+  "resting_hr": 52,
+  "steps": 8400,
+  "exercise_minutes": 62
+}
+```
+
+Example local test on Windows:
+
+```powershell
+curl -X POST http://localhost:5000/apple-health `
+  -H "Content-Type: application/json" `
+  -H "X-Health-Token: your-token" `
+  -d "{\"date\":\"2026-03-17\",\"sleep_hours\":7.2,\"hrv\":58,\"resting_hr\":52}"
+```
+
+## Workout Flow
+
+Typical flow over Telegram:
+
+1. Send a start message such as `starting push` or `starting pull`
+2. During the session, send set logs like:
+   - `110kg x8`
+   - `110 x 10 RPE8`
+   - `done 100 x 12 @8`
+3. End the session with:
+   - PPL days: `session done`, `workout complete`, or similar
+   - Cardio/yoga days: `workout wrapped`
+
+When workout mode is active, the app attempts to log sets automatically and maintain session state in Supabase.
+
+## Notes On Current Behavior
+
+- If Supabase is unavailable, some paths fall back to defaults or mock recovery data.
+- `coach.py terminal` uses the same Claude-backed logic as the live bot.
+- Message sending is Telegram-first in the current codebase.
+- This README reflects the current code, not the older Twilio/Google Sheets version.
 
 ## Troubleshooting
 
-**No Google credentials found** — Coach runs with mock data. Fine for testing, follow Step 6 to connect real data.
+**Imports fail on startup**
+Check that you installed `requirements.txt` into the Python environment you are actually using.
 
-**Twilio not sending** — Check your .env has correct SID/token. Make sure you've joined the sandbox (send the join code first).
+**Coach cannot answer**
+Check `ANTHROPIC_API_KEY` and make sure `system_prompt.txt` exists.
 
-**Coach doesn't remember sessions** — Check memory.json exists and is writable. Call `log_session()` after each workout.
+**No memory or recovery data**
+Check `SUPABASE_URL`, `SUPABASE_KEY`, and the expected Supabase tables.
 
-**Morning briefing not arriving** — Check scheduler.py is running and your ATHLETE_WHATSAPP number in coach.py is correct with country code.
+**Telegram messages do not arrive**
+Check `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and webhook configuration.
+
+**Apple Health posts are rejected**
+Check that the `X-Health-Token` header matches `HEALTH_WEBHOOK_TOKEN`.
+
+**Morning briefing fails**
+Run `python scheduler.py` directly and inspect the logged exception.

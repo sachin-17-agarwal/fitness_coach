@@ -1,0 +1,155 @@
+import unittest
+from unittest.mock import patch
+
+from coach import handle_incoming_message, parse_set_from_message
+from parse_health import parse_health_export
+from parse_workouts import parse_workouts
+from telegram_bot import split_message
+import workout
+
+
+class FakeResponse:
+    def __init__(self, data):
+        self.data = data
+
+
+class FakeTable:
+    def __init__(self, name, store):
+        self.name = name
+        self.store = store
+        self.filters = []
+        self.pending_insert = None
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, field, value):
+        self.filters.append((field, value))
+        return self
+
+    def insert(self, row):
+        self.pending_insert = row
+        return self
+
+    def execute(self):
+        if self.pending_insert is not None:
+            self.store[self.name].append(self.pending_insert)
+            return FakeResponse([self.pending_insert])
+
+        rows = list(self.store[self.name])
+        for field, value in self.filters:
+            rows = [row for row in rows if row.get(field) == value]
+        return FakeResponse(rows)
+
+
+class FakeSupabase:
+    def __init__(self, store):
+        self.store = store
+
+    def table(self, name):
+        return FakeTable(name, self.store)
+
+
+class RegressionTests(unittest.TestCase):
+    def test_parse_set_accepts_plain_weight_x_reps(self):
+        parsed = parse_set_from_message("done 100 x 12 @8")
+        self.assertEqual(parsed["weight"], 100.0)
+        self.assertEqual(parsed["reps"], 12)
+        self.assertEqual(parsed["rpe"], 8.0)
+
+        parsed = parse_set_from_message("110 x 10 RPE8")
+        self.assertEqual(parsed["weight"], 110.0)
+        self.assertEqual(parsed["reps"], 10)
+        self.assertEqual(parsed["rpe"], 8.0)
+
+    def test_health_parser_respects_payload_date(self):
+        payload = {
+            "date": "2026-03-17",
+            "data": {
+                "metrics": [
+                    {"name": "heart_rate_variability", "data": [{"date": "2026-03-17 08:00:00", "qty": 55}]},
+                    {"name": "resting_heart_rate", "data": [{"date": "2026-03-17 07:00:00", "qty": 52}]},
+                    {"name": "sleep_analysis", "data": [{"date": "2026-03-17 06:00:00", "totalSleep": 7.5}]},
+                ]
+            },
+        }
+
+        parsed = parse_health_export(payload)
+        self.assertEqual(parsed["date"], "2026-03-17")
+        self.assertEqual(parsed["hrv"], 55.0)
+        self.assertEqual(parsed["resting_hr"], 52.0)
+        self.assertEqual(parsed["sleep_hours"], 7.5)
+
+    def test_flat_health_parser_does_not_multiply_minutes(self):
+        parsed = parse_health_export({
+            "date": "2026-03-17",
+            "exercise_minutes": 20,
+        })
+        self.assertEqual(parsed["exercise_minutes"], 20.0)
+
+    def test_workout_parser_handles_iso_timestamps(self):
+        payload = {
+            "data": {
+                "workouts": [
+                    {
+                        "name": "Running",
+                        "start": "2026-03-17T08:00:00Z",
+                        "end": "2026-03-17T08:45:00Z",
+                        "duration": {"qty": 2700},
+                        "heartRate": {"avg": {"qty": 150}, "max": {"qty": 175}},
+                        "activeEnergyBurned": {"qty": 900},
+                    }
+                ]
+            }
+        }
+
+        parsed = parse_workouts(payload)
+        self.assertEqual(parsed[0]["date"], "2026-03-17")
+        self.assertEqual(parsed[0]["duration_minutes"], 45.0)
+        self.assertEqual(parsed[0]["avg_heart_rate"], 150.0)
+
+    def test_telegram_split_message_breaks_long_single_paragraph(self):
+        text = "A" * 5000
+        chunks = split_message(text)
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(len(chunk) <= 4096 for chunk in chunks))
+        self.assertEqual("".join(chunks), text)
+
+    def test_log_set_detects_pr_against_prior_history(self):
+        store = {
+            "workout_sets": [
+                {"exercise": "Bench Press", "actual_weight_kg": 100.0, "actual_reps": 5, "is_warmup": False},
+            ],
+            "sets": [],
+        }
+
+        with patch.object(workout, "get_supabase", return_value=FakeSupabase(store)):
+            pr_info = workout.log_set(
+                session_id="session-1",
+                exercise="Bench Press",
+                set_number=2,
+                actual_weight=105.0,
+                actual_reps=5,
+            )
+
+        self.assertTrue(pr_info["is_pr"])
+        self.assertEqual(len(store["workout_sets"]), 2)
+
+    def test_cardio_wrap_ends_active_session(self):
+        memory = {"mesocycle_day": 4, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Wrapped"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc"}), \
+             patch("coach.end_session") as end_session_mock, \
+             patch("coach.advance_mesocycle") as advance_mock, \
+             patch("coach.send_telegram_message") as send_mock:
+            response = handle_incoming_message("Workout wrapped", memory)
+
+        self.assertEqual(response, "Wrapped")
+        end_session_mock.assert_called_once_with("abc")
+        advance_mock.assert_called_once_with(memory)
+        send_mock.assert_called_once_with("Wrapped")
+
+
+if __name__ == "__main__":
+    unittest.main()

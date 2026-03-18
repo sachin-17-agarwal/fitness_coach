@@ -4,7 +4,6 @@ Run as a separate Railway service with cron schedule: 30 23 * * *
 (23:30 UTC = 10:30am Sydney AEDT / 9:30am AEST)
 """
 
-import os
 import sys
 from dotenv import load_dotenv
 load_dotenv()

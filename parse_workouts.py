@@ -4,6 +4,21 @@ parse_workouts.py — Parse Health Auto Export workout data.
 
 from datetime import datetime
 
+def _parse_datetime(raw: str):
+    if not raw:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except Exception:
+        pass
+    try:
+        return datetime.strptime(text[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
 def is_workout_payload(payload: dict) -> bool:
     return "workouts" in payload.get("data", {})
 
@@ -28,16 +43,8 @@ def parse_workouts(payload: dict) -> list:
             start_raw = w.get("start") or w.get("startDate") or ""
             end_raw = w.get("end") or w.get("endDate") or ""
 
-            start_dt = None
-            end_dt = None
-            try:
-                start_dt = datetime.strptime(start_raw[:19], "%Y-%m-%d %H:%M:%S")
-            except:
-                pass
-            try:
-                end_dt = datetime.strptime(end_raw[:19], "%Y-%m-%d %H:%M:%S")
-            except:
-                pass
+            start_dt = _parse_datetime(start_raw)
+            end_dt = _parse_datetime(end_raw)
 
             date = start_dt.strftime("%Y-%m-%d") if start_dt else datetime.now().strftime("%Y-%m-%d")
 
@@ -72,8 +79,8 @@ def parse_workouts(payload: dict) -> list:
             parsed.append({
                 "date": date,
                 "workout_type": workout_type,
-                "start_time": start_raw[:19] if start_raw else None,
-                "end_time": end_raw[:19] if end_raw else None,
+                "start_time": start_dt.isoformat(timespec="seconds") if start_dt else (start_raw[:19] if start_raw else None),
+                "end_time": end_dt.isoformat(timespec="seconds") if end_dt else (end_raw[:19] if end_raw else None),
                 "duration_minutes": duration_minutes,
                 "avg_heart_rate": avg_hr,
                 "min_heart_rate": min_hr,
