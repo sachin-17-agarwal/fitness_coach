@@ -2,7 +2,6 @@
 #workout.py - Workout mode state management.
 #Handles session state, set logging, PR detection, fatigue detection,
 #substitution memory, and session summaries.
-“””
 
 import os
 from datetime import datetime, timedelta
