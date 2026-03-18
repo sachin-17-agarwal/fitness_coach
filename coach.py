@@ -38,34 +38,68 @@ def get_full_session_history(days: int = 30) -> str:
     try:
         supabase = get_supabase()
         since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-        sessions = supabase.table("workout_sessions")\
-            .select("id, date, type, tonnage_kg, notes")\
+
+        all_sessions = []
+
+        # ── New table: workout_sessions + workout_sets ────────────────────────
+        ws = supabase.table("workout_sessions")\
+            .select("id, date, type, tonnage_kg")\
             .gte("date", since)\
             .order("date", desc=True)\
             .execute()
 
-        if not sessions.data:
-            sessions = supabase.table("sessions")\
-                .select("id, date, type, summary, tonnage_kg, notes")\
-                .gte("date", since)\
-                .order("date", desc=True)\
-                .execute()
-
-        if not sessions.data:
-            return "No sessions logged in the last 30 days."
-
-        lines = []
-        for s in sessions.data:
-            lines.append(f"\n{s['date']} — {s['type']} (tonnage: {s.get('tonnage_kg', '?')}kg)")
+        for s in (ws.data or []):
             sets = supabase.table("workout_sets")\
-                .select("exercise, set_number, actual_weight_kg, actual_reps, actual_rpe, is_warmup")\
+                .select("exercise, actual_weight_kg, actual_reps, actual_rpe, is_warmup")\
                 .eq("workout_session_id", s["id"])\
                 .eq("is_warmup", False)\
                 .execute()
+            all_sessions.append({
+                "date": s["date"],
+                "type": s["type"],
+                "tonnage_kg": s.get("tonnage_kg"),
+                "summary": None,
+                "sets": sets.data or []
+            })
 
-            if sets.data:
+        # ── Old table: sessions + sets ────────────────────────────────────────
+        ls = supabase.table("sessions")\
+            .select("id, date, type, summary, tonnage_kg")\
+            .gte("date", since)\
+            .order("date", desc=True)\
+            .execute()
+
+        for s in (ls.data or []):
+            sets = supabase.table("sets")\
+                .select("exercise, weight_kg, reps, rpe")\
+                .eq("session_id", s["id"])\
+                .execute()
+            normalised = [
+                {"exercise": st["exercise"],
+                 "actual_weight_kg": st["weight_kg"],
+                 "actual_reps": st["reps"],
+                 "actual_rpe": st.get("rpe")}
+                for st in (sets.data or [])
+            ]
+            all_sessions.append({
+                "date": s["date"],
+                "type": s["type"],
+                "tonnage_kg": s.get("tonnage_kg"),
+                "summary": s.get("summary"),
+                "sets": normalised
+            })
+
+        if not all_sessions:
+            return "No sessions logged in the last 30 days."
+
+        all_sessions.sort(key=lambda x: x["date"], reverse=True)
+
+        lines = []
+        for s in all_sessions:
+            lines.append(f"\n{s['date']} — {s['type']} (tonnage: {s.get('tonnage_kg', '?')}kg)")
+            if s["sets"]:
                 exercises = {}
-                for st in sets.data:
+                for st in s["sets"]:
                     ex = st["exercise"]
                     if ex not in exercises:
                         exercises[ex] = []

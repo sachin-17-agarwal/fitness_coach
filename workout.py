@@ -75,7 +75,6 @@ def end_session(session_id: str) -> dict:
     try:
         supabase = get_supabase()
 
-        # Calculate total tonnage
         sets = supabase.table("workout_sets")\
             .select("actual_weight_kg, actual_reps, is_warmup")\
             .eq("workout_session_id", session_id)\
@@ -112,7 +111,7 @@ def log_set(session_id: str, exercise: str, set_number: int,
             target_weight: float = None, target_reps: int = None,
             target_rpe: float = None, is_warmup: bool = False,
             rest_seconds: int = None, notes: str = None) -> dict:
-    """Log a completed set and return PR info + fatigue analysis."""
+    """Log a completed set and return PR info."""
     try:
         supabase = get_supabase()
         supabase.table("workout_sets").insert({
@@ -141,32 +140,39 @@ def log_set(session_id: str, exercise: str, set_number: int,
 # ── PR Detection ──────────────────────────────────────────────────────────────
 
 def check_pr(exercise: str, weight: float, reps: int) -> dict:
-    """Check if this set is a PR for this exercise."""
+    """Check PR across both workout_sets (new) and sets (historical)."""
     try:
         supabase = get_supabase()
 
-        # Check historical sets for this exercise
-        result = supabase.table("workout_sets")\
+        def estimated_1rm(w, r):
+            return w * (1 + r / 30) if w and r else 0
+
+        current_1rm = estimated_1rm(weight, reps)
+
+        # New table
+        r1 = supabase.table("workout_sets")\
             .select("actual_weight_kg, actual_reps")\
             .eq("exercise", exercise)\
             .eq("is_warmup", False)\
             .execute()
 
-        if not result.data:
-            return {"is_pr": False}
+        # Historical table
+        r2 = supabase.table("sets")\
+            .select("weight_kg, reps")\
+            .eq("exercise", exercise)\
+            .execute()
 
-        # Calculate 1RM estimate using Epley formula: w * (1 + r/30)
-        def estimated_1rm(w, r):
-            return w * (1 + r / 30) if w and r else 0
-
-        current_1rm = estimated_1rm(weight, reps)
-        previous_best = max(
-            (estimated_1rm(s["actual_weight_kg"], s["actual_reps"])
-             for s in result.data),
-            default=0
+        all_1rms = (
+            [estimated_1rm(s["actual_weight_kg"], s["actual_reps"]) for s in r1.data] +
+            [estimated_1rm(s["weight_kg"], s["reps"]) for s in r2.data]
         )
 
-        if current_1rm > previous_best * 1.01:  # 1% threshold to avoid noise
+        if not all_1rms:
+            return {"is_pr": False}
+
+        previous_best = max(all_1rms, default=0)
+
+        if current_1rm > previous_best * 1.01:
             return {
                 "is_pr": True,
                 "estimated_1rm": round(current_1rm, 1),
@@ -199,20 +205,11 @@ def check_fatigue(session_id: str, exercise: str) -> dict:
         if len(reps) < 2:
             return {"fatigued": False}
 
-        # Flag if reps drop more than 30% from first to last set
         drop_pct = (reps[0] - reps[-1]) / reps[0] * 100
         if drop_pct > 30:
-            return {
-                "fatigued": True,
-                "drop_pct": round(drop_pct, 1),
-                "recommendation": "significant_fatigue"
-            }
+            return {"fatigued": True, "drop_pct": round(drop_pct, 1), "recommendation": "significant_fatigue"}
         elif drop_pct > 20:
-            return {
-                "fatigued": True,
-                "drop_pct": round(drop_pct, 1),
-                "recommendation": "moderate_fatigue"
-            }
+            return {"fatigued": True, "drop_pct": round(drop_pct, 1), "recommendation": "moderate_fatigue"}
         return {"fatigued": False}
     except Exception as e:
         print(f"Fatigue check failed: {e}")
@@ -221,7 +218,6 @@ def check_fatigue(session_id: str, exercise: str) -> dict:
 # ── Session Time ──────────────────────────────────────────────────────────────
 
 def get_session_duration_minutes(state: dict) -> int:
-    """Return how long the current session has been running."""
     try:
         start = state.get("session_start_time", "")
         if not start:
@@ -234,7 +230,6 @@ def get_session_duration_minutes(state: dict) -> int:
 # ── Substitution Memory ───────────────────────────────────────────────────────
 
 def log_substitution(original: str, substitution: str, reason: str = ""):
-    """Remember when an exercise was substituted."""
     try:
         supabase = get_supabase()
         supabase.table("exercise_substitutions").insert({
@@ -247,7 +242,6 @@ def log_substitution(original: str, substitution: str, reason: str = ""):
         print(f"Failed to log substitution: {e}")
 
 def get_substitution_history() -> str:
-    """Return recent substitution history for context injection."""
     try:
         supabase = get_supabase()
         result = supabase.table("exercise_substitutions")\
@@ -279,14 +273,12 @@ def get_workout_context(state: dict) -> str:
     try:
         supabase = get_supabase()
 
-        # Get session info
         session = supabase.table("workout_sessions")\
             .select("type, date")\
             .eq("id", session_id)\
             .execute()
         session_type = session.data[0]["type"] if session.data else "Unknown"
 
-        # Get sets logged so far this session
         sets = supabase.table("workout_sets")\
             .select("exercise, set_number, actual_weight_kg, actual_reps, actual_rpe, is_warmup")\
             .eq("workout_session_id", session_id)\
