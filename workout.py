@@ -1,5 +1,5 @@
 “””
-workout.py — Workout mode state management.
+workout.py - Workout mode state management.
 Handles session state, set logging, PR detection, fatigue detection,
 substitution memory, and session summaries.
 “””
@@ -15,7 +15,7 @@ if not url or not key:
 return None
 return create_client(url, key)
 
-# ── Session State ─────────────────────────────────────────────────────────────
+# – Session State ———————————————————––
 
 def get_workout_state() -> dict:
 “”“Load current workout state from Supabase memory table.”””
@@ -106,7 +106,7 @@ except Exception as e:
     return {}
 ```
 
-# ── Set Logging ───────────────────────────────────────────────────────────────
+# – Set Logging —————————————————————
 
 def log_set(session_id: str, exercise: str, set_number: int,
 actual_weight: float, actual_reps: int, actual_rpe: float = None,
@@ -141,7 +141,7 @@ except Exception as e:
     return {}
 ```
 
-# ── PR Detection ──────────────────────────────────────────────────────────────
+# – PR Detection –––––––––––––––––––––––––––––––
 
 def check_pr(exercise: str, weight: float, reps: int) -> dict:
 “”“Check PR across both workout_sets (new) and sets (historical).”””
@@ -154,14 +154,12 @@ supabase = get_supabase()
 
     current_1rm = estimated_1rm(weight, reps)
 
-    # New table
     r1 = supabase.table("workout_sets")\
         .select("actual_weight_kg, actual_reps")\
         .eq("exercise", exercise)\
         .eq("is_warmup", False)\
         .execute()
 
-    # Historical table
     r2 = supabase.table("sets")\
         .select("weight_kg, reps")\
         .eq("exercise", exercise)\
@@ -190,7 +188,7 @@ except Exception as e:
     return {"is_pr": False}
 ```
 
-# ── Fatigue Detection ─────────────────────────────────────────────────────────
+# – Fatigue Detection ———————————————————
 
 def check_fatigue(session_id: str, exercise: str) -> dict:
 “”“Detect if reps are dropping faster than expected across sets.”””
@@ -223,7 +221,7 @@ except Exception as e:
     return {"fatigued": False}
 ```
 
-# ── Session Time ──────────────────────────────────────────────────────────────
+# – Session Time –––––––––––––––––––––––––––––––
 
 def get_session_duration_minutes(state: dict) -> int:
 try:
@@ -235,7 +233,7 @@ return int((datetime.now() - start_dt).total_seconds() / 60)
 except:
 return 0
 
-# ── Substitution Memory ───────────────────────────────────────────────────────
+# – Substitution Memory —————————————————––
 
 def log_substitution(original: str, substitution: str, reason: str = “”):
 try:
@@ -259,14 +257,14 @@ result = supabase.table(“exercise_substitutions”)
 .execute()
 if not result.data:
 return “No substitutions recorded.”
-lines = [f”  {r[‘original_exercise’]} → {r[‘substitution’]}” +
+lines = [f”  {r[‘original_exercise’]} -> {r[‘substitution’]}” +
 (f” ({r[‘reason’]})” if r.get(“reason”) else “”)
 for r in result.data]
 return “\n”.join(lines)
 except:
 return “”
 
-# ── Context for Coach ─────────────────────────────────────────────────────────
+# – Context for Coach ———————————————————
 
 def get_workout_context(state: dict) -> str:
 “”“Build workout mode context block for injection into coach.”””
@@ -306,12 +304,12 @@ try:
 
     duration_warning = ""
     if duration >= 90:
-        duration_warning = f"\n⚠️ SESSION TIME: {duration} minutes — suggest wrapping up"
+        duration_warning = f"\n WARNING SESSION TIME: {duration} minutes - suggest wrapping up"
 
     return f"""
 ```
 
-[WORKOUT MODE — ACTIVE]
+[WORKOUT MODE - ACTIVE]
 Session type: {session_type}
 Exercise index: {exercise_index}
 Current set: {set_number}
@@ -322,4 +320,4 @@ Sets logged this session:
 [END WORKOUT CONTEXT]
 “””
 except Exception as e:
-return f”[WORKOUT MODE — ACTIVE] (context load failed: {e})”
+return f”[WORKOUT MODE - ACTIVE] (context load failed: {e})”
