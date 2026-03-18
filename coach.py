@@ -3,6 +3,7 @@ AI Fitness Coach — Main Script
 """
 
 import os
+import re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 load_dotenv()
@@ -17,14 +18,14 @@ from memory import (
 from telegram_bot import send_message as send_whatsapp_message
 from workout import (
     get_workout_state, is_workout_active, start_session, end_session,
-    log_substitution, get_substitution_history, get_workout_context
+    log_substitution, get_substitution_history, get_workout_context,
+    log_set, set_workout_state
 )
 from memory import advance_mesocycle
 
 ATHLETE_NAME = "Sachin"
 ATHLETE_CURRENT_WEIGHT_KG = 91
 ATHLETE_GOAL_WEIGHT_KG = 80
-# Telegram — chat_id is set in env, send_message uses it by default
 
 client = Anthropic()
 
@@ -44,7 +45,6 @@ def get_full_session_history(days: int = 30) -> str:
             .execute()
 
         if not sessions.data:
-            # Fall back to legacy sessions table
             sessions = supabase.table("sessions")\
                 .select("id, date, type, summary, tonnage_kg, notes")\
                 .gte("date", since)\
@@ -87,7 +87,11 @@ def get_apple_workouts(days: int = 30) -> str:
     try:
         supabase = get_supabase()
         since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-        result = supabase.table("apple_workouts")            .select("date, workout_type, duration_minutes, avg_heart_rate, active_energy_kcal")            .gte("date", since)            .order("date", desc=True)            .execute()
+        result = supabase.table("apple_workouts")\
+            .select("date, workout_type, duration_minutes, avg_heart_rate, active_energy_kcal")\
+            .gte("date", since)\
+            .order("date", desc=True)\
+            .execute()
         if not result.data:
             return "No Apple Watch workouts recorded."
         lines = []
@@ -134,7 +138,6 @@ def build_context_block(memory: dict) -> str:
     today_session = CYCLE[(mesocycle_day - 1) % len(CYCLE)]
     next_session = CYCLE[mesocycle_day % len(CYCLE)]
 
-    # Run all Supabase queries in parallel
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
             executor.submit(get_athlete_context): "data",
@@ -212,8 +215,6 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict)
 
 def send_morning_briefing(memory: dict):
     print("Sending morning briefing...")
-    # Morning briefing always starts with empty conversation history
-    # to prevent yesterday's session context bleeding into today's day/session type
     conversation_history = []
     message = (
         "Good morning. Give me my morning briefing: "
@@ -225,19 +226,80 @@ def send_morning_briefing(memory: dict):
     send_whatsapp_message(response)
     print("Morning briefing sent.")
 
-# PPL session end phrases — require active workout mode
-PPL_END_PHRASES = ["session done", "session complete", "workout done", "workout complete", "that's all the exercises", "finished the session", "done with the workout"]
+# ── Set parsing ───────────────────────────────────────────────────────────────
 
-# Cardio/Yoga end phrase — advances without requiring workout mode
+def parse_set_from_message(text: str) -> dict | None:
+    """
+    Extract set data from messages like:
+      "Done. 110kg x8"
+      "110 x 10 RPE8"
+      "bench 90kg x8 rpe 8.5"
+      "done 100 x 12 @8"
+    Returns dict with weight, reps, rpe (optional) or None if no match.
+    """
+    pattern = re.compile(
+        r'(?:^|[\s.,])'
+        r'(\d+(?:\.\d+)?)\s*kg?\s*'
+        r'[xX×]\s*'
+        r'(\d+)'
+        r'(?:\s*(?:rpe|@)\s*(\d+(?:\.\d+)?))?',
+        re.IGNORECASE
+    )
+
+    match = pattern.search(text)
+    if not match:
+        return None
+
+    weight = float(match.group(1))
+    reps = int(match.group(2))
+    rpe = float(match.group(3)) if match.group(3) else None
+
+    if weight < 1 or weight > 500:
+        return None
+    if reps < 1 or reps > 50:
+        return None
+
+    return {"weight": weight, "reps": reps, "rpe": rpe}
+
+
+def extract_exercise_from_context(conversation_history: list) -> str:
+    """
+    Look back through recent conversation to find the last exercise the coach
+    mentioned. Reads *Bold Name* or Name: formatting from assistant messages.
+    """
+    recent = conversation_history[-6:] if len(conversation_history) >= 6 else conversation_history
+    for msg in reversed(recent):
+        if msg["role"] != "assistant":
+            continue
+        content = msg["content"]
+        match = re.search(r'\*([A-Za-z\s\-]+)\*', content)
+        if match:
+            return match.group(1).strip()
+        match = re.search(r'^([A-Za-z][A-Za-z\s\-]+):', content, re.MULTILINE)
+        if match:
+            return match.group(1).strip()
+    return "Unknown"
+
+
+# ── Session end phrases ───────────────────────────────────────────────────────
+
+PPL_END_PHRASES = [
+    "session done", "session complete", "workout done", "workout complete",
+    "that's all the exercises", "finished the session", "done with the workout"
+]
 CARDIO_YOGA_END_PHRASE = "workout wrapped"
+CARDIO_YOGA_DAYS = [4, 5]
 
-CARDIO_YOGA_DAYS = [4, 5]  # day 4 = Cardio+Abs, day 5 = Yoga
 
 def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     conversation_history = load_today_conversation()
 
-    # Detect session start
-    start_phrases = ["starting pull", "starting push", "starting legs", "starting cardio", "starting yoga", "workout mode", "at the gym", "let's train", "lets train"]
+    # ── Detect session start ──────────────────────────────────────────────────
+    start_phrases = [
+        "starting pull", "starting push", "starting legs",
+        "starting cardio", "starting yoga", "workout mode",
+        "at the gym", "let's train", "lets train"
+    ]
     if any(p in incoming_text.lower() for p in start_phrases):
         session_type = "Unknown"
         for s in ["pull", "push", "legs", "cardio", "yoga"]:
@@ -246,21 +308,49 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
                 break
         start_session(session_type)
 
+    # ── Log set if workout is active and message contains set data ────────────
+    state = get_workout_state()
+    session_id = state.get("current_session_id", "")
+    workout_active = state.get("workout_mode") == "active"
+
+    if workout_active and session_id:
+        set_data = parse_set_from_message(incoming_text)
+        if set_data:
+            current_set = int(state.get("current_set_number", 0)) + 1
+            exercise = extract_exercise_from_context(conversation_history)
+
+            pr_info = log_set(
+                session_id=session_id,
+                exercise=exercise,
+                set_number=current_set,
+                actual_weight=set_data["weight"],
+                actual_reps=set_data["reps"],
+                actual_rpe=set_data.get("rpe"),
+            )
+
+            set_workout_state({"current_set_number": str(current_set)})
+
+            if pr_info.get("is_pr"):
+                print(f"🏆 PR detected: {exercise} {set_data['weight']}kg x {set_data['reps']}")
+            print(f"✅ Set logged: {exercise} set{current_set} — {set_data['weight']}kg x {set_data['reps']}" +
+                  (f" @RPE{set_data['rpe']}" if set_data.get("rpe") else ""))
+
+    # ── Get coach response ────────────────────────────────────────────────────
     response = chat_with_coach(incoming_text, conversation_history, memory)
 
     mesocycle_day = int(memory.get("mesocycle_day", 1))
 
-    # Cardio+Abs and Yoga days — advance on "workout wrapped" without requiring workout mode
+    # ── Cardio+Abs and Yoga days ──────────────────────────────────────────────
     if CARDIO_YOGA_END_PHRASE in incoming_text.lower() and mesocycle_day in CARDIO_YOGA_DAYS:
         advance_mesocycle(memory)
         print(f"✅ Cardio/Yoga session complete — mesocycle advanced to day {memory.get('mesocycle_day')}")
 
-    # PPL days — advance only if workout mode was actually active
+    # ── PPL days ──────────────────────────────────────────────────────────────
     elif any(p in incoming_text.lower() for p in PPL_END_PHRASES):
         state = get_workout_state()
         session_id = state.get("current_session_id", "")
-        workout_active = memory.get("workout_mode") == "active"
-        if workout_active or session_id:
+        workout_active_flag = state.get("workout_mode") == "active"
+        if workout_active_flag or session_id:
             if session_id:
                 end_session(session_id)
             advance_mesocycle(memory)
@@ -270,6 +360,7 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
 
     send_whatsapp_message(response)
     return response
+
 
 if __name__ == "__main__":
     import sys
