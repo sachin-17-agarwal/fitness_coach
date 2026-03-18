@@ -19,6 +19,7 @@ class FakeTable:
         self.store = store
         self.filters = []
         self.pending_insert = None
+        self.pending_upsert = None
 
     def select(self, *_args, **_kwargs):
         return self
@@ -27,8 +28,16 @@ class FakeTable:
         self.filters.append((field, value))
         return self
 
+    def in_(self, field, values):
+        self.filters.append((field, tuple(values), "in"))
+        return self
+
     def insert(self, row):
         self.pending_insert = row
+        return self
+
+    def upsert(self, row, **_kwargs):
+        self.pending_upsert = row
         return self
 
     def execute(self):
@@ -36,9 +45,22 @@ class FakeTable:
             self.store[self.name].append(self.pending_insert)
             return FakeResponse([self.pending_insert])
 
+        if self.pending_upsert is not None:
+            row = self.pending_upsert
+            key = row.get("key")
+            if key is not None:
+                self.store[self.name] = [r for r in self.store[self.name] if r.get("key") != key]
+            self.store[self.name].append(row)
+            return FakeResponse([row])
+
         rows = list(self.store[self.name])
-        for field, value in self.filters:
-            rows = [row for row in rows if row.get(field) == value]
+        for item in self.filters:
+            if len(item) == 3 and item[2] == "in":
+                field, values, _ = item
+                rows = [row for row in rows if row.get(field) in values]
+            else:
+                field, value = item
+                rows = [row for row in rows if row.get(field) == value]
         return FakeResponse(rows)
 
 
@@ -121,6 +143,7 @@ class RegressionTests(unittest.TestCase):
                 {"exercise": "Bench Press", "actual_weight_kg": 100.0, "actual_reps": 5, "is_warmup": False},
             ],
             "sets": [],
+            "memory": [],
         }
 
         with patch.object(workout, "get_supabase", return_value=FakeSupabase(store)):
@@ -134,6 +157,21 @@ class RegressionTests(unittest.TestCase):
 
         self.assertTrue(pr_info["is_pr"])
         self.assertEqual(len(store["workout_sets"]), 2)
+
+    def test_start_session_reuses_existing_active_session(self):
+        store = {
+            "memory": [
+                {"key": "workout_mode", "value": "active"},
+                {"key": "current_session_id", "value": "existing-session"},
+            ],
+            "workout_sessions": [],
+        }
+
+        with patch.object(workout, "get_supabase", return_value=FakeSupabase(store)):
+            session_id = workout.start_session("Push")
+
+        self.assertEqual(session_id, "existing-session")
+        self.assertEqual(store["workout_sessions"], [])
 
     def test_cardio_wrap_ends_active_session(self):
         memory = {"mesocycle_day": 4, "mesocycle_week": 1}

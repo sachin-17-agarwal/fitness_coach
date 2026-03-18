@@ -50,6 +50,12 @@ def is_workout_active() -> bool:
 def start_session(session_type: str) -> str:
     """Create a new workout session and activate workout mode."""
     try:
+        existing_state = get_workout_state()
+        existing_session_id = existing_state.get("current_session_id", "")
+        if existing_state.get("workout_mode") == "active" and existing_session_id:
+            print(f"Workout already active. Reusing session {existing_session_id}")
+            return existing_session_id
+
         supabase = get_supabase()
         result = supabase.table("workout_sessions").insert({
             "date": datetime.now().strftime("%Y-%m-%d"),
@@ -114,6 +120,7 @@ def log_set(session_id: str, exercise: str, set_number: int,
     """Log a completed set and return PR info."""
     try:
         supabase = get_supabase()
+        pr_info = check_pr(exercise, actual_weight, actual_reps)
         supabase.table("workout_sets").insert({
             "workout_session_id": session_id,
             "date": datetime.now().strftime("%Y-%m-%d"),
@@ -131,7 +138,6 @@ def log_set(session_id: str, exercise: str, set_number: int,
             "logged_at": datetime.now().isoformat()
         }).execute()
 
-        pr_info = check_pr(exercise, actual_weight, actual_reps)
         return pr_info
     except Exception as e:
         print(f"Failed to log set: {e}")
