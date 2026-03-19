@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from coach import handle_incoming_message, parse_set_from_message
+from coach import handle_incoming_message, is_session_completion_message, parse_set_from_message
 from parse_health import parse_health_export
 from parse_workouts import parse_workouts
 from telegram_bot import split_message
@@ -172,6 +172,44 @@ class RegressionTests(unittest.TestCase):
 
         self.assertEqual(session_id, "existing-session")
         self.assertEqual(store["workout_sessions"], [])
+
+    def test_completion_message_detects_finished_legs(self):
+        self.assertTrue(is_session_completion_message("Finished legs", "Legs"))
+        self.assertTrue(is_session_completion_message("All done with push", "Push"))
+
+    def test_set_log_is_not_treated_as_session_completion(self):
+        self.assertFalse(is_session_completion_message("Done 100 x 12 @8", "Legs"))
+
+    def test_finished_legs_advances_mesocycle_without_active_state(self):
+        memory = {"mesocycle_day": 3, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Wrapped"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "inactive", "current_session_id": ""}), \
+             patch("coach.advance_mesocycle") as advance_mock, \
+             patch("coach.send_telegram_message") as send_mock:
+            response = handle_incoming_message("Finished legs", memory)
+
+        self.assertEqual(response, "Wrapped")
+        advance_mock.assert_called_once_with(memory)
+        send_mock.assert_called_once_with("Wrapped")
+
+    def test_set_log_does_not_advance_mesocycle(self):
+        memory = {"mesocycle_day": 3, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Logged"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc", "current_set_number": "0"}), \
+             patch("coach.extract_exercise_from_context", return_value="Back Squat"), \
+             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
+             patch("coach.set_workout_state") as set_state_mock, \
+             patch("coach.advance_mesocycle") as advance_mock, \
+             patch("coach.send_telegram_message") as send_mock:
+            response = handle_incoming_message("Done 100 x 12 @8", memory)
+
+        self.assertEqual(response, "Logged")
+        log_set_mock.assert_called_once()
+        set_state_mock.assert_called_once()
+        advance_mock.assert_not_called()
+        send_mock.assert_called_once_with("Logged")
 
     def test_cardio_wrap_ends_active_session(self):
         memory = {"mesocycle_day": 4, "mesocycle_week": 1}

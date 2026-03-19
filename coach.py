@@ -333,6 +333,52 @@ PPL_END_PHRASES = [
 ]
 CARDIO_YOGA_END_PHRASE = "workout wrapped"
 CARDIO_YOGA_DAYS = [4, 5]
+SESSION_TYPE_ALIASES = {
+    "Pull": ["pull", "pull day"],
+    "Push": ["push", "push day"],
+    "Legs": ["legs", "leg day"],
+    "Cardio+Abs": ["cardio", "abs", "cardio day", "cardio abs"],
+    "Yoga": ["yoga", "mobility", "stretching"],
+}
+
+
+def get_session_type_for_day(mesocycle_day: int) -> str:
+    cycle = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
+    return cycle[(mesocycle_day - 1) % len(cycle)]
+
+
+def is_session_completion_message(text: str, expected_session_type: str) -> bool:
+    """
+    Detect when the user is clearly finishing the whole workout without
+    treating normal set logs like "Done 100 x 12" as session completion.
+    """
+    normalised = text.lower().replace("’", "'").strip()
+
+    if any(phrase in normalised for phrase in PPL_END_PHRASES):
+        return True
+    if CARDIO_YOGA_END_PHRASE in normalised:
+        return True
+
+    general_patterns = [
+        r"\b(all done|done|finished|complete|completed|wrapped up)\s+(with\s+)?(the\s+)?(workout|session|training|gym)\b",
+        r"\b(workout|session|training|gym)\s+(done|finished|complete|completed|wrapped up)\b",
+        r"\bthat's it\b",
+        r"\bthats it\b",
+        r"\bthat's all the exercises\b",
+    ]
+    if any(re.search(pattern, normalised) for pattern in general_patterns):
+        return True
+
+    session_terms = SESSION_TYPE_ALIASES.get(expected_session_type, [])
+    escaped_terms = "|".join(re.escape(term) for term in session_terms)
+    if not escaped_terms:
+        return False
+
+    session_patterns = [
+        rf"\b(all done|done|finished|complete|completed|wrapped up)\s+(with\s+)?({escaped_terms})\b",
+        rf"\b({escaped_terms})\s+(done|finished|complete|completed)\b",
+    ]
+    return any(re.search(pattern, normalised) for pattern in session_patterns)
 
 
 def handle_incoming_message(incoming_text: str, memory: dict) -> str:
@@ -356,6 +402,7 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     state = get_workout_state()
     session_id = state.get("current_session_id", "")
     workout_active = state.get("workout_mode") == "active"
+    set_data = None
 
     if workout_active and session_id:
         set_data = parse_set_from_message(incoming_text)
@@ -383,28 +430,40 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     response = chat_with_coach(incoming_text, conversation_history, memory)
 
     mesocycle_day = int(memory.get("mesocycle_day", 1))
+    expected_session_type = get_session_type_for_day(mesocycle_day)
+    session_complete = is_session_completion_message(incoming_text, expected_session_type)
 
     # ── Cardio+Abs and Yoga days ──────────────────────────────────────────────
-    if CARDIO_YOGA_END_PHRASE in incoming_text.lower() and mesocycle_day in CARDIO_YOGA_DAYS:
+    if session_complete and mesocycle_day in CARDIO_YOGA_DAYS:
         state = get_workout_state()
         session_id = state.get("current_session_id", "")
         workout_active_flag = state.get("workout_mode") == "active"
+        session_type_terms = SESSION_TYPE_ALIASES.get(expected_session_type, [])
+        explicit_session_type = any(term in incoming_text.lower() for term in session_type_terms)
         if workout_active_flag or session_id:
             if session_id:
                 end_session(session_id)
-        advance_mesocycle(memory)
-        print(f"Cardio/Yoga session complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
+            advance_mesocycle(memory)
+            print(f"Cardio/Yoga session complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
+        elif explicit_session_type:
+            advance_mesocycle(memory)
+            print(f"Cardio/Yoga session inferred complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
 
     # ── PPL days ──────────────────────────────────────────────────────────────
-    elif any(p in incoming_text.lower() for p in PPL_END_PHRASES):
+    elif session_complete:
         state = get_workout_state()
         session_id = state.get("current_session_id", "")
         workout_active_flag = state.get("workout_mode") == "active"
+        session_type_terms = SESSION_TYPE_ALIASES.get(expected_session_type, [])
+        explicit_session_type = any(term in incoming_text.lower() for term in session_type_terms)
         if workout_active_flag or session_id:
             if session_id:
                 end_session(session_id)
             advance_mesocycle(memory)
             print(f"PPL session complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
+        elif explicit_session_type and not set_data:
+            advance_mesocycle(memory)
+            print(f"PPL session inferred complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
         else:
             print("Session end phrase detected but no active workout - mesocycle not advanced")
 
