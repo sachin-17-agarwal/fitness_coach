@@ -1,7 +1,9 @@
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 from coach import handle_incoming_message, is_session_completion_message, parse_set_from_message
+import data
 from parse_health import parse_health_export
 from parse_workouts import parse_workouts
 from telegram_bot import split_message
@@ -20,6 +22,9 @@ class FakeTable:
         self.filters = []
         self.pending_insert = None
         self.pending_upsert = None
+        self.order_field = None
+        self.order_desc = False
+        self.limit_count = None
 
     def select(self, *_args, **_kwargs):
         return self
@@ -30,6 +35,23 @@ class FakeTable:
 
     def in_(self, field, values):
         self.filters.append((field, tuple(values), "in"))
+        return self
+
+    def lte(self, field, value):
+        self.filters.append((field, value, "lte"))
+        return self
+
+    def gte(self, field, value):
+        self.filters.append((field, value, "gte"))
+        return self
+
+    def order(self, field, desc=False):
+        self.order_field = field
+        self.order_desc = desc
+        return self
+
+    def limit(self, count):
+        self.limit_count = count
         return self
 
     def insert(self, row):
@@ -58,9 +80,19 @@ class FakeTable:
             if len(item) == 3 and item[2] == "in":
                 field, values, _ = item
                 rows = [row for row in rows if row.get(field) in values]
+            elif len(item) == 3 and item[2] == "lte":
+                field, value, _ = item
+                rows = [row for row in rows if row.get(field) <= value]
+            elif len(item) == 3 and item[2] == "gte":
+                field, value, _ = item
+                rows = [row for row in rows if row.get(field) >= value]
             else:
                 field, value = item
                 rows = [row for row in rows if row.get(field) == value]
+        if self.order_field:
+            rows = sorted(rows, key=lambda row: row.get(self.order_field), reverse=self.order_desc)
+        if self.limit_count is not None:
+            rows = rows[:self.limit_count]
         return FakeResponse(rows)
 
 
@@ -108,6 +140,22 @@ class RegressionTests(unittest.TestCase):
             "exercise_minutes": 20,
         })
         self.assertEqual(parsed["exercise_minutes"], 20.0)
+
+    def test_get_athlete_context_uses_latest_local_recovery_row(self):
+        store = {
+            "recovery": [
+                {"date": "2026-03-19", "sleep_hours": 7.1, "hrv": 55, "hrv_status": "Normal", "resting_hr": 52},
+                {"date": "2026-03-20", "sleep_hours": 8.0, "hrv": 62, "hrv_status": "Elevated", "resting_hr": 50},
+            ],
+        }
+
+        with patch.object(data, "get_supabase", return_value=FakeSupabase(store)), \
+             patch.object(data, "now_local", return_value=datetime(2026, 3, 20, 8, 0, 0)):
+            parsed = data.get_athlete_context()
+
+        self.assertEqual(parsed["date"], "2026-03-20")
+        self.assertEqual(parsed["sleep_hours"], 8.0)
+        self.assertEqual(parsed["hrv"], 62)
 
     def test_workout_parser_handles_iso_timestamps(self):
         payload = {
@@ -188,6 +236,19 @@ class RegressionTests(unittest.TestCase):
              patch("coach.advance_mesocycle") as advance_mock, \
              patch("coach.send_telegram_message") as send_mock:
             response = handle_incoming_message("Finished legs", memory)
+
+        self.assertEqual(response, "Wrapped")
+        advance_mock.assert_called_once_with(memory)
+        send_mock.assert_called_once_with("Wrapped")
+
+    def test_workout_complete_advances_mesocycle_without_active_state(self):
+        memory = {"mesocycle_day": 4, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Wrapped"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "inactive", "current_session_id": ""}), \
+             patch("coach.advance_mesocycle") as advance_mock, \
+             patch("coach.send_telegram_message") as send_mock:
+            response = handle_incoming_message("Workout complete", memory)
 
         self.assertEqual(response, "Wrapped")
         advance_mock.assert_called_once_with(memory)
