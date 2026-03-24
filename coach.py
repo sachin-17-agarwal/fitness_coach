@@ -5,8 +5,6 @@ AI Fitness Coach — Main Script
 import os
 import re
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
-load_dotenv()
 
 from anthropic import Anthropic
 from concurrent.futures import ThreadPoolExecutor, as_completed
