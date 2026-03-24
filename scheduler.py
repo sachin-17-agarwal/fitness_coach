@@ -5,8 +5,6 @@ Run as a separate Railway service with cron schedule: 30 23 * * *
 """
 
 import sys
-from dotenv import load_dotenv
-load_dotenv()
 
 from coach import send_morning_briefing
 from memory import load_memory
