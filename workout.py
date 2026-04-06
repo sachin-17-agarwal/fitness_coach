@@ -4,16 +4,9 @@ Handles session state, set logging, PR detection, fatigue detection,
 substitution memory, and session summaries.
 """
 
-import os
 from datetime import datetime, timedelta
 
-def get_supabase():
-    from supabase import create_client
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        return None
-    return create_client(url, key)
+from data import get_supabase, now_local, today_local_str
 
 # -- Session State -------------------------------------------------------------
 
@@ -38,7 +31,7 @@ def set_workout_state(updates: dict):
             supabase.table("memory").upsert({
                 "key": key,
                 "value": str(value),
-                "updated_at": datetime.now().isoformat()
+                "updated_at": now_local().isoformat()
             }, on_conflict="key").execute()
     except Exception as e:
         print(f"Failed to update workout state: {e}")
@@ -58,17 +51,21 @@ def start_session(session_type: str) -> str:
 
         supabase = get_supabase()
         result = supabase.table("workout_sessions").insert({
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": today_local_str(),
             "type": session_type,
             "status": "active",
-            "start_time": datetime.now().isoformat()
+            "start_time": now_local().isoformat()
         }).execute()
+        if not result.data:
+            print("Failed to start session: insert returned no data")
+            return ""
         session_id = result.data[0]["id"]
         set_workout_state({
             "workout_mode": "active",
             "current_session_id": session_id,
             "current_exercise_index": "0",
             "current_set_number": "0",
+            "session_start_time": now_local().isoformat()
             "current_exercise_name": "",
             "session_start_time": datetime.now().isoformat()
         })
@@ -79,6 +76,9 @@ def start_session(session_type: str) -> str:
 
 def end_session(session_id: str) -> dict:
     """Mark session complete and calculate summary stats."""
+    if not session_id:
+        print("end_session called with empty session_id — skipping")
+        return {}
     try:
         supabase = get_supabase()
 
@@ -88,14 +88,16 @@ def end_session(session_id: str) -> dict:
             .execute()
 
         tonnage = sum(
-            (s["actual_weight_kg"] or 0) * (s["actual_reps"] or 0)
-            for s in sets.data
+            (s.get("actual_weight_kg") or 0) * (s.get("actual_reps") or 0)
+            for s in (sets.data or [])
             if not s.get("is_warmup")
+            and s.get("actual_weight_kg") is not None
+            and s.get("actual_reps") is not None
         )
 
         supabase.table("workout_sessions").update({
             "status": "complete",
-            "end_time": datetime.now().isoformat(),
+            "end_time": now_local().isoformat(),
             "tonnage_kg": round(tonnage, 1)
         }).eq("id", session_id).execute()
 
@@ -125,7 +127,7 @@ def log_set(session_id: str, exercise: str, set_number: int,
         pr_info = check_pr(exercise, actual_weight, actual_reps)
         supabase.table("workout_sets").insert({
             "workout_session_id": session_id,
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": today_local_str(),
             "exercise": exercise,
             "set_number": set_number,
             "is_warmup": is_warmup,
@@ -137,7 +139,7 @@ def log_set(session_id: str, exercise: str, set_number: int,
             "actual_rpe": actual_rpe,
             "rest_seconds": rest_seconds,
             "notes": notes,
-            "logged_at": datetime.now().isoformat()
+            "logged_at": now_local().isoformat()
         }).execute()
 
         return pr_info
@@ -224,8 +226,8 @@ def check_fatigue(session_id: str, exercise: str) -> dict:
         if len(sets.data) < 2:
             return {"fatigued": False}
 
-        reps = [s["actual_reps"] for s in sets.data if s["actual_reps"]]
-        if len(reps) < 2:
+        reps = [s["actual_reps"] for s in sets.data if s.get("actual_reps")]
+        if len(reps) < 2 or reps[0] <= 0:
             return {"fatigued": False}
 
         drop_pct = (reps[0] - reps[-1]) / reps[0] * 100
@@ -246,8 +248,12 @@ def get_session_duration_minutes(state: dict) -> int:
         if not start:
             return 0
         start_dt = datetime.fromisoformat(start)
-        return int((datetime.now() - start_dt).total_seconds() / 60)
-    except:
+        now = now_local()
+        # Make start_dt offset-aware if it's naive
+        if start_dt.tzinfo is None:
+            now = now.replace(tzinfo=None)
+        return int((now - start_dt).total_seconds() / 60)
+    except Exception:
         return 0
 
 # -- Substitution Memory -------------------------------------------------------
@@ -259,7 +265,7 @@ def log_substitution(original: str, substitution: str, reason: str = ""):
             "original_exercise": original,
             "substitution": substitution,
             "reason": reason,
-            "created_at": datetime.now().isoformat()
+            "created_at": now_local().isoformat()
         }).execute()
     except Exception as e:
         print(f"Failed to log substitution: {e}")
@@ -278,7 +284,7 @@ def get_substitution_history() -> str:
                  (f" ({r['reason']})" if r.get("reason") else "")
                  for r in result.data]
         return "\n".join(lines)
-    except:
+    except Exception:
         return ""
 
 # -- Context for Coach ---------------------------------------------------------
