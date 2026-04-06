@@ -54,6 +54,8 @@ def load_system_prompt() -> str:
 def get_full_session_history(days: int = 30) -> str:
     try:
         supabase = get_supabase()
+        if not supabase:
+            return "No database connection."
         since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         all_sessions = []
@@ -65,18 +67,32 @@ def get_full_session_history(days: int = 30) -> str:
             .order("date", desc=True)\
             .execute()
 
-        for s in (ws.data or []):
-            sets = supabase.table("workout_sets")\
-                .select("exercise, actual_weight_kg, actual_reps, actual_rpe, is_warmup")\
-                .eq("workout_session_id", s["id"])\
+        session_ids = [s["id"] for s in (ws.data or [])]
+        all_sets_data = []
+        if session_ids:
+            # Batch fetch all sets for all sessions at once (avoid N+1)
+            all_sets_result = supabase.table("workout_sets")\
+                .select("workout_session_id, exercise, actual_weight_kg, actual_reps, actual_rpe, is_warmup")\
+                .in_("workout_session_id", session_ids)\
                 .eq("is_warmup", False)\
                 .execute()
+            all_sets_data = all_sets_result.data or []
+
+        # Group sets by session ID
+        sets_by_session = {}
+        for s in all_sets_data:
+            sid = s["workout_session_id"]
+            if sid not in sets_by_session:
+                sets_by_session[sid] = []
+            sets_by_session[sid].append(s)
+
+        for s in (ws.data or []):
             all_sessions.append({
                 "date": s["date"],
                 "type": s["type"],
                 "tonnage_kg": s.get("tonnage_kg"),
                 "summary": None,
-                "sets": sets.data or []
+                "sets": sets_by_session.get(s["id"], [])
             })
 
         # ── Old table: sessions + sets ────────────────────────────────────────
@@ -86,24 +102,34 @@ def get_full_session_history(days: int = 30) -> str:
             .order("date", desc=True)\
             .execute()
 
-        for s in (ls.data or []):
-            sets = supabase.table("sets")\
-                .select("exercise, weight_kg, reps, rpe")\
-                .eq("session_id", s["id"])\
+        old_session_ids = [s["id"] for s in (ls.data or [])]
+        old_sets_data = []
+        if old_session_ids:
+            old_sets_result = supabase.table("sets")\
+                .select("session_id, exercise, weight_kg, reps, rpe")\
+                .in_("session_id", old_session_ids)\
                 .execute()
-            normalised = [
-                {"exercise": st["exercise"],
-                 "actual_weight_kg": st["weight_kg"],
-                 "actual_reps": st["reps"],
-                 "actual_rpe": st.get("rpe")}
-                for st in (sets.data or [])
-            ]
+            old_sets_data = old_sets_result.data or []
+
+        old_sets_by_session = {}
+        for st in old_sets_data:
+            sid = st["session_id"]
+            if sid not in old_sets_by_session:
+                old_sets_by_session[sid] = []
+            old_sets_by_session[sid].append({
+                "exercise": st["exercise"],
+                "actual_weight_kg": st["weight_kg"],
+                "actual_reps": st["reps"],
+                "actual_rpe": st.get("rpe")
+            })
+
+        for s in (ls.data or []):
             all_sessions.append({
                 "date": s["date"],
                 "type": s["type"],
                 "tonnage_kg": s.get("tonnage_kg"),
                 "summary": s.get("summary"),
-                "sets": normalised
+                "sets": old_sets_by_session.get(s["id"], [])
             })
 
         if not all_sessions:
@@ -117,10 +143,10 @@ def get_full_session_history(days: int = 30) -> str:
             if s["sets"]:
                 exercises = {}
                 for st in s["sets"]:
-                    ex = st["exercise"]
+                    ex = st.get("exercise", "Unknown")
                     if ex not in exercises:
                         exercises[ex] = []
-                    set_str = f"{st['actual_weight_kg']}kg x {st['actual_reps']}"
+                    set_str = f"{st.get('actual_weight_kg', '?')}kg x {st.get('actual_reps', '?')}"
                     if st.get("actual_rpe"):
                         set_str += f" @RPE{st['actual_rpe']}"
                     exercises[ex].append(set_str)
@@ -137,6 +163,8 @@ def get_apple_workouts(days: int = 30) -> str:
     """Fetch recent Apple Watch workout records."""
     try:
         supabase = get_supabase()
+        if not supabase:
+            return "No database connection."
         since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
         result = supabase.table("apple_workouts")\
             .select("date, workout_type, duration_minutes, avg_heart_rate, active_energy_kcal")\
@@ -157,6 +185,8 @@ def get_apple_workouts(days: int = 30) -> str:
 def get_recovery_history(days: int = 14) -> str:
     try:
         supabase = get_supabase()
+        if not supabase:
+            return "No database connection."
         since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
         result = supabase.table("recovery")\
             .select("date, sleep_hours, hrv, resting_hr, steps, weight_kg, body_fat_pct, vo2_max")\
@@ -224,7 +254,7 @@ NEXT SESSION: {next_session}
 TODAY'S RECOVERY:
 Recovery data date: {data.get('date', 'Unknown')}
 Sleep: {data.get('sleep_hours', 'N/A')} hrs | HRV: {data.get('hrv', 'N/A')} (7-day avg: {data.get('hrv_avg', 'N/A')}) | Status: {data.get('hrv_status', 'Unknown')}
-Resting HR: {data.get('resting_hr', 'N/A')} bpm
+Resting HR: {data.get('resting_hr', 'N/A')} bpm (7-day avg: {data.get('resting_hr_baseline', 'N/A')})
 
 LAST 14 DAYS RECOVERY:
 {recovery_history}
@@ -353,54 +383,53 @@ def _is_exercise_name(text: str) -> bool:
     return True
 
 
+_BLOCKED_LABELS = {
+    "your form cue", "form cue", "back-off", "back off",
+    "notes", "note", "rest", "warm-up", "warm up", "cool-down", "cool down",
+}
+
+
+def _is_valid_exercise(text: str) -> bool:
+    """Combined filter: rejects section headers, form labels, and non-exercise text."""
+    if not _is_exercise_name(text):
+        return False
+    cleaned = re.sub(r"\s+", " ", text).strip(" -*_:\n\t").lower()
+    if cleaned in _BLOCKED_LABELS:
+        return False
+    if any(token in cleaned for token in ["form cue", "back-off", "back off"]):
+        return False
+    return True
+
+
 def extract_exercise_from_context(conversation_history: list) -> str:
     """
     Look back through recent conversation to find the last exercise the coach
     mentioned. Reads *Bold Name* or Name: formatting from assistant messages.
-    Filters out section headers and other non-exercise patterns.
+    Uses broad regex to catch exercises with numbers/special chars (e.g. T-bar Row).
     """
     recent = conversation_history[-8:] if len(conversation_history) >= 8 else conversation_history
-    blocked_labels = {
-        "your form cue", "form cue", "back-off", "back off",
-        "notes", "note", "rest", "warm-up", "warm up", "cool-down", "cool down"
-    }
-
-    def clean_candidate(candidate: str) -> str:
-        cleaned = re.sub(r"\s+", " ", candidate).strip(" -*_:\n\t")
-        if not cleaned:
-            return ""
-        label = cleaned.lower()
-        if label in blocked_labels:
-            return ""
-        if any(token in label for token in ["form cue", "back-off", "back off"]):
-            return ""
-        return cleaned
 
     for msg in reversed(recent):
         if msg["role"] != "assistant":
             continue
         content = msg["content"]
-        # Find all bold matches and check from last to first
-        for match in reversed(list(re.finditer(r'\*([A-Za-z][A-Za-z\s\-]+)\*', content))):
-            name = match.group(1).strip()
-            if _is_exercise_name(name):
-                return name
-        # Fallback: Name: pattern at start of line
-        for match in reversed(list(re.finditer(r'^([A-Za-z][A-Za-z\s\-]+):', content, re.MULTILINE))):
-            name = match.group(1).strip()
-            if _is_exercise_name(name):
-                return name
-        bold_matches = re.findall(r'\*{1,2}([A-Za-z][A-Za-z0-9\s\-/+&()]+)\*{1,2}', content)
-        for raw in bold_matches:
-            candidate = clean_candidate(raw)
-            if candidate:
-                return candidate
 
-        line_matches = re.findall(r'^([A-Za-z][A-Za-z0-9\s\-/+&()]+):', content, re.MULTILINE)
-        for raw in line_matches:
-            candidate = clean_candidate(raw)
-            if candidate:
-                return candidate
+        # Bold text: *Exercise Name* or **Exercise Name**
+        for match in reversed(list(re.finditer(
+            r'\*{1,2}([A-Za-z][A-Za-z0-9\s\-/+&()]+)\*{1,2}', content
+        ))):
+            name = re.sub(r"\s+", " ", match.group(1)).strip()
+            if _is_valid_exercise(name):
+                return name
+
+        # Line-start label: Exercise Name: ...
+        for match in reversed(list(re.finditer(
+            r'^([A-Za-z][A-Za-z0-9\s\-/+&()]+):', content, re.MULTILINE
+        ))):
+            name = re.sub(r"\s+", " ", match.group(1)).strip()
+            if _is_valid_exercise(name):
+                return name
+
     return "Unknown"
 
 
@@ -463,12 +492,21 @@ def get_session_type_for_day(mesocycle_day: int) -> str:
     return CYCLE[(mesocycle_day - 1) % len(CYCLE)]
 
 
+def _has_set_data_in_text(text: str) -> bool:
+    """Check if text contains weight x reps data (a set log, not a completion msg)."""
+    return bool(re.search(r'\d+(?:\.\d+)?\s*(?:kg)?\s*[xX\u00d7]\s*\d+', text))
+
+
 def is_session_completion_message(text: str, expected_session_type: str) -> bool:
     """
     Detect when the user is clearly finishing the whole workout without
     treating normal set logs like "Done 100 x 12" as session completion.
     """
-    normalised = text.lower().replace("’", "'").strip()
+    normalised = text.lower().replace("'", "'").strip()
+
+    # Never treat set logs as session completion
+    if _has_set_data_in_text(normalised):
+        return False
 
     if any(phrase in normalised for phrase in PPL_END_PHRASES):
         return True
@@ -476,30 +514,36 @@ def is_session_completion_message(text: str, expected_session_type: str) -> bool
         return True
 
     general_patterns = [
-        r"\b(all done|done|finished|complete|completed|wrapped up)\s+(with\s+)?(the\s+)?(workout|session|training|gym)\b",
-        r"\b(workout|session|training|gym)\s+(done|finished|complete|completed|wrapped up)\b",
+        r"\b(all done|done|finished|complete|completed|wrapped up|wrapped)\s+(with\s+)?(the\s+)?(workout|session|training|gym)\b",
+        r"\b(workout|session|training|gym)\s+(is\s+)?(done|finished|complete|completed|wrapped up|wrapped)\b",
         r"\bthat's it\b",
         r"\bthats it\b",
         r"\bthat's all the exercises\b",
+        r"\ball done\b",
     ]
     if any(re.search(pattern, normalised) for pattern in general_patterns):
         return True
 
-    session_terms = SESSION_TYPE_ALIASES.get(expected_session_type, [])
-    escaped_terms = "|".join(re.escape(term) for term in session_terms)
-    if not escaped_terms:
-        return False
+    # Check ALL session types, not just the expected one — handles out-of-sync cycles
+    all_session_terms = []
+    for terms in SESSION_TYPE_ALIASES.values():
+        all_session_terms.extend(terms)
+    escaped_all = "|".join(re.escape(term) for term in all_session_terms)
 
     session_patterns = [
-        rf"\b(all done|done|finished|complete|completed|wrapped up)\s+(with\s+)?({escaped_terms})\b",
-        rf"\b({escaped_terms})\s+(done|finished|complete|completed)\b",
+        # "yoga done", "pull done", "cardio complete", "legs finished"
+        rf"\b({escaped_all})\s+(is\s+)?(done|finished|complete|completed|wrapped)\b",
+        # "done with yoga", "finished pull", "completed legs"
+        rf"\b(all done|done|finished|complete|completed|wrapped up|wrapped)\s+(with\s+)?({escaped_all})\b",
+        # "done with today's session", "finished today"
+        rf"\b(done|finished|completed|wrapped)\s+(with\s+)?(today|today's)\b",
     ]
     return any(re.search(pattern, normalised) for pattern in session_patterns)
 
 
 def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     conversation_history = load_today_conversation()
-    normalised_text = incoming_text.lower().replace("’", "'").strip()
+    normalised_text = incoming_text.lower().replace("'", "'").strip()
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
     expected_session_type = get_session_type_for_day(mesocycle_day)
 
@@ -588,41 +632,23 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     brief_completion_ack = workout_active and not set_data and normalised_text in BRIEF_COMPLETION_ACKS
     session_complete = session_complete or brief_completion_ack
 
-    # ── Cardio+Abs and Yoga days ──────────────────────────────────────────────
-    if session_complete and mesocycle_day in CARDIO_YOGA_DAYS:
+    # ── Handle session completion and mesocycle advance ─────────────────────
+    if session_complete:
         state = get_workout_state()
         session_id = state.get("current_session_id", "")
         workout_active_flag = state.get("workout_mode") == "active"
-        session_type_terms = SESSION_TYPE_ALIASES.get(expected_session_type, [])
-        explicit_session_type = any(term in incoming_text.lower() for term in session_type_terms)
-        explicit_workout_completion = any(term in incoming_text.lower() for term in ["workout", "session", "training", "gym"])
-        if workout_active_flag or session_id:
-            if session_id:
-                end_session(session_id)
-            advance_mesocycle(memory)
-            print(f"Cardio/Yoga session complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
-        elif explicit_session_type or explicit_workout_completion:
-            advance_mesocycle(memory)
-            print(f"Cardio/Yoga session inferred complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
 
-    # ── PPL days ──────────────────────────────────────────────────────────────
-    elif session_complete:
-        state = get_workout_state()
-        session_id = state.get("current_session_id", "")
-        workout_active_flag = state.get("workout_mode") == "active"
-        session_type_terms = SESSION_TYPE_ALIASES.get(expected_session_type, [])
-        explicit_session_type = any(term in incoming_text.lower() for term in session_type_terms)
-        explicit_workout_completion = any(term in incoming_text.lower() for term in ["workout", "session", "training", "gym"])
         if workout_active_flag or session_id:
+            # Active workout session — end it and advance
             if session_id:
                 end_session(session_id)
             advance_mesocycle(memory)
-            print(f"PPL session complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
-        elif not set_data and (explicit_session_type or explicit_workout_completion):
+            print(f"Session complete (active) - mesocycle advanced to day {memory.get('mesocycle_day')}")
+        elif not set_data:
+            # No active session but user clearly said they're done — advance anyway.
+            # This handles cardio/yoga done outside workout mode, or out-of-sync cycles.
             advance_mesocycle(memory)
-            print(f"PPL session inferred complete - mesocycle advanced to day {memory.get('mesocycle_day')}")
-        else:
-            print("Session end phrase detected but no active workout - mesocycle not advanced")
+            print(f"Session complete (inferred) - mesocycle advanced to day {memory.get('mesocycle_day')}")
 
     send_telegram_message(response)
     return response

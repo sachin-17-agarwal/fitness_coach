@@ -9,14 +9,23 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 
+_supabase_client = None
+
+
 def get_supabase():
+    """Return a cached Supabase client (one per process)."""
+    global _supabase_client
+    if _supabase_client is not None:
+        return _supabase_client
+
     from supabase import create_client
 
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
         return None
-    return create_client(url, key)
+    _supabase_client = create_client(url, key)
+    return _supabase_client
 
 
 CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]

@@ -13,6 +13,8 @@ def load_memory() -> dict:
     """Load memory from Supabase memory table."""
     try:
         supabase = get_supabase()
+        if not supabase:
+            raise ValueError("No Supabase connection")
         result = supabase.table("memory").select("key, value").execute()
         memory = {row["key"]: row["value"] for row in result.data}
 
@@ -22,15 +24,6 @@ def load_memory() -> dict:
                     memory[key] = int(memory[key])
                 except (TypeError, ValueError):
                     memory[key] = 1
-
-        sessions = (
-            supabase.table("sessions")
-            .select("*")
-            .order("date", desc=True)
-            .limit(30)
-            .execute()
-        )
-        memory["recent_sessions"] = sessions.data or []
 
         print(
             f"Memory loaded. Mesocycle: Week {memory.get('mesocycle_week', 1)}, "
@@ -42,8 +35,6 @@ def load_memory() -> dict:
         return {
             "mesocycle_week": 1,
             "mesocycle_day": 1,
-            "recent_sessions": [],
-            "conversations": {},
         }
 
 
