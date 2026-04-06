@@ -8,10 +8,11 @@ from datetime import datetime, timedelta
 
 from anthropic import Anthropic
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from data import get_athlete_context
+from data import get_athlete_context, now_local, today_local_str
+from data import get_supabase
 from memory import (
     load_memory, save_memory, save_conversation_message,
-    load_today_conversation, get_supabase
+    load_today_conversation,
 )
 from telegram_bot import send_message as send_telegram_message
 from workout import (
@@ -45,7 +46,7 @@ def load_system_prompt() -> str:
 def get_full_session_history(days: int = 30) -> str:
     try:
         supabase = get_supabase()
-        since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         all_sessions = []
 
@@ -128,7 +129,7 @@ def get_apple_workouts(days: int = 30) -> str:
     """Fetch recent Apple Watch workout records."""
     try:
         supabase = get_supabase()
-        since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
         result = supabase.table("apple_workouts")\
             .select("date, workout_type, duration_minutes, avg_heart_rate, active_energy_kcal")\
             .gte("date", since)\
@@ -148,7 +149,7 @@ def get_apple_workouts(days: int = 30) -> str:
 def get_recovery_history(days: int = 14) -> str:
     try:
         supabase = get_supabase()
-        since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
         result = supabase.table("recovery")\
             .select("date, sleep_hours, hrv, resting_hr, steps, weight_kg, body_fat_pct, vo2_max")\
             .gte("date", since)\
@@ -173,7 +174,7 @@ def get_recovery_history(days: int = 14) -> str:
         return f"Could not load recovery data: {e}"
 
 def build_context_block(memory: dict) -> str:
-    today = datetime.now().strftime("%A %d %B %Y")
+    today = now_local().strftime("%A %d %B %Y")
     mesocycle_week = memory.get("mesocycle_week", 1)
     mesocycle_day = int(memory.get("mesocycle_day", 1))
     CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
@@ -192,7 +193,7 @@ def build_context_block(memory: dict) -> str:
         results = {}
         for future, key in futures.items():
             try:
-                results[key] = future.result(timeout=5)
+                results[key] = future.result(timeout=10)
             except Exception as e:
                 print(f"Context fetch failed ({key}): {e}")
                 results[key] = None
@@ -215,8 +216,8 @@ NEXT SESSION: {next_session}
 
 TODAY'S RECOVERY:
 Recovery data date: {data.get('date', 'Unknown')}
-Sleep: {data['sleep_hours']} hrs | HRV: {data['hrv']} (7-day avg: {data['hrv_avg']}) | Status: {data['hrv_status']}
-Resting HR: {data['resting_hr']} bpm
+Sleep: {data.get('sleep_hours', 'N/A')} hrs | HRV: {data.get('hrv', 'N/A')} (7-day avg: {data.get('hrv_avg', 'N/A')}) | Status: {data.get('hrv_status', 'Unknown')}
+Resting HR: {data.get('resting_hr', 'N/A')} bpm
 
 LAST 14 DAYS RECOVERY:
 {recovery_history}
@@ -235,6 +236,16 @@ Known limitations: Slight knee and shoulder issues — see coaching profile.
 [END CONTEXT]
 """
 
+MAX_CONVERSATION_MESSAGES = 40  # Keep last ~20 exchanges to stay within token limits
+
+
+def _truncate_history(history: list) -> list:
+    """Keep the most recent messages to avoid exceeding Claude's context window."""
+    if len(history) <= MAX_CONVERSATION_MESSAGES:
+        return history
+    return history[-MAX_CONVERSATION_MESSAGES:]
+
+
 def chat_with_coach(user_message: str, conversation_history: list, memory: dict) -> str:
     system_prompt = load_system_prompt()
     context_block = build_context_block(memory)
@@ -243,11 +254,13 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict)
     conversation_history.append({"role": "user", "content": user_message})
     save_conversation_message("user", user_message)
 
+    messages_to_send = _truncate_history(conversation_history)
+
     response = get_anthropic_client().messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=1000,
         system=full_system,
-        messages=conversation_history
+        messages=messages_to_send
     )
 
     assistant_message = response.content[0].text
@@ -306,22 +319,51 @@ def parse_set_from_message(text: str) -> dict | None:
     return {"weight": weight, "reps": reps, "rpe": rpe}
 
 
+_NON_EXERCISE_HEADERS = {
+    "recovery", "nutrition", "tomorrow", "today", "volume analysis",
+    "strength trends", "session done", "watch", "best lift",
+    "recovery tonight", "key flags", "progression notes",
+}
+
+
+def _is_exercise_name(text: str) -> bool:
+    """Filter out section headers and other non-exercise bold text."""
+    cleaned = text.strip().lower()
+    # Reject ALL-CAPS section headers like "RECOVERY", "TODAY: PUSH"
+    if text.strip().isupper():
+        return False
+    # Reject known non-exercise headers
+    if cleaned in _NON_EXERCISE_HEADERS:
+        return False
+    if cleaned.startswith("today:") or cleaned.startswith("tomorrow:"):
+        return False
+    # Reject very short strings (single words under 3 chars)
+    if len(cleaned) < 3:
+        return False
+    return True
+
+
 def extract_exercise_from_context(conversation_history: list) -> str:
     """
     Look back through recent conversation to find the last exercise the coach
     mentioned. Reads *Bold Name* or Name: formatting from assistant messages.
+    Filters out section headers and other non-exercise patterns.
     """
     recent = conversation_history[-6:] if len(conversation_history) >= 6 else conversation_history
     for msg in reversed(recent):
         if msg["role"] != "assistant":
             continue
         content = msg["content"]
-        match = re.search(r'\*([A-Za-z\s\-]+)\*', content)
-        if match:
-            return match.group(1).strip()
-        match = re.search(r'^([A-Za-z][A-Za-z\s\-]+):', content, re.MULTILINE)
-        if match:
-            return match.group(1).strip()
+        # Find all bold matches and check from last to first
+        for match in reversed(list(re.finditer(r'\*([A-Za-z][A-Za-z\s\-]+)\*', content))):
+            name = match.group(1).strip()
+            if _is_exercise_name(name):
+                return name
+        # Fallback: Name: pattern at start of line
+        for match in reversed(list(re.finditer(r'^([A-Za-z][A-Za-z\s\-]+):', content, re.MULTILINE))):
+            name = match.group(1).strip()
+            if _is_exercise_name(name):
+                return name
     return "Unknown"
 
 

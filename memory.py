@@ -6,15 +6,7 @@ Replaces the old memory.json file approach.
 import os
 from datetime import datetime
 
-from supabase import Client, create_client
-
-
-def get_supabase() -> Client:
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
-    return create_client(url, key)
+from data import get_supabase, now_local, today_local_str
 
 
 def load_memory() -> dict:
@@ -61,7 +53,7 @@ def save_memory(memory: dict):
                 supabase.table("memory").upsert({
                     "key": key,
                     "value": str(memory[key]),
-                    "updated_at": datetime.now().isoformat(),
+                    "updated_at": now_local().isoformat(),
                 }).execute()
     except Exception as e:
         print(f"Supabase memory save failed: {e}")
@@ -72,10 +64,10 @@ def save_conversation_message(role: str, content: str):
     try:
         supabase = get_supabase()
         supabase.table("conversations").insert({
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": today_local_str(),
             "role": role,
             "content": content,
-            "created_at": datetime.now().isoformat(),
+            "created_at": now_local().isoformat(),
         }).execute()
     except Exception as e:
         print(f"Failed to save conversation message: {e}")
@@ -85,7 +77,7 @@ def load_today_conversation() -> list:
     """Load today's conversation history from Supabase."""
     try:
         supabase = get_supabase()
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = today_local_str()
         result = (
             supabase.table("conversations")
             .select("role, content")
@@ -104,7 +96,7 @@ def log_session(session: dict):
     try:
         supabase = get_supabase()
         supabase.table("sessions").insert({
-            "date": session.get("date", datetime.now().strftime("%Y-%m-%d")),
+            "date": session.get("date", today_local_str()),
             "type": session.get("type", "Unknown"),
             "summary": session.get("summary", ""),
             "tonnage_kg": session.get("tonnage_kg"),
@@ -124,7 +116,7 @@ def save_recovery_data(data: dict):
         row = {
             k: v
             for k, v in {
-                "date": data.get("date", datetime.now().strftime("%Y-%m-%d")),
+                "date": data.get("date", today_local_str()),
                 "sleep_hours": data.get("sleep_hours"),
                 "hrv": data.get("hrv"),
                 "hrv_status": data.get("hrv_status"),

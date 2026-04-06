@@ -30,7 +30,7 @@ def extract_qty(val) -> float:
         return float(v) if v is not None else None
     try:
         return float(val)
-    except:
+    except Exception:
         return None
 
 def parse_workouts(payload: dict) -> list:
@@ -95,13 +95,10 @@ def parse_workouts(payload: dict) -> list:
     return parsed
 
 def save_workouts(parsed: list):
-    import os
-    from supabase import create_client
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key or not parsed:
+    if not parsed:
         return
-    supabase = create_client(url, key)
+    from data import get_supabase
+    supabase = get_supabase()
     for w in parsed:
         try:
             supabase.table("apple_workouts").upsert(

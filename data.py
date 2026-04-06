@@ -31,6 +31,29 @@ def now_local() -> datetime:
     return datetime.now(get_app_timezone())
 
 
+def today_local_str() -> str:
+    """Return today's date as YYYY-MM-DD in the app timezone."""
+    return now_local().strftime("%Y-%m-%d")
+
+
+def _derive_sleep_quality(sleep_hours) -> str:
+    """Derive a sleep quality label from hours slept."""
+    if sleep_hours is None:
+        return "Unknown"
+    try:
+        hours = float(sleep_hours)
+    except (TypeError, ValueError):
+        return "Unknown"
+    if hours >= 7.5:
+        return "Good"
+    elif hours >= 6.0:
+        return "Average"
+    elif hours >= 4.5:
+        return "Poor"
+    else:
+        return "Very Poor"
+
+
 def _pick_recovery_row(rows: list[dict]) -> dict | None:
     for row in rows:
         if any(row.get(field) is not None for field in ["sleep_hours", "hrv", "resting_hr"]):
@@ -87,10 +110,13 @@ def get_athlete_context() -> dict:
         rhr_readings = [r["resting_hr"] for r in rhr_result.data if r.get("resting_hr")]
         rhr_baseline = round(sum(rhr_readings) / len(rhr_readings), 1) if rhr_readings else "N/A"
 
+        sleep_hours = row.get("sleep_hours")
+        sleep_quality = _derive_sleep_quality(sleep_hours)
+
         return {
             "date": row.get("date", today),
-            "sleep_hours": row.get("sleep_hours", "N/A"),
-            "sleep_quality": row.get("sleep_quality", "Unknown"),
+            "sleep_hours": sleep_hours if sleep_hours is not None else "N/A",
+            "sleep_quality": sleep_quality,
             "hrv": row.get("hrv", "N/A"),
             "hrv_avg": hrv_avg,
             "hrv_status": row.get("hrv_status", "Unknown"),

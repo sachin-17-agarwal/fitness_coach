@@ -67,7 +67,10 @@ def apple_health():
     # Validate secret token to prevent random people posting to this endpoint
     token = request.headers.get("X-Health-Token", "")
     expected_token = os.environ.get("HEALTH_WEBHOOK_TOKEN", "")
-    if expected_token and token != expected_token:
+    if not expected_token:
+        print("WARNING: HEALTH_WEBHOOK_TOKEN not set — rejecting health webhook")
+        return jsonify({"error": "Webhook token not configured"}), 503
+    if token != expected_token:
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
@@ -103,13 +106,15 @@ def _get_hrv_status(hrv: float) -> str:
     if not hrv:
         return "Unknown"
     try:
-        from memory import get_supabase
-        from datetime import datetime, timedelta
+        from data import get_supabase, now_local, today_local_str
+        from datetime import timedelta
         supabase = get_supabase()
-        seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        seven_days_ago = (now_local() - timedelta(days=7)).strftime("%Y-%m-%d")
+        today = today_local_str()
         result = supabase.table("recovery")\
             .select("hrv")\
             .gte("date", seven_days_ago)\
+            .lte("date", today)\
             .execute()
         readings = [r["hrv"] for r in result.data if r.get("hrv")]
         if not readings:

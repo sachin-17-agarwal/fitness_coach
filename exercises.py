@@ -5,16 +5,9 @@ When you log "chest fly" it finds the closest match in your library.
 Only asks for confirmation if confidence is low.
 """
 
-import os
 from difflib import SequenceMatcher
 
-def get_supabase():
-    from supabase import create_client
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        return None
-    return create_client(url, key)
+from data import get_supabase
 
 def similarity(a: str, b: str) -> float:
     """Return similarity score between two strings (0-1)."""
