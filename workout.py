@@ -14,6 +14,8 @@ def get_workout_state() -> dict:
     """Load current workout state from Supabase memory table."""
     try:
         supabase = get_supabase()
+        if not supabase:
+            return {"workout_mode": "inactive"}
         result = supabase.table("memory").select("key, value").in_(
             "key", ["workout_mode", "current_session_id", "current_exercise_index",
                     "current_set_number", "session_start_time", "current_exercise_name"]
@@ -27,6 +29,8 @@ def set_workout_state(updates: dict):
     """Update workout state keys in Supabase memory table."""
     try:
         supabase = get_supabase()
+        if not supabase:
+            return
         for key, value in updates.items():
             supabase.table("memory").upsert({
                 "key": key,
@@ -294,8 +298,14 @@ def get_workout_context(state: dict) -> str:
         return ""
 
     session_id = state.get("current_session_id", "")
-    exercise_index = int(state.get("current_exercise_index", 0))
-    set_number = int(state.get("current_set_number", 0))
+    try:
+        exercise_index = int(state.get("current_exercise_index", 0))
+    except (TypeError, ValueError):
+        exercise_index = 0
+    try:
+        set_number = int(state.get("current_set_number", 0))
+    except (TypeError, ValueError):
+        set_number = 0
     duration = get_session_duration_minutes(state)
 
     try:
