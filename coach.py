@@ -17,8 +17,9 @@ from telegram_bot import send_message as send_telegram_message
 from workout import (
     get_workout_state, is_workout_active, start_session, end_session,
     log_substitution, get_substitution_history, get_workout_context,
-    log_set, set_workout_state
+    log_set, set_workout_state, get_last_logged_exercise
 )
+from exercises import find_exercise
 from memory import advance_mesocycle
 
 ATHLETE_NAME = "Sachin"
@@ -311,18 +312,76 @@ def extract_exercise_from_context(conversation_history: list) -> str:
     Look back through recent conversation to find the last exercise the coach
     mentioned. Reads *Bold Name* or Name: formatting from assistant messages.
     """
-    recent = conversation_history[-6:] if len(conversation_history) >= 6 else conversation_history
+    recent = conversation_history[-8:] if len(conversation_history) >= 8 else conversation_history
+    blocked_labels = {
+        "your form cue", "form cue", "back-off", "back off",
+        "notes", "note", "rest", "warm-up", "warm up", "cool-down", "cool down"
+    }
+
+    def clean_candidate(candidate: str) -> str:
+        cleaned = re.sub(r"\s+", " ", candidate).strip(" -*_:\n\t")
+        if not cleaned:
+            return ""
+        label = cleaned.lower()
+        if label in blocked_labels:
+            return ""
+        if any(token in label for token in ["form cue", "back-off", "back off"]):
+            return ""
+        return cleaned
+
     for msg in reversed(recent):
         if msg["role"] != "assistant":
             continue
         content = msg["content"]
-        match = re.search(r'\*([A-Za-z\s\-]+)\*', content)
-        if match:
-            return match.group(1).strip()
-        match = re.search(r'^([A-Za-z][A-Za-z\s\-]+):', content, re.MULTILINE)
-        if match:
-            return match.group(1).strip()
+        bold_matches = re.findall(r'\*{1,2}([A-Za-z][A-Za-z0-9\s\-/+&()]+)\*{1,2}', content)
+        for raw in bold_matches:
+            candidate = clean_candidate(raw)
+            if candidate:
+                return candidate
+
+        line_matches = re.findall(r'^([A-Za-z][A-Za-z0-9\s\-/+&()]+):', content, re.MULTILINE)
+        for raw in line_matches:
+            candidate = clean_candidate(raw)
+            if candidate:
+                return candidate
     return "Unknown"
+
+
+def extract_exercise_from_set_message(text: str) -> str:
+    """
+    Extract exercise name from a set log if provided, e.g.:
+      "Pull-ups 40 x 8"
+      "Chest Supported T-bar Row 60kg x10 @8"
+    """
+    match = re.search(
+        r'^\s*(?:done\s+)?([A-Za-z][A-Za-z0-9\s\-/+&()]+?)\s+\d+(?:\.\d+)?\s*(?:kg)?\s*[xX×]\s*\d+',
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    candidate = re.sub(r"\s+", " ", match.group(1)).strip(" -*_:\n\t")
+    blocked = {"done", "finished", "complete", "completed", "set", "sets"}
+    return "" if candidate.lower() in blocked else candidate
+
+
+def resolve_exercise_name(candidate: str) -> str:
+    """
+    Resolve to a canonical library name when confidence is high.
+    Returns empty string when candidate looks unreliable.
+    """
+    if not candidate:
+        return ""
+    try:
+        result = find_exercise(candidate)
+        if result.get("status") in {"exact", "confident"} and result.get("match"):
+            return (result["match"].get("name") or "").strip()
+    except Exception:
+        pass
+    # Keep explicit user-provided exercise names even if not in library yet.
+    if re.search(r"[A-Za-z]", candidate):
+        return candidate.strip()
+    return ""
 
 
 # ── Session end phrases ───────────────────────────────────────────────────────
@@ -332,6 +391,7 @@ PPL_END_PHRASES = [
     "that's all the exercises", "finished the session", "done with the workout"
 ]
 CARDIO_YOGA_END_PHRASE = "workout wrapped"
+BRIEF_COMPLETION_ACKS = {"done", "finished", "complete", "completed", "wrapped", "wrapped up"}
 CARDIO_YOGA_DAYS = [4, 5]
 SESSION_TYPE_ALIASES = {
     "Pull": ["pull", "pull day"],
@@ -383,18 +443,23 @@ def is_session_completion_message(text: str, expected_session_type: str) -> bool
 
 def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     conversation_history = load_today_conversation()
+    normalised_text = incoming_text.lower().replace("’", "'").strip()
+    mesocycle_day = int(memory.get("mesocycle_day", 1))
+    expected_session_type = get_session_type_for_day(mesocycle_day)
 
     # ── Detect session start ──────────────────────────────────────────────────
     start_phrases = [
         "starting pull", "starting push", "starting legs",
         "starting cardio", "starting yoga", "workout mode",
-        "at the gym", "let's train", "lets train"
+        "at the gym", "let's train", "lets train",
+        "starting workout", "start workout", "begin workout", "gym now"
     ]
-    if any(p in incoming_text.lower() for p in start_phrases):
-        session_type = "Unknown"
-        for s in ["pull", "push", "legs", "cardio", "yoga"]:
-            if s in incoming_text.lower():
-                session_type = s.capitalize()
+    should_start = any(p in normalised_text for p in start_phrases)
+    if should_start:
+        session_type = expected_session_type
+        for canonical, aliases in SESSION_TYPE_ALIASES.items():
+            if canonical.lower().replace("+", " ") in normalised_text or any(alias in normalised_text for alias in aliases):
+                session_type = canonical
                 break
         start_session(session_type)
 
@@ -404,11 +469,42 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     workout_active = state.get("workout_mode") == "active"
     set_data = None
 
+    if not workout_active:
+        # If user logs a set without explicitly starting workout mode, start it
+        # using today's expected session type so sets are still captured.
+        parsed_preview = parse_set_from_message(incoming_text)
+        should_implicit_start = bool(parsed_preview)
+        if should_implicit_start:
+            session_id = start_session(expected_session_type)
+            if session_id:
+                state = get_workout_state()
+                workout_active = state.get("workout_mode") == "active"
+
     if workout_active and session_id:
         set_data = parse_set_from_message(incoming_text)
         if set_data:
             current_set = int(state.get("current_set_number", 0)) + 1
-            exercise = extract_exercise_from_context(conversation_history)
+            explicit_exercise = extract_exercise_from_set_message(incoming_text)
+            exercise = resolve_exercise_name(explicit_exercise)
+
+            if not exercise:
+                state_exercise = (state.get("current_exercise_name") or "").strip()
+                exercise = resolve_exercise_name(state_exercise)
+
+            if not exercise:
+                inferred_exercise = extract_exercise_from_context(conversation_history)
+                if inferred_exercise != "Unknown":
+                    # Only trust inferred context if it maps confidently to library.
+                    inferred_lookup = find_exercise(inferred_exercise)
+                    if inferred_lookup.get("status") in {"exact", "confident"} and inferred_lookup.get("match"):
+                        exercise = (inferred_lookup["match"].get("name") or "").strip()
+
+            if not exercise:
+                fallback_exercise = get_last_logged_exercise(session_id)
+                if fallback_exercise:
+                    exercise = fallback_exercise
+            if not exercise:
+                exercise = "Unknown"
 
             pr_info = log_set(
                 session_id=session_id,
@@ -419,7 +515,10 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
                 actual_rpe=set_data.get("rpe"),
             )
 
-            set_workout_state({"current_set_number": str(current_set)})
+            set_workout_state({
+                "current_set_number": str(current_set),
+                "current_exercise_name": exercise if exercise != "Unknown" else "",
+            })
 
             if pr_info.get("is_pr"):
                 print(f"PR detected: {exercise} {set_data['weight']}kg x {set_data['reps']}")
@@ -429,9 +528,9 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     # ── Get coach response ────────────────────────────────────────────────────
     response = chat_with_coach(incoming_text, conversation_history, memory)
 
-    mesocycle_day = int(memory.get("mesocycle_day", 1))
-    expected_session_type = get_session_type_for_day(mesocycle_day)
     session_complete = is_session_completion_message(incoming_text, expected_session_type)
+    brief_completion_ack = workout_active and not set_data and normalised_text in BRIEF_COMPLETION_ACKS
+    session_complete = session_complete or brief_completion_ack
 
     # ── Cardio+Abs and Yoga days ──────────────────────────────────────────────
     if session_complete and mesocycle_day in CARDIO_YOGA_DAYS:

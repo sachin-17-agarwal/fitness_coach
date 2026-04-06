@@ -2,7 +2,13 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from coach import handle_incoming_message, is_session_completion_message, parse_set_from_message
+from coach import (
+    handle_incoming_message,
+    is_session_completion_message,
+    parse_set_from_message,
+    extract_exercise_from_context,
+    extract_exercise_from_set_message,
+)
 import data
 from parse_health import parse_health_export
 from parse_workouts import parse_workouts
@@ -228,6 +234,19 @@ class RegressionTests(unittest.TestCase):
     def test_set_log_is_not_treated_as_session_completion(self):
         self.assertFalse(is_session_completion_message("Done 100 x 12 @8", "Legs"))
 
+    def test_extract_exercise_ignores_form_cue_and_backoff(self):
+        history = [
+            {
+                "role": "assistant",
+                "content": "**Pull-ups**\nYour form cue: elbows to pockets\nBack-off: 10% lighter",
+            }
+        ]
+        self.assertEqual(extract_exercise_from_context(history), "Pull-ups")
+
+    def test_extract_exercise_from_set_message(self):
+        self.assertEqual(extract_exercise_from_set_message("Pull-ups 40 x 8"), "Pull-ups")
+        self.assertEqual(extract_exercise_from_set_message("done 100 x 8"), "")
+
     def test_finished_legs_advances_mesocycle_without_active_state(self):
         memory = {"mesocycle_day": 3, "mesocycle_week": 1}
         with patch("coach.load_today_conversation", return_value=[]), \
@@ -286,6 +305,89 @@ class RegressionTests(unittest.TestCase):
         end_session_mock.assert_called_once_with("abc")
         advance_mock.assert_called_once_with(memory)
         send_mock.assert_called_once_with("Wrapped")
+
+    def test_plain_done_ends_active_session(self):
+        memory = {"mesocycle_day": 5, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Done"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc"}), \
+             patch("coach.end_session") as end_session_mock, \
+             patch("coach.advance_mesocycle") as advance_mock, \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("Done", memory)
+
+        end_session_mock.assert_called_once_with("abc")
+        advance_mock.assert_called_once_with(memory)
+
+    def test_set_log_implicitly_starts_workout(self):
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        state_sequence = [
+            {"workout_mode": "inactive", "current_session_id": "", "current_set_number": "0"},
+            {"workout_mode": "active", "current_session_id": "new-session", "current_set_number": "0"},
+        ]
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Logged"), \
+             patch("coach.get_workout_state", side_effect=state_sequence), \
+             patch("coach.start_session", return_value="new-session") as start_mock, \
+             patch("coach.extract_exercise_from_context", return_value="Bench Press"), \
+             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
+             patch("coach.set_workout_state"), \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("100 x 8", memory)
+
+        start_mock.assert_called_once_with("Push")
+        log_set_mock.assert_called_once()
+
+    def test_plain_text_does_not_implicitly_start_workout(self):
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Reply"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "inactive", "current_session_id": "", "current_set_number": "0"}), \
+             patch("coach.start_session") as start_mock, \
+             patch("coach.log_set") as log_set_mock, \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("My push day was rough yesterday", memory)
+
+        start_mock.assert_not_called()
+        log_set_mock.assert_not_called()
+
+    def test_set_log_falls_back_to_last_logged_exercise(self):
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Logged"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc", "current_set_number": "1"}), \
+             patch("coach.extract_exercise_from_context", return_value="Unknown"), \
+             patch("coach.get_last_logged_exercise", return_value="Pull-ups"), \
+             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
+             patch("coach.set_workout_state"), \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("40 x 10", memory)
+
+        self.assertEqual(log_set_mock.call_args.kwargs["exercise"], "Pull-ups")
+
+    def test_explicit_exercise_in_set_message_is_preferred(self):
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Logged"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc", "current_set_number": "1", "current_exercise_name": "Lat Pulldown"}), \
+             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
+             patch("coach.set_workout_state"), \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("Pull-ups 40 x 10", memory)
+
+        self.assertEqual(log_set_mock.call_args.kwargs["exercise"], "Pull-ups")
+
+    def test_state_exercise_used_when_message_has_no_exercise(self):
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Logged"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc", "current_set_number": "2", "current_exercise_name": "Chest Supported T-bar Row"}), \
+             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
+             patch("coach.set_workout_state"), \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("55 x 8", memory)
+
+        self.assertEqual(log_set_mock.call_args.kwargs["exercise"], "Chest Supported T-bar Row")
 
 
 if __name__ == "__main__":
