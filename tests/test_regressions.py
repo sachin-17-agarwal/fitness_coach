@@ -2,7 +2,13 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from coach import handle_incoming_message, is_session_completion_message, parse_set_from_message
+from coach import (
+    handle_incoming_message,
+    is_session_completion_message,
+    parse_set_from_message,
+    extract_exercise_from_context,
+    extract_exercise_from_set_message,
+)
 import data
 from parse_health import parse_health_export
 from parse_workouts import parse_workouts
@@ -227,6 +233,19 @@ class RegressionTests(unittest.TestCase):
 
     def test_set_log_is_not_treated_as_session_completion(self):
         self.assertFalse(is_session_completion_message("Done 100 x 12 @8", "Legs"))
+
+    def test_extract_exercise_ignores_form_cue_and_backoff(self):
+        history = [
+            {
+                "role": "assistant",
+                "content": "**Pull-ups**\nYour form cue: elbows to pockets\nBack-off: 10% lighter",
+            }
+        ]
+        self.assertEqual(extract_exercise_from_context(history), "Pull-ups")
+
+    def test_extract_exercise_from_set_message(self):
+        self.assertEqual(extract_exercise_from_set_message("Pull-ups 40 x 8"), "Pull-ups")
+        self.assertEqual(extract_exercise_from_set_message("done 100 x 8"), "")
 
     def test_finished_legs_advances_mesocycle_without_active_state(self):
         memory = {"mesocycle_day": 3, "mesocycle_week": 1}

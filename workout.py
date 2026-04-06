@@ -23,7 +23,7 @@ def get_workout_state() -> dict:
         supabase = get_supabase()
         result = supabase.table("memory").select("key, value").in_(
             "key", ["workout_mode", "current_session_id", "current_exercise_index",
-                    "current_set_number", "session_start_time"]
+                    "current_set_number", "session_start_time", "current_exercise_name"]
         ).execute()
         return {r["key"]: r["value"] for r in result.data}
     except Exception as e:
@@ -69,6 +69,7 @@ def start_session(session_type: str) -> str:
             "current_session_id": session_id,
             "current_exercise_index": "0",
             "current_set_number": "0",
+            "current_exercise_name": "",
             "session_start_time": datetime.now().isoformat()
         })
         return session_id
@@ -102,7 +103,8 @@ def end_session(session_id: str) -> dict:
             "workout_mode": "inactive",
             "current_session_id": "",
             "current_exercise_index": "0",
-            "current_set_number": "0"
+            "current_set_number": "0",
+            "current_exercise_name": "",
         })
 
         return {"tonnage_kg": tonnage, "total_sets": len(sets.data)}
@@ -142,6 +144,23 @@ def log_set(session_id: str, exercise: str, set_number: int,
     except Exception as e:
         print(f"Failed to log set: {e}")
         return {}
+
+
+def get_last_logged_exercise(session_id: str) -> str:
+    """Return the most recent exercise logged for a session."""
+    try:
+        supabase = get_supabase()
+        result = supabase.table("workout_sets")\
+            .select("exercise")\
+            .eq("workout_session_id", session_id)\
+            .order("logged_at", desc=True)\
+            .limit(1)\
+            .execute()
+        if result.data:
+            return (result.data[0].get("exercise") or "").strip()
+    except Exception as e:
+        print(f"Failed to fetch last logged exercise: {e}")
+    return ""
 
 # -- PR Detection --------------------------------------------------------------
 
