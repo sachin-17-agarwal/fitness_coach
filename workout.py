@@ -65,9 +65,8 @@ def start_session(session_type: str) -> str:
             "current_session_id": session_id,
             "current_exercise_index": "0",
             "current_set_number": "0",
-            "session_start_time": now_local().isoformat()
             "current_exercise_name": "",
-            "session_start_time": datetime.now().isoformat()
+            "session_start_time": now_local().isoformat(),
         })
         return session_id
     except Exception as e:
