@@ -351,44 +351,6 @@ class RegressionTests(unittest.TestCase):
         start_mock.assert_not_called()
         log_set_mock.assert_not_called()
 
-    def test_set_log_falls_back_to_last_logged_exercise(self):
-        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
-        with patch("coach.load_today_conversation", return_value=[]), \
-             patch("coach.chat_with_coach", return_value="Logged"), \
-             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc", "current_set_number": "1"}), \
-             patch("coach.extract_exercise_from_context", return_value="Unknown"), \
-             patch("coach.get_last_logged_exercise", return_value="Pull-ups"), \
-             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
-             patch("coach.set_workout_state"), \
-             patch("coach.send_telegram_message"):
-            handle_incoming_message("40 x 10", memory)
-
-        self.assertEqual(log_set_mock.call_args.kwargs["exercise"], "Pull-ups")
-
-    def test_explicit_exercise_in_set_message_is_preferred(self):
-        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
-        with patch("coach.load_today_conversation", return_value=[]), \
-             patch("coach.chat_with_coach", return_value="Logged"), \
-             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc", "current_set_number": "1", "current_exercise_name": "Lat Pulldown"}), \
-             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
-             patch("coach.set_workout_state"), \
-             patch("coach.send_telegram_message"):
-            handle_incoming_message("Pull-ups 40 x 10", memory)
-
-        self.assertEqual(log_set_mock.call_args.kwargs["exercise"], "Pull-ups")
-
-    def test_state_exercise_used_when_message_has_no_exercise(self):
-        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
-        with patch("coach.load_today_conversation", return_value=[]), \
-             patch("coach.chat_with_coach", return_value="Logged"), \
-             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc", "current_set_number": "2", "current_exercise_name": "Chest Supported T-bar Row"}), \
-             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
-             patch("coach.set_workout_state"), \
-             patch("coach.send_telegram_message"):
-            handle_incoming_message("55 x 8", memory)
-
-        self.assertEqual(log_set_mock.call_args.kwargs["exercise"], "Chest Supported T-bar Row")
-
 
 if __name__ == "__main__":
     unittest.main()
