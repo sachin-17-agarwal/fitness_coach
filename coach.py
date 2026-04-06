@@ -387,8 +387,6 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     normalised_text = incoming_text.lower().replace("’", "'").strip()
     mesocycle_day = int(memory.get("mesocycle_day", 1))
     expected_session_type = get_session_type_for_day(mesocycle_day)
-    expected_session_start_alias = expected_session_type.lower().replace("+", " ")
-    expected_terms = SESSION_TYPE_ALIASES.get(expected_session_type, [])
 
     # ── Detect session start ──────────────────────────────────────────────────
     start_phrases = [
@@ -416,11 +414,12 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
         # If user logs a set without explicitly starting workout mode, start it
         # using today's expected session type so sets are still captured.
         parsed_preview = parse_set_from_message(incoming_text)
-        should_implicit_start = bool(parsed_preview) or any(term in normalised_text for term in expected_terms) or expected_session_start_alias in normalised_text
+        should_implicit_start = bool(parsed_preview)
         if should_implicit_start:
             session_id = start_session(expected_session_type)
-            state = get_workout_state()
-            workout_active = state.get("workout_mode") == "active"
+            if session_id:
+                state = get_workout_state()
+                workout_active = state.get("workout_mode") == "active"
 
     if workout_active and session_id:
         set_data = parse_set_from_message(incoming_text)

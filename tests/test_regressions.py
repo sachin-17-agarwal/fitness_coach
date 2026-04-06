@@ -319,6 +319,19 @@ class RegressionTests(unittest.TestCase):
         start_mock.assert_called_once_with("Push")
         log_set_mock.assert_called_once()
 
+    def test_plain_text_does_not_implicitly_start_workout(self):
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Reply"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "inactive", "current_session_id": "", "current_set_number": "0"}), \
+             patch("coach.start_session") as start_mock, \
+             patch("coach.log_set") as log_set_mock, \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("My push day was rough yesterday", memory)
+
+        start_mock.assert_not_called()
+        log_set_mock.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
