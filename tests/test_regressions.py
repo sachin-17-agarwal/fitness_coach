@@ -287,6 +287,38 @@ class RegressionTests(unittest.TestCase):
         advance_mock.assert_called_once_with(memory)
         send_mock.assert_called_once_with("Wrapped")
 
+    def test_plain_done_ends_active_session(self):
+        memory = {"mesocycle_day": 5, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Done"), \
+             patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc"}), \
+             patch("coach.end_session") as end_session_mock, \
+             patch("coach.advance_mesocycle") as advance_mock, \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("Done", memory)
+
+        end_session_mock.assert_called_once_with("abc")
+        advance_mock.assert_called_once_with(memory)
+
+    def test_set_log_implicitly_starts_workout(self):
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        state_sequence = [
+            {"workout_mode": "inactive", "current_session_id": "", "current_set_number": "0"},
+            {"workout_mode": "active", "current_session_id": "new-session", "current_set_number": "0"},
+        ]
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Logged"), \
+             patch("coach.get_workout_state", side_effect=state_sequence), \
+             patch("coach.start_session", return_value="new-session") as start_mock, \
+             patch("coach.extract_exercise_from_context", return_value="Bench Press"), \
+             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
+             patch("coach.set_workout_state"), \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("100 x 8", memory)
+
+        start_mock.assert_called_once_with("Push")
+        log_set_mock.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
