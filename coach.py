@@ -8,8 +8,7 @@ from datetime import datetime, timedelta
 
 from anthropic import Anthropic
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from data import get_athlete_context, now_local, today_local_str
-from data import get_supabase
+from data import CYCLE, get_athlete_context, get_supabase, now_local, today_local_str
 from memory import (
     load_memory, save_memory, save_conversation_message,
     load_today_conversation,
@@ -21,6 +20,14 @@ from workout import (
     log_set, set_workout_state
 )
 from memory import advance_mesocycle
+
+def _safe_int(value, default: int = 1) -> int:
+    """Safely coerce a value to int, returning default on failure."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
 
 ATHLETE_NAME = "Sachin"
 ATHLETE_CURRENT_WEIGHT_KG = 91
@@ -176,8 +183,7 @@ def get_recovery_history(days: int = 14) -> str:
 def build_context_block(memory: dict) -> str:
     today = now_local().strftime("%A %d %B %Y")
     mesocycle_week = memory.get("mesocycle_week", 1)
-    mesocycle_day = int(memory.get("mesocycle_day", 1))
-    CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
+    mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
     today_session = CYCLE[(mesocycle_day - 1) % len(CYCLE)]
     next_session = CYCLE[mesocycle_day % len(CYCLE)]
 
@@ -263,7 +269,10 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict)
         messages=messages_to_send
     )
 
-    assistant_message = response.content[0].text
+    if not response.content:
+        assistant_message = "Sorry, I couldn't generate a response. Please try again."
+    else:
+        assistant_message = response.content[0].text
     conversation_history.append({"role": "assistant", "content": assistant_message})
     save_conversation_message("assistant", assistant_message)
 
@@ -386,8 +395,7 @@ SESSION_TYPE_ALIASES = {
 
 
 def get_session_type_for_day(mesocycle_day: int) -> str:
-    cycle = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
-    return cycle[(mesocycle_day - 1) % len(cycle)]
+    return CYCLE[(mesocycle_day - 1) % len(CYCLE)]
 
 
 def is_session_completion_message(text: str, expected_session_type: str) -> bool:
@@ -427,7 +435,7 @@ def is_session_completion_message(text: str, expected_session_type: str) -> bool
 def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     conversation_history = load_today_conversation()
     normalised_text = incoming_text.lower().replace("’", "'").strip()
-    mesocycle_day = int(memory.get("mesocycle_day", 1))
+    mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
     expected_session_type = get_session_type_for_day(mesocycle_day)
 
     # ── Detect session start ──────────────────────────────────────────────────

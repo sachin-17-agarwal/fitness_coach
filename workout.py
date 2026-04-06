@@ -56,6 +56,9 @@ def start_session(session_type: str) -> str:
             "status": "active",
             "start_time": now_local().isoformat()
         }).execute()
+        if not result.data:
+            print("Failed to start session: insert returned no data")
+            return ""
         session_id = result.data[0]["id"]
         set_workout_state({
             "workout_mode": "active",
@@ -83,9 +86,11 @@ def end_session(session_id: str) -> dict:
             .execute()
 
         tonnage = sum(
-            (s["actual_weight_kg"] or 0) * (s["actual_reps"] or 0)
-            for s in sets.data
+            (s.get("actual_weight_kg") or 0) * (s.get("actual_reps") or 0)
+            for s in (sets.data or [])
             if not s.get("is_warmup")
+            and s.get("actual_weight_kg") is not None
+            and s.get("actual_reps") is not None
         )
 
         supabase.table("workout_sessions").update({
@@ -201,8 +206,8 @@ def check_fatigue(session_id: str, exercise: str) -> dict:
         if len(sets.data) < 2:
             return {"fatigued": False}
 
-        reps = [s["actual_reps"] for s in sets.data if s["actual_reps"]]
-        if len(reps) < 2:
+        reps = [s["actual_reps"] for s in sets.data if s.get("actual_reps")]
+        if len(reps) < 2 or reps[0] <= 0:
             return {"fatigued": False}
 
         drop_pct = (reps[0] - reps[-1]) / reps[0] * 100

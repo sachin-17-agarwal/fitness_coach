@@ -6,7 +6,7 @@ Replaces the old memory.json file approach.
 import os
 from datetime import datetime
 
-from data import get_supabase, now_local, today_local_str
+from data import CYCLE, get_supabase, now_local, today_local_str
 
 
 def load_memory() -> dict:
@@ -18,7 +18,10 @@ def load_memory() -> dict:
 
         for key in ["mesocycle_week", "mesocycle_day"]:
             if key in memory:
-                memory[key] = int(memory[key])
+                try:
+                    memory[key] = int(memory[key])
+                except (TypeError, ValueError):
+                    memory[key] = 1
 
         sessions = (
             supabase.table("sessions")
@@ -136,9 +139,6 @@ def save_recovery_data(data: dict):
         print(f"Recovery data saved for {row.get('date')}")
     except Exception as e:
         print(f"Failed to save recovery data: {e}")
-
-
-CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
 
 
 def get_current_session_type(memory: dict) -> str:

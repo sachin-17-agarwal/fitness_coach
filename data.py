@@ -19,6 +19,9 @@ def get_supabase():
     return create_client(url, key)
 
 
+CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
+
+
 def get_app_timezone() -> ZoneInfo:
     timezone_name = os.environ.get("APP_TIMEZONE", "Australia/Sydney")
     try:

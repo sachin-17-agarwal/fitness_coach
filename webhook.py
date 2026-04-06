@@ -3,6 +3,7 @@ webhook.py — Flask server for Telegram messages and Apple Health data.
 """
 
 import os
+import secrets
 from flask import Flask, request, jsonify
 from coach import handle_incoming_message
 from memory import load_memory, save_recovery_data
@@ -70,7 +71,7 @@ def apple_health():
     if not expected_token:
         print("WARNING: HEALTH_WEBHOOK_TOKEN not set — rejecting health webhook")
         return jsonify({"error": "Webhook token not configured"}), 503
-    if token != expected_token:
+    if not secrets.compare_digest(token, expected_token):
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
