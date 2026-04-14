@@ -48,7 +48,7 @@ def save_memory(memory: dict):
                     "key": key,
                     "value": str(memory[key]),
                     "updated_at": now_local().isoformat(),
-                }).execute()
+                }, on_conflict="key").execute()
     except Exception as e:
         print(f"Supabase memory save failed: {e}")
 
