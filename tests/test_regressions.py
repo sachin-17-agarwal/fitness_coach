@@ -322,7 +322,11 @@ class RegressionTests(unittest.TestCase):
     def test_set_log_implicitly_starts_workout(self):
         memory = {"mesocycle_day": 2, "mesocycle_week": 1}
         state_sequence = [
+            # Stale-session guard checks state first — inactive means skip
             {"workout_mode": "inactive", "current_session_id": "", "current_set_number": "0"},
+            # Main flow check — still inactive so implicit start triggers
+            {"workout_mode": "inactive", "current_session_id": "", "current_set_number": "0"},
+            # After start_session succeeds — now active
             {"workout_mode": "active", "current_session_id": "new-session", "current_set_number": "0"},
         ]
         with patch("coach.load_today_conversation", return_value=[]), \
@@ -350,6 +354,59 @@ class RegressionTests(unittest.TestCase):
 
         start_mock.assert_not_called()
         log_set_mock.assert_not_called()
+
+    def test_warm_up_is_not_treated_as_exercise_name(self):
+        # extract_exercise_from_set_message must reject "Warm up" / "Warmup" / "Rest"
+        self.assertEqual(extract_exercise_from_set_message("Warm up 60 x 10"), "")
+        self.assertEqual(extract_exercise_from_set_message("warmup 80 x 8"), "")
+        self.assertEqual(extract_exercise_from_set_message("Warm-up 100 x 5"), "")
+        self.assertEqual(extract_exercise_from_set_message("Rest 60 x 10"), "")
+        self.assertEqual(extract_exercise_from_set_message("Back-off 50 x 12"), "")
+        self.assertEqual(extract_exercise_from_set_message("Working Set 100 x 8"), "")
+        # Sanity: a real exercise name still works
+        self.assertEqual(
+            extract_exercise_from_set_message("Bench Press 100 x 8"),
+            "Bench Press",
+        )
+
+    def test_resolve_exercise_name_rejects_warm_up(self):
+        from coach import resolve_exercise_name
+        # Even if candidate leaks through, resolve should reject it
+        self.assertEqual(resolve_exercise_name("Warm up"), "")
+        self.assertEqual(resolve_exercise_name("Warmup"), "")
+        self.assertEqual(resolve_exercise_name("Rest"), "")
+        self.assertEqual(resolve_exercise_name("Back-off"), "")
+
+    def test_end_workout_phrases_trigger_completion(self):
+        # The exact phrases the user actually types
+        self.assertTrue(is_session_completion_message("End workout", "Push"))
+        self.assertTrue(is_session_completion_message("end workout", "Legs"))
+        self.assertTrue(is_session_completion_message("I will end it now", "Push"))
+        self.assertTrue(is_session_completion_message("ending session", "Pull"))
+        self.assertTrue(is_session_completion_message("stop workout", "Legs"))
+        self.assertTrue(is_session_completion_message("calling it", "Yoga"))
+        self.assertTrue(is_session_completion_message("that's a wrap", "Cardio+Abs"))
+        # Make sure set logs still don't count
+        self.assertFalse(is_session_completion_message("100 x 10 end", "Push"))
+
+    def test_save_memory_passes_on_conflict_key(self):
+        # The upsert must supply on_conflict="key" so we update existing rows
+        # rather than inserting duplicates.
+        from unittest.mock import MagicMock
+        fake_supabase = MagicMock()
+        fake_table = MagicMock()
+        fake_supabase.table.return_value = fake_table
+        fake_table.upsert.return_value = fake_table
+        fake_table.execute.return_value = None
+
+        import memory as memory_module
+        with patch.object(memory_module, "get_supabase", return_value=fake_supabase):
+            memory_module.save_memory({"mesocycle_week": 2, "mesocycle_day": 3})
+
+        # Both upsert calls should include on_conflict="key"
+        for call in fake_table.upsert.call_args_list:
+            self.assertEqual(call.kwargs.get("on_conflict"), "key")
+        self.assertEqual(len(fake_table.upsert.call_args_list), 2)
 
 
 if __name__ == "__main__":

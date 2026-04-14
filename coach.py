@@ -384,8 +384,10 @@ def _is_exercise_name(text: str) -> bool:
 
 
 _BLOCKED_LABELS = {
-    "your form cue", "form cue", "back-off", "back off",
-    "notes", "note", "rest", "warm-up", "warm up", "cool-down", "cool down",
+    "your form cue", "form cue", "back-off", "back off", "backoff",
+    "notes", "note", "rest", "warm-up", "warm up", "warmup",
+    "cool-down", "cool down", "cooldown",
+    "working set", "top set", "drop set",
 }
 
 
@@ -447,8 +449,15 @@ def extract_exercise_from_set_message(text: str) -> str:
     if not match:
         return ""
     candidate = re.sub(r"\s+", " ", match.group(1)).strip(" -*_:\n\t")
-    blocked = {"done", "finished", "complete", "completed", "set", "sets"}
-    return "" if candidate.lower() in blocked else candidate
+    blocked = {
+        "done", "finished", "complete", "completed", "set", "sets",
+        "warm", "warm up", "warmup", "warm-up",
+        "rest", "back off", "back-off", "backoff",
+        "cool down", "cool-down", "cooldown",
+        "working set", "top set", "drop set",
+    }
+    normalised = candidate.lower().strip(" -_:")
+    return "" if normalised in blocked else candidate
 
 
 def resolve_exercise_name(candidate: str) -> str:
@@ -464,8 +473,9 @@ def resolve_exercise_name(candidate: str) -> str:
             return (result["match"].get("name") or "").strip()
     except Exception:
         pass
-    # Keep explicit user-provided exercise names even if not in library yet.
-    if re.search(r"[A-Za-z]", candidate):
+    # Keep explicit user-provided exercise names even if not in library yet,
+    # but only if they pass the blocked-label filter (e.g. reject "Warm up").
+    if re.search(r"[A-Za-z]", candidate) and _is_valid_exercise(candidate):
         return candidate.strip()
     return ""
 
@@ -474,7 +484,11 @@ def resolve_exercise_name(candidate: str) -> str:
 
 PPL_END_PHRASES = [
     "session done", "session complete", "workout done", "workout complete",
-    "that's all the exercises", "finished the session", "done with the workout"
+    "that's all the exercises", "finished the session", "done with the workout",
+    "end workout", "ending workout", "end session", "ending session",
+    "end it now", "i'll end it", "i will end", "stop workout",
+    "finish workout", "workout over", "calling it", "that's a wrap",
+    "thats a wrap",
 ]
 CARDIO_YOGA_END_PHRASE = "workout wrapped"
 BRIEF_COMPLETION_ACKS = {"done", "finished", "complete", "completed", "wrapped", "wrapped up"}
@@ -546,6 +560,26 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
     normalised_text = incoming_text.lower().replace("'", "'").strip()
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
     expected_session_type = get_session_type_for_day(mesocycle_day)
+
+    # ── Close any stale session carried over from a previous day ─────────────
+    # Without this guard, a session that was never explicitly ended stays
+    # workout_mode=active forever, causing sets from later days to accumulate
+    # on the same session_id and mesocycle to never advance.
+    stale_state = get_workout_state()
+    if stale_state.get("workout_mode") == "active":
+        start_time_str = stale_state.get("session_start_time", "")
+        try:
+            if start_time_str:
+                started = datetime.fromisoformat(start_time_str)
+                if started.date() < now_local().date():
+                    stale_id = stale_state.get("current_session_id", "")
+                    if stale_id:
+                        end_session(stale_id)
+                    advance_mesocycle(memory)
+                    mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
+                    expected_session_type = get_session_type_for_day(mesocycle_day)
+        except Exception as e:
+            print(f"Stale session check failed: {e}")
 
     # ── Detect session start ──────────────────────────────────────────────────
     start_phrases = [
