@@ -435,26 +435,38 @@ def extract_exercise_from_context(conversation_history: list) -> str:
     return "Unknown"
 
 
+_CONVERSATIONAL_PREFIX = re.compile(
+    r'^(?:I\s+)?(?:just\s+)?(?:did|done|finished|completed|logged)\s+(?:my\s+)?',
+    re.IGNORECASE,
+)
+
+
 def extract_exercise_from_set_message(text: str) -> str:
     """
     Extract exercise name from a set log if provided, e.g.:
       "Pull-ups 40 x 8"
       "Chest Supported T-bar Row 60kg x10 @8"
+      "I did calf raise machine 101 x 10"
+      "just finished leg press 80 x 12"
     """
     match = re.search(
-        r'^\s*(?:done\s+)?([A-Za-z][A-Za-z0-9\s\-/+&()]+?)\s+\d+(?:\.\d+)?\s*(?:kg)?\s*[xX×]\s*\d+',
+        r'^\s*(?:(?:I\s+)?(?:just\s+)?(?:did|done|finished|completed|logged)\s+(?:my\s+)?)?'
+        r'([A-Za-z][A-Za-z0-9\s\-/+&()]+?)\s+\d+(?:\.\d+)?\s*(?:kg)?\s*[xX×]\s*\d+',
         text,
         re.IGNORECASE,
     )
     if not match:
         return ""
     candidate = re.sub(r"\s+", " ", match.group(1)).strip(" -*_:\n\t")
+    # Strip any residual conversational prefix the regex didn't consume
+    candidate = _CONVERSATIONAL_PREFIX.sub("", candidate).strip()
     blocked = {
         "done", "finished", "complete", "completed", "set", "sets",
         "warm", "warm up", "warmup", "warm-up",
         "rest", "back off", "back-off", "backoff",
         "cool down", "cool-down", "cooldown",
         "working set", "top set", "drop set",
+        "i", "my",
     }
     normalised = candidate.lower().strip(" -_:")
     return "" if normalised in blocked else candidate
