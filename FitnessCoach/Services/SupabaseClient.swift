@@ -31,23 +31,26 @@ enum SupabaseError: LocalizedError {
 // MARK: - Client
 
 final class SupabaseClient: Sendable {
-    static let shared = SupabaseClient()
+    nonisolated(unsafe) static var shared = SupabaseClient()
 
-    private let baseURL: String
-    private let apiKey: String
+    static func reconfigure() {
+        shared = SupabaseClient()
+    }
+
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
+    private var baseURL: String {
+        let url = Config.supabaseURL
+        return url.hasSuffix("/") ? String(url.dropLast()) : url
+    }
+
+    private var apiKey: String { Config.supabaseKey }
+
     // MARK: Init
 
-    init(
-        baseURL: String = Config.supabaseURL,
-        apiKey: String = Config.supabaseKey,
-        session: URLSession = .shared
-    ) {
-        self.baseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
-        self.apiKey = apiKey
+    init(session: URLSession = .shared) {
         self.session = session
 
         let dec = JSONDecoder()
