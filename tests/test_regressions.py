@@ -275,10 +275,12 @@ class RegressionTests(unittest.TestCase):
 
     def test_set_log_does_not_advance_mesocycle(self):
         memory = {"mesocycle_day": 3, "mesocycle_week": 1}
+        library_hit = {"status": "confident", "match": {"name": "Back Squat"}, "candidates": [], "confidence": 0.9}
         with patch("coach.load_today_conversation", return_value=[]), \
              patch("coach.chat_with_coach", return_value="Logged"), \
              patch("coach.get_workout_state", return_value={"workout_mode": "active", "current_session_id": "abc", "current_set_number": "0"}), \
              patch("coach.extract_exercise_from_context", return_value="Back Squat"), \
+             patch("coach.find_exercise", return_value=library_hit), \
              patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
              patch("coach.set_workout_state") as set_state_mock, \
              patch("coach.advance_mesocycle") as advance_mock, \

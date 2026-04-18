@@ -477,8 +477,8 @@ def extract_exercise_from_set_message(text: str) -> str:
 
 def resolve_exercise_name(candidate: str) -> str:
     """
-    Resolve to a canonical library name when confidence is high.
-    Returns empty string when candidate looks unreliable.
+    Resolve to a canonical library name. Returns '' if not found.
+    Only accepts exact/confident matches (score ≥ 0.7) — never raw strings.
     """
     if not candidate:
         return ""
@@ -488,11 +488,32 @@ def resolve_exercise_name(candidate: str) -> str:
             return (result["match"].get("name") or "").strip()
     except Exception:
         pass
-    # Keep explicit user-provided exercise names even if not in library yet,
-    # but only if they pass the blocked-label filter (e.g. reject "Warm up").
-    if re.search(r"[A-Za-z]", candidate) and _is_valid_exercise(candidate):
-        return candidate.strip()
     return ""
+
+
+def build_exercise_note(unresolved: str) -> str | None:
+    """
+    Return a user-facing note when an exercise couldn't be resolved to a
+    canonical library name, so the user can confirm or request it be added.
+    """
+    if not unresolved or not _is_valid_exercise(unresolved):
+        return None
+    try:
+        result = find_exercise(unresolved)
+        if result.get("status") == "unsure" and result.get("candidates"):
+            top = result["candidates"][0]["name"]
+            return (
+                f"💡 Logged under **{top}** (closest match to \"{unresolved}\"). "
+                f"Was that right? If not, reply with the correct name "
+                f"or _add exercise {unresolved}_ to add it to my library."
+            )
+    except Exception:
+        pass
+    return (
+        f"💡 **{unresolved}** isn't in my exercise library. "
+        f"Reply _add exercise {unresolved}_ to add it permanently, "
+        f"or tell me the correct exercise name."
+    )
 
 
 # ── Session end phrases ───────────────────────────────────────────────────────
@@ -597,6 +618,22 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
     expected_session_type = get_session_type_for_day(mesocycle_day)
 
+    # ── "add exercise [name]" command ─────────────────────────────────────────
+    add_match = re.match(
+        r'add\s+exercise\s+(.+?)(?:\s*,\s*(.+))?\s*$',
+        normalised_text,
+        re.IGNORECASE,
+    )
+    if add_match:
+        ex_name = add_match.group(1).strip().title()
+        muscle_group = (add_match.group(2) or "").strip() or "Unknown"
+        from exercises import add_exercise as _add_exercise
+        success = _add_exercise(ex_name, muscle_group)
+        if success:
+            set_workout_state({"current_exercise_name": ex_name})
+            print(f"Exercise added to library: {ex_name} ({muscle_group})")
+        # Fall through to normal coach response so Claude can confirm naturally
+
     # ── Close any stale session carried over from a previous day ─────────────
     # Without this guard, a session that was never explicitly ended stays
     # workout_mode=active forever, causing sets from later days to accumulate
@@ -658,6 +695,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     # Track the exercise name in local scope so the post-response update can
     # compare without an extra get_workout_state() call.
     _active_exercise = (state.get("current_exercise_name") or "").strip()
+    all_sets: list = []
+    unresolved_candidate = ""
 
     if workout_active and session_id:
         all_sets = parse_all_sets_from_message(incoming_text)
@@ -667,9 +706,12 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
         if all_sets:
             current_set_base = int(state.get("current_set_number", 0))
 
-            # Resolve exercise name once for all sets in this message
+            # Resolve exercise name once for all sets in this message.
+            # Each path tries to return a canonical library name only.
             explicit_exercise = extract_exercise_from_set_message(incoming_text)
             exercise = resolve_exercise_name(explicit_exercise)
+            if not exercise and explicit_exercise and _is_valid_exercise(explicit_exercise):
+                unresolved_candidate = explicit_exercise
 
             if not exercise:
                 exercise = resolve_exercise_name(_active_exercise)
@@ -680,16 +722,18 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                     inferred_lookup = find_exercise(inferred_exercise)
                     if inferred_lookup.get("status") in {"exact", "confident"} and inferred_lookup.get("match"):
                         exercise = (inferred_lookup["match"].get("name") or "").strip()
-                    elif _is_valid_exercise(inferred_exercise):
-                        # Use coach-prescribed name even when not in library
-                        exercise = inferred_exercise
+                    elif not unresolved_candidate and _is_valid_exercise(inferred_exercise):
+                        unresolved_candidate = inferred_exercise
 
             if not exercise:
                 fallback_exercise = get_last_logged_exercise(session_id)
                 if fallback_exercise:
                     exercise = fallback_exercise
+
+            # When no canonical name found, log with the raw candidate so the
+            # set isn't lost — but we'll append a note asking user to add it.
             if not exercise:
-                exercise = "Unknown"
+                exercise = unresolved_candidate or "Unknown"
 
             for i, set_entry in enumerate(all_sets):
                 current_set = current_set_base + i + 1
@@ -717,6 +761,13 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
 
     # ── Get coach response ────────────────────────────────────────────────────
     response = chat_with_coach(incoming_text, conversation_history, memory)
+
+    # When we logged sets under a non-canonical name, append a note so the
+    # user knows and can add the exercise or correct the name.
+    if workout_active and all_sets and unresolved_candidate:
+        note = build_exercise_note(unresolved_candidate)
+        if note:
+            response = response + "\n\n" + note
 
     # Update current_exercise_name from coach's prescription so the next bare
     # set log ("80 x 8") is attributed to the exercise the coach just prescribed
