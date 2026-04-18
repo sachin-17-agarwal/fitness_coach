@@ -45,17 +45,9 @@ struct ChatMessage: Codable, Identifiable, Sendable {
 final class ChatService: Sendable {
 
     private let client: SupabaseClient
-    private let backendURL: String
-    private let appAPIToken: String
 
-    init(
-        client: SupabaseClient = .shared,
-        backendURL: String = Config.backendURL,
-        appAPIToken: String = Config.appAPIToken
-    ) {
+    init(client: SupabaseClient = .shared) {
         self.client = client
-        self.backendURL = backendURL.hasSuffix("/") ? String(backendURL.dropLast()) : backendURL
-        self.appAPIToken = appAPIToken
     }
 
     // MARK: - Send message to backend
@@ -105,13 +97,15 @@ final class ChatService: Sendable {
 
     /// Sends a POST request to the Flask backend's `/api/chat` endpoint.
     private func callBackend(_ message: String) async throws -> ChatResponse {
-        // Construct the URL – if the Config URL already contains `/api/chat`
-        // we use it as-is, otherwise append the path.
+        let rawURL = Config.backendURL
+        let token = Config.appAPIToken
+
         let urlString: String
-        if backendURL.contains("/api/chat") {
-            urlString = backendURL
+        if rawURL.contains("/api/chat") {
+            urlString = rawURL
         } else {
-            urlString = "\(backendURL)/api/chat"
+            let base = rawURL.hasSuffix("/") ? String(rawURL.dropLast()) : rawURL
+            urlString = "\(base)/api/chat"
         }
 
         guard let url = URL(string: urlString) else {
@@ -121,8 +115,8 @@ final class ChatService: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(appAPIToken)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 60 // Claude can take a moment
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 60
 
         let payload: [String: Any] = ["message": message]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
