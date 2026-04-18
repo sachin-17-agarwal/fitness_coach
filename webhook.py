@@ -133,6 +133,34 @@ def _get_hrv_status(hrv: float) -> str:
     except Exception:
         return "Unknown"
 
+# ── iOS App Chat API ─────────────────────────────────────────────────────────
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    """
+    REST endpoint for the iOS app. Returns Claude's response directly
+    instead of sending to Telegram.
+    """
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    expected_token = os.environ.get("APP_API_TOKEN", "")
+    if not expected_token:
+        return jsonify({"error": "APP_API_TOKEN not configured"}), 503
+    if not secrets.compare_digest(token, expected_token):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json(force=True)
+    text = (data or {}).get("message", "").strip()
+    if not text:
+        return jsonify({"error": "empty message"}), 400
+
+    memory = load_memory()
+    response = handle_incoming_message(text, memory, send_reply=False)
+    return jsonify({
+        "response": response,
+        "mesocycle_day": memory.get("mesocycle_day"),
+        "mesocycle_week": memory.get("mesocycle_week"),
+    })
+
 # ── Status ────────────────────────────────────────────────────────────────────
 
 @app.route("/status", methods=["GET"])

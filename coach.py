@@ -555,7 +555,7 @@ def is_session_completion_message(text: str, expected_session_type: str) -> bool
     return any(re.search(pattern, normalised) for pattern in session_patterns)
 
 
-def handle_incoming_message(incoming_text: str, memory: dict) -> str:
+def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool = True) -> str:
     conversation_history = load_today_conversation()
     normalised_text = incoming_text.lower().replace("'", "'").strip()
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
@@ -684,7 +684,8 @@ def handle_incoming_message(incoming_text: str, memory: dict) -> str:
             advance_mesocycle(memory)
             print(f"Session complete (inferred) - mesocycle advanced to day {memory.get('mesocycle_day')}")
 
-    send_telegram_message(response)
+    if send_reply:
+        send_telegram_message(response)
     return response
 
 
