@@ -325,38 +325,41 @@ def send_morning_briefing(memory: dict):
 
 # ── Set parsing ───────────────────────────────────────────────────────────────
 
+_SET_PATTERN = re.compile(
+    r'(?:^|[\s.,;/])'
+    r'(\d+(?:\.\d+)?)\s*(?:kg)?\s*'
+    r'[xX×]\s*'
+    r'(\d+)'
+    r'(?:\s*(?:rpe|@)\s*(\d+(?:\.\d+)?))?',
+    re.IGNORECASE,
+)
+
+
 def parse_set_from_message(text: str) -> dict | None:
+    """Return first set match — kept for backward compatibility."""
+    sets = parse_all_sets_from_message(text)
+    return sets[0] if sets else None
+
+
+def parse_all_sets_from_message(text: str) -> list[dict]:
     """
-    Extract set data from messages like:
-      "Done. 110kg x8"
-      "110 x 10 RPE8"
-      "bench 90kg x8 rpe 8.5"
-      "done 100 x 12 @8"
-    Returns dict with weight, reps, rpe (optional) or None if no match.
+    Extract ALL weight x reps patterns from a message, e.g.:
+      "warm up 90 x 10, 140 x 6"   → [{90,10}, {140,6}]
+      "101 x 10 and 93 x 10"        → [{101,10}, {93,10}]
     """
-    pattern = re.compile(
-        r'(?:^|[\s.,])'
-        r'(\d+(?:\.\d+)?)\s*(?:kg)?\s*'
-        r'[xX×]\s*'
-        r'(\d+)'
-        r'(?:\s*(?:rpe|@)\s*(\d+(?:\.\d+)?))?',
-        re.IGNORECASE
-    )
+    results = []
+    for match in _SET_PATTERN.finditer(text):
+        weight = float(match.group(1))
+        reps = int(match.group(2))
+        rpe = float(match.group(3)) if match.group(3) else None
+        if 1 <= weight <= 500 and 1 <= reps <= 50:
+            results.append({"weight": weight, "reps": reps, "rpe": rpe})
+    return results
 
-    match = pattern.search(text)
-    if not match:
-        return None
 
-    weight = float(match.group(1))
-    reps = int(match.group(2))
-    rpe = float(match.group(3)) if match.group(3) else None
-
-    if weight < 1 or weight > 500:
-        return None
-    if reps < 1 or reps > 50:
-        return None
-
-    return {"weight": weight, "reps": reps, "rpe": rpe}
+def is_warmup_set(text: str) -> bool:
+    """Return True if the message indicates warm-up sets."""
+    return bool(re.search(r'\bwarm[\s-]?up\b|\bwarmup\b', text, re.IGNORECASE))
 
 
 _NON_EXERCISE_HEADERS = {
@@ -567,6 +570,27 @@ def is_session_completion_message(text: str, expected_session_type: str) -> bool
     return any(re.search(pattern, normalised) for pattern in session_patterns)
 
 
+def infer_session_type_from_recent(conversation_history: list, default: str) -> str:
+    """
+    Scan the last few user messages for explicit session type declarations
+    like 'Today is legs' or 'doing push' so the correct type is used even
+    when the session is implicitly started by the first set log.
+    """
+    recent = conversation_history[-8:] if len(conversation_history) >= 8 else conversation_history
+    for msg in reversed(recent):
+        if msg["role"] != "user":
+            continue
+        content = msg["content"].lower().replace("\u2019", "'").strip()
+        for canonical, aliases in SESSION_TYPE_ALIASES.items():
+            for alias in aliases:
+                escaped = re.escape(alias)
+                if (re.search(rf"\btoday\s+is\s+{escaped}\b", content)
+                        or re.search(rf"\bit'?s\s+{escaped}\b", content)
+                        or re.search(rf"\b(?:doing|starting)\s+{escaped}\b", content)):
+                    return canonical
+    return default
+
+
 def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool = True) -> str:
     conversation_history = load_today_conversation()
     normalised_text = incoming_text.lower().replace("'", "'").strip()
@@ -602,11 +626,14 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     ]
     should_start = any(p in normalised_text for p in start_phrases)
     if should_start:
+        # Check current message first, then fall back to recent conversation
         session_type = expected_session_type
         for canonical, aliases in SESSION_TYPE_ALIASES.items():
             if canonical.lower().replace("+", " ") in normalised_text or any(alias in normalised_text for alias in aliases):
                 session_type = canonical
                 break
+        if session_type == expected_session_type:
+            session_type = infer_session_type_from_recent(conversation_history, expected_session_type)
         start_session(session_type)
 
     # ── Log set if workout is active and message contains set data ────────────
@@ -616,34 +643,46 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     set_data = None
 
     if not workout_active:
-        # If user logs a set without explicitly starting workout mode, start it
-        # using today's expected session type so sets are still captured.
+        # If user logs a set without explicitly starting workout mode, start it.
+        # Use session type from recent conversation so "Today is legs" + first set
+        # log creates a Legs session rather than the mesocycle default.
         parsed_preview = parse_set_from_message(incoming_text)
         should_implicit_start = bool(parsed_preview)
         if should_implicit_start:
-            session_id = start_session(expected_session_type)
+            implicit_type = infer_session_type_from_recent(conversation_history, expected_session_type)
+            session_id = start_session(implicit_type)
             if session_id:
                 state = get_workout_state()
                 workout_active = state.get("workout_mode") == "active"
 
+    # Track the exercise name in local scope so the post-response update can
+    # compare without an extra get_workout_state() call.
+    _active_exercise = (state.get("current_exercise_name") or "").strip()
+
     if workout_active and session_id:
-        set_data = parse_set_from_message(incoming_text)
-        if set_data:
-            current_set = int(state.get("current_set_number", 0)) + 1
+        all_sets = parse_all_sets_from_message(incoming_text)
+        set_data = all_sets[0] if all_sets else None
+        warmup = is_warmup_set(incoming_text)
+
+        if all_sets:
+            current_set_base = int(state.get("current_set_number", 0))
+
+            # Resolve exercise name once for all sets in this message
             explicit_exercise = extract_exercise_from_set_message(incoming_text)
             exercise = resolve_exercise_name(explicit_exercise)
 
             if not exercise:
-                state_exercise = (state.get("current_exercise_name") or "").strip()
-                exercise = resolve_exercise_name(state_exercise)
+                exercise = resolve_exercise_name(_active_exercise)
 
             if not exercise:
                 inferred_exercise = extract_exercise_from_context(conversation_history)
                 if inferred_exercise != "Unknown":
-                    # Only trust inferred context if it maps confidently to library.
                     inferred_lookup = find_exercise(inferred_exercise)
                     if inferred_lookup.get("status") in {"exact", "confident"} and inferred_lookup.get("match"):
                         exercise = (inferred_lookup["match"].get("name") or "").strip()
+                    elif _is_valid_exercise(inferred_exercise):
+                        # Use coach-prescribed name even when not in library
+                        exercise = inferred_exercise
 
             if not exercise:
                 fallback_exercise = get_last_logged_exercise(session_id)
@@ -652,27 +691,46 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             if not exercise:
                 exercise = "Unknown"
 
-            pr_info = log_set(
-                session_id=session_id,
-                exercise=exercise,
-                set_number=current_set,
-                actual_weight=set_data["weight"],
-                actual_reps=set_data["reps"],
-                actual_rpe=set_data.get("rpe"),
-            )
+            for i, set_entry in enumerate(all_sets):
+                current_set = current_set_base + i + 1
+                pr_info = log_set(
+                    session_id=session_id,
+                    exercise=exercise,
+                    set_number=current_set,
+                    actual_weight=set_entry["weight"],
+                    actual_reps=set_entry["reps"],
+                    actual_rpe=set_entry.get("rpe"),
+                    is_warmup=warmup,
+                )
+                if pr_info.get("is_pr"):
+                    print(f"PR detected: {exercise} {set_entry['weight']}kg x {set_entry['reps']}")
+                warmup_tag = " (warmup)" if warmup else ""
+                print(f"Set logged: {exercise} set{current_set}{warmup_tag} - "
+                      f"{set_entry['weight']}kg x {set_entry['reps']}"
+                      + (f" @RPE{set_entry['rpe']}" if set_entry.get("rpe") else ""))
 
+            _active_exercise = exercise if exercise != "Unknown" else ""
             set_workout_state({
-                "current_set_number": str(current_set),
-                "current_exercise_name": exercise if exercise != "Unknown" else "",
+                "current_set_number": str(current_set_base + len(all_sets)),
+                "current_exercise_name": _active_exercise,
             })
-
-            if pr_info.get("is_pr"):
-                print(f"PR detected: {exercise} {set_data['weight']}kg x {set_data['reps']}")
-            print(f"Set logged: {exercise} set{current_set} - {set_data['weight']}kg x {set_data['reps']}" +
-                  (f" @RPE{set_data['rpe']}" if set_data.get("rpe") else ""))
 
     # ── Get coach response ────────────────────────────────────────────────────
     response = chat_with_coach(incoming_text, conversation_history, memory)
+
+    # Update current_exercise_name from coach's prescription so the next bare
+    # set log ("80 x 8") is attributed to the exercise the coach just prescribed
+    # rather than the last explicitly named one.
+    if workout_active:
+        next_exercise = extract_exercise_from_context(
+            [{"role": "assistant", "content": response}]
+        )
+        if next_exercise and next_exercise != "Unknown":
+            resolved = resolve_exercise_name(next_exercise)
+            if resolved and resolved != _active_exercise:
+                set_workout_state({"current_exercise_name": resolved})
+                _active_exercise = resolved
+                print(f"Exercise updated from coach response: {resolved}")
 
     session_complete = is_session_completion_message(incoming_text, expected_session_type)
     brief_completion_ack = workout_active and not set_data and normalised_text in BRIEF_COMPLETION_ACKS
