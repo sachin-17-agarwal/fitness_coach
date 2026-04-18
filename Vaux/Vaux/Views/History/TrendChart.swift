@@ -1,3 +1,8 @@
+// TrendChart.swift
+// Vaux
+//
+// Reusable trend card with gradient line + area for a single metric.
+
 import SwiftUI
 import Charts
 
@@ -13,17 +18,33 @@ struct TrendChart: View {
     let color: Color
     let unit: String
 
+    private var delta: Double? {
+        guard let first = data.first, let last = data.last else { return nil }
+        return last.value - first.value
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title.uppercased())
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .kerning(1)
+                        .foregroundStyle(Color.textTertiary)
+                    if let latest = data.last {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(latest.value.oneDecimal)
+                                .font(.system(size: 26, weight: .bold, design: .rounded).monospacedDigit())
+                                .foregroundStyle(.white)
+                            Text(unit)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                    }
+                }
                 Spacer()
-                if let latest = data.last {
-                    Text("\(latest.value.oneDecimal) \(unit)")
-                        .font(.subheadline.weight(.bold).monospacedDigit())
-                        .foregroundColor(color)
+                if let delta {
+                    deltaChip(delta)
                 }
             }
 
@@ -34,38 +55,60 @@ struct TrendChart: View {
                         y: .value("Value", point.value)
                     )
                     .foregroundStyle(color)
+                    .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round))
                     .interpolationMethod(.catmullRom)
 
                     AreaMark(
                         x: .value("Date", point.date),
                         y: .value("Value", point.value)
                     )
-                    .foregroundStyle(color.opacity(0.1))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [color.opacity(0.35), color.opacity(0)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
                     .interpolationMethod(.catmullRom)
                 }
                 .chartYScale(domain: .automatic(includesZero: false))
                 .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 5)) { _ in
+                    AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                         AxisValueLabel(format: .dateTime.day().month(.abbreviated))
-                            .foregroundStyle(.gray)
+                            .foregroundStyle(Color.textTertiary)
                     }
                 }
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
                         AxisValueLabel()
-                            .foregroundStyle(.gray)
+                            .foregroundStyle(Color.textTertiary)
                     }
                 }
-                .frame(height: 120)
+                .frame(height: 130)
             } else {
                 Text("Not enough data")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .frame(height: 120)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.textTertiary)
+                    .frame(height: 130)
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding()
-        .modifier(DarkCardStyle())
+        .darkCard(padding: 16, cornerRadius: 18)
+    }
+
+    private func deltaChip(_ delta: Double) -> some View {
+        let up = delta >= 0
+        let icon = up ? "arrow.up.right" : "arrow.down.right"
+        let sign = up ? "+" : ""
+        return HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+            Text("\(sign)\(delta.oneDecimal)")
+                .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(color.opacity(0.14)))
     }
 }

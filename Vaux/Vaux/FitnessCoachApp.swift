@@ -1,9 +1,9 @@
 // FitnessCoachApp.swift
-// FitnessCoach
+// Vaux
 //
 // Info.plist entries required:
-//   NSHealthShareUsageDescription - "FitnessCoach reads your health data (HRV, heart rate, sleep, steps, VO2 max) to provide personalised recovery and training insights."
-//   NSHealthUpdateUsageDescription - "FitnessCoach writes workout data to Apple Health so your training history stays in sync."
+//   NSHealthShareUsageDescription - "Vaux reads your health data (HRV, heart rate, sleep, steps, VO2 max) to provide personalised recovery and training insights."
+//   NSHealthUpdateUsageDescription - "Vaux writes workout data to Apple Health so your training history stays in sync."
 
 import SwiftUI
 import HealthKit
@@ -11,6 +11,7 @@ import HealthKit
 @main
 struct FitnessCoachApp: App {
     @State private var selectedTab: Tab = .dashboard
+    @State private var showBriefing = false
 
     init() {
         configureAppearance()
@@ -19,39 +20,56 @@ struct FitnessCoachApp: App {
 
     var body: some Scene {
         WindowGroup {
-            TabView(selection: $selectedTab) {
-                DashboardView()
-                    .tabItem {
-                        Label("Dashboard", systemImage: "heart.text.square")
-                    }
-                    .tag(Tab.dashboard)
+            ZStack {
+                TabView(selection: $selectedTab) {
+                    DashboardView(switchToChatTab: { selectedTab = .coach })
+                        .tabItem {
+                            Label("Home", systemImage: "heart.text.square.fill")
+                        }
+                        .tag(Tab.dashboard)
 
-                CoachChatView()
-                    .tabItem {
-                        Label("Coach", systemImage: "message")
-                    }
-                    .tag(Tab.coach)
+                    CoachChatView()
+                        .tabItem {
+                            Label("Coach", systemImage: "sparkles")
+                        }
+                        .tag(Tab.coach)
 
-                WorkoutModeView()
+                    NavigationStack {
+                        WorkoutModeView()
+                    }
                     .tabItem {
                         Label("Workout", systemImage: "figure.strengthtraining.traditional")
                     }
                     .tag(Tab.workout)
 
-                HistoryView()
-                    .tabItem {
-                        Label("History", systemImage: "chart.xyaxis.line")
-                    }
-                    .tag(Tab.history)
+                    HistoryView()
+                        .tabItem {
+                            Label("History", systemImage: "chart.xyaxis.line")
+                        }
+                        .tag(Tab.history)
 
-                SettingsView()
-                    .tabItem {
-                        Label("Settings", systemImage: "gear")
-                    }
-                    .tag(Tab.settings)
+                    SettingsView()
+                        .tabItem {
+                            Label("Settings", systemImage: "gearshape.fill")
+                        }
+                        .tag(Tab.settings)
+                }
+                .tint(Color.recoveryGreen)
+                .preferredColorScheme(.dark)
             }
-            .tint(Color.recoveryGreen)
-            .preferredColorScheme(.dark)
+            .sheet(isPresented: $showBriefing) {
+                MorningBriefingView(
+                    onStartWorkout: { _ in
+                        showBriefing = false
+                        selectedTab = .workout
+                    },
+                    onOpenChat: {
+                        showBriefing = false
+                        selectedTab = .coach
+                    }
+                )
+            }
+            .task { await presentDailyBriefingIfNeeded() }
         }
     }
 
@@ -61,22 +79,54 @@ struct FitnessCoachApp: App {
         case dashboard, coach, workout, history, settings
     }
 
+    // MARK: - Daily briefing
+
+    @MainActor
+    private func presentDailyBriefingIfNeeded() async {
+        let service = BriefingService()
+        let hour = Calendar.current.component(.hour, from: Date())
+        guard hour >= 5 && hour < 12 else { return }
+        guard !service.hasBeenShownToday() else { return }
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        showBriefing = true
+    }
+
     // MARK: - Appearance
 
     private func configureAppearance() {
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
-        tabBarAppearance.backgroundColor = UIColor(Color.background)
+        tabBarAppearance.backgroundColor = UIColor(Color.surface)
+        tabBarAppearance.shadowColor = UIColor(Color.cardBorder.opacity(0.6))
+
+        let normal = UITabBarItemAppearance()
+        normal.normal.iconColor = UIColor(Color.textTertiary)
+        normal.normal.titleTextAttributes = [.foregroundColor: UIColor(Color.textTertiary),
+                                             .font: UIFont.systemFont(ofSize: 10, weight: .semibold)]
+        normal.selected.iconColor = UIColor(Color.recoveryGreen)
+        normal.selected.titleTextAttributes = [.foregroundColor: UIColor(Color.recoveryGreen),
+                                               .font: UIFont.systemFont(ofSize: 10, weight: .bold)]
+        tabBarAppearance.stackedLayoutAppearance = normal
+        tabBarAppearance.inlineLayoutAppearance = normal
+        tabBarAppearance.compactInlineLayoutAppearance = normal
+
         UITabBar.appearance().standardAppearance = tabBarAppearance
         UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
 
         let navBarAppearance = UINavigationBarAppearance()
-        navBarAppearance.configureWithOpaqueBackground()
+        navBarAppearance.configureWithTransparentBackground()
         navBarAppearance.backgroundColor = UIColor(Color.background)
-        navBarAppearance.titleTextAttributes = [.foregroundColor: UIColor.white]
-        navBarAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
+        navBarAppearance.titleTextAttributes = [
+            .foregroundColor: UIColor.white,
+            .font: UIFont.systemFont(ofSize: 17, weight: .semibold)
+        ]
+        navBarAppearance.largeTitleTextAttributes = [
+            .foregroundColor: UIColor.white,
+            .font: UIFont.systemFont(ofSize: 30, weight: .bold)
+        ]
         UINavigationBar.appearance().standardAppearance = navBarAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
+        UINavigationBar.appearance().compactAppearance = navBarAppearance
     }
 
     // MARK: - HealthKit
@@ -114,4 +164,3 @@ struct FitnessCoachApp: App {
         }
     }
 }
-

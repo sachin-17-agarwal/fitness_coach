@@ -1,119 +1,253 @@
 // DashboardView.swift
-// FitnessCoach
+// Vaux
+//
+// Main recovery + training dashboard. Composes the hero recovery ring,
+// quick actions, HRV sparkline, metric grid, and today's session card.
 
 import SwiftUI
 
-/// Main dashboard screen showing recovery status, HRV trend, key metrics,
-/// and today's workout session type.
 struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var navigateToWorkout = false
+    @State private var showBriefing = false
+    @State private var showWeightSheet = false
+    @State private var isSyncing = false
+    @State private var syncError: String?
+
+    var switchToChatTab: (() -> Void)? = nil
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.background.ignoresSafeArea()
+                ambientGlow
 
-                if viewModel.isLoading {
+                if viewModel.isLoading && viewModel.recovery == nil {
                     ProgressView()
                         .tint(.recoveryGreen)
                         .scaleEffect(1.2)
                 } else {
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 16) {
-                            // Recovery Ring
-                            RecoveryRing(
-                                score: viewModel.recoveryScore,
-                                level: viewModel.recoveryColor,
-                                statusText: recoveryStatusText
-                            )
-                            .padding(.top, 8)
-
-                            // HRV Sparkline
-                            HRVSparkline(
-                                history: viewModel.hrvHistory,
-                                average: viewModel.hrvAvg
-                            )
-
-                            // Metric cards row
-                            HStack(spacing: 12) {
-                                MetricCard(
-                                    icon: "moon.fill",
-                                    title: "Sleep",
-                                    value: sleepValue,
-                                    subtitle: sleepSubtitle,
-                                    accentColor: .recoveryGreen
-                                )
-
-                                MetricCard(
-                                    icon: "heart.fill",
-                                    title: "Resting HR",
-                                    value: rhrValue,
-                                    subtitle: rhrSubtitle,
-                                    trend: rhrTrend,
-                                    accentColor: .recoveryRed
-                                )
-                            }
-
-                            // Weight card
-                            if let weight = viewModel.recovery?.weightKg {
-                                MetricCard(
-                                    icon: "scalemass.fill",
-                                    title: "Weight",
-                                    value: weight.weightString,
-                                    subtitle: viewModel.recovery?.bodyFatPct.map { "\($0.oneDecimal)% body fat" }
-                                )
-                            }
-
-                            // Session Type Card
-                            SessionTypeCard(mesocycle: viewModel.mesocycle) {
-                                navigateToWorkout = true
-                            }
-
-                            // Additional metrics
-                            if let steps = viewModel.recovery?.steps {
-                                MetricCard(
-                                    icon: "figure.walk",
-                                    title: "Steps",
-                                    value: formatSteps(steps),
-                                    accentColor: .recoveryGreen
-                                )
-                            }
-
-                            Spacer(minLength: 20)
-                        }
-                        .padding(.horizontal)
-                    }
-                    .refreshable {
-                        await viewModel.load()
-                    }
+                    content
                 }
             }
-            .navigationTitle("Dashboard")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarHidden(true)
             .navigationDestination(isPresented: $navigateToWorkout) {
                 WorkoutModeView(sessionType: viewModel.mesocycle.todayType)
             }
-            .task {
-                await viewModel.load()
+            .sheet(isPresented: $showBriefing) {
+                MorningBriefingView(
+                    onStartWorkout: { _ in
+                        showBriefing = false
+                        navigateToWorkout = true
+                    },
+                    onOpenChat: {
+                        showBriefing = false
+                        switchToChatTab?()
+                    }
+                )
+            }
+            .sheet(isPresented: $showWeightSheet) {
+                WeightLogSheet(initialWeight: viewModel.recovery?.weightKg) {
+                    Task { await viewModel.load() }
+                }
+            }
+            .task { await viewModel.load() }
+        }
+    }
+
+    // MARK: - Content
+
+    private var content: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                    .padding(.top, 8)
+
+                RecoveryRing(
+                    score: viewModel.recoveryScore,
+                    level: viewModel.recoveryColor,
+                    statusText: viewModel.hrvDeltaText,
+                    sleep: viewModel.recovery?.sleepHours,
+                    hrv: viewModel.recovery?.hrv,
+                    rhr: viewModel.recovery?.restingHr
+                )
+
+                QuickActionsBar(
+                    onBriefing: { showBriefing = true },
+                    onChat: { switchToChatTab?() },
+                    onLogWeight: { showWeightSheet = true },
+                    onSync: { Task { await performSync() } }
+                )
+
+                HRVSparkline(
+                    history: viewModel.hrvHistory,
+                    average: viewModel.hrvAvg
+                )
+
+                metricsGrid
+
+                SessionTypeCard(mesocycle: viewModel.mesocycle) {
+                    navigateToWorkout = true
+                }
+
+                if let err = syncError {
+                    Text(err)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.recoveryRed)
+                }
+
+                Spacer(minLength: 24)
+            }
+            .padding(.horizontal, 18)
+        }
+        .refreshable { await viewModel.load() }
+    }
+
+    // MARK: - Header (greeting + streak pill)
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(greeting)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color.textSecondary)
+                Text("Dashboard")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+            Spacer()
+            if viewModel.currentStreak > 0 {
+                streakPill
             }
         }
     }
 
-    // MARK: - Computed Display Values
-
-    private var recoveryStatusText: String {
-        guard let hrv = viewModel.recovery?.hrv else { return "" }
-        if let avg = viewModel.hrvAvg {
-            let diff = hrv - avg
-            let sign = diff >= 0 ? "+" : ""
-            return "HRV \(Int(hrv)) ms (\(sign)\(Int(diff)) vs avg)"
+    private var streakPill: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color.accentAmber)
+            Text("\(viewModel.currentStreak)d streak")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
         }
-        return "HRV \(Int(hrv)) ms"
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(Color.accentAmber.opacity(0.14))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.accentAmber.opacity(0.28), lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - Metrics grid
+
+    private var metricsGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+            MetricCard(
+                icon: "moon.fill",
+                title: "Sleep",
+                value: sleepValue,
+                subtitle: sleepSubtitle,
+                accentColor: .accentBlue,
+                sparkline: sleepSparkline
+            )
+
+            MetricCard(
+                icon: "heart.fill",
+                title: "Resting HR",
+                value: rhrValue,
+                subtitle: rhrSubtitle,
+                trend: rhrTrend,
+                accentColor: .recoveryRed,
+                sparkline: rhrSparkline
+            )
+
+            if let weight = viewModel.recovery?.weightKg {
+                MetricCard(
+                    icon: "scalemass.fill",
+                    title: "Weight",
+                    value: weight.weightString,
+                    subtitle: viewModel.recovery?.bodyFatPct.map { "\($0.oneDecimal)% body fat" },
+                    accentColor: .accentAmber,
+                    sparkline: weightSparkline
+                )
+            }
+
+            if viewModel.weekTonnage > 0 {
+                MetricCard(
+                    icon: "flame.fill",
+                    title: "7d Tonnage",
+                    value: tonnageValue,
+                    subtitle: "\(viewModel.recentSessions.count) sessions",
+                    accentColor: .accentPurple
+                )
+            } else if let steps = viewModel.recovery?.steps {
+                MetricCard(
+                    icon: "figure.walk",
+                    title: "Steps",
+                    value: formatSteps(steps),
+                    accentColor: .recoveryGreen
+                )
+            }
+        }
+    }
+
+    // MARK: - Ambient glow
+
+    private var ambientGlow: some View {
+        GeometryReader { geo in
+            ZStack {
+                Circle()
+                    .fill(Color.accentPurple.opacity(0.12))
+                    .frame(width: 280, height: 280)
+                    .blur(radius: 90)
+                    .offset(x: -geo.size.width * 0.35, y: -geo.size.height * 0.35)
+                Circle()
+                    .fill(Color.recoveryGreen.opacity(0.10))
+                    .frame(width: 260, height: 260)
+                    .blur(radius: 90)
+                    .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.1)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: - Sync
+
+    private func performSync() async {
+        guard !isSyncing else { return }
+        isSyncing = true
+        syncError = nil
+        do {
+            try await HealthKitManager.shared.syncToSupabase()
+            Haptic.success()
+            await viewModel.load()
+        } catch {
+            Haptic.error()
+            syncError = "Sync failed: \(error.localizedDescription)"
+        }
+        isSyncing = false
+    }
+
+    // MARK: - Computed display values
+
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default: return "Welcome back"
+        }
     }
 
     private var sleepValue: String {
-        guard let hours = viewModel.recovery?.sleepHours else { return "--" }
+        guard let hours = viewModel.recovery?.sleepHours else { return "—" }
         return "\(hours.oneDecimal)h"
     }
 
@@ -125,21 +259,50 @@ struct DashboardView: View {
     }
 
     private var rhrValue: String {
-        guard let rhr = viewModel.recovery?.restingHr else { return "--" }
-        return "\(Int(rhr)) bpm"
+        guard let rhr = viewModel.recovery?.restingHr else { return "—" }
+        return "\(Int(rhr))"
     }
 
     private var rhrSubtitle: String? {
         guard let avg = viewModel.rhrAvg else { return nil }
-        return "7d avg: \(Int(avg))"
+        return "7d avg \(Int(avg)) bpm"
     }
 
     private var rhrTrend: MetricCard.Trend? {
         guard let rhr = viewModel.recovery?.restingHr, let avg = viewModel.rhrAvg else { return nil }
-        // For RHR, lower is better so invert the trend indicator
         if rhr < avg - 2 { return .down }
         if rhr > avg + 2 { return .up }
         return .flat
+    }
+
+    private var tonnageValue: String {
+        let kg = viewModel.weekTonnage
+        if kg >= 1000 { return String(format: "%.1ft", kg / 1000) }
+        return "\(Int(kg)) kg"
+    }
+
+    private var sleepSparkline: [Double]? {
+        let values = viewModel.recoveryHistory
+            .reversed()
+            .compactMap(\.sleepHours)
+            .suffix(7)
+        return values.count >= 2 ? Array(values) : nil
+    }
+
+    private var rhrSparkline: [Double]? {
+        let values = viewModel.recoveryHistory
+            .reversed()
+            .compactMap(\.restingHr)
+            .suffix(7)
+        return values.count >= 2 ? Array(values) : nil
+    }
+
+    private var weightSparkline: [Double]? {
+        let values = viewModel.recoveryHistory
+            .reversed()
+            .compactMap(\.weightKg)
+            .suffix(7)
+        return values.count >= 2 ? Array(values) : nil
     }
 
     private func formatSteps(_ steps: Int) -> String {
