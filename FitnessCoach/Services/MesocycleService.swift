@@ -7,27 +7,6 @@
 
 import Foundation
 
-// MARK: - State
-
-/// Represents the current position within the mesocycle programme.
-struct MesocycleState: Sendable {
-    /// 1-based day within the week (1...cycleLength).
-    var day: Int
-    /// 1-based week within the mesocycle.
-    var week: Int
-
-    /// The workout type for the current day (e.g. "Pull").
-    var todayType: String {
-        let index = (day - 1) % Config.cycle.count
-        return Config.cycle[index]
-    }
-
-    /// `true` when this is the last day of the cycle rotation.
-    var isLastDayOfCycle: Bool {
-        day == Config.cycleLength
-    }
-}
-
 // MARK: - Service
 
 final class MesocycleService: Sendable {

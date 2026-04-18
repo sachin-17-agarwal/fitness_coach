@@ -20,31 +20,31 @@ struct FitnessCoachApp: App {
     var body: some Scene {
         WindowGroup {
             TabView(selection: $selectedTab) {
-                DashboardPlaceholderView()
+                DashboardView()
                     .tabItem {
                         Label("Dashboard", systemImage: "heart.text.square")
                     }
                     .tag(Tab.dashboard)
 
-                CoachPlaceholderView()
+                CoachChatView()
                     .tabItem {
                         Label("Coach", systemImage: "message")
                     }
                     .tag(Tab.coach)
 
-                WorkoutPlaceholderView()
+                WorkoutModeView()
                     .tabItem {
                         Label("Workout", systemImage: "figure.strengthtraining.traditional")
                     }
                     .tag(Tab.workout)
 
-                HistoryPlaceholderView()
+                HistoryView()
                     .tabItem {
                         Label("History", systemImage: "chart.xyaxis.line")
                     }
                     .tag(Tab.history)
 
-                SettingsPlaceholderView()
+                SettingsView()
                     .tabItem {
                         Label("Settings", systemImage: "gear")
                     }
@@ -115,76 +115,3 @@ struct FitnessCoachApp: App {
     }
 }
 
-// MARK: - Placeholder Views
-
-/// Temporary placeholder views until the real screens are built.
-
-struct DashboardPlaceholderView: View {
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.background.ignoresSafeArea()
-                Text("Dashboard")
-                    .font(.title2)
-                    .foregroundStyle(Color.textPrimary)
-            }
-            .navigationTitle("Dashboard")
-        }
-    }
-}
-
-struct CoachPlaceholderView: View {
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.background.ignoresSafeArea()
-                Text("Coach")
-                    .font(.title2)
-                    .foregroundStyle(Color.textPrimary)
-            }
-            .navigationTitle("Coach")
-        }
-    }
-}
-
-struct WorkoutPlaceholderView: View {
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.background.ignoresSafeArea()
-                Text("Workout")
-                    .font(.title2)
-                    .foregroundStyle(Color.textPrimary)
-            }
-            .navigationTitle("Workout")
-        }
-    }
-}
-
-struct HistoryPlaceholderView: View {
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.background.ignoresSafeArea()
-                Text("History")
-                    .font(.title2)
-                    .foregroundStyle(Color.textPrimary)
-            }
-            .navigationTitle("History")
-        }
-    }
-}
-
-struct SettingsPlaceholderView: View {
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.background.ignoresSafeArea()
-                Text("Settings")
-                    .font(.title2)
-                    .foregroundStyle(Color.textPrimary)
-            }
-            .navigationTitle("Settings")
-        }
-    }
-}

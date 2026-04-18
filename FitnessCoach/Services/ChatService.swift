@@ -29,6 +29,8 @@ struct ChatMessage: Codable, Identifiable, Sendable {
     let content: String
     let createdAt: String?
 
+    var isUser: Bool { role == "user" }
+
     enum CodingKeys: String, CodingKey {
         case id
         case date
