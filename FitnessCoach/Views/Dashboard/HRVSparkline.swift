@@ -29,7 +29,7 @@ struct HRVSparkline: View {
             HStack {
                 Image(systemName: "waveform.path.ecg")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.recoveryGreen)
+                    .foregroundStyle(Color.recoveryGreen)
 
                 Text("HRV Trend")
                     .font(.system(size: 13, weight: .medium))

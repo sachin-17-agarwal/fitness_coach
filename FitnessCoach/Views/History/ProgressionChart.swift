@@ -32,7 +32,7 @@ struct ProgressionChart: View {
                 guard let weight = set.actualWeightKg else { return nil }
                 let formatter = DateFormatter()
                 formatter.dateFormat = "yyyy-MM-dd"
-                guard let date = formatter.date(from: set.date) else { return nil }
+                guard let dateStr = set.date, let date = formatter.date(from: dateStr) else { return nil }
                 return TrendDataPoint(date: date, value: weight)
             }
 
