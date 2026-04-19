@@ -209,7 +209,8 @@ final class WorkoutService: Sendable {
         setNumber: Int,
         weight: Double,
         reps: Int,
-        rpe: Double? = nil
+        rpe: Double? = nil,
+        isWarmup: Bool = false
     ) async throws -> WorkoutSet {
         let today = Self.todayString()
         let now = ISO8601DateFormatter().string(from: Date())
@@ -221,6 +222,7 @@ final class WorkoutService: Sendable {
             "set_number": setNumber,
             "actual_weight_kg": weight,
             "actual_reps": reps,
+            "is_warmup": isWarmup,
             "logged_at": now,
         ]
         if let rpe {

@@ -23,6 +23,7 @@ struct ExercisePrescription: Identifiable, Sendable {
     var workingSets: [(weight: Double, reps: Int, rpe: Double?)]
     var backoffSets: [(weight: Double, reps: Int, rpe: Double?)]
     var formCue: String?
+    var tempo: String?
     var restSeconds: Int?
 
     var targetWeightKg: Double? { workingSets.first?.weight }
@@ -96,6 +97,7 @@ final class PrescriptionParser {
         var working: [(weight: Double, reps: Int, rpe: Double?)] = []
         var backoff: [(weight: Double, reps: Int, rpe: Double?)] = []
         var formCue: String?
+        var tempo: String?
         var restSeconds: Int?
 
         for line in lines {
@@ -107,15 +109,18 @@ final class PrescriptionParser {
                 warmup = parseWarmupSets(content)
             } else if lower.hasPrefix("working set:") || lower.hasPrefix("working sets:") || lower.hasPrefix("work:") {
                 let content = extractAfterColon(trimmed)
-                let (sets, rest) = parseWorkingSets(content)
+                let (sets, rest, parsedTempo) = parseWorkingSets(content)
                 working = sets
                 if let r = rest { restSeconds = r }
+                if let t = parsedTempo { tempo = t }
             } else if lower.hasPrefix("back-off:") || lower.hasPrefix("backoff:") || lower.hasPrefix("back off:") {
                 let content = extractAfterColon(trimmed)
-                let (sets, _) = parseWorkingSets(content)
+                let (sets, _, _) = parseWorkingSets(content)
                 backoff = sets
             } else if lower.hasPrefix("form:") || lower.hasPrefix("form cue:") || lower.hasPrefix("cue:") {
                 formCue = extractAfterColon(trimmed)
+            } else if lower.hasPrefix("tempo:") {
+                tempo = extractAfterColon(trimmed)
             } else if lower.hasPrefix("rest:") {
                 let content = extractAfterColon(trimmed)
                 restSeconds = parseRestSeconds(content)
@@ -128,6 +133,7 @@ final class PrescriptionParser {
             workingSets: working,
             backoffSets: backoff,
             formCue: formCue,
+            tempo: tempo,
             restSeconds: restSeconds
         )
     }
@@ -167,29 +173,30 @@ final class PrescriptionParser {
 
     /// Parses working/back-off sets from a string like
     /// "125kg x8 RPE8 | Tempo: 3-1-2 | Rest: 2min".
-    /// Handles pipe-separated metadata.  Returns (sets, optional rest seconds).
+    /// Handles pipe-separated metadata.  Returns (sets, optional rest, optional tempo).
     private static func parseWorkingSets(
         _ text: String
-    ) -> (sets: [(weight: Double, reps: Int, rpe: Double?)], rest: Int?) {
-        // Split on pipes to separate set data from metadata
+    ) -> (sets: [(weight: Double, reps: Int, rpe: Double?)], rest: Int?, tempo: String?) {
         let parts = text.components(separatedBy: "|")
             .map { $0.trimmingCharacters(in: .whitespaces) }
 
         var rest: Int?
+        var tempo: String?
 
-        // Check pipe-separated parts for Rest
         for part in parts {
             let lower = part.lowercased()
             if lower.hasPrefix("rest:") || lower.hasPrefix("rest ") {
                 let content = part.contains(":") ? extractAfterColon(part) : part
                 rest = parseRestSeconds(content)
+            } else if lower.hasPrefix("tempo:") || lower.hasPrefix("tempo ") {
+                tempo = part.contains(":") ? extractAfterColon(part) : String(part.dropFirst(6))
+                tempo = tempo?.trimmingCharacters(in: .whitespaces)
             }
         }
 
         // The first part (before any pipe) contains the set prescription(s)
-        guard let setsPart = parts.first else { return ([], rest) }
+        guard let setsPart = parts.first else { return ([], rest, tempo) }
 
-        // Sets may be comma-separated for multiple working sets
         let segments = setsPart.components(separatedBy: ",")
         let sets: [(weight: Double, reps: Int, rpe: Double?)] = segments.compactMap { segment in
             let cleaned = segment.trimmingCharacters(in: .whitespaces)
@@ -198,7 +205,7 @@ final class PrescriptionParser {
             return (weight, reps, rpe)
         }
 
-        return (sets, rest)
+        return (sets, rest, tempo)
     }
 
     /// Extracts weight and reps from strings like "125kg x8", "125 x 8",

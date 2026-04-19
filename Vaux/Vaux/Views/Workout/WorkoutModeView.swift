@@ -166,7 +166,9 @@ struct WorkoutModeView: View {
                         PrescriptionCard(
                             prescription: rx,
                             exerciseSetIndex: viewModel.exerciseSetIndex,
-                            loggedSets: viewModel.exerciseSetsForCurrentExercise
+                            loggedSets: viewModel.exerciseSetsForCurrentExercise,
+                            currentPhase: viewModel.currentPhase,
+                            phaseSetIndex: viewModel.phaseSetIndex
                         )
                         .transition(.asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -183,7 +185,8 @@ struct WorkoutModeView: View {
                             Haptic.medium()
                             Task { await viewModel.logSet() }
                         },
-                        isLoading: false
+                        isLoading: false,
+                        phase: viewModel.currentPhase
                     )
 
                     // Logged sets progress

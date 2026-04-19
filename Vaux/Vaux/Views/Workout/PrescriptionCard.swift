@@ -7,6 +7,8 @@ struct PrescriptionCard: View {
     let prescription: ExercisePrescription
     var exerciseSetIndex: Int = 0
     var loggedSets: [WorkoutSet] = []
+    var currentPhase: SetPhase = .working
+    var phaseSetIndex: Int = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -45,13 +47,16 @@ struct PrescriptionCard: View {
                 )
             }
 
-            if let cue = prescription.formCue, !cue.isEmpty {
-                formCueRow(cue)
+            if prescription.tempo != nil || prescription.formCue != nil {
+                cuesSection
             }
 
             if let rest = prescription.restSeconds {
                 restPill(rest)
             }
+
+            // Current target indicator
+            currentTargetLabel
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
@@ -173,10 +178,11 @@ struct PrescriptionCard: View {
 
     private func setChip(target: SetTarget, color: Color) -> some View {
         let isCompleted = isSetCompleted(target)
+        let isCurrent = isCurrentTarget(target)
         return VStack(spacing: 3) {
             Text("\(formatWeight(target.weight)) × \(target.reps)")
                 .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(isCompleted ? color : .white)
+                .foregroundStyle(isCompleted ? color : isCurrent ? .white : Color.white.opacity(0.7))
             if let rpe = target.rpe {
                 Text("@\(formatRPE(rpe))")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -187,11 +193,14 @@ struct PrescriptionCard: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isCompleted ? color.opacity(0.12) : Color.surface)
+                .fill(isCompleted ? color.opacity(0.12) : isCurrent ? color.opacity(0.18) : Color.surface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(isCompleted ? color.opacity(0.3) : Color.clear, lineWidth: 0.5)
+                .stroke(
+                    isCompleted ? color.opacity(0.3) : isCurrent ? color.opacity(0.6) : Color.clear,
+                    lineWidth: isCurrent ? 1.5 : 0.5
+                )
         )
         .overlay(alignment: .topTrailing) {
             if isCompleted {
@@ -201,6 +210,17 @@ struct PrescriptionCard: View {
                     .offset(x: 3, y: -3)
             }
         }
+    }
+
+    private func isCurrentTarget(_ target: SetTarget) -> Bool {
+        guard !isSetCompleted(target) else { return false }
+        let targetPhase: SetPhase
+        switch target.kind {
+        case .warmup: targetPhase = .warmup
+        case .working: targetPhase = .working
+        case .backoff: targetPhase = .backoff
+        }
+        return targetPhase == currentPhase && target.index == phaseSetIndex
     }
 
     private func isSetCompleted(_ target: SetTarget) -> Bool {
@@ -221,17 +241,83 @@ struct PrescriptionCard: View {
         }
     }
 
-    // MARK: - Form cue + rest
+    // MARK: - Current target label
 
-    private func formCueRow(_ cue: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "lightbulb.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.accentAmber)
-            Text(cue)
-                .font(.system(size: 13).italic())
-                .foregroundStyle(Color.white.opacity(0.8))
+    private var currentTargetLabel: some View {
+        let phaseLabel: String
+        let phaseColor: Color
+        switch currentPhase {
+        case .warmup:
+            phaseLabel = "NEXT: WARM-UP \(phaseSetIndex + 1) OF \(prescription.warmupSets.count)"
+            phaseColor = .textSecondary
+        case .working:
+            phaseLabel = "NEXT: WORKING SET \(phaseSetIndex + 1)"
+            phaseColor = .recoveryGreen
+        case .backoff:
+            phaseLabel = "NEXT: BACK-OFF \(phaseSetIndex + 1)"
+            phaseColor = .recoveryYellow
         }
+
+        return HStack(spacing: 6) {
+            Image(systemName: "arrow.right.circle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(phaseColor)
+            Text(phaseLabel)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .kerning(0.5)
+                .foregroundStyle(phaseColor)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            Capsule().fill(phaseColor.opacity(0.1))
+        )
+    }
+
+    // MARK: - Tempo + form cue
+
+    private var cuesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let tempo = prescription.tempo, !tempo.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "metronome.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.accentTeal)
+                    Text("Tempo: \(tempo)")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+
+                    if let desc = tempoDescription(tempo) {
+                        Text(desc)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                }
+            }
+
+            if let cue = prescription.formCue, !cue.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.accentAmber)
+                    Text(cue)
+                        .font(.system(size: 13).italic())
+                        .foregroundStyle(Color.white.opacity(0.8))
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.surface)
+        )
+    }
+
+    private func tempoDescription(_ tempo: String) -> String? {
+        let parts = tempo.components(separatedBy: "-").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count >= 3 else { return nil }
+        return "\(parts[0])s down · \(parts[1])s pause · \(parts[2])s up"
     }
 
     private func restPill(_ seconds: Int) -> some View {
