@@ -108,32 +108,20 @@ struct FitnessCoachApp: App {
     private func requestHealthKitAuthorization() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
 
-        let store = HKHealthStore()
+        Task {
+            do {
+                try await HealthKitManager.shared.requestAuthorization()
+                HealthKitManager.shared.enableBackgroundSync()
 
-        let readTypes: Set<HKObjectType> = [
-            HKQuantityType(.heartRate),
-            HKQuantityType(.heartRateVariabilitySDNN),
-            HKQuantityType(.restingHeartRate),
-            HKQuantityType(.stepCount),
-            HKQuantityType(.activeEnergyBurned),
-            HKQuantityType(.bodyMass),
-            HKQuantityType(.bodyFatPercentage),
-            HKQuantityType(.appleExerciseTime),
-            HKQuantityType(.respiratoryRate),
-            HKQuantityType(.vo2Max),
-            HKCategoryType(.sleepAnalysis),
-        ]
-
-        let writeTypes: Set<HKSampleType> = [
-            HKQuantityType(.bodyMass),
-            HKQuantityType(.activeEnergyBurned),
-        ]
-
-        store.requestAuthorization(toShare: writeTypes, read: readTypes) { success, error in
-            if let error {
-                print("[HealthKit] Authorization error: \(error.localizedDescription)")
-            } else {
-                print("[HealthKit] Authorization granted: \(success)")
+                // On first launch (or after a long gap), pull the last week so
+                // the dashboard sparkline and history view have data right away.
+                if HealthKitManager.shared.lastSyncDate == nil {
+                    try await HealthKitManager.shared.syncRecent(days: 7)
+                } else {
+                    try await HealthKitManager.shared.syncToSupabase()
+                }
+            } catch {
+                print("[HealthKit] Startup sync failed: \(error.localizedDescription)")
             }
         }
     }

@@ -12,8 +12,10 @@ struct SettingsView: View {
     @State private var backendURL = Config.backendURL
     @State private var apiToken = Config.appAPIToken
     @State private var isSyncing = false
+    @State private var isBackfilling = false
     @State private var syncStatus: StatusMessage?
     @State private var saveStatus: StatusMessage?
+    @State private var lastSyncAt: Date? = HealthKitManager.shared.lastSyncDate
 
     private let mesocycleService = MesocycleService()
 
@@ -125,9 +127,20 @@ struct SettingsView: View {
 
     private var healthCard: some View {
         settingsCard(title: "Apple Health") {
-            Text("Syncs today's HRV, sleep, heart rate, steps, weight, and body fat from Apple Health into your recovery log.")
+            Text("Syncs HRV, sleep, heart rate, steps, weight, body fat, and exercise minutes. Background sync updates Vaux automatically when new data lands.")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.textSecondary)
+
+            if let last = lastSyncAt {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.textTertiary)
+                    Text("Last synced \(Self.relativeFormatter.localizedString(for: last, relativeTo: Date()))")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.textSecondary)
+                }
+            }
 
             Button {
                 Haptic.medium()
@@ -151,13 +164,47 @@ struct SettingsView: View {
                         .fill(Gradients.cool)
                 )
             }
-            .disabled(isSyncing)
+            .disabled(isSyncing || isBackfilling)
+
+            Button {
+                Haptic.light()
+                Task { await backfillLastWeek() }
+            } label: {
+                HStack(spacing: 8) {
+                    if isBackfilling {
+                        ProgressView().tint(.white).scaleEffect(0.85)
+                    } else {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    Text(isBackfilling ? "Back-filling…" : "Back-fill last 7 days")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.surfaceRaised)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.cardBorder, lineWidth: 0.5)
+                )
+            }
+            .disabled(isSyncing || isBackfilling)
 
             if let status = syncStatus {
                 statusLabel(status)
             }
         }
     }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .short
+        return f
+    }()
 
     // MARK: - Backend
 
@@ -312,11 +359,27 @@ struct SettingsView: View {
         do {
             try await HealthKitManager.shared.syncToSupabase()
             syncStatus = StatusMessage(text: "Synced successfully", isError: false)
+            lastSyncAt = HealthKitManager.shared.lastSyncDate
             Haptic.success()
         } catch {
             syncStatus = StatusMessage(text: "Failed: \(error.localizedDescription)", isError: true)
             Haptic.error()
         }
         isSyncing = false
+    }
+
+    private func backfillLastWeek() async {
+        isBackfilling = true
+        syncStatus = StatusMessage(text: "Back-filling last 7 days…", isError: false)
+        do {
+            try await HealthKitManager.shared.syncRecent(days: 7)
+            syncStatus = StatusMessage(text: "Back-filled 7 days", isError: false)
+            lastSyncAt = HealthKitManager.shared.lastSyncDate
+            Haptic.success()
+        } catch {
+            syncStatus = StatusMessage(text: "Failed: \(error.localizedDescription)", isError: true)
+            Haptic.error()
+        }
+        isBackfilling = false
     }
 }
