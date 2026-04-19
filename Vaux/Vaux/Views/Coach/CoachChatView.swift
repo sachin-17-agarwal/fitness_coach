@@ -5,6 +5,7 @@
 // and markdown-rendered coach responses.
 
 import SwiftUI
+import Combine
 
 struct CoachChatView: View {
     @State private var viewModel = ChatViewModel()
