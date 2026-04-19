@@ -1,7 +1,5 @@
 // SetLogInput.swift
 // Vaux
-//
-// Structured set logging: weight stepper (±2.5 kg), rep stepper, RPE slider.
 
 import SwiftUI
 
@@ -11,14 +9,48 @@ struct SetLogInput: View {
     @Binding var rpe: Double
     let onLog: () -> Void
     let isLoading: Bool
+    var phase: SetPhase = .working
+
+    private var isWarmup: Bool { phase == .warmup }
+
+    private var phaseColor: Color {
+        switch phase {
+        case .warmup: return .textSecondary
+        case .working: return .recoveryGreen
+        case .backoff: return .recoveryYellow
+        }
+    }
+
+    private var buttonLabel: String {
+        switch phase {
+        case .warmup: return "Log warm-up"
+        case .working: return "Log set"
+        case .backoff: return "Log back-off"
+        }
+    }
+
+    private var buttonGradient: AnyShapeStyle {
+        switch phase {
+        case .warmup: return AnyShapeStyle(Color.surfaceRaised)
+        case .working: return AnyShapeStyle(Gradients.recovery)
+        case .backoff: return AnyShapeStyle(Gradients.cool)
+        }
+    }
+
+    private var buttonTextColor: Color {
+        phase == .warmup ? .white : .black
+    }
 
     var body: some View {
         VStack(spacing: 14) {
             HStack {
-                Text("LOG SET")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .kerning(1)
-                    .foregroundStyle(Color.textTertiary)
+                HStack(spacing: 6) {
+                    Circle().fill(phaseColor).frame(width: 6, height: 6)
+                    Text(phase.rawValue.uppercased())
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .kerning(1)
+                        .foregroundStyle(phaseColor)
+                }
                 Spacer()
             }
 
@@ -49,7 +81,9 @@ struct SetLogInput: View {
                 )
             }
 
-            RPESlider(value: $rpe)
+            if !isWarmup {
+                RPESlider(value: $rpe)
+            }
 
             Button(action: {
                 Haptic.medium()
@@ -57,22 +91,28 @@ struct SetLogInput: View {
             }) {
                 HStack(spacing: 8) {
                     if isLoading {
-                        ProgressView().tint(.black)
+                        ProgressView().tint(buttonTextColor)
                     } else {
-                        Image(systemName: "checkmark")
+                        Image(systemName: isWarmup ? "flame" : "checkmark")
                             .font(.system(size: 13, weight: .bold))
-                        Text("Log set")
+                        Text(buttonLabel)
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                     }
                 }
-                .foregroundStyle(.black)
+                .foregroundStyle(buttonTextColor)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Gradients.recovery)
+                        .fill(buttonGradient)
                 )
-                .shadow(color: Color.recoveryGreen.opacity(0.3), radius: 14, x: 0, y: 8)
+                .overlay {
+                    if isWarmup {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.cardBorder, lineWidth: 0.5)
+                    }
+                }
+                .shadow(color: isWarmup ? .clear : phaseColor.opacity(0.3), radius: 14, x: 0, y: 8)
             }
             .disabled(isLoading)
         }
