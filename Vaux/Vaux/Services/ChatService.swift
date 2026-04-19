@@ -56,14 +56,14 @@ final class ChatService: Sendable {
     /// assistant's response.  Also persists both the user and assistant
     /// messages to the `conversations` table.
     func sendMessage(_ text: String) async throws -> ChatResponse {
-        // 1. Save user message
-        try await saveMessage(role: "user", content: text)
+        // 1. Save user message (best-effort — don't block the backend call)
+        try? await saveMessage(role: "user", content: text)
 
-        // 2. Call backend
+        // 2. Call backend (this is the critical path)
         let chatResponse = try await callBackend(text)
 
-        // 3. Save assistant reply
-        try await saveMessage(role: "assistant", content: chatResponse.response)
+        // 3. Save assistant reply (best-effort)
+        try? await saveMessage(role: "assistant", content: chatResponse.response)
 
         return chatResponse
     }

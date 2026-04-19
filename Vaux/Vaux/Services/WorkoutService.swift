@@ -108,7 +108,8 @@ final class WorkoutService: Sendable {
             "workout_sessions", body: body
         )
 
-        // Persist workout state to memory table
+        // Best-effort: persist workout state to memory table.
+        // Session row is already created above — don't lose it if state fails.
         let state = WorkoutState(
             workoutMode: "active",
             currentSessionId: sessionId.uuidString,
@@ -116,7 +117,7 @@ final class WorkoutService: Sendable {
             currentExerciseName: "",
             sessionStartTime: now
         )
-        try await setWorkoutState(state)
+        try? await setWorkoutState(state)
 
         return session
     }
@@ -180,7 +181,7 @@ final class WorkoutService: Sendable {
             }
         }
 
-        // Reset workout state to inactive
+        // Best-effort: reset workout state to inactive
         let inactiveState = WorkoutState(
             workoutMode: "inactive",
             currentSessionId: "",
@@ -188,7 +189,7 @@ final class WorkoutService: Sendable {
             currentExerciseName: "",
             sessionStartTime: ""
         )
-        try await setWorkoutState(inactiveState)
+        try? await setWorkoutState(inactiveState)
 
         return WorkoutSummary(
             tonnage: tonnage,
@@ -230,9 +231,10 @@ final class WorkoutService: Sendable {
             "workout_sets", body: body
         )
 
-        // Advance set counter and update exercise name in memory
-        try await setMemory(key: "current_set_number", value: String(setNumber + 1))
-        try await setMemory(key: "current_exercise_name", value: exercise)
+        // Best-effort: advance set counter and exercise name in memory.
+        // The set is already persisted above — don't lose it if state update fails.
+        try? await setMemory(key: "current_set_number", value: String(setNumber + 1))
+        try? await setMemory(key: "current_exercise_name", value: exercise)
 
         return logged
     }

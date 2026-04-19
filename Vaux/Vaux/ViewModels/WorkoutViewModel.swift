@@ -67,29 +67,32 @@ final class WorkoutViewModel {
             errorMessage = "Session create failed: \(error.localizedDescription)"
         }
 
-        do {
-            let prompt = "I'm starting my \(type) session. Please prescribe my exercises with sets, reps, weight, and RPE targets."
-            let response = try await chatService.sendMessage(prompt)
+        // Fetch AI prescription (best-effort — workout can proceed without it)
+        if currentSession != nil {
+            do {
+                let prompt = "I'm starting my \(type) session. Please prescribe my exercises with sets, reps, weight, and RPE targets."
+                let response = try await chatService.sendMessage(prompt)
 
-            let assistantMsg = ChatMessage(
-                id: UUID(),
-                date: RecoveryService.todayString(),
-                role: "assistant",
-                content: response.response,
-                createdAt: ISO8601DateFormatter().string(from: Date())
-            )
-            coachMessages.append(assistantMsg)
+                let assistantMsg = ChatMessage(
+                    id: UUID(),
+                    date: RecoveryService.todayString(),
+                    role: "assistant",
+                    content: response.response,
+                    createdAt: ISO8601DateFormatter().string(from: Date())
+                )
+                coachMessages.append(assistantMsg)
 
-            allPrescriptions = PrescriptionParser.parse(response.response)
-            currentPrescription = allPrescriptions.first
+                allPrescriptions = PrescriptionParser.parse(response.response)
+                currentPrescription = allPrescriptions.first
 
-            if let rx = currentPrescription {
-                inputWeight = rx.targetWeightKg ?? 0
-                inputReps = rx.targetReps ?? 8
-                inputRPE = rx.targetRpe ?? 8.0
+                if let rx = currentPrescription {
+                    inputWeight = rx.targetWeightKg ?? 0
+                    inputReps = rx.targetReps ?? 8
+                    inputRPE = rx.targetRpe ?? 8.0
+                }
+            } catch {
+                print("Coach prescription failed: \(error)")
             }
-        } catch {
-            errorMessage = "Coach unavailable: \(error.localizedDescription)"
         }
         isLoading = false
     }
@@ -97,10 +100,12 @@ final class WorkoutViewModel {
     func logSet() async {
         guard let session = currentSession, let sessionId = session.id else { return }
         isLoading = true
+        errorMessage = nil
 
         setCount += 1
         let exercise = currentPrescription?.exerciseName ?? "Unknown"
 
+        // 1. Log the set to DB — this is the critical operation
         do {
             let set = try await workoutService.logSet(
                 sessionId: sessionId,
@@ -112,8 +117,15 @@ final class WorkoutViewModel {
             )
             loggedSets.append(set)
             totalTonnage += inputWeight * Double(inputReps)
+        } catch {
+            setCount -= 1
+            errorMessage = "Failed to log set: \(error.localizedDescription)"
+            isLoading = false
+            return
+        }
 
-            // Check PR
+        // 2. Check PR (best-effort)
+        do {
             let prResult = try await workoutService.checkPR(
                 exercise: exercise,
                 weight: inputWeight,
@@ -123,14 +135,20 @@ final class WorkoutViewModel {
                 latestPR = prResult
                 showPRCelebration = true
                 triggerHaptic(.success)
-
-                // Auto-dismiss PR celebration
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
                     self?.showPRCelebration = false
                 }
             }
+        } catch {
+            print("PR check failed: \(error)")
+        }
 
-            // Send set log to AI for feedback
+        // 3. Start rest timer immediately — don't wait for AI
+        let rest = currentPrescription?.restSeconds ?? 120
+        startRestTimer(seconds: rest)
+
+        // 4. Send set log to AI for feedback (non-blocking for the UI)
+        do {
             let setMsg = "Logged: \(exercise) - \(inputWeight.weightString) x \(inputReps) @ RPE \(inputRPE.oneDecimal). Set \(setCount). What's next?"
             let response = try await chatService.sendMessage(setMsg)
 
@@ -143,7 +161,6 @@ final class WorkoutViewModel {
             )
             coachMessages.append(assistantMsg)
 
-            // Update prescription from response
             let newPrescriptions = PrescriptionParser.parse(response.response)
             if let next = newPrescriptions.first {
                 currentPrescription = next
@@ -151,13 +168,8 @@ final class WorkoutViewModel {
                 inputReps = next.targetReps ?? inputReps
                 inputRPE = next.targetRpe ?? inputRPE
             }
-
-            // Start rest timer
-            let rest = currentPrescription?.restSeconds ?? 120
-            startRestTimer(seconds: rest)
-
         } catch {
-            errorMessage = error.localizedDescription
+            print("Coach feedback failed: \(error)")
         }
         isLoading = false
     }
