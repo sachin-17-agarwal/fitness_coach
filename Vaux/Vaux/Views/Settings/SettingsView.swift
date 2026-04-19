@@ -49,20 +49,14 @@ struct SettingsView: View {
 
     private var profileHeader: some View {
         HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(Gradients.cool)
-                    .frame(width: 56, height: 56)
-                Text("V")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            }
+            VauxLogo(size: 48)
+                .shadow(color: .recoveryGreen.opacity(0.4), radius: 12, x: 0, y: 4)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("Vaux Coach")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text("Vaux")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
-                Text("AI-driven training")
+                Text("AI Fitness Coach")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.textSecondary)
             }
@@ -229,10 +223,13 @@ struct SettingsView: View {
     // MARK: - About
 
     private var aboutCard: some View {
-        settingsCard(title: "About") {
-            infoRow("Version", "1.0.0")
-            Divider().background(Color.cardBorder)
-            infoRow("Coach", "Claude Sonnet 4.6")
+        VStack(spacing: 14) {
+            settingsCard(title: "About") {
+                infoRow("Version", "1.0.0")
+                Divider().background(Color.cardBorder)
+                infoRow("Coach", "Claude Sonnet 4.6")
+            }
+            VauxBrandFooter()
         }
     }
 

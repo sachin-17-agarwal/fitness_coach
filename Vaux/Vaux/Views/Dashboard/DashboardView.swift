@@ -98,9 +98,12 @@ struct DashboardView: View {
                 Text(greeting)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Color.textSecondary)
-                Text("Dashboard")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                HStack(spacing: 8) {
+                    VauxLogo(size: 28)
+                    Text("Vaux")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                }
             }
             Spacer()
             if viewModel.currentStreak > 0 {
