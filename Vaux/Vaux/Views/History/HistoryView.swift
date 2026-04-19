@@ -97,9 +97,7 @@ struct HistoryView: View {
                     }
                 }
 
-                if !viewModel.sessions.isEmpty {
-                    ProgressionChart(sessions: viewModel.sessions)
-                }
+                ProgressionChart()
             }
         }
     }

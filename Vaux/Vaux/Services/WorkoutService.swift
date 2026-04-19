@@ -390,6 +390,38 @@ final class WorkoutService: Sendable {
         )
     }
 
+    // MARK: - Exercise history (for progression charts)
+
+    func getExerciseHistory(exercise: String, days: Int = 90) async throws -> [WorkoutSet] {
+        let since = Self.dateString(daysAgo: days)
+        return try await client.fetch(
+            "workout_sets",
+            query: [
+                "exercise": "eq.\(exercise)",
+                "date": "gte.\(since)",
+            ],
+            order: "date.asc,set_number.asc"
+        )
+    }
+
+    func getDistinctExercises(days: Int = 90) async throws -> [String] {
+        let since = Self.dateString(daysAgo: days)
+        let sets: [WorkoutSet] = try await client.fetch(
+            "workout_sets",
+            query: ["date": "gte.\(since)"],
+            select: "exercise",
+            order: "date.desc"
+        )
+        var seen = Set<String>()
+        var result: [String] = []
+        for s in sets {
+            let name = s.exercise
+            if name.count > 40 || name.contains("I ") || name.contains("i ") { continue }
+            if seen.insert(name).inserted { result.append(name) }
+        }
+        return result.sorted()
+    }
+
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"

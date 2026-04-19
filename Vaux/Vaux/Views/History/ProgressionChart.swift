@@ -7,7 +7,6 @@ import SwiftUI
 import Charts
 
 struct ProgressionChart: View {
-    let sessions: [WorkoutSession]
     @State private var selectedExercise = ""
     @State private var setData: [WorkoutSet] = []
     @State private var availableExercises: [String] = []
@@ -17,12 +16,20 @@ struct ProgressionChart: View {
     private var chartPoints: [TrendDataPoint] {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
-        return setData.compactMap { set in
-            guard let weight = set.actualWeightKg,
-                  let dateStr = set.date,
-                  let date = f.date(from: dateStr) else { return nil }
+
+        var bestByDate: [String: Double] = [:]
+        for set in setData {
+            if set.isWarmup == true { continue }
+            guard let weight = set.actualWeightKg, weight > 0,
+                  let dateStr = set.date else { continue }
+            bestByDate[dateStr] = max(bestByDate[dateStr] ?? 0, weight)
+        }
+
+        return bestByDate.compactMap { dateStr, weight in
+            guard let date = f.date(from: dateStr) else { return nil }
             return TrendDataPoint(date: date, value: weight)
         }
+        .sorted { $0.date < $1.date }
     }
 
     var body: some View {
@@ -138,14 +145,7 @@ struct ProgressionChart: View {
     }
 
     private func loadExercises() async {
-        var exercises = Set<String>()
-        for session in sessions {
-            guard let id = session.id else { continue }
-            if let sets = try? await workoutService.fetchSets(sessionId: id) {
-                for s in sets { exercises.insert(s.exercise) }
-            }
-        }
-        availableExercises = exercises.sorted()
+        availableExercises = (try? await workoutService.getDistinctExercises()) ?? []
         if let first = availableExercises.first, selectedExercise.isEmpty {
             selectedExercise = first
             await loadSetsForExercise()
@@ -154,6 +154,6 @@ struct ProgressionChart: View {
 
     private func loadSetsForExercise() async {
         guard !selectedExercise.isEmpty else { return }
-        setData = (try? await workoutService.getLastSessionSets(exercise: selectedExercise)) ?? []
+        setData = (try? await workoutService.getExerciseHistory(exercise: selectedExercise)) ?? []
     }
 }

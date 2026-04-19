@@ -109,19 +109,8 @@ struct CoachChatView: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Spacer()
-            ZStack {
-                Circle()
-                    .fill(Gradients.cool)
-                    .frame(width: 72, height: 72)
-                    .blur(radius: 18)
-                    .opacity(0.6)
-                Circle()
-                    .fill(Gradients.cool)
-                    .frame(width: 64, height: 64)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundStyle(.white)
-            }
+            VauxLogo(size: 64)
+                .shadow(color: .recoveryGreen.opacity(0.35), radius: 20, x: 0, y: 8)
 
             VStack(spacing: 6) {
                 Text("Ask your coach")

@@ -11,7 +11,6 @@ import HealthKit
 @main
 struct FitnessCoachApp: App {
     @State private var selectedTab: Tab = .dashboard
-    @State private var showBriefing = false
 
     init() {
         configureAppearance()
@@ -57,19 +56,6 @@ struct FitnessCoachApp: App {
                 .tint(Color.recoveryGreen)
                 .preferredColorScheme(.dark)
             }
-            .sheet(isPresented: $showBriefing) {
-                MorningBriefingView(
-                    onStartWorkout: { _ in
-                        showBriefing = false
-                        selectedTab = .workout
-                    },
-                    onOpenChat: {
-                        showBriefing = false
-                        selectedTab = .coach
-                    }
-                )
-            }
-            .task { await presentDailyBriefingIfNeeded() }
         }
     }
 
@@ -77,18 +63,6 @@ struct FitnessCoachApp: App {
 
     enum Tab: Hashable {
         case dashboard, coach, workout, history, settings
-    }
-
-    // MARK: - Daily briefing
-
-    @MainActor
-    private func presentDailyBriefingIfNeeded() async {
-        let service = BriefingService()
-        let hour = Calendar.current.component(.hour, from: Date())
-        guard hour >= 5 && hour < 12 else { return }
-        guard !service.hasBeenShownToday() else { return }
-        try? await Task.sleep(nanoseconds: 600_000_000)
-        showBriefing = true
     }
 
     // MARK: - Appearance
