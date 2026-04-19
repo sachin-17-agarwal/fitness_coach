@@ -393,7 +393,7 @@ class RegressionTests(unittest.TestCase):
 
     def test_save_memory_passes_on_conflict_key(self):
         # The upsert must supply on_conflict="key" so we update existing rows
-        # rather than inserting duplicates.
+        # rather than inserting duplicates. Uses a single batched upsert.
         from unittest.mock import MagicMock
         fake_supabase = MagicMock()
         fake_table = MagicMock()
@@ -405,10 +405,12 @@ class RegressionTests(unittest.TestCase):
         with patch.object(memory_module, "get_supabase", return_value=fake_supabase):
             memory_module.save_memory({"mesocycle_week": 2, "mesocycle_day": 3})
 
-        # Both upsert calls should include on_conflict="key"
-        for call in fake_table.upsert.call_args_list:
-            self.assertEqual(call.kwargs.get("on_conflict"), "key")
-        self.assertEqual(len(fake_table.upsert.call_args_list), 2)
+        # Single batched upsert with on_conflict="key"
+        self.assertEqual(len(fake_table.upsert.call_args_list), 1)
+        call = fake_table.upsert.call_args_list[0]
+        self.assertEqual(call.kwargs.get("on_conflict"), "key")
+        rows = call.args[0] if call.args else call.kwargs.get("data", [])
+        self.assertEqual(len(rows), 2)
 
 
 if __name__ == "__main__":

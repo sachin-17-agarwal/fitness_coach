@@ -1,3 +1,8 @@
+// RestTimer.swift
+// Vaux
+//
+// Full-screen rest countdown ring with skip + add-15s controls.
+
 import SwiftUI
 
 struct RestTimer: View {
@@ -7,59 +12,101 @@ struct RestTimer: View {
     let onSkip: () -> Void
 
     @State private var timer: Timer?
+    @State private var pulse: Bool = false
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.7)
-                .ignoresSafeArea()
+            Color.black.opacity(0.82).ignoresSafeArea()
 
-            VStack(spacing: 20) {
+            VStack(spacing: 22) {
+                Text("REST")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .kerning(2.5)
+                    .foregroundStyle(Color.textTertiary)
+
                 ZStack {
                     Circle()
-                        .stroke(Color.cardBorder, lineWidth: 8)
-                        .frame(width: 180, height: 180)
+                        .stroke(ringColor.opacity(0.18), lineWidth: 10)
+                        .frame(width: 220, height: 220)
 
                     Circle()
                         .trim(from: 0, to: progress)
-                        .stroke(timerColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                        .frame(width: 180, height: 180)
+                        .stroke(ringColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        .frame(width: 220, height: 220)
                         .rotationEffect(.degrees(-90))
                         .animation(.linear(duration: 1), value: remainingSeconds)
+                        .shadow(color: ringColor.opacity(0.6), radius: 14, x: 0, y: 0)
 
                     VStack(spacing: 4) {
                         Text(timeString)
-                            .font(.system(size: 48, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
-                        Text("REST")
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(.gray)
+                            .font(.system(size: 56, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .contentTransition(.numericText())
+                        Text(statusText)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .kerning(1)
+                            .foregroundStyle(ringColor)
                     }
                 }
+                .scaleEffect(pulse ? 1.015 : 1.0)
+                .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: pulse)
 
-                Button(action: onSkip) {
-                    Text("Skip")
-                        .font(.headline)
-                        .foregroundColor(.gray)
-                        .padding(.horizontal, 32)
+                HStack(spacing: 10) {
+                    Button {
+                        Haptic.light()
+                        remainingSeconds += 15
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                            Text("+15s")
+                        }
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.cardBackground)
-                        .clipShape(Capsule())
+                        .background(Capsule().fill(Color.surface))
+                    }
+
+                    Button {
+                        Haptic.medium()
+                        timer?.invalidate()
+                        onSkip()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "forward.fill")
+                            Text("Skip")
+                        }
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color.recoveryGreen))
+                    }
                 }
             }
         }
-        .onAppear { startTimer() }
+        .onAppear {
+            pulse = true
+            startTimer()
+        }
         .onDisappear { timer?.invalidate() }
     }
 
     private var progress: Double {
         guard totalSeconds > 0 else { return 0 }
-        return Double(remainingSeconds) / Double(totalSeconds)
+        return min(1, max(0, Double(remainingSeconds) / Double(totalSeconds)))
     }
 
-    private var timerColor: Color {
-        if remainingSeconds <= 10 { return Color.recoveryRed }
-        if remainingSeconds <= 30 { return Color.recoveryYellow }
-        return Color.recoveryGreen
+    private var ringColor: Color {
+        if remainingSeconds <= 10 { return .recoveryRed }
+        if remainingSeconds <= 30 { return .recoveryYellow }
+        return .recoveryGreen
+    }
+
+    private var statusText: String {
+        if remainingSeconds <= 10 { return "ALMOST" }
+        if remainingSeconds <= 30 { return "GET READY" }
+        return "RECOVER"
     }
 
     private var timeString: String {
@@ -74,6 +121,7 @@ struct RestTimer: View {
                 remainingSeconds -= 1
             } else {
                 timer?.invalidate()
+                Haptic.warning()
                 isActive = false
             }
         }

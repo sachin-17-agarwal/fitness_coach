@@ -59,11 +59,15 @@ final class WorkoutViewModel {
         isLoading = true
         startTime = Date()
         errorMessage = nil
+        startDurationTimer()
 
         do {
             currentSession = try await workoutService.startSession(type: type)
+        } catch {
+            errorMessage = "Session create failed: \(error.localizedDescription)"
+        }
 
-            // Ask AI for the workout prescription
+        do {
             let prompt = "I'm starting my \(type) session. Please prescribe my exercises with sets, reps, weight, and RPE targets."
             let response = try await chatService.sendMessage(prompt)
 
@@ -76,20 +80,16 @@ final class WorkoutViewModel {
             )
             coachMessages.append(assistantMsg)
 
-            // Parse prescriptions
             allPrescriptions = PrescriptionParser.parse(response.response)
             currentPrescription = allPrescriptions.first
 
-            // Pre-fill input from prescription
             if let rx = currentPrescription {
                 inputWeight = rx.targetWeightKg ?? 0
                 inputReps = rx.targetReps ?? 8
                 inputRPE = rx.targetRpe ?? 8.0
             }
-
-            startDurationTimer()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Coach unavailable: \(error.localizedDescription)"
         }
         isLoading = false
     }
@@ -200,22 +200,28 @@ final class WorkoutViewModel {
     }
 
     func endWorkout() async {
-        guard let session = currentSession, let sessionId = session.id else { return }
-
         stopTimers()
 
+        if let session = currentSession, let sessionId = session.id {
+            do {
+                try await workoutService.endSession(id: sessionId)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+
+        summary = WorkoutSummary(
+            tonnage: totalTonnage,
+            totalSets: setCount,
+            duration: sessionDuration,
+            prs: latestPR != nil ? [latestPR!] : []
+        )
+        showSummary = true
+
         do {
-            let result = try await workoutService.endSession(id: sessionId)
-            summary = WorkoutSummary(
-                tonnage: totalTonnage,
-                totalSets: setCount,
-                duration: sessionDuration,
-                prs: latestPR != nil ? [latestPR!] : []
-            )
-            showSummary = true
             try await mesocycleService.advance()
         } catch {
-            errorMessage = error.localizedDescription
+            print("Mesocycle advance failed: \(error)")
         }
     }
 

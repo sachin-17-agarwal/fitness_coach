@@ -4,6 +4,16 @@ parse_workouts.py — Parse Health Auto Export workout data.
 
 from datetime import datetime
 
+from data import now_local
+
+
+def _today_str() -> str:
+    try:
+        return now_local().strftime("%Y-%m-%d")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d")
+
+
 def _parse_datetime(raw: str):
     if not raw:
         return None
@@ -46,7 +56,7 @@ def parse_workouts(payload: dict) -> list:
             start_dt = _parse_datetime(start_raw)
             end_dt = _parse_datetime(end_raw)
 
-            date = start_dt.strftime("%Y-%m-%d") if start_dt else datetime.now().strftime("%Y-%m-%d")
+            date = start_dt.strftime("%Y-%m-%d") if start_dt else _today_str()
 
             # Duration — field is in seconds, convert to minutes
             duration_seconds = extract_qty(w.get("duration"))
@@ -99,7 +109,16 @@ def save_workouts(parsed: list):
         return
     from data import get_supabase
     supabase = get_supabase()
+    if not supabase:
+        print("⚠️ No Supabase client available; skipping workout save.")
+        return
     for w in parsed:
+        # Postgres treats NULL as distinct in unique indexes, so an on_conflict
+        # composite with a NULL member will duplicate rather than upsert.
+        # Require start_time before writing.
+        if not w.get("start_time") or not w.get("date") or not w.get("workout_type"):
+            print(f"⚠️ Skipping workout with missing key fields: {w}")
+            continue
         try:
             supabase.table("apple_workouts").upsert(
                 w, on_conflict="date,workout_type,start_time"

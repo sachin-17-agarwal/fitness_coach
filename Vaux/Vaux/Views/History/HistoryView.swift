@@ -1,77 +1,297 @@
+// HistoryView.swift
+// Vaux
+//
+// Training + recovery history with a custom segmented control, workout
+// heatmap, and progression charts.
+
 import SwiftUI
 
 struct HistoryView: View {
     @State private var viewModel = HistoryViewModel()
-    @State private var selectedTab = 0
+    @State private var selectedTab: Tab = .training
+
+    enum Tab: String, CaseIterable {
+        case training = "Training"
+        case recovery = "Recovery"
+    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker("View", selection: $selectedTab) {
-                    Text("Workouts").tag(0)
-                    Text("Recovery").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding()
+            ZStack {
+                Color.background.ignoresSafeArea()
 
-                ScrollView {
-                    switch selectedTab {
-                    case 0:
-                        workoutsView
-                    default:
-                        recoveryView
+                VStack(spacing: 0) {
+                    tabSelector
+                        .padding(.horizontal, 18)
+                        .padding(.top, 4)
+                        .padding(.bottom, 14)
+
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 16) {
+                            switch selectedTab {
+                            case .training: trainingContent
+                            case .recovery: recoveryContent
+                            }
+                            Spacer(minLength: 20)
+                        }
+                        .padding(.horizontal, 18)
                     }
+                    .refreshable { await viewModel.load() }
                 }
             }
-            .background(Color.background)
             .navigationTitle("History")
-            .navigationBarTitleDisplayMode(.inline)
-            .refreshable { await viewModel.load() }
+            .navigationBarTitleDisplayMode(.large)
             .task { await viewModel.load() }
         }
     }
 
-    private var workoutsView: some View {
-        LazyVStack(spacing: 12) {
-            if viewModel.sessions.isEmpty && !viewModel.isLoading {
-                Text("No workout sessions yet")
-                    .foregroundColor(.gray)
-                    .padding(.top, 40)
-            }
-            ForEach(viewModel.sessions) { session in
-                SessionCard(session: session)
-            }
+    // MARK: - Tab selector
 
-            if !viewModel.sessions.isEmpty {
-                ProgressionChart(sessions: viewModel.sessions)
-                    .padding(.top, 8)
+    private var tabSelector: some View {
+        HStack(spacing: 4) {
+            ForEach(Tab.allCases, id: \.self) { tab in
+                Button {
+                    Haptic.selection()
+                    withAnimation(Motion.snappy) { selectedTab = tab }
+                } label: {
+                    Text(tab.rawValue)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(selectedTab == tab ? .black : Color.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            ZStack {
+                                if selectedTab == tab {
+                                    Capsule()
+                                        .fill(Gradients.recovery)
+                                        .matchedGeometryEffect(id: "tabBG", in: tabNamespace)
+                                }
+                            }
+                        )
+                }
             }
         }
-        .padding(.horizontal)
+        .padding(4)
+        .background(
+            Capsule().fill(Color.surface)
+        )
     }
 
-    private var recoveryView: some View {
-        VStack(spacing: 16) {
-            let hrvData = viewModel.recoveryHistory.compactMap { r -> TrendDataPoint? in
-                guard let hrv = r.hrv else { return nil }
-                let f = DateFormatter()
-                f.dateFormat = "yyyy-MM-dd"
-                guard let d = f.date(from: r.date) else { return nil }
-                return TrendDataPoint(date: d, value: hrv)
-            }
-            TrendChart(title: "HRV", data: hrvData, color: Color.recoveryGreen, unit: "ms")
+    @Namespace private var tabNamespace
 
-            let weightData = viewModel.recoveryHistory.compactMap { r -> TrendDataPoint? in
-                guard let w = r.weightKg else { return nil }
-                let f = DateFormatter()
-                f.dateFormat = "yyyy-MM-dd"
-                guard let d = f.date(from: r.date) else { return nil }
-                return TrendDataPoint(date: d, value: w)
-            }
-            TrendChart(title: "Weight", data: weightData, color: Color.recoveryYellow, unit: "kg")
+    // MARK: - Training
 
-            RecoveryTimeline(history: viewModel.recoveryHistory)
+    private var trainingContent: some View {
+        Group {
+            heatmapCard
+
+            summaryRow
+
+            if viewModel.sessions.isEmpty && !viewModel.isLoading {
+                emptyTraining
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionHeader(title: "Recent sessions")
+                    ForEach(viewModel.sessions) { session in
+                        SessionCard(session: session)
+                    }
+                }
+
+                if !viewModel.sessions.isEmpty {
+                    ProgressionChart(sessions: viewModel.sessions)
+                }
+            }
         }
-        .padding(.horizontal)
+    }
+
+    private var heatmapCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("TRAINING ACTIVITY")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .kerning(1)
+                    .foregroundStyle(Color.textTertiary)
+                Spacer()
+                Text("Last 8 weeks")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.textSecondary)
+            }
+
+            WorkoutHeatmap(sessions: viewModel.sessions)
+        }
+        .darkCard(padding: 14, cornerRadius: 16)
+    }
+
+    private var summaryRow: some View {
+        HStack(spacing: 10) {
+            miniStat(value: "\(viewModel.sessions.count)", label: "sessions", color: .recoveryGreen, icon: "figure.strengthtraining.traditional")
+            miniStat(value: totalTonnageString, label: "tonnage", color: .accentPurple, icon: "scalemass.fill")
+            miniStat(value: "\(setCount)", label: "sets", color: .accentAmber, icon: "number")
+        }
+    }
+
+    private func miniStat(value: String, label: String, color: Color, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.14))
+                    .frame(width: 26, height: 26)
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(color)
+            }
+            Text(value)
+                .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white)
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .kerning(0.8)
+                .foregroundStyle(Color.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .darkCard(padding: 12, cornerRadius: 14)
+    }
+
+    private var emptyTraining: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "figure.strengthtraining.traditional")
+                .font(.system(size: 30))
+                .foregroundStyle(Color.textTertiary)
+            Text("No sessions yet")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.textSecondary)
+            Text("Start your first workout to see history here")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.textTertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+    }
+
+    // MARK: - Recovery
+
+    private var recoveryContent: some View {
+        Group {
+            let hrvData = trendPoints(\.hrv)
+            let weightData = trendPoints(\.weightKg)
+            let rhrData = trendPoints(\.restingHr)
+
+            if !hrvData.isEmpty {
+                TrendChart(title: "HRV", data: hrvData, color: .recoveryGreen, unit: "ms")
+            }
+            if !rhrData.isEmpty {
+                TrendChart(title: "Resting HR", data: rhrData, color: .recoveryRed, unit: "bpm")
+            }
+            if !weightData.isEmpty {
+                TrendChart(title: "Weight", data: weightData, color: .accentAmber, unit: "kg")
+            }
+
+            if viewModel.recoveryHistory.isEmpty && !viewModel.isLoading {
+                VStack(spacing: 8) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 30))
+                        .foregroundStyle(Color.textTertiary)
+                    Text("No recovery data")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.textSecondary)
+                    Text("Sync Apple Health or log a weight to get started")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.textTertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionHeader(title: "Daily log")
+                    RecoveryTimeline(history: viewModel.recoveryHistory)
+                }
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func trendPoints(_ key: KeyPath<Recovery, Double?>) -> [TrendDataPoint] {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return viewModel.recoveryHistory.compactMap { r in
+            guard let value = r[keyPath: key], let date = f.date(from: r.date) else { return nil }
+            return TrendDataPoint(date: date, value: value)
+        }
+    }
+
+    private var totalTonnageString: String {
+        let total = viewModel.sessions.compactMap(\.tonnageKg).reduce(0, +)
+        if total >= 1000 { return String(format: "%.1ft", total / 1000) }
+        return "\(Int(total)) kg"
+    }
+
+    private var setCount: Int {
+        viewModel.sessionSets.values.reduce(0) { $0 + $1.count }
+    }
+}
+
+// MARK: - Heatmap
+
+struct WorkoutHeatmap: View {
+    let sessions: [WorkoutSession]
+
+    private static let weeks = 8
+
+    private var cells: [(date: Date, intensity: Double)] {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let sessionByDate: [String: WorkoutSession] = sessions.reduce(into: [:]) { map, s in
+            map[s.date] = s
+        }
+
+        let today = Calendar.current.startOfDay(for: Date())
+        let startOfWeek = Calendar.current.date(byAdding: .day, value: -(Self.weeks * 7 - 1), to: today) ?? today
+
+        return (0..<Self.weeks * 7).map { offset in
+            let date = Calendar.current.date(byAdding: .day, value: offset, to: startOfWeek) ?? today
+            let key = f.string(from: date)
+            let intensity: Double
+            if let s = sessionByDate[key] {
+                if let tonnage = s.tonnageKg, tonnage > 0 {
+                    intensity = min(1, tonnage / 6000)
+                } else {
+                    intensity = 0.35
+                }
+            } else {
+                intensity = 0
+            }
+            return (date, intensity)
+        }
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let cellSize = (geo.size.width - CGFloat(Self.weeks - 1) * 4) / CGFloat(Self.weeks)
+            HStack(alignment: .top, spacing: 4) {
+                ForEach(0..<Self.weeks, id: \.self) { weekIdx in
+                    VStack(spacing: 4) {
+                        ForEach(0..<7, id: \.self) { dayIdx in
+                            let cellIdx = weekIdx * 7 + dayIdx
+                            let cell = cells[cellIdx]
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(cellColor(cell.intensity))
+                                .frame(width: cellSize, height: cellSize)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(height: 7 * 14 + 6 * 4)
+    }
+
+    private func cellColor(_ intensity: Double) -> Color {
+        if intensity <= 0 { return Color.surface }
+        if intensity < 0.3 { return Color.recoveryGreen.opacity(0.25) }
+        if intensity < 0.6 { return Color.recoveryGreen.opacity(0.55) }
+        return Color.recoveryGreen
     }
 }

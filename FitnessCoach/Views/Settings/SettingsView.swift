@@ -4,8 +4,10 @@ struct SettingsView: View {
     @State private var mesocycleWeek = 1
     @State private var mesocycleDay = 1
     @State private var backendURL = Config.backendURL
+    @State private var apiToken = Config.appAPIToken
     @State private var isSyncing = false
     @State private var syncStatus = ""
+    @State private var saveStatus = ""
 
     private let mesocycleService = MesocycleService()
 
@@ -19,10 +21,13 @@ struct SettingsView: View {
                         .foregroundColor(Color.recoveryGreen)
 
                     Button("Save Mesocycle") {
-                        Task {
-                            let state = MesocycleState(day: mesocycleDay, week: mesocycleWeek)
-                            try? await mesocycleService.saveState(state)
-                        }
+                        Task { await saveMesocycle() }
+                    }
+
+                    if !saveStatus.isEmpty {
+                        Text(saveStatus)
+                            .font(.caption)
+                            .foregroundColor(saveStatus.hasPrefix("Failed") ? .red : .gray)
                     }
                 }
 
@@ -30,8 +35,13 @@ struct SettingsView: View {
                     TextField("Railway URL", text: $backendURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    SecureField("API Token", text: $apiToken)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                     Button("Save") {
                         UserDefaults.standard.set(backendURL, forKey: "backendURL")
+                        UserDefaults.standard.set(apiToken, forKey: "appAPIToken")
+                        saveStatus = "Backend settings saved"
                     }
                 }
 
@@ -83,6 +93,17 @@ struct SettingsView: View {
         if let state = try? await mesocycleService.loadState() {
             mesocycleWeek = state.week
             mesocycleDay = state.day
+        }
+    }
+
+    private func saveMesocycle() async {
+        saveStatus = "Saving..."
+        do {
+            let state = MesocycleState(day: mesocycleDay, week: mesocycleWeek)
+            try await mesocycleService.saveState(state)
+            saveStatus = "Saved"
+        } catch {
+            saveStatus = "Failed: \(error.localizedDescription)"
         }
     }
 

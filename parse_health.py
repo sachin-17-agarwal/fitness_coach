@@ -4,6 +4,43 @@ parse_health.py - Parse Health Auto Export payloads into flat daily summaries.
 
 from datetime import datetime, timedelta
 
+from data import now_local
+
+
+def _today_str() -> str:
+    try:
+        return now_local().strftime("%Y-%m-%d")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d")
+
+
+def _normalize_weight_kg(value):
+    """Convert to kg. Source may send lb — detect via magnitude (>150 → lb)."""
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0 or v > 500:  # sanity bounds (0–500 covers anything reasonable)
+        return None
+    # Apple Health stores bodyMass in the user's locale unit. A value above
+    # 150 is almost certainly pounds for an adult (~68kg) vs kg (~68–150 kg).
+    return round(v / 2.205, 2) if v > 150 else round(v, 2)
+
+
+def _normalize_body_fat_pct(value):
+    """Convert to percent. Source may send fraction (0.0–1.0) or percent."""
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v < 0 or v > 100:
+        return None
+    return round(v * 100, 1) if v <= 1 else round(v, 1)
+
 
 def _coerce_date(value) -> str | None:
     if not value:
@@ -46,7 +83,7 @@ def parse_health_export(payload: dict) -> dict:
     target_date = (
         _coerce_date(payload.get("date"))
         or _latest_metric_date(metrics)
-        or datetime.now().strftime("%Y-%m-%d")
+        or _today_str()
     )
     fallback_date = (
         datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=1)
@@ -109,11 +146,23 @@ def parse_health_export(payload: dict) -> dict:
             reverse=True,
         )[0]
         total = latest_sleep.get("totalSleep")
-        if total:
-            sleep_hours = round(float(total), 2)
+        if total is not None:
+            try:
+                total_f = float(total)
+                # Health Auto Export normally reports hours. If the value is
+                # absurdly large, assume the source sent seconds or minutes.
+                if total_f > 86400:
+                    total_f = total_f / 3600  # seconds → hours (stored as ms edge case)
+                elif total_f > 1440:
+                    total_f = total_f / 3600  # seconds → hours
+                elif total_f > 24:
+                    total_f = total_f / 60    # minutes → hours
+                sleep_hours = round(total_f, 2)
+            except (TypeError, ValueError):
+                sleep_hours = None
 
     steps_vals = get_daily_values("step_count")
-    steps = int(sum(steps_vals)) if steps_vals else None
+    steps = int(round(sum(steps_vals))) if steps_vals else None
 
     energy_vals = get_daily_values("active_energy")
     active_energy = round(sum(energy_vals) / 4.184, 1) if energy_vals else None
@@ -121,10 +170,10 @@ def parse_health_export(payload: dict) -> dict:
     weight_raw = latest_qty(metric_data.get("weight_body_mass", []))
     if weight_raw is None:
         weight_raw = latest_qty(metric_data.get("body_mass", []))
-    weight_kg = round(weight_raw / 2.205, 2) if weight_raw and weight_raw > 150 else weight_raw
+    weight_kg = _normalize_weight_kg(weight_raw)
 
     bf_raw = latest_qty(metric_data.get("body_fat_percentage", []))
-    body_fat_pct = round(bf_raw * 100, 1) if bf_raw and bf_raw < 1 else bf_raw
+    body_fat_pct = _normalize_body_fat_pct(bf_raw)
 
     exercise_vals = get_daily_values("apple_exercise_time")
     exercise_minutes = int(sum(exercise_vals)) if exercise_vals else None
@@ -156,24 +205,24 @@ def parse_flat_format(payload: dict) -> dict:
     def safe_float(val):
         try:
             return float(val)
-        except Exception:
+        except (TypeError, ValueError):
             return None
 
-    weight_raw = safe_float(payload.get("weight_kg"))
-    weight_kg = round(weight_raw / 2.205, 2) if weight_raw and weight_raw > 150 else weight_raw
+    def safe_int(val):
+        v = safe_float(val)
+        return int(round(v)) if v is not None else None
 
-    exercise_minutes = safe_float(payload.get("exercise_minutes"))
-
-    body_fat_raw = safe_float(payload.get("body_fat_pct"))
-    body_fat_pct = round(body_fat_raw * 100, 1) if body_fat_raw and body_fat_raw < 1 else body_fat_raw
+    weight_kg = _normalize_weight_kg(payload.get("weight_kg"))
+    body_fat_pct = _normalize_body_fat_pct(payload.get("body_fat_pct"))
+    exercise_minutes = safe_int(payload.get("exercise_minutes"))
 
     return {
-        "date": _coerce_date(payload.get("date")) or datetime.now().strftime("%Y-%m-%d"),
+        "date": _coerce_date(payload.get("date")) or _today_str(),
         "sleep_hours": safe_float(payload.get("sleep_hours")),
         "hrv": safe_float(payload.get("hrv")),
         "resting_hr": safe_float(payload.get("resting_hr")),
         "heart_rate": safe_float(payload.get("heart_rate")),
-        "steps": safe_float(payload.get("steps")),
+        "steps": safe_int(payload.get("steps")),
         "active_energy_kcal": safe_float(payload.get("active_energy_kcal")),
         "weight_kg": weight_kg,
         "body_fat_pct": body_fat_pct,
