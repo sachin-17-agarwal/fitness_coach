@@ -238,6 +238,8 @@ struct WorkoutHeatmap: View {
     let sessions: [WorkoutSession]
 
     private static let weeks = 8
+    private static let maxCell: CGFloat = 14
+    private static let spacing: CGFloat = 3
 
     private var cells: [(date: Date, intensity: Double)] {
         let f = DateFormatter()
@@ -268,10 +270,13 @@ struct WorkoutHeatmap: View {
 
     var body: some View {
         GeometryReader { geo in
-            let cellSize = (geo.size.width - CGFloat(Self.weeks - 1) * 4) / CGFloat(Self.weeks)
-            HStack(alignment: .top, spacing: 4) {
+            let rawCell = (geo.size.width - CGFloat(Self.weeks - 1) * Self.spacing) / CGFloat(Self.weeks)
+            let cellSize = min(rawCell, Self.maxCell)
+            let gridWidth = CGFloat(Self.weeks) * cellSize + CGFloat(Self.weeks - 1) * Self.spacing
+
+            HStack(alignment: .top, spacing: Self.spacing) {
                 ForEach(0..<Self.weeks, id: \.self) { weekIdx in
-                    VStack(spacing: 4) {
+                    VStack(spacing: Self.spacing) {
                         ForEach(0..<7, id: \.self) { dayIdx in
                             let cellIdx = weekIdx * 7 + dayIdx
                             let cell = cells[cellIdx]
@@ -282,8 +287,11 @@ struct WorkoutHeatmap: View {
                     }
                 }
             }
+            .frame(width: gridWidth)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(height: 7 * 14 + 6 * 4)
+        .frame(height: 7 * Self.maxCell + 6 * Self.spacing)
+        .clipped()
     }
 
     private func cellColor(_ intensity: Double) -> Color {
