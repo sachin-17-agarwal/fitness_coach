@@ -93,7 +93,7 @@ struct DashboardView: View {
     // MARK: - Header (greeting + streak pill)
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(greeting)
                     .font(.system(size: 14, weight: .medium))
@@ -103,8 +103,12 @@ struct DashboardView: View {
                     .foregroundStyle(.white)
             }
             Spacer()
-            if viewModel.currentStreak > 0 {
-                streakPill
+            VStack(alignment: .trailing, spacing: 10) {
+                VauxLogo(size: 26)
+                    .opacity(0.7)
+                if viewModel.currentStreak > 0 {
+                    streakPill
+                }
             }
         }
     }

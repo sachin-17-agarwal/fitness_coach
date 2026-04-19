@@ -238,7 +238,7 @@ struct WorkoutHeatmap: View {
     let sessions: [WorkoutSession]
 
     private static let weeks = 8
-    private static let maxCell: CGFloat = 14
+    private static let cellHeight: CGFloat = 14
     private static let spacing: CGFloat = 3
 
     private var cells: [(date: Date, intensity: Double)] {
@@ -268,30 +268,39 @@ struct WorkoutHeatmap: View {
         }
     }
 
-    var body: some View {
-        GeometryReader { geo in
-            let rawCell = (geo.size.width - CGFloat(Self.weeks - 1) * Self.spacing) / CGFloat(Self.weeks)
-            let cellSize = min(rawCell, Self.maxCell)
-            let gridWidth = CGFloat(Self.weeks) * cellSize + CGFloat(Self.weeks - 1) * Self.spacing
+    private static let dayLabels = ["M", "", "W", "", "F", "", "S"]
 
-            HStack(alignment: .top, spacing: Self.spacing) {
-                ForEach(0..<Self.weeks, id: \.self) { weekIdx in
-                    VStack(spacing: Self.spacing) {
-                        ForEach(0..<7, id: \.self) { dayIdx in
-                            let cellIdx = weekIdx * 7 + dayIdx
-                            let cell = cells[cellIdx]
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(cellColor(cell.intensity))
-                                .frame(width: cellSize, height: cellSize)
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .trailing, spacing: Self.spacing) {
+                ForEach(0..<7, id: \.self) { dayIdx in
+                    Text(Self.dayLabels[dayIdx])
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.textTertiary)
+                        .frame(height: Self.cellHeight)
+                }
+            }
+            .frame(width: 16)
+
+            GeometryReader { geo in
+                let cellWidth = (geo.size.width - CGFloat(Self.weeks - 1) * Self.spacing) / CGFloat(Self.weeks)
+
+                HStack(alignment: .top, spacing: Self.spacing) {
+                    ForEach(0..<Self.weeks, id: \.self) { weekIdx in
+                        VStack(spacing: Self.spacing) {
+                            ForEach(0..<7, id: \.self) { dayIdx in
+                                let cellIdx = weekIdx * 7 + dayIdx
+                                let cell = cells[cellIdx]
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .fill(cellColor(cell.intensity))
+                                    .frame(width: cellWidth, height: Self.cellHeight)
+                            }
                         }
                     }
                 }
             }
-            .frame(width: gridWidth)
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(height: 7 * Self.maxCell + 6 * Self.spacing)
-        .clipped()
+        .frame(height: 7 * Self.cellHeight + 6 * Self.spacing)
     }
 
     private func cellColor(_ intensity: Double) -> Color {
