@@ -1,5 +1,5 @@
 // WorkoutViewModel.swift
-// FitnessCoach
+// Vaux
 
 import Foundation
 import Observation
@@ -14,16 +14,23 @@ final class WorkoutViewModel {
     var loggedSets: [WorkoutSet] = []
     var currentPrescription: ExercisePrescription?
     var allPrescriptions: [ExercisePrescription] = []
-    var coachMessages: [ChatMessage] = []
     var totalTonnage: Double = 0
     var setCount = 0
     var sessionDuration: TimeInterval = 0
     var startTime: Date?
 
+    // Coach feedback (compact note shown in UI, not full chat dump)
+    var coachNote: String?
+    var isCoachThinking = false
+
     // Set input state
     var inputWeight: Double = 0
     var inputReps: Int = 8
     var inputRPE: Double = 8.0
+
+    // Exercise-level set tracking
+    var exerciseSetIndex = 0
+    var exerciseSetsForCurrentExercise: [WorkoutSet] = []
 
     // Rest timer
     var restTimeRemaining: Int = 0
@@ -41,7 +48,7 @@ final class WorkoutViewModel {
     var summary: WorkoutSummary?
     var showSummary = false
 
-    // Loading
+    // Loading (blocks start/end, NOT per-set logging)
     var isLoading = false
 
     // Error
@@ -67,29 +74,11 @@ final class WorkoutViewModel {
             errorMessage = "Session create failed: \(error.localizedDescription)"
         }
 
-        // Fetch AI prescription (best-effort — workout can proceed without it)
         if currentSession != nil {
             do {
                 let prompt = "I'm starting my \(type) session. Please prescribe my exercises with sets, reps, weight, and RPE targets."
                 let response = try await chatService.sendMessage(prompt)
-
-                let assistantMsg = ChatMessage(
-                    id: UUID(),
-                    date: RecoveryService.todayString(),
-                    role: "assistant",
-                    content: response.response,
-                    createdAt: ISO8601DateFormatter().string(from: Date())
-                )
-                coachMessages.append(assistantMsg)
-
-                allPrescriptions = PrescriptionParser.parse(response.response)
-                currentPrescription = allPrescriptions.first
-
-                if let rx = currentPrescription {
-                    inputWeight = rx.targetWeightKg ?? 0
-                    inputReps = rx.targetReps ?? 8
-                    inputRPE = rx.targetRpe ?? 8.0
-                }
+                applyAIResponse(response.response)
             } catch {
                 print("Coach prescription failed: \(error)")
             }
@@ -99,13 +88,12 @@ final class WorkoutViewModel {
 
     func logSet() async {
         guard let session = currentSession, let sessionId = session.id else { return }
-        isLoading = true
         errorMessage = nil
 
         setCount += 1
+        exerciseSetIndex += 1
         let exercise = currentPrescription?.exerciseName ?? "Unknown"
 
-        // 1. Log the set to DB — this is the critical operation
         do {
             let set = try await workoutService.logSet(
                 sessionId: sessionId,
@@ -116,15 +104,16 @@ final class WorkoutViewModel {
                 rpe: inputRPE
             )
             loggedSets.append(set)
+            exerciseSetsForCurrentExercise.append(set)
             totalTonnage += inputWeight * Double(inputReps)
         } catch {
             setCount -= 1
+            exerciseSetIndex -= 1
             errorMessage = "Failed to log set: \(error.localizedDescription)"
-            isLoading = false
             return
         }
 
-        // 2. Check PR (best-effort)
+        // PR check (best-effort)
         do {
             let prResult = try await workoutService.checkPR(
                 exercise: exercise,
@@ -143,72 +132,35 @@ final class WorkoutViewModel {
             print("PR check failed: \(error)")
         }
 
-        // 3. Start rest timer immediately — don't wait for AI
+        // Rest timer starts immediately
         let rest = currentPrescription?.restSeconds ?? 120
         startRestTimer(seconds: rest)
 
-        // 4. Send set log to AI for feedback (non-blocking for the UI)
+        // AI feedback in background — UI stays responsive
+        isCoachThinking = true
+        let setMsg = "Logged: \(exercise) - \(inputWeight.weightString) x \(inputReps) @ RPE \(inputRPE.oneDecimal). Set \(exerciseSetIndex) for this exercise, \(setCount) total. What's next?"
         do {
-            let setMsg = "Logged: \(exercise) - \(inputWeight.weightString) x \(inputReps) @ RPE \(inputRPE.oneDecimal). Set \(setCount). What's next?"
             let response = try await chatService.sendMessage(setMsg)
-
-            let assistantMsg = ChatMessage(
-                id: UUID(),
-                date: RecoveryService.todayString(),
-                role: "assistant",
-                content: response.response,
-                createdAt: ISO8601DateFormatter().string(from: Date())
-            )
-            coachMessages.append(assistantMsg)
-
-            let newPrescriptions = PrescriptionParser.parse(response.response)
-            if let next = newPrescriptions.first {
-                currentPrescription = next
-                inputWeight = next.targetWeightKg ?? inputWeight
-                inputReps = next.targetReps ?? inputReps
-                inputRPE = next.targetRpe ?? inputRPE
-            }
+            applyAIResponse(response.response)
         } catch {
             print("Coach feedback failed: \(error)")
         }
-        isLoading = false
+        isCoachThinking = false
     }
 
     func sendInlineMessage() async {
         let text = inlineChatText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-
-        let userMsg = ChatMessage(
-            id: UUID(),
-            date: RecoveryService.todayString(),
-            role: "user",
-            content: text,
-            createdAt: ISO8601DateFormatter().string(from: Date())
-        )
-        coachMessages.append(userMsg)
         inlineChatText = ""
+        isCoachThinking = true
 
         do {
             let response = try await chatService.sendMessage(text)
-            let assistantMsg = ChatMessage(
-                id: UUID(),
-                date: RecoveryService.todayString(),
-                role: "assistant",
-                content: response.response,
-                createdAt: ISO8601DateFormatter().string(from: Date())
-            )
-            coachMessages.append(assistantMsg)
-
-            let newPrescriptions = PrescriptionParser.parse(response.response)
-            if let next = newPrescriptions.first {
-                currentPrescription = next
-                inputWeight = next.targetWeightKg ?? inputWeight
-                inputReps = next.targetReps ?? inputReps
-                inputRPE = next.targetRpe ?? inputRPE
-            }
+            applyAIResponse(response.response)
         } catch {
             errorMessage = error.localizedDescription
         }
+        isCoachThinking = false
     }
 
     func endWorkout() async {
@@ -270,6 +222,28 @@ final class WorkoutViewModel {
         resetState()
     }
 
+    // MARK: - AI response handling
+
+    private func applyAIResponse(_ text: String) {
+        let oldExercise = currentPrescription?.exerciseName
+
+        allPrescriptions = PrescriptionParser.parse(text)
+        if let rx = allPrescriptions.first {
+            currentPrescription = rx
+            inputWeight = rx.targetWeightKg ?? inputWeight
+            inputReps = rx.targetReps ?? inputReps
+            inputRPE = rx.targetRpe ?? inputRPE
+
+            // Reset exercise set counter when exercise changes
+            if rx.exerciseName != oldExercise {
+                exerciseSetIndex = 0
+                exerciseSetsForCurrentExercise = []
+            }
+        }
+
+        coachNote = PrescriptionParser.extractCoachNote(text)
+    }
+
     // MARK: - Private
 
     private func startDurationTimer() {
@@ -289,9 +263,11 @@ final class WorkoutViewModel {
         loggedSets = []
         currentPrescription = nil
         allPrescriptions = []
-        coachMessages = []
+        coachNote = nil
         totalTonnage = 0
         setCount = 0
+        exerciseSetIndex = 0
+        exerciseSetsForCurrentExercise = []
         sessionDuration = 0
         startTime = nil
         latestPR = nil

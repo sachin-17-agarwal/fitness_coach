@@ -1,8 +1,5 @@
 // WorkoutModeView.swift
 // Vaux
-//
-// AI-driven workout screen with live stats, prescription card, set logging,
-// rest timer, and inline coach chat.
 
 import SwiftUI
 
@@ -22,7 +19,7 @@ struct WorkoutModeView: View {
 
             if viewModel.isResting {
                 RestTimer(
-                    totalSeconds: 120,
+                    totalSeconds: viewModel.currentPrescription?.restSeconds ?? 120,
                     remainingSeconds: $viewModel.restTimeRemaining,
                     isActive: $viewModel.isResting,
                     onSkip: { viewModel.skipRest() }
@@ -114,10 +111,14 @@ struct WorkoutModeView: View {
                 Task { await viewModel.startWorkout(type: sessionType) }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 13, weight: .bold))
-                    Text("Begin session")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                    if viewModel.isLoading {
+                        ProgressView().tint(.black)
+                    } else {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 13, weight: .bold))
+                        Text("Begin session")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                    }
                 }
                 .foregroundStyle(.black)
                 .frame(maxWidth: .infinity)
@@ -128,6 +129,7 @@ struct WorkoutModeView: View {
                 )
                 .shadow(color: accent.opacity(0.35), radius: 18, x: 0, y: 10)
             }
+            .disabled(viewModel.isLoading)
             .padding(.horizontal, 24)
             .padding(.bottom, 32)
         }
@@ -144,15 +146,35 @@ struct WorkoutModeView: View {
             )
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 14) {
-                    if let lastCoach = viewModel.coachMessages.last(where: { !$0.isUser }) {
-                        CoachMessageStrip(content: lastCoach.content)
+                VStack(spacing: 12) {
+                    // Compact coach feedback strip
+                    if viewModel.isCoachThinking {
+                        coachThinkingStrip
+                    } else if let note = viewModel.coachNote {
+                        CoachNoteStrip(note: note)
                     }
 
-                    if let rx = viewModel.currentPrescription {
-                        PrescriptionCard(prescription: rx)
+                    // Error display
+                    if let error = viewModel.errorMessage {
+                        errorStrip(error)
                     }
 
+                    // Prescription card — the star
+                    if viewModel.isLoading && viewModel.currentPrescription == nil {
+                        prescriptionPlaceholder
+                    } else if let rx = viewModel.currentPrescription {
+                        PrescriptionCard(
+                            prescription: rx,
+                            exerciseSetIndex: viewModel.exerciseSetIndex,
+                            loggedSets: viewModel.exerciseSetsForCurrentExercise
+                        )
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        ))
+                    }
+
+                    // Set log input
                     SetLogInput(
                         weight: $viewModel.inputWeight,
                         reps: $viewModel.inputReps,
@@ -161,24 +183,90 @@ struct WorkoutModeView: View {
                             Haptic.medium()
                             Task { await viewModel.logSet() }
                         },
-                        isLoading: viewModel.isLoading
+                        isLoading: false
                     )
 
-                    if !viewModel.loggedSets.isEmpty {
-                        SetProgressRow(sets: viewModel.loggedSets)
+                    // Logged sets progress
+                    if !viewModel.exerciseSetsForCurrentExercise.isEmpty {
+                        SetProgressRow(sets: viewModel.exerciseSetsForCurrentExercise)
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+                .padding(.vertical, 14)
             }
 
             InlineChatInput(
                 text: $viewModel.inlineChatText,
                 isExpanded: $viewModel.showInlineChat,
                 onSend: { Task { await viewModel.sendInlineMessage() } },
-                isLoading: viewModel.isLoading
+                isLoading: viewModel.isCoachThinking
             )
         }
+    }
+
+    // MARK: - Coach feedback strips
+
+    private var coachThinkingStrip: some View {
+        HStack(spacing: 8) {
+            CoachAvatar()
+            Text("Coach is thinking…")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(Color.textSecondary)
+            Spacer()
+            ProgressView()
+                .scaleEffect(0.7)
+                .tint(Color.accentTeal)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.surfaceRaised)
+        )
+    }
+
+    private func errorStrip(_ message: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .bold))
+            Text(message)
+                .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundStyle(Color.recoveryRed)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.recoveryRed.opacity(0.1))
+        )
+    }
+
+    private var prescriptionPlaceholder: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.surface)
+                    .frame(width: 42, height: 42)
+                VStack(alignment: .leading, spacing: 6) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.surface)
+                        .frame(width: 120, height: 10)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.surface)
+                        .frame(width: 180, height: 16)
+                }
+                Spacer()
+            }
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.surface)
+                .frame(height: 60)
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.cardBackground)
+        )
+        .redacted(reason: .placeholder)
     }
 
     // MARK: - Helpers
@@ -206,46 +294,43 @@ struct WorkoutModeView: View {
     }
 }
 
-// MARK: - Coach message strip
+// MARK: - Coach note strip
 
-struct CoachMessageStrip: View {
-    let content: String
+struct CoachNoteStrip: View {
+    let note: String
     @State private var expanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        Button {
+            withAnimation(Motion.smooth) { expanded.toggle() }
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
                 CoachAvatar()
-                Text("Coach says")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.textSecondary)
-                Spacer()
-                Button {
-                    withAnimation(Motion.smooth) { expanded.toggle() }
-                } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.textSecondary)
-                        .padding(6)
-                        .background(Circle().fill(Color.surface))
-                }
-            }
 
-            MarkdownText(content: content)
-                .font(.system(size: 13))
-                .foregroundStyle(Color.white.opacity(0.92))
-                .lineLimit(expanded ? nil : 3)
+                Text(note)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.85))
+                    .lineLimit(expanded ? nil : 2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.textTertiary)
+                    .padding(.top, 4)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.surfaceRaised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.cardBorder, lineWidth: 0.5)
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.surfaceRaised)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.cardBorder, lineWidth: 0.5)
-        )
+        .buttonStyle(.plain)
     }
 }
 
@@ -295,7 +380,7 @@ struct SetProgressRow: View {
                 .font(.system(size: 9, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.textTertiary)
             Text("\(Int(weight))×\(reps)")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
                 .foregroundStyle(.white)
             if let rpe {
                 Text("RPE \(rpe.oneDecimal)")
