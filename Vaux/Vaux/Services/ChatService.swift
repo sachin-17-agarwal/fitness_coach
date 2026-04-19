@@ -13,12 +13,36 @@ struct ChatResponse: Codable, Sendable {
     let response: String
     let mesocycleDay: Int?
     let mesocycleWeek: Int?
+    let prescription: ServerPrescription?
 
     enum CodingKeys: String, CodingKey {
         case response
         case mesocycleDay = "mesocycle_day"
         case mesocycleWeek = "mesocycle_week"
+        case prescription
     }
+}
+
+/// Server-side parsed prescription — more reliable than client-side regex.
+struct ServerPrescription: Codable, Sendable {
+    let exercise: String
+    let warmup: [ServerSet]?
+    let working: [ServerSetWithRPE]?
+    let backoff: [ServerSetWithRPE]?
+    let form: String?
+    let tempo: String?
+    let rest: String?
+}
+
+struct ServerSet: Codable, Sendable {
+    let weight: Double
+    let reps: Int
+}
+
+struct ServerSetWithRPE: Codable, Sendable {
+    let weight: Double
+    let reps: Int
+    let rpe: Double?
 }
 
 /// A single message in the conversation history (maps to the `conversations` table).

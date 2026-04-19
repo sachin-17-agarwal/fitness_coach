@@ -89,7 +89,7 @@ final class WorkoutViewModel {
             do {
                 let prompt = "I'm starting my \(type) session. Please prescribe my exercises with sets, reps, weight, and RPE targets."
                 let response = try await chatService.sendMessage(prompt)
-                applyAIResponse(response.response)
+                applyAIResponse(response)
             } catch {
                 print("Coach prescription failed: \(error)")
             }
@@ -167,7 +167,7 @@ final class WorkoutViewModel {
         let setMsg = "Logged \(label): \(exercise) - \(inputWeight.weightString) x \(inputReps)\(isWarmup ? "" : " @ RPE \(inputRPE.oneDecimal)"). Set \(exerciseSetIndex) for this exercise, \(setCount) working sets total. What's next?"
         do {
             let response = try await chatService.sendMessage(setMsg)
-            applyAIResponse(response.response)
+            applyAIResponse(response)
         } catch {
             print("Coach feedback failed: \(error)")
         }
@@ -182,7 +182,7 @@ final class WorkoutViewModel {
 
         do {
             let response = try await chatService.sendMessage(text)
-            applyAIResponse(response.response)
+            applyAIResponse(response)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -317,24 +317,56 @@ final class WorkoutViewModel {
 
     // MARK: - AI response handling
 
-    private func applyAIResponse(_ text: String) {
+    private func applyAIResponse(_ chatResponse: ChatResponse) {
+        let text = chatResponse.response
         let oldExercise = currentPrescription?.exerciseName
 
-        allPrescriptions = PrescriptionParser.parse(text)
-        if let rx = allPrescriptions.first {
+        // Prefer server-side parsed prescription, fall back to client-side regex
+        if let serverRx = chatResponse.prescription {
+            let rx = ExercisePrescription(
+                exerciseName: serverRx.exercise,
+                warmupSets: (serverRx.warmup ?? []).map { ($0.weight, $0.reps) },
+                workingSets: (serverRx.working ?? []).map { ($0.weight, $0.reps, $0.rpe) },
+                backoffSets: (serverRx.backoff ?? []).map { ($0.weight, $0.reps, $0.rpe) },
+                formCue: serverRx.form,
+                tempo: serverRx.tempo,
+                restSeconds: Self.parseRestString(serverRx.rest)
+            )
+            allPrescriptions = [rx]
             currentPrescription = rx
+        } else {
+            allPrescriptions = PrescriptionParser.parse(text)
+            if let rx = allPrescriptions.first {
+                currentPrescription = rx
+            }
+        }
 
+        if let rx = currentPrescription {
             if rx.exerciseName != oldExercise {
                 exerciseSetIndex = 0
                 exerciseSetsForCurrentExercise = []
                 phaseSetIndex = 0
                 currentPhase = rx.warmupSets.isEmpty ? .working : .warmup
             }
-
             prefillFromCurrentTarget()
         }
 
         coachNote = PrescriptionParser.extractCoachNote(text)
+    }
+
+    private static func parseRestString(_ rest: String?) -> Int? {
+        guard let rest else { return nil }
+        let lower = rest.lowercased().trimmingCharacters(in: .whitespaces)
+        if let match = lower.range(of: #"(\d+)\s*min"#, options: .regularExpression) {
+            let digits = lower[match].filter(\.isNumber)
+            if let mins = Int(digits) { return mins * 60 }
+        }
+        if let match = lower.range(of: #"(\d+)\s*s"#, options: .regularExpression) {
+            let digits = lower[match].filter(\.isNumber)
+            if let secs = Int(digits) { return secs }
+        }
+        if let num = Int(lower) { return num < 10 ? num * 60 : num }
+        return nil
     }
 
     // MARK: - Private

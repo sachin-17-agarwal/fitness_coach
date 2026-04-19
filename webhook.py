@@ -3,6 +3,7 @@ webhook.py — Flask server for Telegram messages and Apple Health data.
 """
 
 import os
+import re
 import secrets
 from flask import Flask, request, jsonify
 from coach import handle_incoming_message
@@ -173,11 +174,120 @@ def api_chat():
         except (TypeError, ValueError):
             return default
 
-    return jsonify({
+    prescription = _parse_prescription(response)
+
+    result = {
         "response": response,
         "mesocycle_day": _int_or_default(memory.get("mesocycle_day"), 1),
         "mesocycle_week": _int_or_default(memory.get("mesocycle_week"), 1),
-    })
+    }
+    if prescription:
+        result["prescription"] = prescription
+
+    return jsonify(result)
+
+# ── Prescription parser (server-side) ────────────────────────────────────────
+
+def _parse_prescription(text: str) -> dict | None:
+    """Extract structured prescription data from Claude's workout response."""
+    # Find bold exercise names: *Exercise Name*
+    name_pattern = re.compile(r'^\s*\*{1,2}([^*\n]+)\*{1,2}\s*$', re.MULTILINE)
+    matches = list(name_pattern.finditer(text))
+    if not matches:
+        return None
+
+    # Take the first exercise block that has actual set data
+    for i, match in enumerate(matches):
+        name = match.group(1).strip()
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        block = text[start:end]
+
+        rx = _parse_block(name, block)
+        if rx and (rx.get("warmup") or rx.get("working") or rx.get("backoff")):
+            return rx
+
+    return None
+
+
+def _parse_block(name: str, block: str) -> dict | None:
+    """Parse a single exercise block into structured data."""
+    result = {"exercise": name}
+    warmup = []
+    working = []
+    backoff = []
+    form = None
+    tempo = None
+    rest = None
+
+    for line in block.split("\n"):
+        line = line.strip()
+        lower = line.lower()
+
+        if lower.startswith(("warm-up:", "warmup:", "warm up:")):
+            content = line.split(":", 1)[1].strip()
+            warmup = _parse_set_list(content)
+        elif lower.startswith(("working set:", "working sets:", "work:")):
+            content = line.split(":", 1)[1].strip()
+            parts = [p.strip() for p in content.split("|")]
+            if parts:
+                working = _parse_set_list_with_rpe(parts[0])
+            for part in parts[1:]:
+                pl = part.lower()
+                if pl.startswith("tempo"):
+                    tempo = part.split(":", 1)[1].strip() if ":" in part else part[6:].strip()
+                elif pl.startswith("rest"):
+                    rest = part.split(":", 1)[1].strip() if ":" in part else part[5:].strip()
+        elif lower.startswith(("back-off:", "backoff:", "back off:")):
+            content = line.split(":", 1)[1].strip()
+            parts = [p.strip() for p in content.split("|")]
+            if parts:
+                backoff = _parse_set_list_with_rpe(parts[0])
+        elif lower.startswith(("form:", "form cue:", "cue:")):
+            form = line.split(":", 1)[1].strip()
+        elif lower.startswith("tempo:"):
+            tempo = line.split(":", 1)[1].strip()
+        elif lower.startswith("rest:"):
+            rest = line.split(":", 1)[1].strip()
+
+    if warmup:
+        result["warmup"] = warmup
+    if working:
+        result["working"] = working
+    if backoff:
+        result["backoff"] = backoff
+    if form:
+        result["form"] = form
+    if tempo:
+        result["tempo"] = tempo
+    if rest:
+        result["rest"] = rest
+
+    return result
+
+
+def _parse_set_list(text: str) -> list:
+    """Parse '60kg x10, 80kg x6' into [{"weight": 60, "reps": 10}, ...]"""
+    pattern = re.compile(r'(\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)')
+    return [{"weight": float(m.group(1)), "reps": int(m.group(2))}
+            for m in pattern.finditer(text)]
+
+
+def _parse_set_list_with_rpe(text: str) -> list:
+    """Parse '120kg x6-8 RPE8-9' into [{"weight": 120, "reps": 6, "rpe": 8}]"""
+    pattern = re.compile(r'(\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)')
+    rpe_pattern = re.compile(r'(?:RPE\s*|@)(\d+(?:\.\d+)?)', re.IGNORECASE)
+    results = []
+    for m in pattern.finditer(text):
+        entry = {"weight": float(m.group(1)), "reps": int(m.group(2))}
+        rpe_match = rpe_pattern.search(text[m.end():m.end() + 30])
+        if not rpe_match:
+            rpe_match = rpe_pattern.search(text)
+        if rpe_match:
+            entry["rpe"] = float(rpe_match.group(1))
+        results.append(entry)
+    return results
+
 
 # ── Status ────────────────────────────────────────────────────────────────────
 
