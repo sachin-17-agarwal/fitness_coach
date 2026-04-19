@@ -109,7 +109,10 @@ def get_athlete_context() -> dict:
             .lte("date", today)
             .execute()
         )
-        hrv_readings = [r["hrv"] for r in hrv_result.data if r.get("hrv")]
+        hrv_readings = [
+            r["hrv"] for r in (hrv_result.data or [])
+            if isinstance(r, dict) and r.get("hrv") is not None
+        ]
         hrv_avg = round(sum(hrv_readings) / len(hrv_readings), 1) if hrv_readings else "N/A"
 
         rhr_result = (
@@ -119,7 +122,10 @@ def get_athlete_context() -> dict:
             .lte("date", today)
             .execute()
         )
-        rhr_readings = [r["resting_hr"] for r in rhr_result.data if r.get("resting_hr")]
+        rhr_readings = [
+            r["resting_hr"] for r in (rhr_result.data or [])
+            if isinstance(r, dict) and r.get("resting_hr") is not None
+        ]
         rhr_baseline = round(sum(rhr_readings) / len(rhr_readings), 1) if rhr_readings else "N/A"
 
         sleep_hours = row.get("sleep_hours")

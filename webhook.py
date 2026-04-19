@@ -102,14 +102,20 @@ def apple_health():
         print(f"❌ Apple Health webhook error: {e}")
         return jsonify({"error": str(e)}), 500
 
-def _get_hrv_status(hrv: float) -> str:
+def _get_hrv_status(hrv) -> str:
     """Compare today's HRV against 7-day rolling average from Supabase."""
-    if not hrv:
+    if hrv is None:
+        return "Unknown"
+    try:
+        hrv_f = float(hrv)
+    except (TypeError, ValueError):
         return "Unknown"
     try:
         from data import get_supabase, now_local, today_local_str
         from datetime import timedelta
         supabase = get_supabase()
+        if not supabase:
+            return "Unknown"
         seven_days_ago = (now_local() - timedelta(days=7)).strftime("%Y-%m-%d")
         today = today_local_str()
         result = supabase.table("recovery")\
@@ -117,11 +123,16 @@ def _get_hrv_status(hrv: float) -> str:
             .gte("date", seven_days_ago)\
             .lte("date", today)\
             .execute()
-        readings = [r["hrv"] for r in result.data if r.get("hrv")]
+        readings = [
+            r["hrv"] for r in (result.data or [])
+            if isinstance(r, dict) and r.get("hrv") is not None
+        ]
         if not readings:
             return "Baseline building"
         avg = sum(readings) / len(readings)
-        diff_pct = ((hrv - avg) / avg) * 100
+        if avg <= 0:
+            return "Baseline building"
+        diff_pct = ((hrv_f - avg) / avg) * 100
         if diff_pct >= 10:
             return "✅ Elevated — push hard"
         elif diff_pct >= -10:
@@ -155,10 +166,17 @@ def api_chat():
 
     memory = load_memory()
     response = handle_incoming_message(text, memory, send_reply=False)
+
+    def _int_or_default(val, default=1):
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return default
+
     return jsonify({
         "response": response,
-        "mesocycle_day": memory.get("mesocycle_day"),
-        "mesocycle_week": memory.get("mesocycle_week"),
+        "mesocycle_day": _int_or_default(memory.get("mesocycle_day"), 1),
+        "mesocycle_week": _int_or_default(memory.get("mesocycle_week"), 1),
     })
 
 # ── Status ────────────────────────────────────────────────────────────────────

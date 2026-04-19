@@ -44,14 +44,21 @@ def find_exercise(user_input: str, threshold_auto=0.7, threshold_ask=0.5) -> dic
     
     scored = []
     for ex in exercises:
+        if not isinstance(ex, dict) or not ex.get("name"):
+            continue
         # Check name similarity
         score = similarity(user_input, ex["name"])
-        
-        # Check aliases too
-        for alias in (ex.get("aliases") or []):
-            alias_score = similarity(user_input, alias)
-            score = max(score, alias_score)
-        
+
+        # Check aliases too — guard against non-list values (stored as null,
+        # CSV string, or JSON string depending on migration state).
+        aliases = ex.get("aliases")
+        if isinstance(aliases, list):
+            for alias in aliases:
+                if not isinstance(alias, str):
+                    continue
+                alias_score = similarity(user_input, alias)
+                score = max(score, alias_score)
+
         scored.append((score, ex))
     
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -101,7 +108,9 @@ def add_alias(exercise_name: str, alias: str) -> bool:
         if not result.data:
             return False
         ex = result.data[0]
-        aliases = ex.get("aliases") or []
+        aliases = ex.get("aliases")
+        if not isinstance(aliases, list):
+            aliases = []
         if alias not in aliases:
             aliases.append(alias)
             supabase.table("exercises")\

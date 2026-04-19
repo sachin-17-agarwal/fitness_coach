@@ -40,23 +40,31 @@ def load_memory() -> dict:
 
 def save_memory(memory: dict):
     """Save key memory values to Supabase."""
+    supabase = get_supabase()
+    if not supabase:
+        print("Supabase not configured; skipping memory save.")
+        return
+    now_iso = now_local().isoformat()
+    rows = [
+        {"key": key, "value": str(memory[key]), "updated_at": now_iso}
+        for key in ("mesocycle_week", "mesocycle_day")
+        if key in memory
+    ]
+    if not rows:
+        return
     try:
-        supabase = get_supabase()
-        for key in ["mesocycle_week", "mesocycle_day"]:
-            if key in memory:
-                supabase.table("memory").upsert({
-                    "key": key,
-                    "value": str(memory[key]),
-                    "updated_at": now_local().isoformat(),
-                }, on_conflict="key").execute()
+        # Single batched upsert keeps week/day writes consistent.
+        supabase.table("memory").upsert(rows, on_conflict="key").execute()
     except Exception as e:
         print(f"Supabase memory save failed: {e}")
 
 
 def save_conversation_message(role: str, content: str):
     """Save a single message to the conversations table."""
+    supabase = get_supabase()
+    if not supabase:
+        return
     try:
-        supabase = get_supabase()
         supabase.table("conversations").insert({
             "date": today_local_str(),
             "role": role,
@@ -105,8 +113,11 @@ def log_session(session: dict):
 
 def save_recovery_data(data: dict):
     """Save daily Apple Health recovery data using upsert on date."""
+    supabase = get_supabase()
+    if not supabase:
+        print("Supabase not configured; skipping recovery save.")
+        return
     try:
-        supabase = get_supabase()
         row = {
             k: v
             for k, v in {
