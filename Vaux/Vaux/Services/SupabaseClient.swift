@@ -1,5 +1,5 @@
 // SupabaseClient.swift
-// FitnessCoach
+// Vaux
 //
 // Lightweight Supabase REST client using PostgREST conventions.
 // Avoids the Supabase Swift SDK so the project stays SPM-free for sideloading.
