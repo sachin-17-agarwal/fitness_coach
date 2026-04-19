@@ -37,9 +37,11 @@ final class PrescriptionParser {
     // MARK: - Public
 
     /// Parses a full AI response string into an array of exercise prescriptions.
+    /// Filters out "header" blocks that have no actual sets (e.g. session titles).
     static func parse(_ text: String) -> [ExercisePrescription] {
         let blocks = splitIntoExerciseBlocks(text)
         return blocks.compactMap { parseBlock($0) }
+            .filter { !$0.warmupSets.isEmpty || !$0.workingSets.isEmpty || !$0.backoffSets.isEmpty }
     }
 
     // MARK: - Block splitting
@@ -75,11 +77,20 @@ final class PrescriptionParser {
     // MARK: - Single block parsing
 
     private static func parseBlock(_ block: String) -> ExercisePrescription? {
-        let lines = block.components(separatedBy: .newlines)
-        guard let firstLine = lines.first else { return nil }
+        let rawLines = block.components(separatedBy: .newlines)
+        guard let firstLine = rawLines.first else { return nil }
 
         // Extract exercise name from bold markers
         guard let name = extractExerciseName(firstLine) else { return nil }
+
+        // The first line may contain content after the bold name, e.g.:
+        // "*Machine Chest Press* Warm-up: 70kg x10, 100kg x6"
+        // Extract the tail and treat it as an additional line.
+        var lines = Array(rawLines.dropFirst())
+        let tail = extractAfterBoldMarker(firstLine)
+        if !tail.isEmpty {
+            lines.insert(tail, at: 0)
+        }
 
         var warmup: [(weight: Double, reps: Int)] = []
         var working: [(weight: Double, reps: Int, rpe: Double?)] = []
@@ -87,7 +98,7 @@ final class PrescriptionParser {
         var formCue: String?
         var restSeconds: Int?
 
-        for line in lines.dropFirst() {
+        for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let lower = trimmed.lowercased()
 
@@ -284,5 +295,57 @@ final class PrescriptionParser {
         guard let colonIndex = text.firstIndex(of: ":") else { return text }
         return String(text[text.index(after: colonIndex)...])
             .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Returns text after the closing bold marker(s) on a line.
+    /// e.g. "*Machine Chest Press* Warm-up: 70kg x10" → "Warm-up: 70kg x10"
+    private static func extractAfterBoldMarker(_ line: String) -> String {
+        let pattern = #"\*{1,2}[^*]+\*{1,2}\s*(.*)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: line,
+                  range: NSRange(location: 0, length: (line as NSString).length)
+              ),
+              match.numberOfRanges > 1 else {
+            return ""
+        }
+        return (line as NSString).substring(with: match.range(at: 1))
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Extracts the narrative (non-structured) parts of an AI response:
+    /// everything that isn't a bold exercise header, Warm-up/Working/Back-off/Form/Rest line.
+    static func extractCoachNote(_ text: String) -> String? {
+        let structuredPrefixes = [
+            "warm-up:", "warmup:", "warm up:",
+            "working set:", "working sets:", "work:",
+            "back-off:", "backoff:", "back off:",
+            "form:", "form cue:", "cue:",
+            "rest:", "tempo:",
+        ]
+        let lines = text.components(separatedBy: "\n")
+        var narrative: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+
+            // Skip bold exercise headers
+            if trimmed.hasPrefix("*") && trimmed.contains("*") {
+                let afterBold = extractAfterBoldMarker(trimmed)
+                let lower = afterBold.lowercased()
+                let isStructured = structuredPrefixes.contains { lower.hasPrefix($0) }
+                if isStructured || afterBold.isEmpty { continue }
+            }
+
+            let lower = trimmed.lowercased()
+            let isStructured = structuredPrefixes.contains { lower.hasPrefix($0) }
+            if isStructured { continue }
+
+            narrative.append(trimmed)
+        }
+
+        let result = narrative.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        return result.isEmpty ? nil : result
     }
 }
