@@ -6,17 +6,17 @@
 import SwiftUI
 
 struct QuickActionsBar: View {
-    let onBriefing: () -> Void
+    let onWorkout: () -> Void
     let onChat: () -> Void
     let onLogWeight: () -> Void
     let onSync: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            action(icon: "sparkles", label: "Briefing", tint: .accentPurple, action: onBriefing)
+            action(icon: "figure.strengthtraining.traditional", label: "Workout", tint: .recoveryGreen, action: onWorkout)
             action(icon: "message.fill", label: "Chat", tint: .accentTeal, action: onChat)
             action(icon: "scalemass.fill", label: "Weight", tint: .accentAmber, action: onLogWeight)
-            action(icon: "arrow.clockwise", label: "Sync", tint: .recoveryGreen, action: onSync)
+            action(icon: "arrow.clockwise", label: "Sync", tint: .accentPurple, action: onSync)
         }
     }
 
@@ -44,7 +44,7 @@ struct QuickActionsBar: View {
 }
 
 #Preview {
-    QuickActionsBar(onBriefing: {}, onChat: {}, onLogWeight: {}, onSync: {})
+    QuickActionsBar(onWorkout: {}, onChat: {}, onLogWeight: {}, onSync: {})
         .padding()
         .background(Color.background)
 }

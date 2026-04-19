@@ -12,6 +12,7 @@ struct MetricCard: View {
     let value: String
     var subtitle: String? = nil
     var trend: Trend? = nil
+    var trendColor: Color? = nil
     var accentColor: Color = .recoveryGreen
     var sparkline: [Double]? = nil
 
@@ -94,16 +95,17 @@ struct MetricCard: View {
     }
 
     private func trendChip(_ trend: Trend) -> some View {
-        HStack(spacing: 3) {
+        let chipColor = trendColor ?? trend.color
+        return HStack(spacing: 3) {
             Image(systemName: trend.icon)
                 .font(.system(size: 9, weight: .bold))
             Text(trend.label)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
         }
-        .foregroundStyle(trend.color)
+        .foregroundStyle(chipColor)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .background(Capsule().fill(trend.color.opacity(0.14)))
+        .background(Capsule().fill(chipColor.opacity(0.14)))
     }
 
     private func sparklineView(_ data: [Double]) -> some View {

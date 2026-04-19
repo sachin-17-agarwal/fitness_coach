@@ -9,7 +9,6 @@ import SwiftUI
 struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var navigateToWorkout = false
-    @State private var showBriefing = false
     @State private var showWeightSheet = false
     @State private var isSyncing = false
     @State private var syncError: String?
@@ -33,18 +32,6 @@ struct DashboardView: View {
             .navigationBarHidden(true)
             .navigationDestination(isPresented: $navigateToWorkout) {
                 WorkoutModeView(sessionType: viewModel.mesocycle.todayType)
-            }
-            .sheet(isPresented: $showBriefing) {
-                MorningBriefingView(
-                    onStartWorkout: { _ in
-                        showBriefing = false
-                        navigateToWorkout = true
-                    },
-                    onOpenChat: {
-                        showBriefing = false
-                        switchToChatTab?()
-                    }
-                )
             }
             .sheet(isPresented: $showWeightSheet) {
                 WeightLogSheet(initialWeight: viewModel.recovery?.weightKg) {
@@ -73,7 +60,7 @@ struct DashboardView: View {
                 )
 
                 QuickActionsBar(
-                    onBriefing: { showBriefing = true },
+                    onWorkout: { navigateToWorkout = true },
                     onChat: { switchToChatTab?() },
                     onLogWeight: { showWeightSheet = true },
                     onSync: { Task { await performSync() } }
@@ -162,6 +149,7 @@ struct DashboardView: View {
                 value: rhrValue,
                 subtitle: rhrSubtitle,
                 trend: rhrTrend,
+                trendColor: rhrTrendColor,
                 accentColor: .recoveryRed,
                 sparkline: rhrSparkline
             )
@@ -273,6 +261,15 @@ struct DashboardView: View {
         if rhr < avg - 2 { return .down }
         if rhr > avg + 2 { return .up }
         return .flat
+    }
+
+    private var rhrTrendColor: Color? {
+        guard let trend = rhrTrend else { return nil }
+        switch trend {
+        case .down: return .recoveryGreen
+        case .up: return .recoveryRed
+        default: return nil
+        }
     }
 
     private var tonnageValue: String {
