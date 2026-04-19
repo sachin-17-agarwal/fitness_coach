@@ -409,13 +409,13 @@ final class WorkoutService: Sendable {
         let sets: [WorkoutSet] = try await client.fetch(
             "workout_sets",
             query: ["date": "gte.\(since)"],
-            select: "exercise",
             order: "date.desc"
         )
         var seen = Set<String>()
         var result: [String] = []
         for s in sets {
             let name = s.exercise
+            if s.isWarmup == true { continue }
             if name.count > 40 || name.contains("I ") || name.contains("i ") { continue }
             if seen.insert(name).inserted { result.append(name) }
         }
