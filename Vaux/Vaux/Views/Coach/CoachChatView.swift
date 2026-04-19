@@ -69,6 +69,22 @@ struct CoachChatView: View {
                         TypingIndicator()
                             .id("loading")
                     }
+
+                    if let error = viewModel.errorMessage {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(error)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(Color.recoveryRed)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.recoveryRed.opacity(0.1))
+                        )
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)

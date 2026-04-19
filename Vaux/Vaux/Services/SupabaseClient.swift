@@ -136,7 +136,7 @@ final class SupabaseClient: Sendable {
     /// Upsert a row (insert or update on conflict).
     @discardableResult
     func upsert(_ table: String, body: [String: Any], onConflict: String) async throws -> Data {
-        let url = try buildURL(table: table)
+        let url = try buildURL(table: table, params: ["on_conflict": onConflict])
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyHeaders(to: &request)
@@ -144,10 +144,6 @@ final class SupabaseClient: Sendable {
             "return=representation,resolution=merge-duplicates",
             forHTTPHeaderField: "Prefer"
         )
-        request.setValue(onConflict, forHTTPHeaderField: "on-conflict")
-
-        // PostgREST also accepts ?on_conflict= as a query param.
-        // Using the header keeps the URL clean.
         request.httpBody = try serializeJSON(body)
 
         let (data, response) = try await session.data(for: request)
