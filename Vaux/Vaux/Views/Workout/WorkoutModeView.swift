@@ -174,6 +174,12 @@ struct WorkoutModeView: View {
                             insertion: .move(edge: .trailing).combined(with: .opacity),
                             removal: .move(edge: .leading).combined(with: .opacity)
                         ))
+
+                        if viewModel.upcomingPrescriptions.count > 0 {
+                            UpcomingExercisesCard(names: viewModel.upcomingPrescriptions.map(\.exerciseName))
+                        }
+                    } else {
+                        emptyPrescriptionCard
                     }
 
                     // Set log input
@@ -241,6 +247,57 @@ struct WorkoutModeView: View {
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.recoveryRed.opacity(0.1))
+        )
+    }
+
+    private var emptyPrescriptionCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("NO PLAN YET")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .kerning(1.0)
+                .foregroundStyle(Color.textTertiary)
+            Text("The coach didn't send exercises for this session.")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.textPrimary)
+            Text("Tap retry to ask again, or end the session and start a new one.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Haptic.light()
+                Task { await viewModel.retryPrescription() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Retry")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(Color.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.surfaceRaised)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.cardBorder, lineWidth: 0.5)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isLoading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.cardBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.cardBorder, lineWidth: 0.5)
         )
     }
 
@@ -396,6 +453,53 @@ struct SetProgressRow: View {
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.surface)
+        )
+    }
+}
+
+// MARK: - Upcoming exercises
+
+struct UpcomingExercisesCard: View {
+    let names: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("UP NEXT")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .kerning(1.0)
+                    .foregroundStyle(Color.textTertiary)
+                Spacer()
+                Text("\(names.count)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.textSecondary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(names.enumerated()), id: \.offset) { idx, name in
+                    HStack(spacing: 10) {
+                        Text("\(idx + 2).")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.textTertiary)
+                            .frame(width: 22, alignment: .leading)
+                        Text(name)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.textSecondary)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.cardBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.cardBorder, lineWidth: 0.5)
         )
     }
 }

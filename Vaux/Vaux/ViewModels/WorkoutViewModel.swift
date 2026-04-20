@@ -20,6 +20,11 @@ final class WorkoutViewModel {
     var loggedSets: [WorkoutSet] = []
     var currentPrescription: ExercisePrescription?
     var allPrescriptions: [ExercisePrescription] = []
+
+    /// Everything in `allPrescriptions` after the one we're currently working on.
+    var upcomingPrescriptions: [ExercisePrescription] {
+        Array(allPrescriptions.dropFirst())
+    }
     var totalTonnage: Double = 0
     var setCount = 0
     var warmupCount = 0
@@ -79,26 +84,52 @@ final class WorkoutViewModel {
         errorMessage = nil
         startDurationTimer()
 
+        var issues: [String] = []
+
         do {
             currentSession = try await workoutService.startSession(type: type)
         } catch {
-            errorMessage = "Session create failed: \(error.localizedDescription)"
+            issues.append("Couldn't save the session (\(error.localizedDescription)). You'll see today's plan, but logged sets won't persist until you retry.")
         }
 
-        if currentSession != nil {
-            do {
-                let prompt = "I'm starting my \(type) session. Please prescribe my exercises with sets, reps, weight, and RPE targets."
-                let response = try await chatService.sendMessage(prompt)
-                applyAIResponse(response)
-            } catch {
-                print("Coach prescription failed: \(error)")
-            }
+        // Always ask the coach for the plan — even if the Supabase session-create
+        // call failed, we still want the user to see today's exercises instead
+        // of a blank screen.
+        do {
+            let prompt = "Starting my \(type) session. List today's full exercise plan first (every exercise with sets/reps/weight/RPE in the strict format), then prescribe the first exercise in detail so I can warm up."
+            let response = try await chatService.sendMessage(prompt)
+            applyAIResponse(response)
+        } catch {
+            issues.append("Coach didn't respond (\(error.localizedDescription)). Pull down or tap End and try again.")
+        }
+
+        if !issues.isEmpty {
+            errorMessage = issues.joined(separator: " ")
+        }
+        isLoading = false
+    }
+
+    /// Re-requests today's plan from the coach without creating a new session.
+    /// Used as a manual retry when `startWorkout` left the screen empty.
+    func retryPrescription() async {
+        guard isActive else { return }
+        isLoading = true
+        errorMessage = nil
+        do {
+            let prompt = "Resend today's \(sessionType) plan — full exercise list followed by the first exercise in detail."
+            let response = try await chatService.sendMessage(prompt)
+            applyAIResponse(response)
+        } catch {
+            errorMessage = "Coach didn't respond (\(error.localizedDescription))."
         }
         isLoading = false
     }
 
     func logSet() async {
-        guard let session = currentSession, let sessionId = session.id else { return }
+        guard let session = currentSession, let sessionId = session.id else {
+            errorMessage = "Session not saved — tap End and Begin session again to retry."
+            return
+        }
         errorMessage = nil
 
         // Snapshot the phase *before* we advance — the label below must describe
@@ -329,7 +360,12 @@ final class WorkoutViewModel {
         let text = chatResponse.response
         let oldExercise = currentPrescription?.exerciseName
 
-        // Prefer server-side parsed prescription, fall back to client-side regex
+        // Server-side parser only ever returns the first exercise it finds,
+        // so we always also run the client parser — it handles multi-exercise
+        // responses like the full session plan we now ask for on start.
+        let clientParsed = PrescriptionParser.parse(text)
+
+        var prescriptions: [ExercisePrescription] = []
         if let serverRx = chatResponse.prescription {
             let rx = ExercisePrescription(
                 exerciseName: serverRx.exercise,
@@ -340,13 +376,14 @@ final class WorkoutViewModel {
                 tempo: serverRx.tempo,
                 restSeconds: Self.parseRestString(serverRx.rest)
             )
-            allPrescriptions = [rx]
-            currentPrescription = rx
+            prescriptions = [rx] + clientParsed.dropFirst()
         } else {
-            allPrescriptions = PrescriptionParser.parse(text)
-            if let rx = allPrescriptions.first {
-                currentPrescription = rx
-            }
+            prescriptions = clientParsed
+        }
+
+        if !prescriptions.isEmpty {
+            allPrescriptions = prescriptions
+            currentPrescription = prescriptions.first
         }
 
         if let rx = currentPrescription {
@@ -359,7 +396,19 @@ final class WorkoutViewModel {
             prefillFromCurrentTarget()
         }
 
-        coachNote = PrescriptionParser.extractCoachNote(text)
+        // Always show *something* from the coach. extractCoachNote strips out
+        // the structured lines; if nothing is left (e.g. the response didn't
+        // match any expected format), fall back to the raw text so the user
+        // doesn't stare at an empty screen.
+        let note = PrescriptionParser.extractCoachNote(text)
+        if let note, !note.isEmpty {
+            coachNote = note
+        } else if currentPrescription == nil {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            coachNote = trimmed.isEmpty ? nil : trimmed
+        } else {
+            coachNote = nil
+        }
     }
 
     private static func parseRestString(_ rest: String?) -> Int? {
