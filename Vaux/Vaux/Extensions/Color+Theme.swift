@@ -1,5 +1,10 @@
 // Color+Theme.swift
-// Vaux
+// Vaux — editorial redesign tokens
+//
+// Single source of truth for color. Matches the design-handoff tokens:
+//   ink scale (backgrounds), fg scale (text), signal palette (accents).
+// Old gradient-heavy names are kept as aliases so legacy views still compile
+// while we migrate screens one at a time.
 
 import SwiftUI
 
@@ -7,7 +12,6 @@ import SwiftUI
 
 extension Color {
     /// Creates a `Color` from a hex string (e.g. "0D0D0D" or "#0D0D0D").
-    /// Supports optional leading "#" and 6-digit RGB hex.
     init(hex: String) {
         let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "#", with: "")
@@ -23,124 +27,121 @@ extension Color {
     }
 }
 
-// MARK: - Theme Colors
+// MARK: - Editorial tokens
 
 extension Color {
-    // Surfaces
-    static let background = Color(hex: "0A0A0E")
-    static let surface = Color(hex: "141418")
-    static let surfaceRaised = Color(hex: "1C1C22")
-    static let cardBackground = Color(hex: "17171C")
-    static let cardBorder = Color(hex: "26262E")
-    static let divider = Color(hex: "1F1F25")
+    // Ink scale
+    static let ink0 = Color(hex: "05060A")
+    static let ink1 = Color(hex: "0B0D12")
+    static let ink2 = Color(hex: "12141B")
+    static let ink3 = Color(hex: "191C25")
+    static let ink4 = Color(hex: "242832")
+    static let line = Color(hex: "1E2230")
+    static let line2 = Color(hex: "2B3040")
 
-    // Semantic accents
-    static let recoveryGreen = Color(hex: "00E57A")
-    static let recoveryYellow = Color(hex: "FFB800")
-    static let recoveryRed = Color(hex: "FF4D4D")
+    // Paper
+    static let paper = Color(hex: "F5F4EF")
+    static let bone = Color(hex: "E7E4DB")
 
-    // Extended palette
-    static let accentTeal = Color(hex: "00D4FF")
-    static let accentCoral = Color(hex: "FF6B6B")
-    static let accentPurple = Color(hex: "9D7BF4")
-    static let accentAmber = Color(hex: "FFA940")
-    static let accentBlue = Color(hex: "5B9DFF")
+    // Foreground text
+    static let fg0 = Color(hex: "F4F3EE")
+    static let fg1 = Color(hex: "CFCEC7")
+    static let fg2 = Color(hex: "878791")
+    static let fg3 = Color(hex: "4E4E5A")
 
-    // Text
-    static let textPrimary = Color.white
-    static let textSecondary = Color(hex: "8B8B96")
-    static let textTertiary = Color(hex: "55555E")
+    // Signal palette (one accent per role)
+    static let signal = Color(hex: "CFFF3E")
+    static let signalInk = Color(hex: "0A0F00")
+    static let mint = Color(hex: "7CE8B5")
+    static let amber = Color(hex: "F5B84E")
+    static let ember = Color(hex: "F26B4A")
+    static let iris = Color(hex: "A8A0FF")
 }
 
-// MARK: - Gradient tokens
+// MARK: - Legacy aliases (retain compilation for views not yet migrated)
+
+extension Color {
+    static let background = Color.ink0
+    static let surface = Color.ink1
+    static let surfaceRaised = Color.ink3
+    static let cardBackground = Color.ink2
+    static let cardBorder = Color.line
+    static let divider = Color.line
+
+    static let recoveryGreen = Color.mint
+    static let recoveryYellow = Color.amber
+    static let recoveryRed = Color.ember
+
+    static let accentTeal = Color.mint
+    static let accentCoral = Color.ember
+    static let accentPurple = Color.iris
+    static let accentAmber = Color.amber
+    static let accentBlue = Color.iris
+
+    static let textPrimary = Color.fg0
+    static let textSecondary = Color.fg1
+    static let textTertiary = Color.fg2
+
+    static let signalLime = Color.signal
+    static let signalLimeMuted = Color(hex: "8FB324")
+}
+
+// MARK: - Gradient tokens (quiet, single-tone)
+//
+// The editorial direction rejects vibrant gradients. We keep the Gradient
+// helpers as mild single-color LinearGradients so card styles that still
+// reference them render as quiet solid fills without extra refactoring.
 
 enum Gradients {
-    /// Vibrant recovery gradient (green → teal). Used for hero metrics.
     static let recovery = LinearGradient(
-        colors: [Color(hex: "00E57A"), Color(hex: "00D4FF")],
+        colors: [Color.mint, Color.mint.opacity(0.85)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
-    /// Moderate state (yellow → amber).
     static let moderate = LinearGradient(
-        colors: [Color(hex: "FFB800"), Color(hex: "FFA940")],
+        colors: [Color.amber, Color.amber.opacity(0.85)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
-    /// Low / strain gradient (amber → coral).
     static let strain = LinearGradient(
-        colors: [Color(hex: "FFA940"), Color(hex: "FF4D4D")],
+        colors: [Color.ember, Color.ember.opacity(0.85)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
-    /// Cool/calm gradient (teal → blue → purple).
     static let cool = LinearGradient(
-        colors: [Color(hex: "00D4FF"), Color(hex: "5B9DFF"), Color(hex: "9D7BF4")],
+        colors: [Color.iris, Color.iris.opacity(0.85)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
-    /// Violet/pull day accent.
-    static let violet = LinearGradient(
-        colors: [Color(hex: "9D7BF4"), Color(hex: "5B9DFF")],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    static let violet = cool
+    static let push = moderate
+    static let legs = strain
+    static let cardio = recovery
+    static let yoga = cool
 
-    /// Push day accent (amber → coral).
-    static let push = LinearGradient(
-        colors: [Color(hex: "FFA940"), Color(hex: "FF6B6B")],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    /// Legs day accent (coral → red).
-    static let legs = LinearGradient(
-        colors: [Color(hex: "FF6B6B"), Color(hex: "FF4D4D")],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    /// Cardio accent (teal → green).
-    static let cardio = LinearGradient(
-        colors: [Color(hex: "00D4FF"), Color(hex: "00E57A")],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    /// Yoga accent (purple → blue).
-    static let yoga = LinearGradient(
-        colors: [Color(hex: "9D7BF4"), Color(hex: "00D4FF")],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    /// Card surface gradient (subtle elevation).
     static let card = LinearGradient(
-        colors: [Color(hex: "1C1C22"), Color(hex: "17171C")],
+        colors: [Color.ink2, Color.ink2],
         startPoint: .top,
         endPoint: .bottom
     )
 
-    /// Hero card — deep purple → surface.
     static let hero = LinearGradient(
-        colors: [Color(hex: "1F1B2E"), Color(hex: "17171C")],
+        colors: [Color.ink2, Color.ink1],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
-    /// Ambient background glow (subtle).
     static let ambient = RadialGradient(
-        colors: [Color(hex: "1A1A22").opacity(0.8), Color.clear],
+        colors: [Color.ink3.opacity(0.6), Color.clear],
         center: .top,
         startRadius: 0,
         endRadius: 500
     )
 
-    /// Returns the appropriate gradient for a recovery level 0…100.
     static func forRecovery(_ score: Int) -> LinearGradient {
         switch score {
         case 70...: return recovery
@@ -149,30 +150,38 @@ enum Gradients {
         }
     }
 
-    /// Returns the session-type gradient.
     static func forSession(_ type: String) -> LinearGradient {
         switch type {
-        case "Pull": return violet
-        case "Push": return push
-        case "Legs": return legs
-        case "Cardio+Abs": return cardio
-        case "Yoga": return yoga
+        case "Pull": return cool
+        case "Push": return moderate
+        case "Legs": return strain
+        case "Cardio+Abs": return recovery
+        case "Yoga": return cool
         default: return recovery
         }
     }
 }
 
-// MARK: - Solid accent resolution for session types
+// MARK: - Session type → solid accent
 
 extension Color {
     static func forSession(_ type: String) -> Color {
         switch type {
-        case "Pull": return .accentPurple
-        case "Push": return .accentAmber
-        case "Legs": return .accentCoral
-        case "Cardio+Abs": return .accentTeal
-        case "Yoga": return .accentBlue
-        default: return .recoveryGreen
+        case "Pull": return .iris
+        case "Push": return .amber
+        case "Legs": return .ember
+        case "Cardio+Abs": return .mint
+        case "Yoga": return .iris
+        default: return .signal
+        }
+    }
+
+    /// Zone color for a 0–100 recovery score.
+    static func forZone(_ score: Int) -> Color {
+        switch score {
+        case 70...: return .mint
+        case 40...: return .amber
+        default: return .ember
         }
     }
 }

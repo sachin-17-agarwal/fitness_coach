@@ -1,5 +1,8 @@
 // SessionTypeCard.swift
-// Vaux
+// Vaux — editorial redesign
+//
+// Hairline card: session icon tile + serif lift name + mono focus line +
+// full-width signal "Start" button. Quiet, no accent-tinted shadows.
 
 import SwiftUI
 
@@ -18,84 +21,78 @@ struct SessionTypeCard: View {
         }
     }
 
-    private var sessionGradient: LinearGradient {
-        Gradients.forSession(mesocycle.todayType)
-    }
-
-    private var sessionColor: Color {
-        Color.forSession(mesocycle.todayType)
-    }
-
     private var focus: String {
         switch mesocycle.todayType {
-        case "Pull": return "Back · Rear delts · Biceps"
-        case "Push": return "Chest · Shoulders · Triceps"
-        case "Legs": return "Quads · Hamstrings · Glutes"
-        case "Cardio+Abs": return "Zone 2 · Core"
-        case "Yoga": return "Mobility · Stretching"
-        default: return "Full body"
+        case "Pull": return "BACK · REAR DELTS · BICEPS"
+        case "Push": return "CHEST · SHOULDERS · TRICEPS"
+        case "Legs": return "QUADS · HAMS · GLUTES"
+        case "Cardio+Abs": return "ZONE 2 · CORE"
+        case "Yoga": return "MOBILITY · STRETCHING"
+        default: return "FULL BODY"
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("TODAY'S SESSION")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .kerning(1.2)
-                    .foregroundStyle(Color.white.opacity(0.7))
+                Eyebrow(text: "Today's session")
                 Spacer()
-                Text("Week \(mesocycle.week) · Day \(mesocycle.day)")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.7))
+                Eyebrow(text: "Week \(mesocycle.week) · Day \(mesocycle.day)")
             }
 
             HStack(alignment: .center, spacing: 14) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.white.opacity(0.15))
-                        .frame(width: 56, height: 56)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.signal.opacity(0.12))
                     Image(systemName: sessionIcon)
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Color.signal)
                 }
+                .frame(width: 46, height: 46)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(mesocycle.todayType)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.serifMD)
+                        .foregroundStyle(Color.fg0)
                     Text(focus)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.75))
+                        .font(.eyebrowSmall)
+                        .kerning(1.2)
+                        .foregroundStyle(Color.fg2)
                 }
 
                 Spacer()
-            }
 
-            Button(action: {
-                Haptic.medium()
-                onStartWorkout()
-            }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 12, weight: .bold))
-                    Text("Start workout")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                    Spacer()
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 12, weight: .bold))
-                }
-                .foregroundStyle(.black)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.white.opacity(0.95))
-                )
+                startButton
             }
         }
-        .accentCard(sessionGradient, padding: 18, cornerRadius: 24)
-        .shadow(color: sessionColor.opacity(0.3), radius: 24, x: 0, y: 14)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.ink2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.line, lineWidth: 1)
+        )
+    }
+
+    private var startButton: some View {
+        Button {
+            Haptic.medium()
+            onStartWorkout()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 10, weight: .bold))
+                Text("Start")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(Color.signalInk)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(Color.signal))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -103,8 +100,7 @@ struct SessionTypeCard: View {
     VStack(spacing: 16) {
         SessionTypeCard(mesocycle: MesocycleState(day: 2, week: 3)) {}
         SessionTypeCard(mesocycle: MesocycleState(day: 3, week: 1)) {}
-        SessionTypeCard(mesocycle: MesocycleState(day: 5, week: 2)) {}
     }
     .padding()
-    .background(Color.background)
+    .background(Color.ink0)
 }

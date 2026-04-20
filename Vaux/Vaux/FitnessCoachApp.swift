@@ -1,5 +1,5 @@
 // FitnessCoachApp.swift
-// Vaux
+// Vaux — editorial redesign
 //
 // Info.plist entries required:
 //   NSHealthShareUsageDescription - "Vaux reads your health data (HRV, heart rate, sleep, steps, VO2 max) to provide personalised recovery and training insights."
@@ -10,7 +10,7 @@ import HealthKit
 
 @main
 struct FitnessCoachApp: App {
-    @State private var selectedTab: Tab = .dashboard
+    @State private var selectedTab: Tab = .home
 
     init() {
         configureNavBarAppearance()
@@ -19,12 +19,16 @@ struct FitnessCoachApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ZStack {
-                Color.background.ignoresSafeArea()
+            ZStack(alignment: .bottom) {
+                Color.ink0.ignoresSafeArea()
+
                 tabContent
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                FloatingTabBar(selectedTab: $selectedTab)
+                    // Reserve room at the bottom so content never sits
+                    // underneath the floating capsule tab bar.
+                    .padding(.bottom, CapsuleTabBar.reservedHeight)
+
+                CapsuleTabBar(selected: $selectedTab)
+                    .padding(.horizontal, 16)
                     .padding(.bottom, 8)
             }
             .preferredColorScheme(.dark)
@@ -37,8 +41,8 @@ struct FitnessCoachApp: App {
     private var tabContent: some View {
         ZStack {
             DashboardView(switchToChatTab: { selectedTab = .coach })
-                .opacity(selectedTab == .dashboard ? 1 : 0)
-                .allowsHitTesting(selectedTab == .dashboard)
+                .opacity(selectedTab == .home ? 1 : 0)
+                .allowsHitTesting(selectedTab == .home)
 
             CoachChatView()
                 .opacity(selectedTab == .coach ? 1 : 0)
@@ -47,8 +51,8 @@ struct FitnessCoachApp: App {
             NavigationStack {
                 WorkoutModeView()
             }
-            .opacity(selectedTab == .workout ? 1 : 0)
-            .allowsHitTesting(selectedTab == .workout)
+            .opacity(selectedTab == .train ? 1 : 0)
+            .allowsHitTesting(selectedTab == .train)
 
             HistoryView()
                 .opacity(selectedTab == .history ? 1 : 0)
@@ -63,15 +67,25 @@ struct FitnessCoachApp: App {
     // MARK: - Tab enum
 
     enum Tab: Hashable, CaseIterable {
-        case dashboard, coach, workout, history, settings
+        case home, coach, train, history, settings
 
-        func icon(selected: Bool) -> String {
+        var title: String {
             switch self {
-            case .dashboard: return selected ? "heart.text.square.fill" : "heart.text.square"
-            case .coach:     return "sparkles"
-            case .workout:   return "figure.strengthtraining.traditional"
-            case .history:   return "chart.xyaxis.line"
-            case .settings:  return selected ? "gearshape.fill" : "gearshape"
+            case .home:     return "Home"
+            case .coach:    return "Coach"
+            case .train:    return "Train"
+            case .history:  return "History"
+            case .settings: return "Settings"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .home:     return "square.grid.2x2"
+            case .coach:    return "sparkles"
+            case .train:    return "figure.strengthtraining.traditional"
+            case .history:  return "chart.xyaxis.line"
+            case .settings: return "slider.horizontal.3"
             }
         }
     }
@@ -81,13 +95,13 @@ struct FitnessCoachApp: App {
     private func configureNavBarAppearance() {
         let navBarAppearance = UINavigationBarAppearance()
         navBarAppearance.configureWithTransparentBackground()
-        navBarAppearance.backgroundColor = UIColor(Color.background)
+        navBarAppearance.backgroundColor = UIColor(Color.ink0)
         navBarAppearance.titleTextAttributes = [
-            .foregroundColor: UIColor.white,
+            .foregroundColor: UIColor(Color.fg0),
             .font: UIFont.systemFont(ofSize: 17, weight: .semibold)
         ]
         navBarAppearance.largeTitleTextAttributes = [
-            .foregroundColor: UIColor.white,
+            .foregroundColor: UIColor(Color.fg0),
             .font: UIFont.systemFont(ofSize: 30, weight: .bold)
         ]
         UINavigationBar.appearance().standardAppearance = navBarAppearance
@@ -115,60 +129,81 @@ struct FitnessCoachApp: App {
     }
 }
 
-// MARK: - Floating tab bar
+// MARK: - Capsule tab bar (editorial)
+//
+// Fixed-height floating capsule at the bottom, ink-2 @ ~82% alpha with blur,
+// r=28, 16pt outer inset. Active tab: signal lime icon + label, others fg-2
+// icon with no label. Deliberately constrained in height so the bar never
+// fights the content area above it (previous implementation had no height
+// bound and could stretch when layout changed).
 
-struct FloatingTabBar: View {
-    @Binding var selectedTab: FitnessCoachApp.Tab
+struct CapsuleTabBar: View {
+    @Binding var selected: FitnessCoachApp.Tab
+
+    /// Outer space (bar height + bottom inset) the tab bar occupies — used
+    /// by the app root to leave room below scrolling content.
+    static let reservedHeight: CGFloat = 72
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             ForEach(FitnessCoachApp.Tab.allCases, id: \.self) { tab in
-                tabButton(for: tab)
+                tabItem(tab)
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .frame(height: 56)
+        .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(Color.cardBorder.opacity(0.9), lineWidth: 0.8)
-                )
-                .shadow(color: .black.opacity(0.55), radius: 22, x: 0, y: 8)
+            ZStack {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.ink2.opacity(0.82))
+                    .background(
+                        .ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    )
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.line, lineWidth: 1)
+            }
         )
-        .padding(.horizontal, 20)
+        .shadow(color: Color.black.opacity(0.5), radius: 20, x: 0, y: 10)
     }
 
-    private func tabButton(for tab: FitnessCoachApp.Tab) -> some View {
-        let isSelected = selectedTab == tab
+    private func tabItem(_ tab: FitnessCoachApp.Tab) -> some View {
+        let isSelected = selected == tab
         return Button {
-            guard selectedTab != tab else { return }
-            Haptic.selection()
-            withAnimation(Motion.spring) { selectedTab = tab }
+            guard selected != tab else { return }
+            Haptic.light()
+            withAnimation(.easeOut(duration: 0.18)) { selected = tab }
         } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.recoveryGreen.opacity(isSelected ? 0.12 : 0))
-                    .padding(3)
-                    .animation(Motion.spring, value: isSelected)
+            HStack(spacing: 6) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Color.signal : Color.fg2)
 
-                VStack(spacing: 4) {
-                    Image(systemName: tab.icon(selected: isSelected))
-                        .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(isSelected ? Color.recoveryGreen : Color.textTertiary)
-                        .animation(Motion.snappy, value: isSelected)
-
-                    Circle()
-                        .fill(Color.recoveryGreen)
-                        .frame(width: 4, height: 4)
-                        .opacity(isSelected ? 1 : 0)
-                        .animation(Motion.spring, value: isSelected)
+                if isSelected {
+                    Text(tab.title.uppercased())
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .kerning(1.2)
+                        .foregroundStyle(Color.signal)
+                        .fixedSize()
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
             }
-            .contentShape(Rectangle())
+            .padding(.horizontal, isSelected ? 14 : 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: 40)
+            .background(
+                Capsule()
+                    .fill(isSelected ? Color.signal.opacity(0.08) : Color.clear)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(
+                        isSelected ? Color.signal.opacity(0.22) : Color.clear,
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }

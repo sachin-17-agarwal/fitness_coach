@@ -140,17 +140,69 @@ extension View {
 // MARK: - Typography presets
 
 extension Font {
-    /// Huge hero number (recovery score, stats).
-    static let display = Font.system(size: 64, weight: .bold, design: .rounded).monospacedDigit()
-    static let heroNumber = Font.system(size: 48, weight: .bold, design: .rounded).monospacedDigit()
-    static let largeNumber = Font.system(size: 36, weight: .bold, design: .rounded).monospacedDigit()
-    static let mediumNumber = Font.system(size: 26, weight: .bold, design: .rounded).monospacedDigit()
-    static let smallNumber = Font.system(size: 18, weight: .semibold, design: .rounded).monospacedDigit()
+    // Editorial redesign — Fraunces serif for hero numbers/titles, JetBrains
+    // Mono for numerics/eyebrows, system sans for UI. We fall back to the
+    // system serif/mono until custom font files are registered in Info.plist.
 
-    static let sectionTitle = Font.system(size: 13, weight: .semibold, design: .default).smallCaps()
-    static let cardTitle = Font.system(size: 16, weight: .semibold)
-    static let cardBody = Font.system(size: 14)
-    static let chipLabel = Font.system(size: 12, weight: .medium, design: .rounded)
+    // Hero serif numbers
+    static let numHero = Font.system(size: 96, weight: .light, design: .serif)
+    static let numXL = Font.system(size: 68, weight: .light, design: .serif)
+    static let numLG = Font.system(size: 36, weight: .medium, design: .monospaced).monospacedDigit()
+    static let numMD = Font.system(size: 22, weight: .medium, design: .monospaced).monospacedDigit()
+    static let numSM = Font.system(size: 16, weight: .medium, design: .monospaced).monospacedDigit()
+
+    // Editorial serif titles
+    static let serifXL = Font.system(size: 52, weight: .light, design: .serif)
+    static let serifLG = Font.system(size: 36, weight: .light, design: .serif)
+    static let serifMD = Font.system(size: 24, weight: .regular, design: .serif)
+    static let serifSM = Font.system(size: 18, weight: .medium, design: .serif)
+    static let serifBrand = Font.system(size: 22, weight: .medium, design: .serif)
+
+    // UI + labels
+    static let eyebrow = Font.system(size: 10, weight: .medium, design: .monospaced)
+    static let eyebrowSmall = Font.system(size: 9, weight: .medium, design: .monospaced)
+    static let uiBody = Font.system(size: 14, weight: .regular)
+    static let uiStrong = Font.system(size: 14, weight: .semibold)
+    static let uiSmall = Font.system(size: 12, weight: .regular)
+
+    // Legacy aliases — keep existing views compiling while screens migrate.
+    static let display = numXL
+    static let heroNumber = numXL
+    static let largeNumber = numLG
+    static let mediumNumber = numMD
+    static let smallNumber = numSM
+    static let sectionTitle = eyebrow
+    static let cardTitle = uiStrong
+    static let cardBody = uiBody
+    static let chipLabel = eyebrow
+}
+
+// MARK: - Eyebrow label
+//
+// Small, mono, uppercase, kerned label used above hero numbers, cards, and
+// sections. Corresponds to `.eyebrow` in the prototype's CSS.
+
+struct Eyebrow: View {
+    let text: String
+    var color: Color = .fg2
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.eyebrow)
+            .kerning(1.4)
+            .foregroundStyle(color)
+    }
+}
+
+// MARK: - Hairline divider
+
+struct Hairline: View {
+    var color: Color = .line
+    var body: some View {
+        Rectangle()
+            .fill(color)
+            .frame(height: 1)
+    }
 }
 
 // MARK: - Haptics

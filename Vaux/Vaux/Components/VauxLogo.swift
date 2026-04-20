@@ -1,10 +1,15 @@
 // VauxLogo.swift
-// Vaux
+// Vaux — editorial redesign
+//
+// Notched V mark: two diagonal arms meeting at a shortened apex so the
+// negative space reads as a precise geometric shape rather than a letter.
+// Single-weight, single-tone (fg-0 by default, switchable to signal).
 
 import SwiftUI
 
 struct VauxLogo: View {
-    var size: CGFloat = 40
+    var size: CGFloat = 24
+    var color: Color = .fg0
 
     private var vShape: Path {
         let w = size
@@ -35,28 +40,23 @@ struct VauxLogo: View {
 
     var body: some View {
         vShape
-            .fill(Gradients.recovery)
+            .fill(color)
             .frame(width: size, height: size)
     }
 }
 
 struct VauxWordmark: View {
-    var iconSize: CGFloat = 28
+    var iconSize: CGFloat = 22
     var fontSize: CGFloat = 22
+    var color: Color = .fg0
 
     var body: some View {
         HStack(spacing: 8) {
-            VauxLogo(size: iconSize)
+            VauxLogo(size: iconSize, color: color)
             Text("VAUX")
-                .font(.system(size: fontSize, weight: .bold, design: .rounded))
+                .font(.system(size: fontSize, weight: .semibold))
                 .kerning(2)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.white, .white.opacity(0.8)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .foregroundStyle(color)
         }
     }
 }
@@ -64,14 +64,15 @@ struct VauxWordmark: View {
 struct VauxBrandFooter: View {
     var body: some View {
         VStack(spacing: 6) {
-            VauxLogo(size: 24)
+            VauxLogo(size: 20, color: .fg2)
             Text("VAUX")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(.eyebrow)
                 .kerning(2)
-                .foregroundStyle(Color.textTertiary)
-            Text("AI Fitness Coach")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Color.textTertiary.opacity(0.6))
+                .foregroundStyle(Color.fg2)
+            Text("AI FITNESS COACH")
+                .font(.eyebrowSmall)
+                .kerning(1.4)
+                .foregroundStyle(Color.fg3)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
@@ -81,9 +82,10 @@ struct VauxBrandFooter: View {
 #Preview {
     VStack(spacing: 40) {
         VauxLogo(size: 80)
+        VauxLogo(size: 40, color: .signal)
         VauxWordmark()
         VauxBrandFooter()
     }
     .padding()
-    .background(Color.background)
+    .background(Color.ink0)
 }

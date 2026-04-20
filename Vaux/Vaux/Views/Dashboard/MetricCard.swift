@@ -1,11 +1,12 @@
 // MetricCard.swift
-// Vaux
+// Vaux — editorial redesign
+//
+// Quiet hairline card: eyebrow label, serif value + mono unit, sparkline in
+// fg-2 with a faint fill, optional mono sub-copy. No colored glows.
 
 import SwiftUI
 import Charts
 
-/// Reusable metric card with icon, title, value, optional subtitle,
-/// optional trend chip, and optional sparkline.
 struct MetricCard: View {
     let icon: String
     let title: String
@@ -13,7 +14,7 @@ struct MetricCard: View {
     var subtitle: String? = nil
     var trend: Trend? = nil
     var trendColor: Color? = nil
-    var accentColor: Color = .recoveryGreen
+    var accentColor: Color = .fg2
     var sparkline: [Double]? = nil
 
     enum Trend {
@@ -22,90 +23,104 @@ struct MetricCard: View {
 
         var icon: String {
             switch self {
-            case .up, .delta: return "arrow.up.right"
-            case .down: return "arrow.down.right"
-            case .flat: return "arrow.right"
+            case .up, .delta: return "arrow.up"
+            case .down: return "arrow.down"
+            case .flat: return "minus"
             }
         }
 
         var label: String {
             switch self {
-            case .up: return "up"
-            case .down: return "down"
-            case .flat: return "flat"
+            case .up: return "UP"
+            case .down: return "DOWN"
+            case .flat: return "FLAT"
             case .delta(let s): return s
             }
         }
 
         var color: Color {
             switch self {
-            case .up, .delta: return .recoveryGreen
-            case .down: return .recoveryRed
-            case .flat: return .textSecondary
+            case .up, .delta: return .mint
+            case .down: return .ember
+            case .flat: return .fg2
             }
         }
     }
 
+    private var unit: String? {
+        // Split "54 ms" → ("54", "ms"). If no space, we render value whole.
+        let parts = value.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        return parts.count == 2 ? String(parts[1]) : nil
+    }
+
+    private var numberPart: String {
+        let parts = value.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        return parts.first.map(String.init) ?? value
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(accentColor.opacity(0.14))
-                        .frame(width: 28, height: 28)
-                    Image(systemName: icon)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(accentColor)
-                }
-
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.textSecondary)
-
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Eyebrow(text: title)
                 Spacer()
-
                 if let trend {
                     trendChip(trend)
                 }
             }
 
-            HStack(alignment: .bottom) {
-                Text(value)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-
+            HStack(alignment: .bottom, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(numberPart)
+                        .font(.serifLG)
+                        .foregroundStyle(Color.fg0)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    if let unit {
+                        Text(unit)
+                            .font(.eyebrow)
+                            .foregroundStyle(Color.fg2)
+                    }
+                }
                 Spacer()
-
                 if let sparkline, sparkline.count >= 2 {
                     sparklineView(sparkline)
-                        .frame(width: 76, height: 28)
+                        .frame(width: 72, height: 24)
                 }
             }
 
             if let subtitle {
-                Text(subtitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.textTertiary)
+                Text(subtitle.uppercased())
+                    .font(.eyebrowSmall)
+                    .kerning(1.2)
+                    .foregroundStyle(Color.fg2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .darkCard()
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.ink2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.line, lineWidth: 1)
+        )
     }
 
     private func trendChip(_ trend: Trend) -> some View {
         let chipColor = trendColor ?? trend.color
         return HStack(spacing: 3) {
             Image(systemName: trend.icon)
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: 8, weight: .bold))
             Text(trend.label)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(.eyebrowSmall)
+                .kerning(1.0)
         }
         .foregroundStyle(chipColor)
-        .padding(.horizontal, 7)
+        .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(Capsule().fill(chipColor.opacity(0.14)))
+        .background(Capsule().fill(chipColor.opacity(0.10)))
+        .overlay(Capsule().stroke(chipColor.opacity(0.22), lineWidth: 0.5))
     }
 
     private func sparklineView(_ data: [Double]) -> some View {
@@ -115,7 +130,7 @@ struct MetricCard: View {
                     x: .value("idx", i),
                     y: .value("v", v)
                 )
-                .foregroundStyle(accentColor)
+                .foregroundStyle(Color.fg1)
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .interpolationMethod(.catmullRom)
 
@@ -125,7 +140,7 @@ struct MetricCard: View {
                 )
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [accentColor.opacity(0.35), accentColor.opacity(0)],
+                        colors: [Color.fg1.opacity(0.12), Color.fg1.opacity(0)],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -144,22 +159,20 @@ struct MetricCard: View {
         MetricCard(
             icon: "moon.fill",
             title: "Sleep",
-            value: "7.2h",
-            subtitle: "Deep 1.8h · REM 1.5h",
+            value: "8.7 hrs",
+            subtitle: "Deep 2h · REM 1.5h",
             trend: .up,
-            accentColor: .accentBlue,
-            sparkline: [6.8, 7.1, 6.5, 7.3, 7.0, 7.4, 7.2]
+            sparkline: [6.8, 7.1, 6.5, 7.3, 7.0, 7.4, 8.7]
         )
         MetricCard(
-            icon: "waveform.path.ecg",
-            title: "HRV",
-            value: "58 ms",
-            subtitle: "7d avg: 54 ms",
-            trend: .delta("+4"),
-            accentColor: .recoveryGreen,
-            sparkline: [52, 48, 55, 51, 58, 54, 58]
+            icon: "heart.fill",
+            title: "Resting HR",
+            value: "49 bpm",
+            subtitle: "7d avg 51 bpm",
+            trend: .down,
+            sparkline: [52, 51, 53, 52, 50, 51, 49]
         )
     }
     .padding()
-    .background(Color.background)
+    .background(Color.ink0)
 }

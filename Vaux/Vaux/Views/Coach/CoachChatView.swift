@@ -39,7 +39,7 @@ struct CoachChatView: View {
                     inputBar
                 }
             }
-            .navigationTitle("Coach")
+            .navigationTitle("Nov")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -107,19 +107,18 @@ struct CoachChatView: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             Spacer()
-            VauxLogo(size: 64)
-                .shadow(color: .recoveryGreen.opacity(0.35), radius: 20, x: 0, y: 8)
+            VauxLogo(size: 56, color: .signal)
 
             VStack(spacing: 6) {
-                Text("Ask your coach")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text("Programming questions, form cues,\nrecovery strategy — anything training-related.")
+                Text("Ask Nov")
+                    .font(.serifLG)
+                    .foregroundStyle(Color.fg0)
+                Text("Programming. Form. Recovery.\nNov keeps it factual.")
                     .multilineTextAlignment(.center)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.textSecondary)
+                    .font(.uiSmall)
+                    .foregroundStyle(Color.fg1)
             }
 
             Spacer()
