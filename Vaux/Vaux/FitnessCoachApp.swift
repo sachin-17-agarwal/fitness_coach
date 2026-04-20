@@ -13,80 +13,72 @@ struct FitnessCoachApp: App {
     @State private var selectedTab: Tab = .dashboard
 
     init() {
-        configureAppearance()
+        configureNavBarAppearance()
         requestHealthKitAuthorization()
     }
 
     var body: some Scene {
         WindowGroup {
             ZStack {
-                TabView(selection: $selectedTab) {
-                    DashboardView(switchToChatTab: { selectedTab = .coach })
-                        .tabItem {
-                            Label("Home", systemImage: "heart.text.square.fill")
-                        }
-                        .tag(Tab.dashboard)
+                Color.background.ignoresSafeArea()
+                tabContent
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                FloatingTabBar(selectedTab: $selectedTab)
+                    .padding(.bottom, 8)
+            }
+            .preferredColorScheme(.dark)
+        }
+    }
 
-                    CoachChatView()
-                        .tabItem {
-                            Label("Coach", systemImage: "sparkles")
-                        }
-                        .tag(Tab.coach)
+    // MARK: - Tab content
 
-                    NavigationStack {
-                        WorkoutModeView()
-                    }
-                    .tabItem {
-                        Label("Workout", systemImage: "figure.strengthtraining.traditional")
-                    }
-                    .tag(Tab.workout)
+    @ViewBuilder
+    private var tabContent: some View {
+        ZStack {
+            DashboardView(switchToChatTab: { selectedTab = .coach })
+                .opacity(selectedTab == .dashboard ? 1 : 0)
+                .allowsHitTesting(selectedTab == .dashboard)
 
-                    HistoryView()
-                        .tabItem {
-                            Label("History", systemImage: "chart.xyaxis.line")
-                        }
-                        .tag(Tab.history)
+            CoachChatView()
+                .opacity(selectedTab == .coach ? 1 : 0)
+                .allowsHitTesting(selectedTab == .coach)
 
-                    SettingsView()
-                        .tabItem {
-                            Label("Settings", systemImage: "gearshape.fill")
-                        }
-                        .tag(Tab.settings)
-                }
-                .tint(Color.recoveryGreen)
-                .preferredColorScheme(.dark)
+            NavigationStack {
+                WorkoutModeView()
+            }
+            .opacity(selectedTab == .workout ? 1 : 0)
+            .allowsHitTesting(selectedTab == .workout)
+
+            HistoryView()
+                .opacity(selectedTab == .history ? 1 : 0)
+                .allowsHitTesting(selectedTab == .history)
+
+            SettingsView()
+                .opacity(selectedTab == .settings ? 1 : 0)
+                .allowsHitTesting(selectedTab == .settings)
+        }
+    }
+
+    // MARK: - Tab enum
+
+    enum Tab: Hashable, CaseIterable {
+        case dashboard, coach, workout, history, settings
+
+        func icon(selected: Bool) -> String {
+            switch self {
+            case .dashboard: return selected ? "heart.text.square.fill" : "heart.text.square"
+            case .coach:     return "sparkles"
+            case .workout:   return "figure.strengthtraining.traditional"
+            case .history:   return "chart.xyaxis.line"
+            case .settings:  return selected ? "gearshape.fill" : "gearshape"
             }
         }
     }
 
-    // MARK: - Tabs
-
-    enum Tab: Hashable {
-        case dashboard, coach, workout, history, settings
-    }
-
     // MARK: - Appearance
 
-    private func configureAppearance() {
-        let tabBarAppearance = UITabBarAppearance()
-        tabBarAppearance.configureWithOpaqueBackground()
-        tabBarAppearance.backgroundColor = UIColor(Color.surface)
-        tabBarAppearance.shadowColor = UIColor(Color.cardBorder.opacity(0.6))
-
-        let normal = UITabBarItemAppearance()
-        normal.normal.iconColor = UIColor(Color.textTertiary)
-        normal.normal.titleTextAttributes = [.foregroundColor: UIColor(Color.textTertiary),
-                                             .font: UIFont.systemFont(ofSize: 10, weight: .semibold)]
-        normal.selected.iconColor = UIColor(Color.recoveryGreen)
-        normal.selected.titleTextAttributes = [.foregroundColor: UIColor(Color.recoveryGreen),
-                                               .font: UIFont.systemFont(ofSize: 10, weight: .bold)]
-        tabBarAppearance.stackedLayoutAppearance = normal
-        tabBarAppearance.inlineLayoutAppearance = normal
-        tabBarAppearance.compactInlineLayoutAppearance = normal
-
-        UITabBar.appearance().standardAppearance = tabBarAppearance
-        UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
-
+    private func configureNavBarAppearance() {
         let navBarAppearance = UINavigationBarAppearance()
         navBarAppearance.configureWithTransparentBackground()
         navBarAppearance.backgroundColor = UIColor(Color.background)
@@ -107,14 +99,10 @@ struct FitnessCoachApp: App {
 
     private func requestHealthKitAuthorization() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-
         Task {
             do {
                 try await HealthKitManager.shared.requestAuthorization()
                 HealthKitManager.shared.enableBackgroundSync()
-
-                // On first launch (or after a long gap), pull the last week so
-                // the dashboard sparkline and history view have data right away.
                 if HealthKitManager.shared.lastSyncDate == nil {
                     try await HealthKitManager.shared.syncRecent(days: 7)
                 } else {
@@ -124,5 +112,64 @@ struct FitnessCoachApp: App {
                 print("[HealthKit] Startup sync failed: \(error.localizedDescription)")
             }
         }
+    }
+}
+
+// MARK: - Floating tab bar
+
+struct FloatingTabBar: View {
+    @Binding var selectedTab: FitnessCoachApp.Tab
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(FitnessCoachApp.Tab.allCases, id: \.self) { tab in
+                tabButton(for: tab)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(Color.cardBorder.opacity(0.9), lineWidth: 0.8)
+                )
+                .shadow(color: .black.opacity(0.55), radius: 22, x: 0, y: 8)
+        )
+        .padding(.horizontal, 20)
+    }
+
+    private func tabButton(for tab: FitnessCoachApp.Tab) -> some View {
+        let isSelected = selectedTab == tab
+        return Button {
+            guard selectedTab != tab else { return }
+            Haptic.selection()
+            withAnimation(Motion.spring) { selectedTab = tab }
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.recoveryGreen.opacity(isSelected ? 0.12 : 0))
+                    .padding(3)
+                    .animation(Motion.spring, value: isSelected)
+
+                VStack(spacing: 4) {
+                    Image(systemName: tab.icon(selected: isSelected))
+                        .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? Color.recoveryGreen : Color.textTertiary)
+                        .animation(Motion.snappy, value: isSelected)
+
+                    Circle()
+                        .fill(Color.recoveryGreen)
+                        .frame(width: 4, height: 4)
+                        .opacity(isSelected ? 1 : 0)
+                        .animation(Motion.spring, value: isSelected)
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

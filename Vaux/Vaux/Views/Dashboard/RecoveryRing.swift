@@ -47,7 +47,7 @@ struct RecoveryRing: View {
                         .foregroundStyle(Color.textSecondary)
 
                     Text(statusLabel)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
 
                     if !statusText.isEmpty {
@@ -82,31 +82,31 @@ struct RecoveryRing: View {
     private var ring: some View {
         ZStack {
             Circle()
-                .stroke(ringColor.opacity(0.14), lineWidth: 10)
-                .frame(width: 120, height: 120)
+                .stroke(ringColor.opacity(0.13), lineWidth: 11)
+                .frame(width: 140, height: 140)
 
             Circle()
                 .trim(from: 0, to: animatedProgress)
-                .stroke(ringGradient, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                .stroke(ringGradient, style: StrokeStyle(lineWidth: 11, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .frame(width: 120, height: 120)
+                .frame(width: 140, height: 140)
 
             Circle()
                 .trim(from: 0, to: animatedProgress)
-                .stroke(ringColor.opacity(0.45), style: StrokeStyle(lineWidth: 16, lineCap: .round))
+                .stroke(ringColor.opacity(0.4), style: StrokeStyle(lineWidth: 18, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .frame(width: 120, height: 120)
-                .blur(radius: 10)
+                .frame(width: 140, height: 140)
+                .blur(radius: 11)
 
             VStack(spacing: 0) {
                 Text("\(score)")
-                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                    .font(.system(size: 46, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .contentTransition(.numericText(value: Double(score)))
                 Text("%")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.textSecondary)
-                    .offset(y: -4)
+                    .offset(y: -5)
             }
         }
     }
