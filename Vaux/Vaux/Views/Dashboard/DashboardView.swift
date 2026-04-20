@@ -10,7 +10,6 @@ struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var navigateToWorkout = false
     @State private var showWeightSheet = false
-    @State private var isSyncing = false
     @State private var syncError: String?
 
     var switchToChatTab: (() -> Void)? = nil
@@ -18,13 +17,12 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.background.ignoresSafeArea()
-                ambientGlow
+                Color.ink0.ignoresSafeArea()
 
                 if viewModel.isLoading && viewModel.recovery == nil {
                     ProgressView()
-                        .tint(.recoveryGreen)
-                        .scaleEffect(1.2)
+                        .tint(.signal)
+                        .scaleEffect(1.0)
                 } else {
                     content
                 }
@@ -46,9 +44,9 @@ struct DashboardView: View {
 
     private var content: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 20) {
                 header
-                    .padding(.top, 8)
+                    .padding(.top, 4)
 
                 RecoveryRing(
                     score: viewModel.recoveryScore,
@@ -56,180 +54,150 @@ struct DashboardView: View {
                     statusText: viewModel.hrvDeltaText,
                     sleep: viewModel.recovery?.sleepHours,
                     hrv: viewModel.recovery?.hrv,
-                    rhr: viewModel.recovery?.restingHr
+                    rhr: viewModel.recovery?.restingHr,
+                    hrvDelta: hrvDeltaInt,
+                    rhrDelta: rhrDeltaInt,
+                    recentScores: recentRecoveryScores
                 )
-
-                QuickActionsBar(
-                    onWorkout: { navigateToWorkout = true },
-                    onChat: { switchToChatTab?() },
-                    onLogWeight: { showWeightSheet = true },
-                    onSync: { Task { await performSync() } }
-                )
-
-                HRVSparkline(
-                    history: viewModel.hrvHistory,
-                    average: viewModel.hrvAvg
-                )
-
-                metricsGrid
 
                 SessionTypeCard(mesocycle: viewModel.mesocycle) {
                     navigateToWorkout = true
                 }
 
+                metricsGrid
+
                 if let err = syncError {
                     Text(err)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.recoveryRed)
+                        .font(.uiSmall)
+                        .foregroundStyle(Color.ember)
                 }
 
                 Spacer(minLength: 12)
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 22)
         }
         .refreshable { await viewModel.load() }
     }
 
-    // MARK: - Header (greeting + date + streak)
+    private var hrvDeltaInt: Int? {
+        guard let hrv = viewModel.recovery?.hrv, let avg = viewModel.hrvAvg else { return nil }
+        return Int((hrv - avg).rounded())
+    }
+
+    private var rhrDeltaInt: Int? {
+        guard let rhr = viewModel.recovery?.restingHr, let avg = viewModel.rhrAvg else { return nil }
+        return Int((rhr - avg).rounded())
+    }
+
+    private var recentRecoveryScores: [Int] {
+        // Recompute each day's score relative to the rolling HRV average.
+        guard let avg = viewModel.hrvAvg, avg > 0 else { return [] }
+        return viewModel.recoveryHistory
+            .reversed()
+            .prefix(14)
+            .map { rec -> Int in
+                guard let hrv = rec.hrv else { return 0 }
+                let ratio = hrv / avg
+                return min(100, max(0, Int(ratio * 100)))
+            }
+            .reversed()
+    }
+
+    // MARK: - Header — editorial (wordmark left, streak chip right)
 
     private var header: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(greeting)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.textSecondary)
-                Text(formattedDate)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+            HStack(spacing: 10) {
+                VauxLogo(size: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Eyebrow(text: formattedDate)
+                    Text("\(greeting), Sachin")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.fg0)
+                }
             }
             Spacer()
-            HStack(spacing: 10) {
-                if viewModel.currentStreak > 0 {
-                    streakPill
-                }
-                VauxLogo(size: 24)
-                    .opacity(0.55)
+            if viewModel.currentStreak > 0 {
+                streakPill
             }
         }
     }
 
     private var formattedDate: String {
         let f = DateFormatter()
-        f.dateFormat = "EEEE, MMM d"
+        f.dateFormat = "EEE · MMM d"
         return f.string(from: Date())
     }
 
     private var streakPill: some View {
         HStack(spacing: 5) {
-            Image(systemName: "flame.fill")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Color.accentAmber)
-            Text("\(viewModel.currentStreak)d streak")
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+            Image(systemName: "flame")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.amber)
+            Text("\(viewModel.currentStreak)D STREAK")
+                .font(.eyebrowSmall)
+                .kerning(1.2)
+                .foregroundStyle(Color.amber)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            Capsule()
-                .fill(Color.accentAmber.opacity(0.14))
-        )
+        .padding(.vertical, 5)
         .overlay(
             Capsule()
-                .stroke(Color.accentAmber.opacity(0.28), lineWidth: 0.5)
+                .stroke(Color.amber.opacity(0.35), lineWidth: 1)
         )
     }
 
-    // MARK: - Metrics grid
+    // MARK: - Metrics grid (This week)
 
     private var metricsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-            MetricCard(
-                icon: "moon.fill",
-                title: "Sleep",
-                value: sleepValue,
-                subtitle: sleepSubtitle,
-                accentColor: .accentBlue,
-                sparkline: sleepSparkline
-            )
+        VStack(alignment: .leading, spacing: 12) {
+            Eyebrow(text: "This week")
 
-            MetricCard(
-                icon: "heart.fill",
-                title: "Resting HR",
-                value: rhrValue,
-                subtitle: rhrSubtitle,
-                trend: rhrTrend,
-                trendColor: rhrTrendColor,
-                accentColor: .recoveryRed,
-                sparkline: rhrSparkline
-            )
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                MetricCard(
+                    icon: "moon",
+                    title: "Sleep",
+                    value: sleepValue,
+                    subtitle: sleepSubtitle,
+                    sparkline: sleepSparkline
+                )
 
-            if let weight = viewModel.recovery?.weightKg {
                 MetricCard(
-                    icon: "scalemass.fill",
-                    title: "Weight",
-                    value: weight.weightString,
-                    subtitle: viewModel.recovery?.bodyFatPct.map { "\($0.oneDecimal)% body fat" },
-                    accentColor: .accentAmber,
-                    sparkline: weightSparkline
+                    icon: "heart",
+                    title: "Resting HR",
+                    value: rhrValue,
+                    subtitle: rhrSubtitle,
+                    trend: rhrTrend,
+                    trendColor: rhrTrendColor,
+                    sparkline: rhrSparkline
                 )
-            }
 
-            if viewModel.weekTonnage > 0 {
-                MetricCard(
-                    icon: "flame.fill",
-                    title: "7d Tonnage",
-                    value: tonnageValue,
-                    subtitle: "\(viewModel.recentSessions.count) sessions",
-                    accentColor: .accentPurple
-                )
-            } else if let steps = viewModel.recovery?.steps {
-                MetricCard(
-                    icon: "figure.walk",
-                    title: "Steps",
-                    value: formatSteps(steps),
-                    accentColor: .recoveryGreen
-                )
+                if let weight = viewModel.recovery?.weightKg {
+                    MetricCard(
+                        icon: "scalemass",
+                        title: "Weight",
+                        value: "\(weight.oneDecimal) kg",
+                        subtitle: viewModel.recovery?.bodyFatPct.map { "\($0.oneDecimal)% body fat" },
+                        sparkline: weightSparkline
+                    )
+                }
+
+                if viewModel.weekTonnage > 0 {
+                    MetricCard(
+                        icon: "flame",
+                        title: "Tonnage",
+                        value: tonnageValue,
+                        subtitle: "\(viewModel.recentSessions.count) sessions"
+                    )
+                } else if let steps = viewModel.recovery?.steps {
+                    MetricCard(
+                        icon: "figure.walk",
+                        title: "Steps",
+                        value: formatSteps(steps)
+                    )
+                }
             }
         }
-    }
-
-    // MARK: - Ambient glow
-
-    private var ambientGlow: some View {
-        GeometryReader { geo in
-            ZStack {
-                Circle()
-                    .fill(Color.accentPurple.opacity(0.12))
-                    .frame(width: 280, height: 280)
-                    .blur(radius: 90)
-                    .offset(x: -geo.size.width * 0.35, y: -geo.size.height * 0.35)
-                Circle()
-                    .fill(Color.recoveryGreen.opacity(0.10))
-                    .frame(width: 260, height: 260)
-                    .blur(radius: 90)
-                    .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.1)
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-        }
-    }
-
-    // MARK: - Sync
-
-    private func performSync() async {
-        guard !isSyncing else { return }
-        isSyncing = true
-        syncError = nil
-        do {
-            try await HealthKitManager.shared.syncToSupabase()
-            Haptic.success()
-            await viewModel.load()
-        } catch {
-            Haptic.error()
-            syncError = "Sync failed: \(error.localizedDescription)"
-        }
-        isSyncing = false
     }
 
     // MARK: - Computed display values
@@ -246,7 +214,9 @@ struct DashboardView: View {
 
     private var sleepValue: String {
         guard let hours = viewModel.recovery?.sleepHours else { return "—" }
-        return "\(hours.oneDecimal)h"
+        let h = Int(hours)
+        let m = Int((hours - Double(h)) * 60)
+        return String(format: "%d:%02d hrs", h, m)
     }
 
     private var sleepSubtitle: String? {
@@ -258,7 +228,7 @@ struct DashboardView: View {
 
     private var rhrValue: String {
         guard let rhr = viewModel.recovery?.restingHr else { return "—" }
-        return "\(Int(rhr))"
+        return "\(Int(rhr)) bpm"
     }
 
     private var rhrSubtitle: String? {
@@ -273,18 +243,19 @@ struct DashboardView: View {
         return .flat
     }
 
+    // For RHR, lower is better — flip the default trend colors.
     private var rhrTrendColor: Color? {
         guard let trend = rhrTrend else { return nil }
         switch trend {
-        case .down: return .recoveryGreen
-        case .up: return .recoveryRed
+        case .down: return .mint
+        case .up: return .ember
         default: return nil
         }
     }
 
     private var tonnageValue: String {
         let kg = viewModel.weekTonnage
-        if kg >= 1000 { return String(format: "%.1ft", kg / 1000) }
+        if kg >= 1000 { return String(format: "%.1f t", kg / 1000) }
         return "\(Int(kg)) kg"
     }
 
