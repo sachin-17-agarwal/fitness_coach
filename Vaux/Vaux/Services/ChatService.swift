@@ -77,19 +77,11 @@ final class ChatService: Sendable {
     // MARK: - Send message to backend
 
     /// Posts the user's message to the Railway backend and returns the
-    /// assistant's response.  Also persists both the user and assistant
-    /// messages to the `conversations` table.
+    /// assistant's response. The backend persists both messages to the
+    /// `conversations` table, so the client does not save them here (doing
+    /// so would double-insert every message).
     func sendMessage(_ text: String) async throws -> ChatResponse {
-        // 1. Save user message (best-effort — don't block the backend call)
-        try? await saveMessage(role: "user", content: text)
-
-        // 2. Call backend (this is the critical path)
-        let chatResponse = try await callBackend(text)
-
-        // 3. Save assistant reply (best-effort)
-        try? await saveMessage(role: "assistant", content: chatResponse.response)
-
-        return chatResponse
+        return try await callBackend(text)
     }
 
     // MARK: - Conversation history
@@ -103,18 +95,6 @@ final class ChatService: Sendable {
             order: "created_at.asc"
         )
         return messages
-    }
-
-    /// Saves a single message to the `conversations` table.
-    func saveMessage(role: String, content: String) async throws {
-        let today = Self.todayString()
-        let now = ISO8601DateFormatter().string(from: Date())
-        try await client.insert("conversations", body: [
-            "date": today,
-            "role": role,
-            "content": content,
-            "created_at": now,
-        ])
     }
 
     // MARK: - Backend call
