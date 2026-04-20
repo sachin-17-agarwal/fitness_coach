@@ -155,45 +155,50 @@ struct DashboardView: View {
 
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 MetricCard(
-                    icon: "moon",
+                    icon: "moon.fill",
                     title: "Sleep",
                     value: sleepValue,
                     subtitle: sleepSubtitle,
+                    accentColor: .iris,
                     sparkline: sleepSparkline
                 )
 
                 MetricCard(
-                    icon: "heart",
+                    icon: "heart.fill",
                     title: "Resting HR",
                     value: rhrValue,
                     subtitle: rhrSubtitle,
                     trend: rhrTrend,
                     trendColor: rhrTrendColor,
+                    accentColor: .ember,
                     sparkline: rhrSparkline
                 )
 
                 if let weight = viewModel.recovery?.weightKg {
                     MetricCard(
-                        icon: "scalemass",
+                        icon: "scalemass.fill",
                         title: "Weight",
                         value: "\(weight.oneDecimal) kg",
                         subtitle: viewModel.recovery?.bodyFatPct.map { "\($0.oneDecimal)% body fat" },
+                        accentColor: .amber,
                         sparkline: weightSparkline
                     )
                 }
 
                 if viewModel.weekTonnage > 0 {
                     MetricCard(
-                        icon: "flame",
+                        icon: "flame.fill",
                         title: "Tonnage",
                         value: tonnageValue,
-                        subtitle: "\(viewModel.recentSessions.count) sessions"
+                        subtitle: "\(viewModel.recentSessions.count) sessions",
+                        accentColor: .signal
                     )
                 } else if let steps = viewModel.recovery?.steps {
                     MetricCard(
                         icon: "figure.walk",
                         title: "Steps",
-                        value: formatSteps(steps)
+                        value: formatSteps(steps),
+                        accentColor: .mint
                     )
                 }
             }

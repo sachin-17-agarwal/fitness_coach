@@ -14,7 +14,7 @@ struct MetricCard: View {
     var subtitle: String? = nil
     var trend: Trend? = nil
     var trendColor: Color? = nil
-    var accentColor: Color = .fg2
+    var accentColor: Color = .signal
     var sparkline: [Double]? = nil
 
     enum Trend {
@@ -60,7 +60,8 @@ struct MetricCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
+                iconTile
                 Eyebrow(text: title)
                 Spacer()
                 if let trend {
@@ -78,7 +79,7 @@ struct MetricCard: View {
                     if let unit {
                         Text(unit)
                             .font(.eyebrow)
-                            .foregroundStyle(Color.fg2)
+                            .foregroundStyle(accentColor)
                     }
                 }
                 Spacer()
@@ -107,6 +108,17 @@ struct MetricCard: View {
         )
     }
 
+    private var iconTile: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(accentColor.opacity(0.14))
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(accentColor)
+        }
+        .frame(width: 22, height: 22)
+    }
+
     private func trendChip(_ trend: Trend) -> some View {
         let chipColor = trendColor ?? trend.color
         return HStack(spacing: 3) {
@@ -130,7 +142,7 @@ struct MetricCard: View {
                     x: .value("idx", i),
                     y: .value("v", v)
                 )
-                .foregroundStyle(Color.fg1)
+                .foregroundStyle(accentColor)
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .interpolationMethod(.catmullRom)
 
@@ -140,7 +152,7 @@ struct MetricCard: View {
                 )
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.fg1.opacity(0.12), Color.fg1.opacity(0)],
+                        colors: [accentColor.opacity(0.22), accentColor.opacity(0)],
                         startPoint: .top,
                         endPoint: .bottom
                     )
