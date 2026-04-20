@@ -101,7 +101,10 @@ final class WorkoutViewModel {
         guard let session = currentSession, let sessionId = session.id else { return }
         errorMessage = nil
 
-        let isWarmup = currentPhase == .warmup
+        // Snapshot the phase *before* we advance — the label below must describe
+        // the set the user just logged, not the next prescribed phase.
+        let loggedPhase = currentPhase
+        let isWarmup = loggedPhase == .warmup
         let exercise = currentPrescription?.exerciseName ?? "Unknown"
 
         if !isWarmup {
@@ -163,7 +166,12 @@ final class WorkoutViewModel {
 
         // AI feedback
         isCoachThinking = true
-        let label = isWarmup ? "warm-up" : currentPhase == .backoff ? "back-off" : "working"
+        let label: String
+        switch loggedPhase {
+        case .warmup:  label = "warm-up"
+        case .working: label = "working"
+        case .backoff: label = "back-off"
+        }
         let setMsg = "Logged \(label): \(exercise) - \(inputWeight.weightString) x \(inputReps)\(isWarmup ? "" : " @ RPE \(inputRPE.oneDecimal)"). Set \(exerciseSetIndex) for this exercise, \(setCount) working sets total. What's next?"
         do {
             let response = try await chatService.sendMessage(setMsg)
