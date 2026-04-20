@@ -14,10 +14,9 @@ struct Briefing: Sendable {
     let coachNote: String
     let generatedAt: Date
 
-    /// Recovery score 0-100 based on HRV vs 7-day avg.
+    /// Composite recovery score 0-100 combining sleep, HRV, and resting HR.
     var recoveryScore: Int {
-        guard let hrv = recovery?.hrv, let avg = hrv7DayAvg, avg > 0 else { return 0 }
-        return min(100, max(0, Int((hrv / avg) * 100)))
+        recovery?.compositeScore(hrv7DayAvg: hrv7DayAvg, rhr7DayAvg: rhr7DayAvg) ?? 0
     }
 
     /// HRV delta vs 7-day avg ("+3ms", "-2ms", or "—").
