@@ -83,34 +83,40 @@ struct DashboardView: View {
                         .foregroundStyle(Color.recoveryRed)
                 }
 
-                Spacer(minLength: 24)
+                Spacer(minLength: 12)
             }
             .padding(.horizontal, 18)
         }
         .refreshable { await viewModel.load() }
     }
 
-    // MARK: - Header (greeting + streak pill)
+    // MARK: - Header (greeting + date + streak)
 
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(greeting)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.textSecondary)
-                Text("Dashboard")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                Text(formattedDate)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 10) {
-                VauxLogo(size: 26)
-                    .opacity(0.7)
+            HStack(spacing: 10) {
                 if viewModel.currentStreak > 0 {
                     streakPill
                 }
+                VauxLogo(size: 24)
+                    .opacity(0.55)
             }
         }
+    }
+
+    private var formattedDate: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMM d"
+        return f.string(from: Date())
     }
 
     private var streakPill: some View {
