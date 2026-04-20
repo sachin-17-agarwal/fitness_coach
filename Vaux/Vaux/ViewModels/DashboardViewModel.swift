@@ -22,18 +22,17 @@ final class DashboardViewModel {
     private let mesocycleService = MesocycleService()
     private let workoutService = WorkoutService()
 
-    /// Computed recovery score 0-100 based on HRV relative to 7-day average.
+    /// Composite recovery score 0-100 combining sleep, HRV, and resting HR.
     var recoveryScore: Int {
-        guard let hrv = recovery?.hrv, let avg = hrvAvg, avg > 0 else { return 0 }
-        let ratio = hrv / avg
-        return min(100, max(0, Int(ratio * 100)))
+        recovery?.compositeScore(hrv7DayAvg: hrvAvg, rhr7DayAvg: rhrAvg) ?? 0
     }
 
     var recoveryColor: RecoveryLevel {
-        guard let hrv = recovery?.hrv, let avg = hrvAvg, avg > 0 else { return .unknown }
-        let ratio = hrv / avg
-        if ratio >= 1.0 { return .green }
-        if ratio >= 0.9 { return .yellow }
+        guard let score = recovery?.compositeScore(hrv7DayAvg: hrvAvg, rhr7DayAvg: rhrAvg) else {
+            return .unknown
+        }
+        if score >= 75 { return .green }
+        if score >= 55 { return .yellow }
         return .red
     }
 
