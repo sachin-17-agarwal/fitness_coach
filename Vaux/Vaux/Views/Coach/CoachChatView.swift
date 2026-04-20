@@ -39,7 +39,7 @@ struct CoachChatView: View {
                     inputBar
                 }
             }
-            .navigationTitle("Nov")
+            .navigationTitle("Coach")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -112,10 +112,10 @@ struct CoachChatView: View {
             VauxLogo(size: 56, color: .signal)
 
             VStack(spacing: 6) {
-                Text("Ask Nov")
+                Text("Ask your coach")
                     .font(.serifLG)
                     .foregroundStyle(Color.fg0)
-                Text("Programming. Form. Recovery.\nNov keeps it factual.")
+                Text("Programming. Form. Recovery.\nAsk anything, stay factual.")
                     .multilineTextAlignment(.center)
                     .font(.uiSmall)
                     .foregroundStyle(Color.fg1)
