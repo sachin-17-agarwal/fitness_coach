@@ -5,6 +5,7 @@ webhook.py — Flask server for Telegram messages and Apple Health data.
 import os
 import re
 import secrets
+import traceback
 from flask import Flask, request, jsonify
 from coach import handle_incoming_message
 from memory import load_memory, save_recovery_data
@@ -165,8 +166,18 @@ def api_chat():
     if not text:
         return jsonify({"error": "empty message"}), 400
 
-    memory = load_memory()
-    response = handle_incoming_message(text, memory, send_reply=False)
+    try:
+        memory = load_memory()
+        response = handle_incoming_message(text, memory, send_reply=False)
+    except Exception as e:
+        # Log full traceback to Railway/Flask logs for debugging, but return
+        # a clean JSON error so the iOS app surfaces something useful instead
+        # of a generic HTML 500 page.
+        traceback.print_exc()
+        return jsonify({
+            "error": "coach_failed",
+            "message": f"{type(e).__name__}: {e}",
+        }), 502
 
     def _int_or_default(val, default=1):
         try:
