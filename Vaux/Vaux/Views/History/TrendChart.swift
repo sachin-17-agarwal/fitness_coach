@@ -18,8 +18,16 @@ struct TrendChart: View {
     let color: Color
     let unit: String
 
+    /// Chronological (oldest → newest) view of `data`. Callers sometimes pass
+    /// points in newest-first order (the recovery history API returns
+    /// `date.desc`), which would otherwise cause the header to show the
+    /// oldest reading as "latest" and invert the delta sign.
+    private var sorted: [TrendDataPoint] {
+        data.sorted { $0.date < $1.date }
+    }
+
     private var delta: Double? {
-        guard let first = data.first, let last = data.last else { return nil }
+        guard let first = sorted.first, let last = sorted.last, first.id != last.id else { return nil }
         return last.value - first.value
     }
 
@@ -31,7 +39,7 @@ struct TrendChart: View {
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .kerning(1)
                         .foregroundStyle(Color.textTertiary)
-                    if let latest = data.last {
+                    if let latest = sorted.last {
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text(latest.value.oneDecimal)
                                 .font(.system(size: 26, weight: .bold, design: .rounded).monospacedDigit())
@@ -48,8 +56,8 @@ struct TrendChart: View {
                 }
             }
 
-            if data.count >= 2 {
-                Chart(data) { point in
+            if sorted.count >= 2 {
+                Chart(sorted) { point in
                     LineMark(
                         x: .value("Date", point.date),
                         y: .value("Value", point.value)
