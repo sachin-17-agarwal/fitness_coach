@@ -32,7 +32,7 @@ struct DashboardView: View {
                 WorkoutModeView(sessionType: viewModel.mesocycle.todayType)
             }
             .sheet(isPresented: $showWeightSheet) {
-                WeightLogSheet(initialWeight: viewModel.recovery?.weightKg) {
+                WeightLogSheet(initialWeight: viewModel.latestWeightKg) {
                     Task { await viewModel.load() }
                 }
             }
@@ -174,12 +174,12 @@ struct DashboardView: View {
                     sparkline: rhrSparkline
                 )
 
-                if let weight = viewModel.recovery?.weightKg {
+                if let weight = viewModel.latestWeightKg {
                     MetricCard(
                         icon: "scalemass.fill",
                         title: "Weight",
                         value: "\(weight.oneDecimal) kg",
-                        subtitle: viewModel.recovery?.bodyFatPct.map { "\($0.oneDecimal)% body fat" },
+                        subtitle: viewModel.latestBodyFatPct.map { "\($0.oneDecimal)% body fat" },
                         accentColor: .amber,
                         sparkline: weightSparkline
                     )

@@ -104,6 +104,15 @@ struct WeightLogSheet: View {
             )
             do {
                 try await recoveryService.saveRecovery(recovery)
+                // Mirror the entry into HealthKit so the next background HK
+                // sync re-reads the same value instead of overwriting this
+                // recovery row with an older sample. Best-effort — if the
+                // user declined HK write permission, the Supabase row still
+                // wins because body-mass sync is now day-scoped.
+                try? await HealthKitManager.shared.saveBodyComposition(
+                    weightKg: weight,
+                    bodyFatPct: bf
+                )
                 Haptic.success()
                 status = "Saved"
                 onSaved?()

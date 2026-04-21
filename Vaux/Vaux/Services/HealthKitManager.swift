@@ -27,6 +27,19 @@ final class HealthKitManager {
         return types
     }()
 
+    /// Metrics Vaux can write back into HealthKit. Body composition values are
+    /// the only ones the app actively authors (via `WeightLogSheet`); the
+    /// rest stay read-only.
+    private let writeTypes: Set<HKSampleType> = {
+        var types = Set<HKSampleType>()
+        for id in [HKQuantityTypeIdentifier.bodyMass, .bodyFatPercentage] {
+            if let t = HKQuantityType.quantityType(forIdentifier: id) {
+                types.insert(t)
+            }
+        }
+        return types
+    }()
+
     /// Metrics that warrant a background refresh when Apple Health ingests new data.
     private let observedIdentifiers: [HKQuantityTypeIdentifier] = [
         .heartRateVariabilitySDNN,
@@ -40,7 +53,7 @@ final class HealthKitManager {
 
     func requestAuthorization() async throws {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        try await store.requestAuthorization(toShare: [], read: readTypes)
+        try await store.requestAuthorization(toShare: writeTypes, read: readTypes)
     }
 
     var lastSyncDate: Date? {
@@ -83,8 +96,13 @@ final class HealthKitManager {
         let steps = await safe { try await querySum(.stepCount, unit: .count(), start: start, end: end) }
         let energy = await safe { try await querySum(.activeEnergyBurned, unit: .kilocalorie(), start: start, end: end) }
         let exercise = await safe { try await querySum(.appleExerciseTime, unit: .minute(), start: start, end: end) }
-        let weight = await safe { try await queryLatest(.bodyMass, unit: .gramUnit(with: .kilo), endingBefore: end) }
-        let bodyFat = await safe { try await queryLatest(.bodyFatPercentage, unit: .percent(), endingBefore: end) }
+        // Body composition is scoped to the current day's window so an old
+        // HealthKit reading doesn't get re-stamped onto today's recovery row
+        // (and silently overwrite a value the user typed into the weight
+        // sheet). Days without a weigh-in leave `weight_kg` null — the UI
+        // falls back to the most recent non-null entry.
+        let weight = await safe { try await queryLatestInRange(.bodyMass, unit: .gramUnit(with: .kilo), start: start, end: end) }
+        let bodyFat = await safe { try await queryLatestInRange(.bodyFatPercentage, unit: .percent(), start: start, end: end) }
         let resp = await safe { try await queryAverage(.respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start, end: end) }
         let vo2 = await safe { try await queryLatest(.vo2Max, unit: HKUnit(from: "ml/kg*min"), endingBefore: end) }
         let sleep = await safe { try await querySleepHours(for: start) }
@@ -115,8 +133,36 @@ final class HealthKitManager {
             vo2Max: vo2
         )
 
-        try await recoveryService.saveRecovery(recovery)
+        try await recoveryService.saveHealthKitSync(recovery)
         UserDefaults.standard.set(Date(), forKey: lastSyncKey)
+    }
+
+    // MARK: - Body composition writes
+
+    /// Writes a body-weight (and optional body-fat) sample into HealthKit so
+    /// the value the user typed into the weight sheet becomes the canonical
+    /// reading across apps. Without this, the next sync would query
+    /// HealthKit, find the older sample still at the top, and overwrite the
+    /// user's entry back to the stale value.
+    func saveBodyComposition(weightKg: Double, bodyFatPct: Double?, at date: Date = Date()) async throws {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+
+        var samples: [HKQuantitySample] = []
+
+        if let massType = HKQuantityType.quantityType(forIdentifier: .bodyMass) {
+            let quantity = HKQuantity(unit: .gramUnit(with: .kilo), doubleValue: weightKg)
+            samples.append(HKQuantitySample(type: massType, quantity: quantity, start: date, end: date))
+        }
+
+        if let bodyFatPct,
+           let fatType = HKQuantityType.quantityType(forIdentifier: .bodyFatPercentage) {
+            // HealthKit stores body-fat percentage as a fraction 0-1.
+            let quantity = HKQuantity(unit: .percent(), doubleValue: bodyFatPct / 100.0)
+            samples.append(HKQuantitySample(type: fatType, quantity: quantity, start: date, end: date))
+        }
+
+        guard !samples.isEmpty else { return }
+        try await store.save(samples)
     }
 
     // MARK: - Workouts (Apple Watch import)
@@ -223,6 +269,29 @@ final class HealthKitManager {
             let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stats, error in
                 if let error { continuation.resume(throwing: error); return }
                 continuation.resume(returning: stats?.sumQuantity()?.doubleValue(for: unit))
+            }
+            store.execute(query)
+        }
+    }
+
+    /// Returns the most recent sample inside `[start, end)`. Used for
+    /// metrics where carrying a reading from an earlier day into today's
+    /// row would be wrong (body weight, body fat). Returns `nil` when no
+    /// sample was recorded in the window.
+    private func queryLatestInRange(
+        _ identifier: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        start: Date,
+        end: Date
+    ) async throws -> Double? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictEndDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sort]) { _, samples, error in
+                if let error { continuation.resume(throwing: error); return }
+                continuation.resume(returning: (samples?.first as? HKQuantitySample)?.quantity.doubleValue(for: unit))
             }
             store.execute(query)
         }

@@ -117,11 +117,12 @@ struct FitnessCoachApp: App {
             do {
                 try await HealthKitManager.shared.requestAuthorization()
                 HealthKitManager.shared.enableBackgroundSync()
-                if HealthKitManager.shared.lastSyncDate == nil {
-                    try await HealthKitManager.shared.syncRecent(days: 7)
-                } else {
-                    try await HealthKitManager.shared.syncToSupabase()
-                }
+                // Always revisit the last week on launch. Today's row is what
+                // the dashboard needs immediately, but re-syncing the prior
+                // days lets the new day-scoped body-composition logic clear
+                // stale values that earlier (unscoped) syncs stamped onto
+                // days with no actual weigh-in.
+                try await HealthKitManager.shared.syncRecent(days: 7)
             } catch {
                 print("[HealthKit] Startup sync failed: \(error.localizedDescription)")
             }
