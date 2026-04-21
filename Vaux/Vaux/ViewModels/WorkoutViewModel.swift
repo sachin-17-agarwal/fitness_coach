@@ -70,6 +70,9 @@ final class WorkoutViewModel {
     // Error
     var errorMessage: String?
 
+    // Live heart rate (streams from HealthKit while workout is active)
+    let heartRateMonitor = HeartRateMonitor()
+
     private let workoutService = WorkoutService()
     private let chatService = ChatService()
     private let mesocycleService = MesocycleService()
@@ -83,6 +86,7 @@ final class WorkoutViewModel {
         startTime = Date()
         errorMessage = nil
         startDurationTimer()
+        heartRateMonitor.start(from: startTime ?? Date())
 
         var issues: [String] = []
 
@@ -146,6 +150,7 @@ final class WorkoutViewModel {
             startTime = Date()
         }
         startDurationTimer()
+        heartRateMonitor.start(from: startTime ?? Date())
 
         // Hydrate tonnage / set counters from sets already persisted in this
         // session so the live stats bar reflects what's already logged.
@@ -329,6 +334,7 @@ final class WorkoutViewModel {
 
     func endWorkout() async {
         stopTimers()
+        heartRateMonitor.stop()
 
         if let session = currentSession, let sessionId = session.id {
             do {
@@ -342,7 +348,10 @@ final class WorkoutViewModel {
             tonnage: totalTonnage,
             totalSets: setCount,
             duration: sessionDuration,
-            prs: latestPR != nil ? [latestPR!] : []
+            prs: latestPR != nil ? [latestPR!] : [],
+            avgHR: heartRateMonitor.avgBPM,
+            maxHR: heartRateMonitor.maxBPM,
+            minHR: heartRateMonitor.minBPM
         )
         showSummary = true
 

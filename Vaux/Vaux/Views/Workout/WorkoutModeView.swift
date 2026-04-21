@@ -173,7 +173,8 @@ struct WorkoutModeView: View {
             LiveStatsBar(
                 tonnage: viewModel.totalTonnage,
                 setCount: viewModel.setCount,
-                duration: viewModel.sessionDuration
+                duration: viewModel.sessionDuration,
+                heartRate: viewModel.heartRateMonitor.currentBPM
             )
 
             ScrollView(showsIndicators: false) {
