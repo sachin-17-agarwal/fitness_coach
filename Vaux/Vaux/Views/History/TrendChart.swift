@@ -31,6 +31,17 @@ struct TrendChart: View {
         return last.value - first.value
     }
 
+    /// Tight Y-axis domain around the observed range. `.automatic(includesZero: false)`
+    /// still snapped weight (values in the 80s) to a 0–100 range, flattening
+    /// the line. Picking a data-hugging domain keeps every metric readable.
+    private var yDomain: ClosedRange<Double> {
+        let values = sorted.map(\.value)
+        guard let lo = values.min(), let hi = values.max() else { return 0...1 }
+        let span = max(hi - lo, 1)
+        let pad = max(span * 0.15, 1)
+        return (lo - pad)...(hi + pad)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
@@ -79,7 +90,7 @@ struct TrendChart: View {
                     )
                     .interpolationMethod(.catmullRom)
                 }
-                .chartYScale(domain: .automatic(includesZero: false))
+                .chartYScale(domain: yDomain)
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                         AxisValueLabel(format: .dateTime.day().month(.abbreviated))
