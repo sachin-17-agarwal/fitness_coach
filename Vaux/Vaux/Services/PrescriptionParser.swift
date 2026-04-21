@@ -35,6 +35,31 @@ struct ExercisePrescription: Identifiable, Sendable {
 
 final class PrescriptionParser {
 
+    // MARK: - Prefix aliases
+
+    /// Line prefixes Claude uses for warm-up sets. Matches lowercase prefixes.
+    private static let warmupPrefixes = [
+        "warm-up:", "warmup:", "warm up:",
+        "warm-up sets:", "warmup sets:", "warm up sets:",
+        "warm sets:", "warm:",
+    ]
+
+    /// Line prefixes Claude uses for the main working set.
+    private static let workingPrefixes = [
+        "working set:", "working sets:", "work:", "working:",
+        "top set:", "top sets:",
+        "primary set:", "primary:",
+        "main set:", "main:",
+    ]
+
+    /// Line prefixes Claude uses for the back-off / drop set.
+    private static let backoffPrefixes = [
+        "back-off:", "backoff:", "back off:",
+        "back-off set:", "back off set:", "backoff set:",
+        "drop set:", "drop:",
+        "light set:", "light:",
+    ]
+
     // MARK: - Public
 
     /// Parses a full AI response string into an array of exercise prescriptions.
@@ -104,16 +129,16 @@ final class PrescriptionParser {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let lower = trimmed.lowercased()
 
-            if lower.hasPrefix("warm-up:") || lower.hasPrefix("warmup:") || lower.hasPrefix("warm up:") {
+            if Self.warmupPrefixes.contains(where: lower.hasPrefix) {
                 let content = extractAfterColon(trimmed)
                 warmup = parseWarmupSets(content)
-            } else if lower.hasPrefix("working set:") || lower.hasPrefix("working sets:") || lower.hasPrefix("work:") {
+            } else if Self.workingPrefixes.contains(where: lower.hasPrefix) {
                 let content = extractAfterColon(trimmed)
                 let (sets, rest, parsedTempo) = parseWorkingSets(content)
                 working = sets
                 if let r = rest { restSeconds = r }
                 if let t = parsedTempo { tempo = t }
-            } else if lower.hasPrefix("back-off:") || lower.hasPrefix("backoff:") || lower.hasPrefix("back off:") {
+            } else if Self.backoffPrefixes.contains(where: lower.hasPrefix) {
                 let content = extractAfterColon(trimmed)
                 let (sets, _, _) = parseWorkingSets(content)
                 backoff = sets
@@ -127,6 +152,21 @@ final class PrescriptionParser {
             }
         }
 
+        // Fallback: Claude sometimes drops the `Working Set:` / `Back-off:`
+        // prefixes and writes loose lines like "3 sets: 90kg x12 RPE7" +
+        // "3 sets: 60kg x15 RPE7". Scan the block for those when the named
+        // prefixes didn't produce structured sets so the working and back-off
+        // chips still render in the card.
+        if working.isEmpty && backoff.isEmpty {
+            let loose = parseLooseSets(block)
+            if let first = loose.first {
+                working = [first]
+                if loose.count >= 2 {
+                    backoff = [loose[1]]
+                }
+            }
+        }
+
         return ExercisePrescription(
             exerciseName: name,
             warmupSets: warmup,
@@ -136,6 +176,31 @@ final class PrescriptionParser {
             tempo: tempo,
             restSeconds: restSeconds
         )
+    }
+
+    /// Extracts sets from loose phrasings like "3 sets: 90kg x12 RPE7" or
+    /// "3x 90kg x 12 RPE7". Used as a fallback when the strict Working Set /
+    /// Back-off prefixes are missing.
+    private static func parseLooseSets(_ block: String) -> [(weight: Double, reps: Int, rpe: Double?)] {
+        let pattern = #"(?:(?:^|\s))(?:\d+\s*(?:sets?|x)\s*:?\s*)(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)(?:\s*(?:RPE|@)\s*(\d+(?:\.\d+)?))?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+            return []
+        }
+        let ns = block as NSString
+        let matches = regex.matches(in: block, range: NSRange(location: 0, length: ns.length))
+        var out: [(weight: Double, reps: Int, rpe: Double?)] = []
+        for match in matches where match.numberOfRanges >= 3 {
+            guard
+                let weight = Double(ns.substring(with: match.range(at: 1))),
+                let reps = Int(ns.substring(with: match.range(at: 2)))
+            else { continue }
+            var rpe: Double?
+            if match.numberOfRanges > 3, match.range(at: 3).location != NSNotFound {
+                rpe = Double(ns.substring(with: match.range(at: 3)))
+            }
+            out.append((weight, reps, rpe))
+        }
+        return out
     }
 
     // MARK: - Name extraction
@@ -323,10 +388,7 @@ final class PrescriptionParser {
     /// Extracts the narrative (non-structured) parts of an AI response:
     /// everything that isn't a bold exercise header, Warm-up/Working/Back-off/Form/Rest line.
     static func extractCoachNote(_ text: String) -> String? {
-        let structuredPrefixes = [
-            "warm-up:", "warmup:", "warm up:",
-            "working set:", "working sets:", "work:",
-            "back-off:", "backoff:", "back off:",
+        let structuredPrefixes = warmupPrefixes + workingPrefixes + backoffPrefixes + [
             "form:", "form cue:", "cue:",
             "rest:", "tempo:",
         ]

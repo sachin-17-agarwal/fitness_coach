@@ -391,6 +391,56 @@ class RegressionTests(unittest.TestCase):
         # Make sure set logs still don't count
         self.assertFalse(is_session_completion_message("100 x 10 end", "Push"))
 
+    def test_prescription_parser_accepts_loose_set_phrasings(self):
+        """Claude sometimes drops the strict prefixes; parser should recover."""
+        from webhook import _parse_prescription
+        text = (
+            "Week 4 deload keeps RPE conservative.\n\n"
+            "*Leg Press*\n"
+            "3 sets: 90kg x12 RPE7\n"
+            "3 sets: 60kg x15 RPE7\n"
+            "Form: Control the descent\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["exercise"], "Leg Press")
+        self.assertEqual(rx["working"], [{"weight": 90.0, "reps": 12, "rpe": 7.0}])
+        self.assertEqual(rx["backoff"], [{"weight": 60.0, "reps": 15, "rpe": 7.0}])
+        self.assertEqual(rx["form"], "Control the descent")
+
+    def test_prescription_parser_accepts_top_set_and_drop_set_prefixes(self):
+        from webhook import _parse_prescription
+        text = (
+            "*Leg Press*\n"
+            "Top Set: 170kg x8 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Drop Set: 130kg x12 RPE7\n"
+            "Form: Full ROM\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["working"], [{"weight": 170.0, "reps": 8, "rpe": 8.0}])
+        self.assertEqual(rx["backoff"], [{"weight": 130.0, "reps": 12, "rpe": 7.0}])
+        self.assertEqual(rx["tempo"], "3-1-2")
+
+    def test_prescription_parser_preserves_strict_format(self):
+        """Sanity: the strict format still parses identically after loosening."""
+        from webhook import _parse_prescription
+        text = (
+            "*Leg Press*\n"
+            "Warm-up: 60kg x15, 100kg x8\n"
+            "Working Set: 170kg x8 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Back-off: 130kg x12 RPE7\n"
+            "Form: Full ROM\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["warmup"], [
+            {"weight": 60.0, "reps": 15},
+            {"weight": 100.0, "reps": 8},
+        ])
+        self.assertEqual(rx["working"], [{"weight": 170.0, "reps": 8, "rpe": 8.0}])
+        self.assertEqual(rx["backoff"], [{"weight": 130.0, "reps": 12, "rpe": 7.0}])
+
     def test_save_memory_passes_on_conflict_key(self):
         # The upsert must supply on_conflict="key" so we update existing rows
         # rather than inserting duplicates. Uses a single batched upsert.
