@@ -98,18 +98,35 @@ struct SessionCard: View {
     }
 
     private var setsList: some View {
-        let grouped = Dictionary(grouping: sets, by: \.exercise)
+        // Group case-insensitively so "Leg Press" and "Leg press" collapse
+        // into one block. Keep the first-seen display form (and prefer a
+        // non-warmup label when one exists) to avoid an all-lowercase header.
+        var order: [String] = []
+        var display: [String: String] = [:]
+        var buckets: [String: [WorkoutSet]] = [:]
+        for set in sets {
+            let key = set.exercise.lowercased()
+            if buckets[key] == nil {
+                order.append(key)
+                display[key] = set.exercise
+                buckets[key] = []
+            } else if set.isWarmup != true, display[key]?.first?.isLowercase == true {
+                display[key] = set.exercise
+            }
+            buckets[key]?.append(set)
+        }
+
         return VStack(alignment: .leading, spacing: 12) {
             Divider().background(Color.cardBorder)
 
-            ForEach(grouped.keys.sorted(), id: \.self) { exercise in
+            ForEach(order, id: \.self) { key in
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(exercise)
+                    Text(display[key] ?? key.capitalized)
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .foregroundStyle(accent)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(grouped[exercise] ?? [], id: \.setNumber) { s in
+                        ForEach(Array((buckets[key] ?? []).enumerated()), id: \.offset) { _, s in
                             setRow(s)
                         }
                     }
@@ -119,7 +136,8 @@ struct SessionCard: View {
     }
 
     private func setRow(_ set: WorkoutSet) -> some View {
-        HStack(spacing: 10) {
+        let isWarmup = set.isWarmup == true
+        return HStack(spacing: 10) {
             Text("#\(set.setNumber)")
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.textTertiary)
@@ -128,8 +146,19 @@ struct SessionCard: View {
             if let w = set.actualWeightKg, let r = set.actualReps {
                 Text("\(w.weightString) × \(r)")
                     .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(isWarmup ? Color.textSecondary : .white)
             }
+
+            if isWarmup {
+                Text("WARM-UP")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .kerning(0.5)
+                    .foregroundStyle(Color.textTertiary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.surface))
+            }
+
             Spacer()
             if let rpe = set.actualRpe {
                 Text("RPE \(rpe.oneDecimal)")

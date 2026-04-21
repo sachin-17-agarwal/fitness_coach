@@ -130,13 +130,21 @@ final class WorkoutViewModel {
             errorMessage = "Session not saved — tap End and Begin session again to retry."
             return
         }
+        // Refuse to persist a set when we don't yet know what exercise is
+        // current — otherwise the backend ends up with orphan "Unknown" rows
+        // if the user races the prescription load.
+        guard let rawExercise = currentPrescription?.exerciseName,
+              !rawExercise.trimmingCharacters(in: .whitespaces).isEmpty else {
+            errorMessage = "Waiting on the coach's prescription — try again once the exercise card loads."
+            return
+        }
         errorMessage = nil
 
         // Snapshot the phase *before* we advance — the label below must describe
         // the set the user just logged, not the next prescribed phase.
         let loggedPhase = currentPhase
         let isWarmup = loggedPhase == .warmup
-        let exercise = currentPrescription?.exerciseName ?? "Unknown"
+        let exercise = PrescriptionParser.normalizeExerciseName(rawExercise)
 
         if !isWarmup {
             setCount += 1
@@ -149,7 +157,7 @@ final class WorkoutViewModel {
             let set = try await workoutService.logSet(
                 sessionId: sessionId,
                 exercise: exercise,
-                setNumber: isWarmup ? warmupCount : setCount,
+                setNumber: exerciseSetIndex,
                 weight: inputWeight,
                 reps: inputReps,
                 rpe: isWarmup ? nil : inputRPE,
@@ -368,7 +376,7 @@ final class WorkoutViewModel {
         var prescriptions: [ExercisePrescription] = []
         if let serverRx = chatResponse.prescription {
             let rx = ExercisePrescription(
-                exerciseName: serverRx.exercise,
+                exerciseName: PrescriptionParser.normalizeExerciseName(serverRx.exercise),
                 warmupSets: (serverRx.warmup ?? []).map { ($0.weight, $0.reps) },
                 workingSets: (serverRx.working ?? []).map { ($0.weight, $0.reps, $0.rpe) },
                 backoffSets: (serverRx.backoff ?? []).map { ($0.weight, $0.reps, $0.rpe) },
@@ -384,6 +392,12 @@ final class WorkoutViewModel {
         if !prescriptions.isEmpty {
             allPrescriptions = prescriptions
             currentPrescription = prescriptions.first
+        } else if let next = nextExerciseMentioned(in: text, after: oldExercise) {
+            // Coach transitions without re-sending the full prescription
+            // ("moving to calves…") — advance to the next known exercise so
+            // the UI doesn't stay stuck on the previous card.
+            currentPrescription = next
+            allPrescriptions = rearrangedPrescriptions(startingAt: next)
         }
 
         if let rx = currentPrescription {
@@ -409,6 +423,36 @@ final class WorkoutViewModel {
         } else {
             coachNote = nil
         }
+    }
+
+    /// Looks for a mention of any upcoming exercise in the coach's narrative
+    /// text. Ignores the currently-displayed exercise so a mere "great job on
+    /// leg press" doesn't re-pin us to the same card.
+    private func nextExerciseMentioned(
+        in text: String,
+        after current: String?
+    ) -> ExercisePrescription? {
+        let candidates = allPrescriptions
+            .map(\.exerciseName)
+            .filter { $0 != current }
+        guard !candidates.isEmpty else { return nil }
+        guard let matched = PrescriptionParser.detectExerciseTransition(
+            in: text, candidates: candidates
+        ) else { return nil }
+        return allPrescriptions.first { $0.exerciseName == matched }
+    }
+
+    /// Moves `target` to the head of the prescription list while preserving
+    /// the rest of the order, so the "up next" card stays consistent with
+    /// whatever the coach just transitioned us into.
+    private func rearrangedPrescriptions(startingAt target: ExercisePrescription) -> [ExercisePrescription] {
+        guard let idx = allPrescriptions.firstIndex(where: { $0.exerciseName == target.exerciseName }) else {
+            return allPrescriptions
+        }
+        var reordered = allPrescriptions
+        let item = reordered.remove(at: idx)
+        reordered.insert(item, at: 0)
+        return reordered
     }
 
     private static func parseRestString(_ rest: String?) -> Int? {
