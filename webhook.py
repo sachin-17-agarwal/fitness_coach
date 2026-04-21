@@ -221,6 +221,24 @@ def _parse_prescription(text: str) -> dict | None:
     return None
 
 
+_WARMUP_PREFIXES = ("warm-up:", "warmup:", "warm up:", "warm-up sets:",
+                    "warmup sets:", "warm up sets:", "warm sets:", "warm:")
+_WORKING_PREFIXES = ("working set:", "working sets:", "work:", "working:",
+                     "top set:", "top sets:", "primary set:", "primary:",
+                     "main set:", "main:")
+_BACKOFF_PREFIXES = ("back-off:", "backoff:", "back off:", "back-off set:",
+                     "back off set:", "backoff set:", "drop set:", "drop:",
+                     "light set:", "light:")
+
+# Matches loose phrasings like "3 sets: 90kg x12 RPE7" or "3x 90kg x 12 RPE7".
+_LOOSE_SET_PATTERN = re.compile(
+    r'(?:^|\s)(?:\d+\s*(?:sets?|x)\s*:?\s*)'
+    r'(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)'
+    r'(?:\s*(?:rpe|@)\s*(\d+(?:\.\d+)?))?',
+    re.IGNORECASE,
+)
+
+
 def _parse_block(name: str, block: str) -> dict | None:
     """Parse a single exercise block into structured data."""
     result = {"exercise": name}
@@ -235,10 +253,10 @@ def _parse_block(name: str, block: str) -> dict | None:
         line = line.strip()
         lower = line.lower()
 
-        if lower.startswith(("warm-up:", "warmup:", "warm up:")):
+        if any(lower.startswith(p) for p in _WARMUP_PREFIXES):
             content = line.split(":", 1)[1].strip()
             warmup = _parse_set_list(content)
-        elif lower.startswith(("working set:", "working sets:", "work:")):
+        elif any(lower.startswith(p) for p in _WORKING_PREFIXES):
             content = line.split(":", 1)[1].strip()
             parts = [p.strip() for p in content.split("|")]
             if parts:
@@ -249,7 +267,7 @@ def _parse_block(name: str, block: str) -> dict | None:
                     tempo = part.split(":", 1)[1].strip() if ":" in part else part[6:].strip()
                 elif pl.startswith("rest"):
                     rest = part.split(":", 1)[1].strip() if ":" in part else part[5:].strip()
-        elif lower.startswith(("back-off:", "backoff:", "back off:")):
+        elif any(lower.startswith(p) for p in _BACKOFF_PREFIXES):
             content = line.split(":", 1)[1].strip()
             parts = [p.strip() for p in content.split("|")]
             if parts:
@@ -260,6 +278,17 @@ def _parse_block(name: str, block: str) -> dict | None:
             tempo = line.split(":", 1)[1].strip()
         elif lower.startswith("rest:"):
             rest = line.split(":", 1)[1].strip()
+
+    # Fallback: Claude sometimes drops the `Working Set:` / `Back-off:` prefixes
+    # and writes loose lines like "3 sets: 90kg x12 RPE7" + "3 sets: 60kg x15 RPE7".
+    # Scan the block for those when the named prefixes didn't produce structured
+    # sets, so the working/back-off chips still appear in the app.
+    if not working and not backoff:
+        loose = _parse_loose_sets(block)
+        if loose:
+            working = [loose[0]]
+            if len(loose) >= 2:
+                backoff = [loose[1]]
 
     if warmup:
         result["warmup"] = warmup
@@ -275,6 +304,31 @@ def _parse_block(name: str, block: str) -> dict | None:
         result["rest"] = rest
 
     return result
+
+
+def _parse_loose_sets(block: str) -> list:
+    """Extract sets from loose phrasings inside an exercise block.
+
+    Handles lines like:
+      "3 sets: 90kg x12 RPE7"
+      "3x 90kg x 12 RPE7"
+    Returns a list of {weight, reps, rpe?} dicts in source order.
+    """
+    seen = []
+    for match in _LOOSE_SET_PATTERN.finditer(block):
+        try:
+            weight = float(match.group(1))
+            reps = int(match.group(2))
+        except (TypeError, ValueError):
+            continue
+        entry = {"weight": weight, "reps": reps}
+        if match.group(3):
+            try:
+                entry["rpe"] = float(match.group(3))
+            except ValueError:
+                pass
+        seen.append(entry)
+    return seen
 
 
 def _parse_set_list(text: str) -> list:
