@@ -362,6 +362,24 @@ def is_warmup_set(text: str) -> bool:
     return bool(re.search(r'\bwarm[\s-]?up\b|\bwarmup\b', text, re.IGNORECASE))
 
 
+# iOS app sends structured log messages after it has already persisted the set
+# directly to Supabase, e.g.:
+#   "Logged warm-up: Leg Press - 60 kg x 10. Set 1 for this exercise, 0 working sets total. What's next?"
+#   "Logged working: Leg Press - 170 kg x 8 @ RPE 8.0. Set 3 for this exercise, 2 working sets total. What's next?"
+#   "Logged back-off: Leg Press - 130 kg x 12 @ RPE 7.0. Set 5 for this exercise, 3 working sets total. What's next?"
+# The backend must NOT re-parse and re-log these — that would double-count the
+# set and desync the coach's phase tracking from the app's visual state.
+_IOS_LOG_PATTERN = re.compile(
+    r'^\s*logged\s+(warm[\s-]?up|working|back[\s-]?off)\s*:',
+    re.IGNORECASE,
+)
+
+
+def is_ios_structured_log(text: str) -> bool:
+    """Detect a 'Logged <phase>: …' message sent by the iOS app."""
+    return bool(_IOS_LOG_PATTERN.match(text or ""))
+
+
 _NON_EXERCISE_HEADERS = {
     "recovery", "nutrition", "tomorrow", "today", "volume analysis",
     "strength trends", "session done", "watch", "best lift",
@@ -679,7 +697,14 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     workout_active = state.get("workout_mode") == "active"
     set_data = None
 
-    if not workout_active:
+    # When the iOS app sends a structured "Logged <phase>: ..." message, the
+    # app has already persisted the set to workout_sets directly and already
+    # updated current_set_number / current_exercise_name in memory. Skip the
+    # backend's parse-and-log path to avoid duplicate rows that confuse the
+    # coach about which phase was just completed.
+    ios_log = is_ios_structured_log(incoming_text)
+
+    if not workout_active and not ios_log:
         # If user logs a set without explicitly starting workout mode, start it.
         # Use session type from recent conversation so "Today is legs" + first set
         # log creates a Legs session rather than the mesocycle default.
@@ -698,7 +723,7 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     all_sets: list = []
     unresolved_candidate = ""
 
-    if workout_active and session_id:
+    if workout_active and session_id and not ios_log:
         all_sets = parse_all_sets_from_message(incoming_text)
         set_data = all_sets[0] if all_sets else None
         warmup = is_warmup_set(incoming_text)

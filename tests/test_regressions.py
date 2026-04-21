@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from coach import (
     handle_incoming_message,
+    is_ios_structured_log,
     is_session_completion_message,
     parse_set_from_message,
     extract_exercise_from_context,
@@ -440,6 +441,76 @@ class RegressionTests(unittest.TestCase):
         ])
         self.assertEqual(rx["working"], [{"weight": 170.0, "reps": 8, "rpe": 8.0}])
         self.assertEqual(rx["backoff"], [{"weight": 130.0, "reps": 12, "rpe": 7.0}])
+
+    def test_is_ios_structured_log_detects_all_phases(self):
+        # The exact shapes WorkoutViewModel.swift sends
+        self.assertTrue(is_ios_structured_log(
+            "Logged warm-up: Leg Press - 60 kg x 10. Set 1 for this exercise, 0 working sets total. What's next?"
+        ))
+        self.assertTrue(is_ios_structured_log(
+            "Logged working: Leg Press - 170 kg x 8 @ RPE 8.0. Set 3 for this exercise, 2 working sets total. What's next?"
+        ))
+        self.assertTrue(is_ios_structured_log(
+            "Logged back-off: Leg Press - 130 kg x 12 @ RPE 7.0. Set 5 for this exercise, 3 working sets total. What's next?"
+        ))
+        # Ad-hoc user messages must not match
+        self.assertFalse(is_ios_structured_log("Done 100 x 12 @8"))
+        self.assertFalse(is_ios_structured_log("I logged my set"))
+        self.assertFalse(is_ios_structured_log("Logged it: 100 x 10"))
+        self.assertFalse(is_ios_structured_log(""))
+
+    def test_ios_structured_log_skips_backend_set_logging(self):
+        """
+        The iOS app already persists the set to workout_sets directly. The
+        backend must NOT re-parse and re-insert that set — double-logging was
+        causing the coach and app to disagree about which phase was just done.
+        """
+        memory = {"mesocycle_day": 3, "mesocycle_week": 1}
+        ios_msg = ("Logged working: Leg Press - 170 kg x 8 @ RPE 8.0. "
+                   "Set 3 for this exercise, 2 working sets total. What's next?")
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Nice. Next: back-off 130kg x12"), \
+             patch("coach.get_workout_state", return_value={
+                 "workout_mode": "active",
+                 "current_session_id": "abc",
+                 "current_set_number": "2",
+                 "current_exercise_name": "Leg Press",
+             }), \
+             patch("coach.log_set") as log_set_mock, \
+             patch("coach.set_workout_state") as set_state_mock, \
+             patch("coach.start_session") as start_mock, \
+             patch("coach.advance_mesocycle") as advance_mock, \
+             patch("coach.send_telegram_message"):
+            response = handle_incoming_message(ios_msg, memory)
+
+        self.assertEqual(response, "Nice. Next: back-off 130kg x12")
+        log_set_mock.assert_not_called()
+        set_state_mock.assert_not_called()
+        start_mock.assert_not_called()
+        advance_mock.assert_not_called()
+
+    def test_ios_structured_log_does_not_implicit_start_session(self):
+        """
+        An iOS "Logged …" arriving while workout_mode is inactive must not
+        trigger an implicit start_session either — iOS creates sessions itself.
+        """
+        memory = {"mesocycle_day": 3, "mesocycle_week": 1}
+        ios_msg = ("Logged warm-up: Leg Press - 60 kg x 10. "
+                   "Set 1 for this exercise, 0 working sets total. What's next?")
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Good warm-up"), \
+             patch("coach.get_workout_state", return_value={
+                 "workout_mode": "inactive",
+                 "current_session_id": "",
+                 "current_set_number": "0",
+             }), \
+             patch("coach.start_session") as start_mock, \
+             patch("coach.log_set") as log_set_mock, \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message(ios_msg, memory)
+
+        start_mock.assert_not_called()
+        log_set_mock.assert_not_called()
 
     def test_save_memory_passes_on_conflict_key(self):
         # The upsert must supply on_conflict="key" so we update existing rows
