@@ -36,6 +36,18 @@ final class DashboardViewModel {
         return .red
     }
 
+    /// Most recent non-null body weight across the recovery history. Today's
+    /// row may have `weightKg == nil` on days without a weigh-in, so fall
+    /// back through prior days instead of hiding the metric card.
+    var latestWeightKg: Double? {
+        recoveryHistory.compactMap(\.weightKg).first
+    }
+
+    /// Most recent non-null body-fat reading — same fallback logic as weight.
+    var latestBodyFatPct: Double? {
+        recoveryHistory.compactMap(\.bodyFatPct).first
+    }
+
     /// HRV delta vs 7-day avg — string like "+3 ms" / "-2 ms".
     var hrvDeltaText: String {
         guard let hrv = recovery?.hrv, let avg = hrvAvg else { return "" }
