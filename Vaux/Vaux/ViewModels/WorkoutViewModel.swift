@@ -109,6 +109,97 @@ final class WorkoutViewModel {
         isLoading = false
     }
 
+    /// Reuses an in-progress session for `type` if one already exists today
+    /// (e.g. opened earlier via the cardio logger on a Cardio+Abs day) so
+    /// strength work for abs gets logged against the same session row
+    /// instead of creating a duplicate. Falls back to `startWorkout` when
+    /// nothing is open.
+    func startOrResumeWorkout(type: String) async {
+        let today = Self.todayString()
+        let sessions: [WorkoutSession]? = try? await SupabaseClient.shared.fetch(
+            "workout_sessions",
+            query: [
+                "date": "eq.\(today)",
+                "type": "eq.\(type)",
+                "status": "eq.in_progress",
+            ],
+            order: "start_time.desc",
+            limit: 1
+        )
+        if let existing = sessions?.first {
+            await resume(session: existing)
+        } else {
+            await startWorkout(type: type)
+        }
+    }
+
+    private func resume(session: WorkoutSession) async {
+        sessionType = session.type
+        currentSession = session
+        isActive = true
+        isLoading = true
+        errorMessage = nil
+        if let startStr = session.startTime,
+           let start = ISO8601DateFormatter().date(from: startStr) {
+            startTime = start
+        } else {
+            startTime = Date()
+        }
+        startDurationTimer()
+
+        // Hydrate tonnage / set counters from sets already persisted in this
+        // session so the live stats bar reflects what's already logged.
+        // Cardio/yoga entries live in the same session but use `actual_reps`
+        // as a duration — filter them out so they don't inflate `setCount`
+        // or `tonnage` for the strength portion.
+        if let id = session.id {
+            if let existing = try? await workoutService.fetchSets(sessionId: id) {
+                let strengthOnly = existing.filter { set in
+                    let note = (set.notes ?? "").lowercased()
+                    return !note.hasPrefix("cardio") && !note.hasPrefix("yoga")
+                }
+                loggedSets = strengthOnly
+                for set in strengthOnly {
+                    if set.isWarmup == true {
+                        warmupCount += 1
+                    } else {
+                        setCount += 1
+                        let w = set.actualWeightKg ?? 0
+                        let r = Double(set.actualReps ?? 0)
+                        totalTonnage += w * r
+                    }
+                }
+            }
+        }
+
+        // For the abs flow, ask the coach for an abs exercise prescription
+        // rather than a full-session plan.
+        let prompt: String
+        if session.type == "Cardio+Abs" {
+            prompt = "I've finished cardio for my \(session.type) session. Prescribe the first abs exercise in detail — sets, reps, weight, RPE, rest."
+        } else {
+            prompt = "Resuming my \(session.type) session. Resend today's full plan and prescribe the next exercise."
+        }
+        do {
+            let response = try await chatService.sendMessage(prompt)
+            applyAIResponse(response)
+        } catch {
+            errorMessage = "Coach didn't respond (\(error.localizedDescription))."
+        }
+        isLoading = false
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = .current
+        return f
+    }()
+
+    private static func todayString() -> String {
+        dateFormatter.string(from: Date())
+    }
+
     /// Re-requests today's plan from the coach without creating a new session.
     /// Used as a manual retry when `startWorkout` left the screen empty.
     func retryPrescription() async {
@@ -130,13 +221,21 @@ final class WorkoutViewModel {
             errorMessage = "Session not saved — tap End and Begin session again to retry."
             return
         }
+        // Refuse to persist a set when we don't yet know what exercise is
+        // current — otherwise the backend ends up with orphan "Unknown" rows
+        // if the user races the prescription load.
+        guard let rawExercise = currentPrescription?.exerciseName,
+              !rawExercise.trimmingCharacters(in: .whitespaces).isEmpty else {
+            errorMessage = "Waiting on the coach's prescription — try again once the exercise card loads."
+            return
+        }
         errorMessage = nil
 
         // Snapshot the phase *before* we advance — the label below must describe
         // the set the user just logged, not the next prescribed phase.
         let loggedPhase = currentPhase
         let isWarmup = loggedPhase == .warmup
-        let exercise = currentPrescription?.exerciseName ?? "Unknown"
+        let exercise = PrescriptionParser.normalizeExerciseName(rawExercise)
 
         if !isWarmup {
             setCount += 1
@@ -149,7 +248,7 @@ final class WorkoutViewModel {
             let set = try await workoutService.logSet(
                 sessionId: sessionId,
                 exercise: exercise,
-                setNumber: isWarmup ? warmupCount : setCount,
+                setNumber: exerciseSetIndex,
                 weight: inputWeight,
                 reps: inputReps,
                 rpe: isWarmup ? nil : inputRPE,
@@ -368,7 +467,7 @@ final class WorkoutViewModel {
         var prescriptions: [ExercisePrescription] = []
         if let serverRx = chatResponse.prescription {
             let rx = ExercisePrescription(
-                exerciseName: serverRx.exercise,
+                exerciseName: PrescriptionParser.normalizeExerciseName(serverRx.exercise),
                 warmupSets: (serverRx.warmup ?? []).map { ($0.weight, $0.reps) },
                 workingSets: (serverRx.working ?? []).map { ($0.weight, $0.reps, $0.rpe) },
                 backoffSets: (serverRx.backoff ?? []).map { ($0.weight, $0.reps, $0.rpe) },
@@ -384,6 +483,12 @@ final class WorkoutViewModel {
         if !prescriptions.isEmpty {
             allPrescriptions = prescriptions
             currentPrescription = prescriptions.first
+        } else if let next = nextExerciseMentioned(in: text, after: oldExercise) {
+            // Coach transitions without re-sending the full prescription
+            // ("moving to calves…") — advance to the next known exercise so
+            // the UI doesn't stay stuck on the previous card.
+            currentPrescription = next
+            allPrescriptions = rearrangedPrescriptions(startingAt: next)
         }
 
         if let rx = currentPrescription {
@@ -409,6 +514,36 @@ final class WorkoutViewModel {
         } else {
             coachNote = nil
         }
+    }
+
+    /// Looks for a mention of any upcoming exercise in the coach's narrative
+    /// text. Ignores the currently-displayed exercise so a mere "great job on
+    /// leg press" doesn't re-pin us to the same card.
+    private func nextExerciseMentioned(
+        in text: String,
+        after current: String?
+    ) -> ExercisePrescription? {
+        let candidates = allPrescriptions
+            .map(\.exerciseName)
+            .filter { $0 != current }
+        guard !candidates.isEmpty else { return nil }
+        guard let matched = PrescriptionParser.detectExerciseTransition(
+            in: text, candidates: candidates
+        ) else { return nil }
+        return allPrescriptions.first { $0.exerciseName == matched }
+    }
+
+    /// Moves `target` to the head of the prescription list while preserving
+    /// the rest of the order, so the "up next" card stays consistent with
+    /// whatever the coach just transitioned us into.
+    private func rearrangedPrescriptions(startingAt target: ExercisePrescription) -> [ExercisePrescription] {
+        guard let idx = allPrescriptions.firstIndex(where: { $0.exerciseName == target.exerciseName }) else {
+            return allPrescriptions
+        }
+        var reordered = allPrescriptions
+        let item = reordered.remove(at: idx)
+        reordered.insert(item, at: 0)
+        return reordered
     }
 
     private static func parseRestString(_ rest: String?) -> Int? {

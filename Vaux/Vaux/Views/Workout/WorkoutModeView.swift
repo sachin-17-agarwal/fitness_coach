@@ -5,13 +5,35 @@ import SwiftUI
 
 struct WorkoutModeView: View {
     @State private var viewModel = WorkoutViewModel()
+    @State private var resolvedSessionType: String = ""
+    @State private var didResolveType = false
+
+    /// Session type passed explicitly (e.g. from the Dashboard CTA). When left
+    /// empty — the Train tab mounts this view with no argument — the view
+    /// resolves today's type from `MesocycleService` so the tab matches the
+    /// Dashboard instead of showing an empty "Full body" placeholder.
     var sessionType: String = ""
+
+    private var effectiveSessionType: String {
+        sessionType.isEmpty ? resolvedSessionType : sessionType
+    }
+
+    private var isNonStrengthDay: Bool {
+        effectiveSessionType == "Cardio+Abs" || effectiveSessionType == "Yoga"
+    }
 
     var body: some View {
         ZStack {
             Color.background.ignoresSafeArea()
 
-            if !viewModel.isActive && !viewModel.showSummary {
+            if isNonStrengthDay && !viewModel.isActive && !viewModel.showSummary {
+                CardioYogaLogView(
+                    sessionType: effectiveSessionType,
+                    onStartStrengthSession: effectiveSessionType == "Cardio+Abs"
+                        ? { Task { await viewModel.startOrResumeWorkout(type: effectiveSessionType) } }
+                        : nil
+                )
+            } else if !viewModel.isActive && !viewModel.showSummary {
                 startView
             } else {
                 activeWorkoutView
@@ -36,7 +58,16 @@ struct WorkoutModeView: View {
                 .transition(.opacity)
             }
         }
-        .navigationTitle(viewModel.isActive ? viewModel.sessionType : "Workout")
+        .task {
+            // Only fall back to the mesocycle service when the caller didn't
+            // already hand us a session type. Loads once per view lifetime.
+            guard sessionType.isEmpty, !didResolveType else { return }
+            didResolveType = true
+            if let state = try? await MesocycleService().loadState() {
+                resolvedSessionType = state.todayType
+            }
+        }
+        .navigationTitle(viewModel.isActive ? viewModel.sessionType : (effectiveSessionType.isEmpty ? "Workout" : effectiveSessionType))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if viewModel.isActive {
@@ -67,7 +98,7 @@ struct WorkoutModeView: View {
     // MARK: - Start screen
 
     private var startView: some View {
-        let type = sessionType.isEmpty ? "Session" : sessionType
+        let type = effectiveSessionType.isEmpty ? "Session" : effectiveSessionType
         let gradient = Gradients.forSession(type)
         let accent = Color.forSession(type)
         return VStack(spacing: 28) {
@@ -94,7 +125,7 @@ struct WorkoutModeView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Color.textSecondary)
 
-                Text(sessionType.isEmpty ? "Start workout" : "\(sessionType) Day")
+                Text(effectiveSessionType.isEmpty ? "Start workout" : "\(effectiveSessionType) Day")
                     .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
 
@@ -108,7 +139,7 @@ struct WorkoutModeView: View {
 
             Button {
                 Haptic.medium()
-                Task { await viewModel.startWorkout(type: sessionType) }
+                Task { await viewModel.startWorkout(type: effectiveSessionType) }
             } label: {
                 HStack(spacing: 8) {
                     if viewModel.isLoading {

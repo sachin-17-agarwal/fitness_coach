@@ -119,6 +119,33 @@ final class HealthKitManager {
         UserDefaults.standard.set(Date(), forKey: lastSyncKey)
     }
 
+    // MARK: - Workouts (Apple Watch import)
+
+    /// Returns today's `HKWorkout` samples (local timezone). Used by the
+    /// Cardio+Abs / Yoga log view to import Apple Watch sessions instead of
+    /// asking the user to type them in.
+    func fetchTodaysWorkouts() async throws -> [HKWorkout] {
+        guard HKHealthStore.isHealthDataAvailable() else { return [] }
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: Date())
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: HKObjectType.workoutType(),
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [sort]
+            ) { _, samples, error in
+                if let error { continuation.resume(throwing: error); return }
+                continuation.resume(returning: (samples as? [HKWorkout]) ?? [])
+            }
+            store.execute(query)
+        }
+    }
+
     // MARK: - Background delivery
 
     /// Registers observer queries so iOS wakes the app and refreshes Supabase

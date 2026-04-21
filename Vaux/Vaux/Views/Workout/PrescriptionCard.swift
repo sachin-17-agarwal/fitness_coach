@@ -224,20 +224,22 @@ struct PrescriptionCard: View {
     }
 
     private func isSetCompleted(_ target: SetTarget) -> Bool {
-        let matchingSets = loggedSets.filter { set in
-            let w = set.actualWeightKg ?? 0
-            return abs(w - target.weight) < 1.0
-        }
+        // Use the stored is_warmup flag on each logged set so the card stays
+        // in sync with the phase the user actually logged, not the order the
+        // chips are laid out. Warm-up chips check against warm-up logs;
+        // working and back-off chips share the non-warmup queue, with the
+        // first N entries being working sets and the rest back-offs.
+        let warmupsDone = loggedSets.filter { $0.isWarmup == true }.count
+        let nonWarmupsDone = loggedSets.count - warmupsDone
+        let workingPrescribed = prescription.workingSets.count
 
         switch target.kind {
         case .warmup:
-            return matchingSets.count > target.index
+            return warmupsDone > target.index
         case .working:
-            let warmupCount = prescription.warmupSets.count
-            return loggedSets.count > warmupCount + target.index
+            return nonWarmupsDone > target.index
         case .backoff:
-            let priorCount = prescription.warmupSets.count + prescription.workingSets.count
-            return loggedSets.count > priorCount + target.index
+            return nonWarmupsDone > workingPrescribed + target.index
         }
     }
 

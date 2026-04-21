@@ -218,9 +218,40 @@ final class PrescriptionParser {
             return nil
         }
         let nameRange = match.range(at: 1)
-        let name = (line as NSString).substring(with: nameRange)
-            .trimmingCharacters(in: .whitespaces)
+        let raw = (line as NSString).substring(with: nameRange)
+        let name = normalizeExerciseName(raw)
         return name.isEmpty ? nil : name
+    }
+
+    /// Canonical form used everywhere we persist or display an exercise name:
+    /// trimmed, collapsed internal whitespace, title-cased so "leg press" and
+    /// "Leg Press" don't group as separate exercises in history.
+    static func normalizeExerciseName(_ raw: String) -> String {
+        let collapsed = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return collapsed.capitalized
+    }
+
+    /// Scans narrative coach text like "Moving to calves. Machine Calf Press:
+    /// 3 sets 90kg x12 RPE7" for any name in `candidates` that the user's
+    /// upcoming-exercise list already knows about. Returns the matched
+    /// canonical name, or nil when no upcoming exercise is mentioned.
+    static func detectExerciseTransition(
+        in text: String,
+        candidates: [String]
+    ) -> String? {
+        let haystack = text.lowercased()
+        for candidate in candidates {
+            let needle = candidate.lowercased()
+            guard !needle.isEmpty else { continue }
+            if haystack.contains(needle) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     // MARK: - Set parsing
