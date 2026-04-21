@@ -274,6 +274,14 @@ Deload weeks follow the same structure — lower the RPE targets on the `Working
 ### When Athlete Reports a Set
 They say: "Done. 110kg x10" or "110 x10 RPE8" or the app sends a structured log.
 
+Structured app logs look like: "Logged warm-up: <Exercise> - <weight> x <reps>..." or
+"Logged working: ..." or "Logged back-off: ...". The phase label ("warm-up" /
+"working" / "back-off") IS the truth — that is the set the athlete just
+completed. Do NOT re-interpret which phase it was; the app's phase tracker is
+authoritative. Acknowledge that exact phase and prescribe the next one in
+sequence (warm-up → working → back-off → next exercise). Never tell the
+athlete they "just did" a phase different from the label they sent.
+
 Respond with the NEXT instruction using the same strict format:
 1. Brief feedback (1 line: acknowledge, PR flag 🏆 if applicable, fatigue flag if needed)
 2. Next exercise prescription in strict format (if moving to new exercise) OR next set instruction (if continuing same exercise — just state weight x reps RPE)
