@@ -137,26 +137,43 @@ struct SessionCard: View {
 
     private func setRow(_ set: WorkoutSet) -> some View {
         let isWarmup = set.isWarmup == true
+        let kind = entryKind(set)
         return HStack(spacing: 10) {
             Text("#\(set.setNumber)")
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.textTertiary)
                 .frame(width: 26, alignment: .leading)
 
-            if let w = set.actualWeightKg, let r = set.actualReps {
-                Text("\(w.weightString) × \(r)")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(isWarmup ? Color.textSecondary : .white)
-            }
-
-            if isWarmup {
-                Text("WARM-UP")
+            switch kind {
+            case .cardio, .yoga:
+                if let minutes = set.actualReps {
+                    Text("\(minutes) min")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white)
+                }
+                Text(kind == .yoga ? "YOGA" : "CARDIO")
                     .font(.system(size: 9, weight: .bold, design: .rounded))
                     .kerning(0.5)
-                    .foregroundStyle(Color.textTertiary)
+                    .foregroundStyle(Color.forSession(kind == .yoga ? "Yoga" : "Cardio+Abs"))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(Color.surface))
+            case .strength:
+                if let w = set.actualWeightKg, let r = set.actualReps {
+                    Text("\(w.weightString) × \(r)")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(isWarmup ? Color.textSecondary : .white)
+                }
+
+                if isWarmup {
+                    Text("WARM-UP")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .kerning(0.5)
+                        .foregroundStyle(Color.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.surface))
+                }
             }
 
             Spacer()
@@ -169,6 +186,18 @@ struct SessionCard: View {
                     .background(Capsule().fill(Color.surface))
             }
         }
+    }
+
+    private enum EntryKind { case strength, cardio, yoga }
+
+    /// Cardio/yoga entries are tagged via the `notes` column on write
+    /// (see `CardioYogaLogView`). Treat anything else as a strength set so
+    /// legacy rows keep rendering as "weight × reps".
+    private func entryKind(_ set: WorkoutSet) -> EntryKind {
+        let note = (set.notes ?? "").lowercased()
+        if note.hasPrefix("yoga") || note.contains(" yoga") { return .yoga }
+        if note.hasPrefix("cardio") || note.contains(" cardio") { return .cardio }
+        return .strength
     }
 
     private func statusBadge(_ status: String) -> some View {

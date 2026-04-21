@@ -109,6 +109,97 @@ final class WorkoutViewModel {
         isLoading = false
     }
 
+    /// Reuses an in-progress session for `type` if one already exists today
+    /// (e.g. opened earlier via the cardio logger on a Cardio+Abs day) so
+    /// strength work for abs gets logged against the same session row
+    /// instead of creating a duplicate. Falls back to `startWorkout` when
+    /// nothing is open.
+    func startOrResumeWorkout(type: String) async {
+        let today = Self.todayString()
+        let sessions: [WorkoutSession]? = try? await SupabaseClient.shared.fetch(
+            "workout_sessions",
+            query: [
+                "date": "eq.\(today)",
+                "type": "eq.\(type)",
+                "status": "eq.in_progress",
+            ],
+            order: "start_time.desc",
+            limit: 1
+        )
+        if let existing = sessions?.first {
+            await resume(session: existing)
+        } else {
+            await startWorkout(type: type)
+        }
+    }
+
+    private func resume(session: WorkoutSession) async {
+        sessionType = session.type
+        currentSession = session
+        isActive = true
+        isLoading = true
+        errorMessage = nil
+        if let startStr = session.startTime,
+           let start = ISO8601DateFormatter().date(from: startStr) {
+            startTime = start
+        } else {
+            startTime = Date()
+        }
+        startDurationTimer()
+
+        // Hydrate tonnage / set counters from sets already persisted in this
+        // session so the live stats bar reflects what's already logged.
+        // Cardio/yoga entries live in the same session but use `actual_reps`
+        // as a duration — filter them out so they don't inflate `setCount`
+        // or `tonnage` for the strength portion.
+        if let id = session.id {
+            if let existing = try? await workoutService.fetchSets(sessionId: id) {
+                let strengthOnly = existing.filter { set in
+                    let note = (set.notes ?? "").lowercased()
+                    return !note.hasPrefix("cardio") && !note.hasPrefix("yoga")
+                }
+                loggedSets = strengthOnly
+                for set in strengthOnly {
+                    if set.isWarmup == true {
+                        warmupCount += 1
+                    } else {
+                        setCount += 1
+                        let w = set.actualWeightKg ?? 0
+                        let r = Double(set.actualReps ?? 0)
+                        totalTonnage += w * r
+                    }
+                }
+            }
+        }
+
+        // For the abs flow, ask the coach for an abs exercise prescription
+        // rather than a full-session plan.
+        let prompt: String
+        if session.type == "Cardio+Abs" {
+            prompt = "I've finished cardio for my \(session.type) session. Prescribe the first abs exercise in detail — sets, reps, weight, RPE, rest."
+        } else {
+            prompt = "Resuming my \(session.type) session. Resend today's full plan and prescribe the next exercise."
+        }
+        do {
+            let response = try await chatService.sendMessage(prompt)
+            applyAIResponse(response)
+        } catch {
+            errorMessage = "Coach didn't respond (\(error.localizedDescription))."
+        }
+        isLoading = false
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = .current
+        return f
+    }()
+
+    private static func todayString() -> String {
+        dateFormatter.string(from: Date())
+    }
+
     /// Re-requests today's plan from the coach without creating a new session.
     /// Used as a manual retry when `startWorkout` left the screen empty.
     func retryPrescription() async {
