@@ -133,7 +133,7 @@ final class HealthKitManager {
             vo2Max: vo2
         )
 
-        try await recoveryService.saveRecovery(recovery)
+        try await recoveryService.saveHealthKitSync(recovery)
         UserDefaults.standard.set(Date(), forKey: lastSyncKey)
     }
 

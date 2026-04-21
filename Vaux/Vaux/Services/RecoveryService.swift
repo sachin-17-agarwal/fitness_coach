@@ -65,7 +65,9 @@ final class RecoveryService: Sendable {
     // MARK: - Save / upsert
 
     /// Upserts a recovery row.  Uses `date` as the conflict key so a second
-    /// sync on the same day merges rather than duplicates.
+    /// sync on the same day merges rather than duplicates. Nil fields are
+    /// skipped so partial updates (e.g. a manual weight entry) don't clobber
+    /// unrelated columns already stored on that row.
     func saveRecovery(_ data: Recovery) async throws {
         var body: [String: Any] = ["date": data.date]
 
@@ -78,6 +80,32 @@ final class RecoveryService: Sendable {
         if let v = data.activeEnergyKcal { body["active_energy_kcal"] = v }
         if let v = data.weightKg         { body["weight_kg"] = v }
         if let v = data.bodyFatPct       { body["body_fat_pct"] = v }
+        if let v = data.exerciseMinutes  { body["exercise_minutes"] = v }
+        if let v = data.respiratoryRate  { body["respiratory_rate"] = v }
+        if let v = data.vo2Max           { body["vo2_max"] = v }
+
+        try await client.upsert("recovery", body: body, onConflict: "date")
+    }
+
+    /// Upsert path used by HealthKit day-sync. Unlike `saveRecovery`, this
+    /// version always sends `weight_kg` and `body_fat_pct` — explicitly NULL
+    /// when the target day has no HealthKit sample — so a stale value left
+    /// behind by a previous (unscoped) sync gets cleared instead of lingering
+    /// forever. Other fields still respect the "only write non-nil" rule so
+    /// an unrelated missing metric (e.g. an hour with no RHR yet) doesn't
+    /// wipe a value that already landed earlier.
+    func saveHealthKitSync(_ data: Recovery) async throws {
+        var body: [String: Any] = ["date": data.date]
+
+        if let v = data.sleepHours       { body["sleep_hours"] = v }
+        if let v = data.hrv              { body["hrv"] = v }
+        if let v = data.hrvStatus        { body["hrv_status"] = v }
+        if let v = data.restingHr        { body["resting_hr"] = v }
+        if let v = data.heartRate        { body["heart_rate"] = v }
+        if let v = data.steps            { body["steps"] = v }
+        if let v = data.activeEnergyKcal { body["active_energy_kcal"] = v }
+        body["weight_kg"] = data.weightKg ?? NSNull()
+        body["body_fat_pct"] = data.bodyFatPct ?? NSNull()
         if let v = data.exerciseMinutes  { body["exercise_minutes"] = v }
         if let v = data.respiratoryRate  { body["respiratory_rate"] = v }
         if let v = data.vo2Max           { body["vo2_max"] = v }
