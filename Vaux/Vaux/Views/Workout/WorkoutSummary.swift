@@ -24,6 +24,10 @@ struct WorkoutSummaryView: View {
                             statCard(value: formatDuration(summary.duration), label: "Duration", color: .accentAmber, icon: "timer")
                         }
 
+                        if summary.avgHR != nil || summary.maxHR != nil {
+                            heartRateSection
+                        }
+
                         if summary.prs.contains(where: \.isPR) {
                             prsSection
                         }
@@ -105,6 +109,46 @@ struct WorkoutSummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .darkCard(padding: 14, cornerRadius: 16)
+    }
+
+    private var heartRateSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color.recoveryRed)
+                Text("Heart rate")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+
+            HStack(spacing: 10) {
+                hrCell(label: "Min", value: summary.minHR)
+                hrCell(label: "Avg", value: summary.avgHR)
+                hrCell(label: "Max", value: summary.maxHR)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .darkCard(padding: 0, cornerRadius: 18)
+    }
+
+    private func hrCell(label: String, value: Int?) -> some View {
+        VStack(spacing: 4) {
+            Text(label.uppercased())
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .kerning(0.8)
+                .foregroundStyle(Color.textTertiary)
+            Text(value.map { "\($0)" } ?? "—")
+                .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.surface)
+        )
     }
 
     private var prsSection: some View {

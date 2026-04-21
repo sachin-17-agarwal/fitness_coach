@@ -30,6 +30,9 @@ struct WorkoutSummary: Sendable {
     var totalSets: Int
     var duration: TimeInterval
     var prs: [PRResult]
+    var avgHR: Int? = nil
+    var maxHR: Int? = nil
+    var minHR: Int? = nil
 }
 
 /// Result of a personal-record check using the Epley 1RM formula.
