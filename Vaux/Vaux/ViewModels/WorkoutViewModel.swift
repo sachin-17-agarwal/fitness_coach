@@ -358,6 +358,7 @@ final class WorkoutViewModel {
             }
         }
 
+        let topWorkingSet = bestWorkingSet()
         summary = WorkoutSummary(
             tonnage: totalTonnage,
             totalSets: setCount,
@@ -365,15 +366,74 @@ final class WorkoutViewModel {
             prs: latestPR != nil ? [latestPR!] : [],
             avgHR: heartRateMonitor.avgBPM,
             maxHR: heartRateMonitor.maxBPM,
-            minHR: heartRateMonitor.minBPM
+            minHR: heartRateMonitor.minBPM,
+            topExercise: topWorkingSet?.exercise,
+            topExerciseWeight: topWorkingSet?.actualWeightKg,
+            topExerciseReps: topWorkingSet?.actualReps
         )
         showSummary = true
+
+        // The sheet renders immediately because `showSummary` already
+        // fired through @Observable. Awaiting these in sequence here
+        // means the recap card pops in once the chat call returns; the
+        // sheet is already visible to the user.
+        await fetchPostWorkoutRecap()
 
         do {
             try await mesocycleService.advance()
         } catch {
             print("Mesocycle advance failed: \(error)")
         }
+    }
+
+    /// Returns the heaviest working set logged this session, used to give
+    /// the coach a concrete data point for the recap prompt.
+    private func bestWorkingSet() -> WorkoutSet? {
+        loggedSets
+            .filter { $0.isWarmup != true }
+            .max { lhs, rhs in
+                let l = (lhs.actualWeightKg ?? 0) * Double(lhs.actualReps ?? 0)
+                let r = (rhs.actualWeightKg ?? 0) * Double(rhs.actualReps ?? 0)
+                return l < r
+            }
+    }
+
+    private func fetchPostWorkoutRecap() async {
+        guard var snapshot = summary, snapshot.totalSets > 0 else {
+            // No working sets logged — clear the placeholder so the
+            // recap card hides instead of spinning forever.
+            summary?.coachRecap = ""
+            return
+        }
+        let prompt = buildRecapPrompt(snapshot)
+        do {
+            let response = try await chatService.sendMessage(prompt)
+            let trimmed = response.response.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            snapshot.coachRecap = trimmed
+            summary = snapshot
+        } catch {
+            print("[Recap] coach call failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func buildRecapPrompt(_ s: WorkoutSummary) -> String {
+        let mins = Int(s.duration / 60)
+        var parts: [String] = [
+            "I just finished a \(sessionType) session.",
+            "\(s.totalSets) working sets, \(Int(s.tonnage))kg tonnage, \(mins) minutes.",
+        ]
+        if let avg = s.avgHR, let peak = s.maxHR {
+            parts.append("Avg HR \(avg), peak \(peak).")
+        }
+        if let ex = s.topExercise, let w = s.topExerciseWeight, let r = s.topExerciseReps, w > 0, r > 0 {
+            parts.append("Heaviest set: \(ex) \(Int(w))kg × \(r).")
+        }
+        if let pr = s.prs.first(where: \.isPR) {
+            parts.append("New PR on \(pr.exercise) (est. 1RM \(Int(pr.estimated1RM))kg).")
+        }
+        parts.append("Give me a 2–3 sentence recap: what went well and one thing to adjust next time. No questions, no formatting.")
+        return parts.joined(separator: " ")
     }
 
     func startRestTimer(seconds: Int) {

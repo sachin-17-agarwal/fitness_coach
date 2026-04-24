@@ -28,6 +28,8 @@ struct WorkoutSummaryView: View {
                             heartRateSection
                         }
 
+                        recapSection
+
                         if summary.prs.contains(where: \.isPR) {
                             prsSection
                         }
@@ -149,6 +151,44 @@ struct WorkoutSummaryView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.surface)
         )
+    }
+
+    @ViewBuilder
+    private var recapSection: some View {
+        // Three states:
+        //   coachRecap == nil       → still loading, show spinner.
+        //   coachRecap == ""        → explicitly no recap (e.g. zero
+        //                              working sets), hide the section.
+        //   coachRecap == "<text>"  → render the coach note.
+        if summary.coachRecap == nil || !(summary.coachRecap ?? "").isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    CoachAvatar()
+                    Text("Coach recap")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Spacer()
+                }
+
+                if let recap = summary.coachRecap, !recap.isEmpty {
+                    Text(recap)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView().scaleEffect(0.7).tint(Color.accentTeal)
+                        Text("Writing your recap…")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .darkCard(padding: 0, cornerRadius: 18)
+        }
     }
 
     private var prsSection: some View {

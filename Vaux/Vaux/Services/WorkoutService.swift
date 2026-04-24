@@ -33,6 +33,10 @@ struct WorkoutSummary: Sendable {
     var avgHR: Int? = nil
     var maxHR: Int? = nil
     var minHR: Int? = nil
+    var coachRecap: String? = nil
+    var topExercise: String? = nil
+    var topExerciseWeight: Double? = nil
+    var topExerciseReps: Int? = nil
 }
 
 /// Result of a personal-record check using the Epley 1RM formula.
@@ -250,6 +254,21 @@ final class WorkoutService: Sendable {
             "workout_sets",
             query: ["workout_session_id": "eq.\(sessionId.uuidString)"],
             order: "set_number.asc"
+        )
+    }
+
+    /// Fetches every set logged on or after `start`. PostgREST through
+    /// `SupabaseClient.fetch` only accepts one filter per column, so the
+    /// caller is responsible for trimming to a desired upper bound — for
+    /// the weekly-volume use case we ask for ~14 days back and split the
+    /// result into "this week" / "prior week" client-side.
+    func fetchSets(since start: Date) async throws -> [WorkoutSet] {
+        let f = Self.dateFormatter
+        let startStr = f.string(from: start)
+        return try await client.fetch(
+            "workout_sets",
+            query: ["date": "gte.\(startStr)"],
+            order: "date.asc"
         )
     }
 
