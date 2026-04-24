@@ -262,6 +262,41 @@ final class WorkoutService: Sendable {
         )
     }
 
+    /// Sweeps session rows left stuck in `in_progress` from past days — an
+    /// accidental back-swipe used to mint a fresh session on every re-entry
+    /// because the view never called `endSession`. Empty rows (no logged
+    /// sets) are deleted; rows with actual sets get finalised so they stop
+    /// showing as In_Progress in history. Today's sessions are left alone
+    /// so a currently-open workout isn't disturbed.
+    func cleanupStaleSessions() async {
+        let today = Self.todayString()
+        guard let sessions: [WorkoutSession] = try? await client.fetch(
+            "workout_sessions",
+            query: ["status": "eq.in_progress", "date": "lt.\(today)"]
+        ) else { return }
+
+        for session in sessions {
+            guard let id = session.id else { continue }
+            let sets = (try? await fetchSets(sessionId: id)) ?? []
+
+            if sets.isEmpty {
+                _ = try? await client.delete(
+                    "workout_sessions",
+                    match: ["id": id.uuidString]
+                )
+            } else {
+                let tonnage = sets.reduce(0.0) { total, s in
+                    total + (s.actualWeightKg ?? 0) * Double(s.actualReps ?? 0)
+                }
+                _ = try? await client.update(
+                    "workout_sessions",
+                    body: ["status": "completed", "tonnage_kg": tonnage],
+                    match: ["id": id.uuidString]
+                )
+            }
+        }
+    }
+
     // MARK: - Workout state (memory table)
 
     /// Reads the current workout state from the `memory` key-value table.

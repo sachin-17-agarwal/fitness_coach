@@ -15,6 +15,7 @@ struct FitnessCoachApp: App {
     init() {
         configureNavBarAppearance()
         requestHealthKitAuthorization()
+        Task { await WorkoutService().cleanupStaleSessions() }
     }
 
     var body: some Scene {
