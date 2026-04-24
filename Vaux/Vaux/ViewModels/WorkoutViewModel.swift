@@ -115,6 +115,24 @@ final class WorkoutViewModel {
     /// instead of creating a duplicate. Falls back to `startWorkout` when
     /// nothing is open.
     func startOrResumeWorkout(type: String) async {
+        if let existing = await fetchInProgressSession(type: type) {
+            await resume(session: existing)
+        } else {
+            await startWorkout(type: type)
+        }
+    }
+
+    /// Resume-only variant used when the view remounts (e.g. after an
+    /// accidental back-swipe): if there's already an in-progress session for
+    /// today's type, hydrate into it. Does NOT create a new session when
+    /// nothing's open — that still requires an explicit "Begin session" tap.
+    func resumeIfInProgress(type: String) async {
+        guard !isActive, !showSummary, !type.isEmpty else { return }
+        guard let existing = await fetchInProgressSession(type: type) else { return }
+        await resume(session: existing)
+    }
+
+    private func fetchInProgressSession(type: String) async -> WorkoutSession? {
         let today = Self.todayString()
         let sessions: [WorkoutSession]? = try? await SupabaseClient.shared.fetch(
             "workout_sessions",
@@ -126,11 +144,7 @@ final class WorkoutViewModel {
             order: "start_time.desc",
             limit: 1
         )
-        if let existing = sessions?.first {
-            await resume(session: existing)
-        } else {
-            await startWorkout(type: type)
-        }
+        return sessions?.first
     }
 
     private func resume(session: WorkoutSession) async {

@@ -61,10 +61,18 @@ struct WorkoutModeView: View {
         .task {
             // Only fall back to the mesocycle service when the caller didn't
             // already hand us a session type. Loads once per view lifetime.
-            guard sessionType.isEmpty, !didResolveType else { return }
-            didResolveType = true
-            if let state = try? await MesocycleService().loadState() {
-                resolvedSessionType = state.todayType
+            if sessionType.isEmpty, !didResolveType {
+                didResolveType = true
+                if let state = try? await MesocycleService().loadState() {
+                    resolvedSessionType = state.todayType
+                }
+            }
+            // If the user left mid-workout (accidental back-swipe, app
+            // backgrounded, etc.) the Supabase session is still `in_progress`
+            // — pick it back up automatically instead of showing the start
+            // screen, which would otherwise mint a brand-new session on tap.
+            if !isNonStrengthDay {
+                await viewModel.resumeIfInProgress(type: effectiveSessionType)
             }
         }
         .navigationTitle(viewModel.isActive ? viewModel.sessionType : (effectiveSessionType.isEmpty ? "Workout" : effectiveSessionType))
@@ -139,7 +147,7 @@ struct WorkoutModeView: View {
 
             Button {
                 Haptic.medium()
-                Task { await viewModel.startWorkout(type: effectiveSessionType) }
+                Task { await viewModel.startOrResumeWorkout(type: effectiveSessionType) }
             } label: {
                 HStack(spacing: 8) {
                     if viewModel.isLoading {
