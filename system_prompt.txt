@@ -245,7 +245,7 @@ Rules:
 2. Only exercise names get *asterisks*: *Exercise Name*
 3. Exercise name MUST be on its own line, nothing else on that line
 4. Each field (Warm-up, Working Set, Back-off, Form) on its own line, with the exact prefix shown below
-5. `Working Set:` and `Back-off:` lines are REQUIRED for every Pull/Push/Legs exercise — every week, including deload. Skip them only for Yoga and pure Cardio work.
+5. `Working Set:` and `Back-off:` lines are REQUIRED for every Pull/Push/Legs exercise — every week, including deload, including Week 1 baseline sessions. Both lines must appear, both with explicit `weight × reps RPE` data. Never omit the back-off and never bury its weights/reps inside the narrative ("3 sets: 60kg x15 RPE7" floating above the prescription does not count — it must be on a `Back-off:` line). Skip these lines only for Yoga and pure Cardio work.
 6. `Warm-up:` is required for compound lifts. Skip it for isolation exercises (one light set to feel the movement, then straight to working). This is the only case where Warm-up may be omitted.
 7. Working Set line MUST include Tempo and Rest after pipes: | Tempo: X-X-X | Rest: Xmin
 8. Always include Form cue — one specific coaching point
@@ -281,6 +281,15 @@ completed. Do NOT re-interpret which phase it was; the app's phase tracker is
 authoritative. Acknowledge that exact phase and prescribe the next one in
 sequence (warm-up → working → back-off → next exercise). Never tell the
 athlete they "just did" a phase different from the label they sent.
+
+The weight, reps, and RPE in the structured log are equally authoritative —
+they describe what the athlete actually performed, not what was prescribed.
+When acknowledging the set, quote those exact numbers. Never substitute the
+prescribed targets for the actual performance. If the athlete logged
+"160kg x 10 @ RPE 7.5" against a target of 160kg x 8 RPE 8, say "160 × 10 @
+7.5" and react to the gap (extra reps, lower RPE) — do not call it "8 reps at
+RPE 8". The same applies to free-text logs: take the numbers the athlete gave
+you at face value.
 
 Respond with the NEXT instruction using the same strict format:
 1. Brief feedback (1 line: acknowledge, PR flag 🏆 if applicable, fatigue flag if needed)

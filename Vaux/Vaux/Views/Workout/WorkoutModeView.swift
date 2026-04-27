@@ -7,6 +7,12 @@ struct WorkoutModeView: View {
     @State private var viewModel = WorkoutViewModel()
     @State private var resolvedSessionType: String = ""
     @State private var didResolveType = false
+    /// Set to false while the view is probing Supabase for an in-progress
+    /// session on appearance. Shown as a brief loading state so an
+    /// accidental back-swipe doesn't flash the "Begin session" screen
+    /// before the resume kicks in — that flash made it look like the
+    /// workout had been thrown away when it was still on disk.
+    @State private var didCheckResume = false
 
     /// Session type passed explicitly (e.g. from the Dashboard CTA). When left
     /// empty — the Train tab mounts this view with no argument — the view
@@ -34,7 +40,11 @@ struct WorkoutModeView: View {
                         : nil
                 )
             } else if !viewModel.isActive && !viewModel.showSummary {
-                startView
+                if didCheckResume {
+                    startView
+                } else {
+                    resumeCheckView
+                }
             } else {
                 activeWorkoutView
             }
@@ -74,6 +84,7 @@ struct WorkoutModeView: View {
             if !isNonStrengthDay {
                 await viewModel.resumeIfInProgress(type: effectiveSessionType)
             }
+            didCheckResume = true
         }
         .navigationTitle(viewModel.isActive ? viewModel.sessionType : (effectiveSessionType.isEmpty ? "Workout" : effectiveSessionType))
         .navigationBarTitleDisplayMode(.inline)
@@ -101,6 +112,26 @@ struct WorkoutModeView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Resume probe
+
+    /// Shown for the brief moment between the view appearing and
+    /// `resumeIfInProgress` returning. Prevents the "Begin session" screen
+    /// from flashing into view when the user is actually re-entering a
+    /// workout that's still in progress on the server.
+    private var resumeCheckView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ProgressView()
+                .tint(.signal)
+                .scaleEffect(1.1)
+            Text("Checking for an active session…")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.textSecondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Start screen

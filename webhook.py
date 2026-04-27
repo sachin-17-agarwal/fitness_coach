@@ -281,14 +281,20 @@ def _parse_block(name: str, block: str) -> dict | None:
 
     # Fallback: Claude sometimes drops the `Working Set:` / `Back-off:` prefixes
     # and writes loose lines like "3 sets: 90kg x12 RPE7" + "3 sets: 60kg x15 RPE7".
-    # Scan the block for those when the named prefixes didn't produce structured
-    # sets, so the working/back-off chips still appear in the app.
-    if not working and not backoff:
+    # Scan the block for those whenever a phase is missing — including the case
+    # where the strict `Working Set:` line was sent but the back-off was only
+    # mentioned narratively, which would otherwise drop silently and leave the
+    # card with a working chip and no back-off.
+    if not working or not backoff:
         loose = _parse_loose_sets(block)
+        # Don't double-count anything the strict prefixes already captured.
+        already = {(s["weight"], s["reps"]) for s in working + backoff}
+        loose = [s for s in loose if (s["weight"], s["reps"]) not in already]
         if loose:
-            working = [loose[0]]
-            if len(loose) >= 2:
-                backoff = [loose[1]]
+            if not working:
+                working = [loose.pop(0)]
+            if not backoff and loose:
+                backoff = [loose[0]]
 
     if warmup:
         result["warmup"] = warmup

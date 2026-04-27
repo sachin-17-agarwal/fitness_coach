@@ -423,6 +423,39 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(rx["backoff"], [{"weight": 130.0, "reps": 12, "rpe": 7.0}])
         self.assertEqual(rx["tempo"], "3-1-2")
 
+    def test_prescription_parser_recovers_loose_backoff_when_working_is_strict(self):
+        """When the coach sends a strict `Working Set:` line but only mentions
+        the back-off as loose narrative ("3 sets: 50kg x15 RPE7"), the parser
+        should still surface the back-off so the workout card renders both
+        sections instead of silently dropping the back-off."""
+        from webhook import _parse_prescription
+        text = (
+            "*Leg Press*\n"
+            "Working Set: 160kg x8 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "3 sets: 50kg x15 RPE7\n"
+            "Form: Control the descent\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["working"], [{"weight": 160.0, "reps": 8, "rpe": 8.0}])
+        self.assertEqual(rx["backoff"], [{"weight": 50.0, "reps": 15, "rpe": 7.0}])
+        self.assertEqual(rx["form"], "Control the descent")
+
+    def test_prescription_parser_does_not_double_count_strict_working_in_loose_pass(self):
+        """If a structured `Working Set:` line happens to also match the loose
+        regex (e.g. uses extra wording like '3 sets: ...'), the loose
+        fallback must not re-add it as the back-off."""
+        from webhook import _parse_prescription
+        text = (
+            "*Leg Press*\n"
+            "Working Set: 3 sets 160kg x8 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Form: Drive through the heels\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["working"], [{"weight": 160.0, "reps": 8, "rpe": 8.0}])
+        self.assertNotIn("backoff", rx)
+
     def test_prescription_parser_preserves_strict_format(self):
         """Sanity: the strict format still parses identically after loosening."""
         from webhook import _parse_prescription

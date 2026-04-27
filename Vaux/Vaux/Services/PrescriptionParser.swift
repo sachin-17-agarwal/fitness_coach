@@ -154,16 +154,21 @@ final class PrescriptionParser {
 
         // Fallback: Claude sometimes drops the `Working Set:` / `Back-off:`
         // prefixes and writes loose lines like "3 sets: 90kg x12 RPE7" +
-        // "3 sets: 60kg x15 RPE7". Scan the block for those when the named
-        // prefixes didn't produce structured sets so the working and back-off
-        // chips still render in the card.
-        if working.isEmpty && backoff.isEmpty {
-            let loose = parseLooseSets(block)
-            if let first = loose.first {
-                working = [first]
-                if loose.count >= 2 {
-                    backoff = [loose[1]]
-                }
+        // "3 sets: 60kg x15 RPE7". Scan the block whenever a phase is missing
+        // — including the case where the strict `Working Set:` line came
+        // through but the back-off was only mentioned narratively, which used
+        // to drop silently and leave the card with a working chip and no
+        // back-off.
+        if working.isEmpty || backoff.isEmpty {
+            let already = Set((working + backoff).map { LooseKey(weight: $0.weight, reps: $0.reps) })
+            var loose = parseLooseSets(block).filter {
+                !already.contains(LooseKey(weight: $0.weight, reps: $0.reps))
+            }
+            if working.isEmpty, !loose.isEmpty {
+                working = [loose.removeFirst()]
+            }
+            if backoff.isEmpty, let next = loose.first {
+                backoff = [next]
             }
         }
 
@@ -176,6 +181,13 @@ final class PrescriptionParser {
             tempo: tempo,
             restSeconds: restSeconds
         )
+    }
+
+    /// Hashable identity for deduping loose-set matches against the sets we
+    /// already extracted via strict `Working Set:` / `Back-off:` prefixes.
+    private struct LooseKey: Hashable {
+        let weight: Double
+        let reps: Int
     }
 
     /// Extracts sets from loose phrasings like "3 sets: 90kg x12 RPE7" or
