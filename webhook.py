@@ -338,19 +338,34 @@ def _parse_loose_sets(block: str) -> list:
 
 
 def _parse_set_list(text: str) -> list:
-    """Parse '60kg x10, 80kg x6' into [{"weight": 60, "reps": 10}, ...]"""
-    pattern = re.compile(r'(\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)')
-    return [{"weight": float(m.group(1)), "reps": int(m.group(2))}
-            for m in pattern.finditer(text)]
+    """Parse '60kg x10, 80kg x6' (or 'BW x10, BW x6') into structured sets.
+
+    Bodyweight phrasings ('BW', 'Bodyweight', 'BW + 10kg') resolve to weight 0
+    so swaps to assisted/pull-up style exercises still render a card."""
+    pattern = re.compile(
+        r'(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)',
+        re.IGNORECASE,
+    )
+    sets = []
+    for m in pattern.finditer(text):
+        raw_weight = m.group(1)
+        weight = 0.0 if not raw_weight[0].isdigit() else float(raw_weight)
+        sets.append({"weight": weight, "reps": int(m.group(2))})
+    return sets
 
 
 def _parse_set_list_with_rpe(text: str) -> list:
-    """Parse '120kg x6-8 RPE8-9' into [{"weight": 120, "reps": 6, "rpe": 8}]"""
-    pattern = re.compile(r'(\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)')
+    """Parse '120kg x6-8 RPE8-9' (or 'BW x6 RPE8') into structured sets."""
+    pattern = re.compile(
+        r'(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)',
+        re.IGNORECASE,
+    )
     rpe_pattern = re.compile(r'(?:RPE\s*|@)(\d+(?:\.\d+)?)', re.IGNORECASE)
     results = []
     for m in pattern.finditer(text):
-        entry = {"weight": float(m.group(1)), "reps": int(m.group(2))}
+        raw_weight = m.group(1)
+        weight = 0.0 if not raw_weight[0].isdigit() else float(raw_weight)
+        entry = {"weight": weight, "reps": int(m.group(2))}
         rpe_match = rpe_pattern.search(text[m.end():m.end() + 30])
         if not rpe_match:
             rpe_match = rpe_pattern.search(text)

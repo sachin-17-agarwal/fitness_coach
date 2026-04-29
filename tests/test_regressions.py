@@ -456,6 +456,29 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(rx["working"], [{"weight": 160.0, "reps": 8, "rpe": 8.0}])
         self.assertNotIn("backoff", rx)
 
+    def test_prescription_parser_handles_bodyweight_swap(self):
+        """Swapping to pull-ups / dips uses `BW xN` instead of a kg weight.
+        The parser must recognise the bodyweight token (resolving to 0kg) so
+        the workout card actually swaps to the new exercise instead of
+        leaving the previous one on screen."""
+        from webhook import _parse_prescription
+        text = (
+            "*Pull-ups*\n"
+            "Warm-up: BW x5, BW x5\n"
+            "Working Set: BW x6 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Back-off: BW x10 RPE7\n"
+            "Form: Squeeze lats at top\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["exercise"], "Pull-ups")
+        self.assertEqual(rx["warmup"], [
+            {"weight": 0.0, "reps": 5},
+            {"weight": 0.0, "reps": 5},
+        ])
+        self.assertEqual(rx["working"], [{"weight": 0.0, "reps": 6, "rpe": 8.0}])
+        self.assertEqual(rx["backoff"], [{"weight": 0.0, "reps": 10, "rpe": 7.0}])
+
     def test_prescription_parser_preserves_strict_format(self):
         """Sanity: the strict format still parses identically after loosening."""
         from webhook import _parse_prescription

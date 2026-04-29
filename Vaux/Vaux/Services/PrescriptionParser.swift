@@ -317,11 +317,15 @@ final class PrescriptionParser {
     }
 
     /// Extracts weight and reps from strings like "125kg x8", "125 x 8",
-    /// "125kgx8", "125 kg x 8".
+    /// "125kgx8", "125 kg x 8". Also accepts bodyweight phrasings ("BW x8",
+    /// "Bodyweight x6") so swaps to pull-ups / dips render a real card
+    /// instead of getting silently dropped — bodyweight resolves to 0kg.
     private static func parseWeightReps(_ text: String) -> (weight: Double, reps: Int)? {
-        // Pattern: number (optional "kg"/"lbs") then "x" then number
-        let pattern = #"(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        let pattern = #"(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)"#
+        guard let regex = try? NSRegularExpression(
+                  pattern: pattern,
+                  options: .caseInsensitive
+              ),
               let match = regex.firstMatch(
                   in: text,
                   range: NSRange(location: 0, length: (text as NSString).length)
@@ -331,7 +335,11 @@ final class PrescriptionParser {
         }
         let weightStr = (text as NSString).substring(with: match.range(at: 1))
         let repsStr = (text as NSString).substring(with: match.range(at: 2))
-        guard let weight = Double(weightStr), let reps = Int(repsStr) else { return nil }
+        let weight: Double = {
+            if let n = Double(weightStr) { return n }
+            return 0  // BW / bodyweight → 0kg target
+        }()
+        guard let reps = Int(repsStr) else { return nil }
         return (weight, reps)
     }
 
