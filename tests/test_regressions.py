@@ -499,7 +499,9 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(rx["backoff"], [{"weight": 130.0, "reps": 12, "rpe": 7.0}])
 
     def test_is_ios_structured_log_detects_all_phases(self):
-        # The exact shapes WorkoutViewModel.swift sends
+        # The exact shapes WorkoutViewModel.swift sends — both the legacy
+        # "Logged <phase>: <ex> - …" form (still in older clients) and the
+        # new "Logged <phase>: <ex> — actual: … (target was …)" form.
         self.assertTrue(is_ios_structured_log(
             "Logged warm-up: Leg Press - 60 kg x 10. Set 1 for this exercise, 0 working sets total. What's next?"
         ))
@@ -508,6 +510,12 @@ class RegressionTests(unittest.TestCase):
         ))
         self.assertTrue(is_ios_structured_log(
             "Logged back-off: Leg Press - 130 kg x 12 @ RPE 7.0. Set 5 for this exercise, 3 working sets total. What's next?"
+        ))
+        self.assertTrue(is_ios_structured_log(
+            "Logged working: Lat Pulldown — actual: 95kg × 6 @ RPE 8.5 (target was 95kg × 6 @ RPE 8). Set 3 for this exercise, 1 working sets total. Quote the actual numbers (95kg × 6 @ RPE 8.5) when responding, not the target. What's next?"
+        ))
+        self.assertTrue(is_ios_structured_log(
+            "Logged warm-up: Lat Pulldown — actual: 60kg × 10 (target was 60kg × 10). Set 1 for this exercise, 0 working sets total. Quote the actual numbers (60kg × 10) when responding, not the target. What's next?"
         ))
         # Ad-hoc user messages must not match
         self.assertFalse(is_ios_structured_log("Done 100 x 12 @8"))

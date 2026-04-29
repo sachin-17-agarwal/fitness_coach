@@ -251,8 +251,12 @@ final class WorkoutViewModel {
         errorMessage = nil
 
         // Snapshot the phase *before* we advance — the label below must describe
-        // the set the user just logged, not the next prescribed phase.
+        // the set the user just logged, not the next prescribed phase. Same
+        // for the index into the phase: we use it to pull the prescription's
+        // target for the *just-logged* set so the coach can compare actual vs
+        // target without re-deriving it from history.
         let loggedPhase = currentPhase
+        let loggedPhaseSetIndex = phaseSetIndex
         let isWarmup = loggedPhase == .warmup
         let exercise = PrescriptionParser.normalizeExerciseName(rawExercise)
 
@@ -321,7 +325,16 @@ final class WorkoutViewModel {
         case .working: label = "working"
         case .backoff: label = "back-off"
         }
-        let setMsg = "Logged \(label): \(exercise) - \(inputWeight.weightString) x \(inputReps)\(isWarmup ? "" : " @ RPE \(inputRPE.oneDecimal)"). Set \(exerciseSetIndex) for this exercise, \(setCount) working sets total. What's next?"
+        let actual = "\(inputWeight.weightString) × \(inputReps)" + (isWarmup ? "" : " @ RPE \(inputRPE.oneDecimal)")
+        let targetSuffix = formatTargetSuffix(
+            phase: loggedPhase,
+            phaseSetIndex: loggedPhaseSetIndex,
+            isWarmup: isWarmup
+        )
+        // Spell out actual vs target so the coach can't quote the prescription's
+        // target as if it were the performed set. Claude was previously echoing
+        // back the back-off prescription as the working-set result.
+        let setMsg = "Logged \(label): \(exercise) — actual: \(actual)\(targetSuffix). Set \(exerciseSetIndex) for this exercise, \(setCount) working sets total. Quote the actual numbers (\(actual)) when responding, not the target. What's next?"
         do {
             let response = try await chatService.sendMessage(setMsg)
             applyAIResponse(response)
@@ -627,6 +640,39 @@ final class WorkoutViewModel {
         let item = reordered.remove(at: idx)
         reordered.insert(item, at: 0)
         return reordered
+    }
+
+    /// Returns " (target was 95kg × 6 @ RPE 8)" when we know what was
+    /// prescribed for the just-logged phase index, or "" otherwise. The
+    /// suffix is appended to the coach's "Logged …" message so Claude has
+    /// both the actual and target side by side and can't conflate them.
+    private func formatTargetSuffix(
+        phase: SetPhase,
+        phaseSetIndex: Int,
+        isWarmup: Bool
+    ) -> String {
+        guard let rx = currentPrescription else { return "" }
+        let target: (weight: Double, reps: Int, rpe: Double?)? = {
+            switch phase {
+            case .warmup:
+                guard phaseSetIndex < rx.warmupSets.count else { return nil }
+                let t = rx.warmupSets[phaseSetIndex]
+                return (t.weight, t.reps, nil)
+            case .working:
+                guard phaseSetIndex < rx.workingSets.count else { return nil }
+                return rx.workingSets[phaseSetIndex]
+            case .backoff:
+                guard phaseSetIndex < rx.backoffSets.count else { return nil }
+                return rx.backoffSets[phaseSetIndex]
+            }
+        }()
+        guard let t = target else { return "" }
+        var s = " (target was \(t.weight.weightString) × \(t.reps)"
+        if !isWarmup, let rpe = t.rpe {
+            s += " @ RPE \(rpe.oneDecimal)"
+        }
+        s += ")"
+        return s
     }
 
     private static func parseRestString(_ rest: String?) -> Int? {
