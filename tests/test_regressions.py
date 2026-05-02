@@ -423,6 +423,62 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(rx["backoff"], [{"weight": 130.0, "reps": 12, "rpe": 7.0}])
         self.assertEqual(rx["tempo"], "3-1-2")
 
+    def test_prescription_parser_recovers_loose_backoff_when_working_is_strict(self):
+        """When the coach sends a strict `Working Set:` line but only mentions
+        the back-off as loose narrative ("3 sets: 50kg x15 RPE7"), the parser
+        should still surface the back-off so the workout card renders both
+        sections instead of silently dropping the back-off."""
+        from webhook import _parse_prescription
+        text = (
+            "*Leg Press*\n"
+            "Working Set: 160kg x8 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "3 sets: 50kg x15 RPE7\n"
+            "Form: Control the descent\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["working"], [{"weight": 160.0, "reps": 8, "rpe": 8.0}])
+        self.assertEqual(rx["backoff"], [{"weight": 50.0, "reps": 15, "rpe": 7.0}])
+        self.assertEqual(rx["form"], "Control the descent")
+
+    def test_prescription_parser_does_not_double_count_strict_working_in_loose_pass(self):
+        """If a structured `Working Set:` line happens to also match the loose
+        regex (e.g. uses extra wording like '3 sets: ...'), the loose
+        fallback must not re-add it as the back-off."""
+        from webhook import _parse_prescription
+        text = (
+            "*Leg Press*\n"
+            "Working Set: 3 sets 160kg x8 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Form: Drive through the heels\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["working"], [{"weight": 160.0, "reps": 8, "rpe": 8.0}])
+        self.assertNotIn("backoff", rx)
+
+    def test_prescription_parser_handles_bodyweight_swap(self):
+        """Swapping to pull-ups / dips uses `BW xN` instead of a kg weight.
+        The parser must recognise the bodyweight token (resolving to 0kg) so
+        the workout card actually swaps to the new exercise instead of
+        leaving the previous one on screen."""
+        from webhook import _parse_prescription
+        text = (
+            "*Pull-ups*\n"
+            "Warm-up: BW x5, BW x5\n"
+            "Working Set: BW x6 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Back-off: BW x10 RPE7\n"
+            "Form: Squeeze lats at top\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["exercise"], "Pull-ups")
+        self.assertEqual(rx["warmup"], [
+            {"weight": 0.0, "reps": 5},
+            {"weight": 0.0, "reps": 5},
+        ])
+        self.assertEqual(rx["working"], [{"weight": 0.0, "reps": 6, "rpe": 8.0}])
+        self.assertEqual(rx["backoff"], [{"weight": 0.0, "reps": 10, "rpe": 7.0}])
+
     def test_prescription_parser_preserves_strict_format(self):
         """Sanity: the strict format still parses identically after loosening."""
         from webhook import _parse_prescription
@@ -443,7 +499,9 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(rx["backoff"], [{"weight": 130.0, "reps": 12, "rpe": 7.0}])
 
     def test_is_ios_structured_log_detects_all_phases(self):
-        # The exact shapes WorkoutViewModel.swift sends
+        # The exact shapes WorkoutViewModel.swift sends — both the legacy
+        # "Logged <phase>: <ex> - …" form (still in older clients) and the
+        # new "Logged <phase>: <ex> — actual: … (target was …)" form.
         self.assertTrue(is_ios_structured_log(
             "Logged warm-up: Leg Press - 60 kg x 10. Set 1 for this exercise, 0 working sets total. What's next?"
         ))
@@ -452,6 +510,12 @@ class RegressionTests(unittest.TestCase):
         ))
         self.assertTrue(is_ios_structured_log(
             "Logged back-off: Leg Press - 130 kg x 12 @ RPE 7.0. Set 5 for this exercise, 3 working sets total. What's next?"
+        ))
+        self.assertTrue(is_ios_structured_log(
+            "Logged working: Lat Pulldown — actual: 95kg × 6 @ RPE 8.5 (target was 95kg × 6 @ RPE 8). Set 3 for this exercise, 1 working sets total. Quote the actual numbers (95kg × 6 @ RPE 8.5) when responding, not the target. What's next?"
+        ))
+        self.assertTrue(is_ios_structured_log(
+            "Logged warm-up: Lat Pulldown — actual: 60kg × 10 (target was 60kg × 10). Set 1 for this exercise, 0 working sets total. Quote the actual numbers (60kg × 10) when responding, not the target. What's next?"
         ))
         # Ad-hoc user messages must not match
         self.assertFalse(is_ios_structured_log("Done 100 x 12 @8"))

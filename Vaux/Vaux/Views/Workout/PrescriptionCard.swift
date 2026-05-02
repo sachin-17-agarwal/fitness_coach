@@ -338,7 +338,10 @@ struct PrescriptionCard: View {
     // MARK: - Formatting
 
     private func formatWeight(_ w: Double) -> String {
-        w.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(w))kg" : String(format: "%.1fkg", w)
+        // Bodyweight prescriptions parse to weight 0 (Pull-ups, dips, etc.) —
+        // render "BW" so the card doesn't claim the athlete is lifting 0kg.
+        if w <= 0 { return "BW" }
+        return w.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(w))kg" : String(format: "%.1fkg", w)
     }
 
     private func formatRPE(_ r: Double) -> String {
