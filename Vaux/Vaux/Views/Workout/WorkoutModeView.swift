@@ -506,11 +506,14 @@ struct SetProgressRow: View {
         let weight = set.actualWeightKg ?? set.targetWeightKg ?? 0
         let reps = set.actualReps ?? set.targetReps ?? 0
         let rpe = set.actualRpe ?? set.targetRpe
+        // Bodyweight prescriptions log a 0 weight — render "BW" instead of
+        // "0×N" so a logged pull-up reads as "BW × 5", not a zero lift.
+        let weightLabel = weight > 0 ? "\(Int(weight))" : "BW"
         return VStack(spacing: 3) {
             Text("SET \(index)")
                 .font(.system(size: 9, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.textTertiary)
-            Text("\(Int(weight))×\(reps)")
+            Text("\(weightLabel)×\(reps)")
                 .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
                 .foregroundStyle(.white)
             if let rpe {

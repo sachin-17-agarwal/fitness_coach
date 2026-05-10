@@ -591,9 +591,15 @@ final class WorkoutViewModel {
             if rx.exerciseName != oldExercise {
                 exerciseSetIndex = 0
                 exerciseSetsForCurrentExercise = []
-                phaseSetIndex = 0
-                currentPhase = rx.warmupSets.isEmpty ? .working : .warmup
             }
+            // Re-derive the phase from what's already logged for this
+            // exercise so a re-prescription that *adds* warm-ups or
+            // back-offs (e.g. user asks "give me warm-up + back-off too")
+            // moves the input form back to warm-up phase 0 instead of
+            // continuing to log as working. Without this, the visual
+            // chips updated but the next Log Set still wrote a working
+            // set with the warm-up's reps.
+            syncPhaseToPrescription()
             prefillFromCurrentTarget()
         }
 
@@ -640,6 +646,35 @@ final class WorkoutViewModel {
         let item = reordered.remove(at: idx)
         reordered.insert(item, at: 0)
         return reordered
+    }
+
+    /// Re-derives `currentPhase` and `phaseSetIndex` from the sets already
+    /// logged for this exercise plus the active prescription. Called every
+    /// time `currentPrescription` is replaced — including same-exercise
+    /// updates triggered by user requests like "add a warm-up too" — so
+    /// the input form lines up with the unfilled phase, not whatever phase
+    /// happened to be active before the prescription changed.
+    private func syncPhaseToPrescription() {
+        guard let rx = currentPrescription else { return }
+        let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
+        let nonWarmupsDone = exerciseSetsForCurrentExercise.count - warmupsDone
+        let workingPrescribed = rx.workingSets.count
+
+        if warmupsDone < rx.warmupSets.count {
+            currentPhase = .warmup
+            phaseSetIndex = warmupsDone
+        } else if nonWarmupsDone < workingPrescribed {
+            currentPhase = .working
+            phaseSetIndex = nonWarmupsDone
+        } else if !rx.backoffSets.isEmpty {
+            currentPhase = .backoff
+            phaseSetIndex = max(0, nonWarmupsDone - workingPrescribed)
+        } else {
+            // Prescription has no back-off — leave us at the last working
+            // set so prefill still shows something reasonable.
+            currentPhase = rx.warmupSets.isEmpty ? .working : (workingPrescribed > 0 ? .working : .warmup)
+            phaseSetIndex = max(0, min(nonWarmupsDone, max(0, workingPrescribed - 1)))
+        }
     }
 
     /// Returns " (target was 95kg × 6 @ RPE 8)" when we know what was
