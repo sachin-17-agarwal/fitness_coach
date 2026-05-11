@@ -325,6 +325,24 @@ final class WorkoutViewModel {
         case .working: label = "working"
         case .backoff: label = "back-off"
         }
+        let phaseTotal: Int = {
+            guard let rx = currentPrescription else { return 0 }
+            switch loggedPhase {
+            case .warmup:  return rx.warmupSets.count
+            case .working: return rx.workingSets.count
+            case .backoff: return rx.backoffSets.count
+            }
+        }()
+        // Spell out *which* set inside the phase was just done ("warm-up 2 of 2")
+        // so Claude can't mistake the running-set counter for a working-set
+        // index — that misread was making it quote the working prescription's
+        // weight × reps as the recap of a warm-up.
+        let phaseProgress: String
+        if phaseTotal > 0 {
+            phaseProgress = "\(label) \(loggedPhaseSetIndex + 1) of \(phaseTotal)"
+        } else {
+            phaseProgress = label
+        }
         let actual = "\(inputWeight.weightString) × \(inputReps)" + (isWarmup ? "" : " @ RPE \(inputRPE.oneDecimal)")
         let targetSuffix = formatTargetSuffix(
             phase: loggedPhase,
@@ -333,8 +351,9 @@ final class WorkoutViewModel {
         )
         // Spell out actual vs target so the coach can't quote the prescription's
         // target as if it were the performed set. Claude was previously echoing
-        // back the back-off prescription as the working-set result.
-        let setMsg = "Logged \(label): \(exercise) — actual: \(actual)\(targetSuffix). Set \(exerciseSetIndex) for this exercise, \(setCount) working sets total. Quote the actual numbers (\(actual)) when responding, not the target. What's next?"
+        // back the back-off prescription as the working-set result, and the
+        // working set's target as a warm-up's actual.
+        let setMsg = "Logged \(phaseProgress): \(exercise) — actual: \(actual)\(targetSuffix). \(setCount) working sets done so far. Acknowledge the athlete's actual numbers (\(actual)) — do NOT echo any other phase's target as the result. What's next?"
         do {
             let response = try await chatService.sendMessage(setMsg)
             applyAIResponse(response)
