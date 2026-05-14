@@ -4,9 +4,12 @@ Handles session state, set logging, PR detection, fatigue detection,
 substitution memory, and session summaries.
 """
 
+import logging
 from datetime import datetime, timedelta
 
 from data import get_supabase, now_local, today_local_str
+
+log = logging.getLogger(__name__)
 
 # -- Session State -------------------------------------------------------------
 
@@ -21,8 +24,8 @@ def get_workout_state() -> dict:
                     "current_set_number", "session_start_time", "current_exercise_name"]
         ).execute()
         return {r["key"]: r["value"] for r in result.data}
-    except Exception as e:
-        print(f"Failed to load workout state: {e}")
+    except Exception:
+        log.exception("Failed to load workout state")
         return {"workout_mode": "inactive"}
 
 def set_workout_state(updates: dict):
@@ -37,8 +40,8 @@ def set_workout_state(updates: dict):
                 "value": str(value),
                 "updated_at": now_local().isoformat()
             }, on_conflict="key").execute()
-    except Exception as e:
-        print(f"Failed to update workout state: {e}")
+    except Exception:
+        log.exception("Failed to update workout state")
 
 def is_workout_active() -> bool:
     state = get_workout_state()
@@ -73,8 +76,8 @@ def start_session(session_type: str) -> str:
             "session_start_time": now_local().isoformat(),
         })
         return session_id
-    except Exception as e:
-        print(f"Failed to start session: {e}")
+    except Exception:
+        log.exception("Failed to start session")
         return ""
 
 def end_session(session_id: str) -> dict:
@@ -113,8 +116,8 @@ def end_session(session_id: str) -> dict:
         })
 
         return {"tonnage_kg": tonnage, "total_sets": len(sets.data)}
-    except Exception as e:
-        print(f"Failed to end session: {e}")
+    except Exception:
+        log.exception("Failed to end session")
         return {}
 
 # -- Set Logging ---------------------------------------------------------------
@@ -162,8 +165,8 @@ def log_set(session_id: str, exercise: str, set_number: int,
         }).execute()
 
         return pr_info
-    except Exception as e:
-        print(f"Failed to log set: {e}")
+    except Exception:
+        log.exception("Failed to log set")
         return {}
 
 
@@ -179,8 +182,8 @@ def get_last_logged_exercise(session_id: str) -> str:
             .execute()
         if result.data:
             return (result.data[0].get("exercise") or "").strip()
-    except Exception as e:
-        print(f"Failed to fetch last logged exercise: {e}")
+    except Exception:
+        log.exception("Failed to fetch last logged exercise")
     return ""
 
 # -- PR Detection --------------------------------------------------------------
@@ -224,8 +227,8 @@ def check_pr(exercise: str, weight: float, reps: int) -> dict:
                 "improvement_pct": round((current_1rm - previous_best) / previous_best * 100, 1)
             }
         return {"is_pr": False}
-    except Exception as e:
-        print(f"PR check failed: {e}")
+    except Exception:
+        log.exception("PR check failed")
         return {"is_pr": False}
 
 # -- Fatigue Detection ---------------------------------------------------------
@@ -255,8 +258,8 @@ def check_fatigue(session_id: str, exercise: str) -> dict:
         elif drop_pct > 20:
             return {"fatigued": True, "drop_pct": round(drop_pct, 1), "recommendation": "moderate_fatigue"}
         return {"fatigued": False}
-    except Exception as e:
-        print(f"Fatigue check failed: {e}")
+    except Exception:
+        log.exception("Fatigue check failed")
         return {"fatigued": False}
 
 # -- Session Time --------------------------------------------------------------
@@ -286,8 +289,8 @@ def log_substitution(original: str, substitution: str, reason: str = ""):
             "reason": reason,
             "created_at": now_local().isoformat()
         }).execute()
-    except Exception as e:
-        print(f"Failed to log substitution: {e}")
+    except Exception:
+        log.exception("Failed to log substitution")
 
 def get_substitution_history() -> str:
     try:

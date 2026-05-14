@@ -3,10 +3,13 @@ memory.py - Persistent memory using Supabase.
 Replaces the old memory.json file approach.
 """
 
+import logging
 import os
 from datetime import datetime
 
 from data import CYCLE, get_supabase, now_local, today_local_str
+
+log = logging.getLogger(__name__)
 
 
 def load_memory() -> dict:
@@ -30,8 +33,8 @@ def load_memory() -> dict:
             f"Day {memory.get('mesocycle_day', 1)}"
         )
         return memory
-    except Exception as e:
-        print(f"Supabase memory load failed: {e}. Using defaults.")
+    except Exception:
+        log.exception("Supabase memory load failed; using defaults")
         return {
             "mesocycle_week": 1,
             "mesocycle_day": 1,
@@ -55,8 +58,8 @@ def save_memory(memory: dict):
     try:
         # Single batched upsert keeps week/day writes consistent.
         supabase.table("memory").upsert(rows, on_conflict="key").execute()
-    except Exception as e:
-        print(f"Supabase memory save failed: {e}")
+    except Exception:
+        log.exception("Supabase memory save failed")
 
 
 def save_conversation_message(role: str, content: str):
@@ -71,8 +74,8 @@ def save_conversation_message(role: str, content: str):
             "content": content,
             "created_at": now_local().isoformat(),
         }).execute()
-    except Exception as e:
-        print(f"Failed to save conversation message: {e}")
+    except Exception:
+        log.exception("Failed to save conversation message")
 
 
 def load_today_conversation() -> list:
@@ -88,8 +91,8 @@ def load_today_conversation() -> list:
             .execute()
         )
         return [{"role": row["role"], "content": row["content"]} for row in result.data]
-    except Exception as e:
-        print(f"Failed to load conversation: {e}")
+    except Exception:
+        log.exception("Failed to load conversation")
         return []
 
 
@@ -107,8 +110,8 @@ def log_session(session: dict):
             "mesocycle_day": session.get("mesocycle_day", 1),
         }).execute()
         print(f"Session logged: {session.get('type')} on {session.get('date')}")
-    except Exception as e:
-        print(f"Failed to log session: {e}")
+    except Exception:
+        log.exception("Failed to log session")
 
 
 def save_recovery_data(data: dict):
@@ -139,8 +142,8 @@ def save_recovery_data(data: dict):
         }
         supabase.table("recovery").upsert(row, on_conflict="date").execute()
         print(f"Recovery data saved for {row.get('date')}")
-    except Exception as e:
-        print(f"Failed to save recovery data: {e}")
+    except Exception:
+        log.exception("Failed to save recovery data")
 
 
 def get_current_session_type(memory: dict) -> str:

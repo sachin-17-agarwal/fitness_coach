@@ -2,12 +2,20 @@
 webhook.py — Flask server for Telegram messages and Apple Health data.
 """
 
+import logging
 import os
 import re
 import secrets
 import traceback
 from flask import Flask, request, jsonify
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger(__name__)
 from coach import handle_incoming_message
+from data import get_supabase, now_local
 from memory import load_memory, save_recovery_data
 from parse_health import parse_health_export
 from parse_workouts import is_workout_payload, parse_workouts, save_workouts
@@ -16,11 +24,43 @@ app = Flask(__name__)
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 
+def _is_duplicate_update(update_id) -> bool:
+    """Return True if this Telegram update_id has been processed before.
+
+    Telegram retries on 5xx and timeouts; without this guard the same message
+    can trigger duplicate mesocycle advances and double replies. Uses the
+    memory key/value table with a `tg_update_<id>` key; the upsert's
+    on_conflict=key acts as the unique constraint.
+    """
+    if update_id is None:
+        return False
+    supabase = get_supabase()
+    if not supabase:
+        return False
+    key = f"tg_update_{update_id}"
+    try:
+        existing = supabase.table("memory").select("key").eq("key", key).limit(1).execute()
+        if existing.data:
+            return True
+        supabase.table("memory").upsert(
+            {"key": key, "value": "1", "updated_at": now_local().isoformat()},
+            on_conflict="key",
+        ).execute()
+        return False
+    except Exception:
+        log.exception("Telegram dedup check failed")
+        return False
+
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     """Receives incoming Telegram messages via webhook."""
     data = request.get_json(force=True)
     if not data:
+        return jsonify({"ok": True})
+
+    if _is_duplicate_update(data.get("update_id")):
+        print(f"Skipping duplicate Telegram update_id={data.get('update_id')}")
         return jsonify({"ok": True})
 
     message = data.get("message", {})
@@ -101,7 +141,7 @@ def apple_health():
         return jsonify({"status": "ok", "date": data.get("date")}), 200
 
     except Exception as e:
-        print(f"❌ Apple Health webhook error: {e}")
+        log.exception("Apple Health webhook error")
         return jsonify({"error": str(e)}), 500
 
 def _get_hrv_status(hrv) -> str:

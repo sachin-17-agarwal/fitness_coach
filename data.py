@@ -4,9 +4,12 @@ Apple Health data is written to Supabase via the health webhook in webhook.py.
 Falls back to mock data if no real data exists yet.
 """
 
+import logging
 import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+log = logging.getLogger(__name__)
 
 
 _supabase_client = None
@@ -141,8 +144,8 @@ def get_athlete_context() -> dict:
             "resting_hr": row.get("resting_hr", "N/A"),
             "resting_hr_baseline": rhr_baseline,
         }
-    except Exception as e:
-        print(f"Supabase data fetch failed: {e}. Using mock data.")
+    except Exception:
+        log.exception("Supabase data fetch failed; using mock data")
         return get_mock_data()
 
 

@@ -2,11 +2,14 @@
 AI Fitness Coach — Main Script
 """
 
+import logging
 import os
 import re
 from datetime import datetime, timedelta
 
 from anthropic import Anthropic
+
+log = logging.getLogger(__name__)
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from data import CYCLE, get_athlete_context, get_supabase, now_local, today_local_str
 from memory import (
@@ -46,10 +49,16 @@ def get_anthropic_client() -> Anthropic:
         client = Anthropic(api_key=api_key)
     return client
 
+_SYSTEM_PROMPT_CACHE: str | None = None
+
+
 def load_system_prompt() -> str:
-    path = os.path.join(os.path.dirname(__file__), "system_prompt.txt")
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+    global _SYSTEM_PROMPT_CACHE
+    if _SYSTEM_PROMPT_CACHE is None:
+        path = os.path.join(os.path.dirname(__file__), "system_prompt.txt")
+        with open(path, "r", encoding="utf-8") as f:
+            _SYSTEM_PROMPT_CACHE = f.read()
+    return _SYSTEM_PROMPT_CACHE
 
 def get_full_session_history(days: int = 30) -> str:
     try:
@@ -231,8 +240,8 @@ def build_context_block(memory: dict) -> str:
         for future, key in futures.items():
             try:
                 results[key] = future.result(timeout=10)
-            except Exception as e:
-                print(f"Context fetch failed ({key}): {e}")
+            except Exception:
+                log.exception("Context fetch failed (%s)", key)
                 results[key] = None
 
     data = results.get("data") or {}
@@ -286,17 +295,22 @@ def _truncate_history(history: list) -> list:
 def chat_with_coach(user_message: str, conversation_history: list, memory: dict) -> str:
     system_prompt = load_system_prompt()
     context_block = build_context_block(memory)
-    full_system = system_prompt + "\n\n" + context_block
 
     conversation_history.append({"role": "user", "content": user_message})
     save_conversation_message("user", user_message)
 
     messages_to_send = _truncate_history(conversation_history)
 
+    # Split system into two blocks so the static prompt is cached across calls
+    # but the per-request context (recovery, sessions, workout state) stays live.
     response = get_anthropic_client().messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=1000,
-        system=full_system,
+        system=[
+            {"type": "text", "text": system_prompt,
+             "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": context_block},
+        ],
         messages=messages_to_send
     )
 
@@ -672,8 +686,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                     advance_mesocycle(memory)
                     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
                     expected_session_type = get_session_type_for_day(mesocycle_day)
-        except Exception as e:
-            print(f"Stale session check failed: {e}")
+        except Exception:
+            log.exception("Stale session check failed")
 
     # ── Detect session start ──────────────────────────────────────────────────
     start_phrases = [
@@ -840,6 +854,10 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
 
 if __name__ == "__main__":
     import sys
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     memory = load_memory()
 
     if len(sys.argv) < 2:

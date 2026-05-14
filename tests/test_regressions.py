@@ -1,3 +1,4 @@
+import os
 import unittest
 from datetime import datetime
 from unittest.mock import patch
@@ -606,6 +607,57 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(call.kwargs.get("on_conflict"), "key")
         rows = call.args[0] if call.args else call.kwargs.get("data", [])
         self.assertEqual(len(rows), 2)
+
+
+    def test_webhook_skips_duplicate_telegram_update_id(self):
+        # Telegram retries can deliver the same update twice; the dedup table
+        # must short-circuit the second delivery before handle_incoming_message
+        # runs.
+        import webhook as webhook_module
+        store = {"memory": []}
+        fake = FakeSupabase(store)
+        payload = {
+            "update_id": 12345,
+            "message": {
+                "text": "hello",
+                "chat": {"id": "1"},
+                "from": {"first_name": "Sachin"},
+            },
+        }
+
+        with patch.object(webhook_module, "get_supabase", return_value=fake), \
+             patch.object(webhook_module, "load_memory", return_value={}), \
+             patch.object(webhook_module, "handle_incoming_message") as handler, \
+             patch.dict(os.environ, {"TELEGRAM_CHAT_ID": ""}, clear=False):
+            client = webhook_module.app.test_client()
+            r1 = client.post("/webhook", json=payload)
+            r2 = client.post("/webhook", json=payload)
+
+        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(r2.status_code, 200)
+        handler.assert_called_once()  # Second delivery short-circuits
+
+    def test_webhook_lets_distinct_update_ids_through(self):
+        import webhook as webhook_module
+        store = {"memory": []}
+        fake = FakeSupabase(store)
+
+        with patch.object(webhook_module, "get_supabase", return_value=fake), \
+             patch.object(webhook_module, "load_memory", return_value={}), \
+             patch.object(webhook_module, "handle_incoming_message") as handler, \
+             patch.dict(os.environ, {"TELEGRAM_CHAT_ID": ""}, clear=False):
+            client = webhook_module.app.test_client()
+            for update_id in (1, 2):
+                client.post("/webhook", json={
+                    "update_id": update_id,
+                    "message": {
+                        "text": "hi",
+                        "chat": {"id": "1"},
+                        "from": {"first_name": "Sachin"},
+                    },
+                })
+
+        self.assertEqual(handler.call_count, 2)
 
 
 if __name__ == "__main__":
