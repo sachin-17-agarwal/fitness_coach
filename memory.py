@@ -47,7 +47,7 @@ def save_memory(memory: dict):
     now_iso = now_local().isoformat()
     rows = [
         {"key": key, "value": str(memory[key]), "updated_at": now_iso}
-        for key in ("mesocycle_week", "mesocycle_day")
+        for key in ("mesocycle_week", "mesocycle_day", "last_advanced_date")
         if key in memory
     ]
     if not rows:
@@ -156,8 +156,19 @@ def get_next_session_type(memory: dict) -> str:
 
 
 def advance_mesocycle(memory: dict):
-    """Advance mesocycle day after a session using fresh DB state."""
+    """Advance mesocycle day after a session using fresh DB state.
+
+    Guarded by last_advanced_date so concurrent webhook + scheduler callers
+    can't double-advance within the same day.
+    """
     fresh_memory = load_memory()
+    today = today_local_str()
+    if fresh_memory.get("last_advanced_date") == today:
+        memory["mesocycle_day"] = int(fresh_memory.get("mesocycle_day", 1))
+        memory["mesocycle_week"] = int(fresh_memory.get("mesocycle_week", 1))
+        print(f"Mesocycle already advanced today ({today}); skipping")
+        return
+
     current_day = int(fresh_memory.get("mesocycle_day", 1))
     next_day = (current_day % len(CYCLE)) + 1
     fresh_memory["mesocycle_day"] = next_day
@@ -165,6 +176,7 @@ def advance_mesocycle(memory: dict):
     if current_day == len(CYCLE):
         fresh_memory["mesocycle_week"] = (int(fresh_memory.get("mesocycle_week", 1)) % 4) + 1
 
+    fresh_memory["last_advanced_date"] = today
     save_memory(fresh_memory)
     memory["mesocycle_day"] = fresh_memory["mesocycle_day"]
     memory["mesocycle_week"] = fresh_memory["mesocycle_week"]

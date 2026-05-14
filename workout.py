@@ -124,9 +124,25 @@ def log_set(session_id: str, exercise: str, set_number: int,
             target_weight: float = None, target_reps: int = None,
             target_rpe: float = None, is_warmup: bool = False,
             rest_seconds: int = None, notes: str = None) -> dict:
-    """Log a completed set and return PR info."""
+    """Log a completed set and return PR info.
+
+    Guards against double-inserts when the same set message is processed twice
+    (Telegram webhook retries, parallel iOS + Telegram delivery) by skipping
+    when an equivalent row already exists for the same session/set_number.
+    """
     try:
         supabase = get_supabase()
+        existing = supabase.table("workout_sets")\
+            .select("id")\
+            .eq("workout_session_id", session_id)\
+            .eq("exercise", exercise)\
+            .eq("set_number", set_number)\
+            .eq("is_warmup", is_warmup)\
+            .limit(1)\
+            .execute()
+        if existing.data:
+            print(f"Set already logged: {exercise} set{set_number} — skipping duplicate")
+            return {"is_pr": False, "duplicate": True}
         pr_info = check_pr(exercise, actual_weight, actual_reps)
         supabase.table("workout_sets").insert({
             "workout_session_id": session_id,

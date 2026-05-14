@@ -30,9 +30,9 @@ def _safe_int(value, default: int = 1) -> int:
         return default
 
 
-ATHLETE_NAME = "Sachin"
-ATHLETE_CURRENT_WEIGHT_KG = 91
-ATHLETE_GOAL_WEIGHT_KG = 80
+ATHLETE_NAME = os.environ.get("ATHLETE_NAME", "Athlete")
+ATHLETE_CURRENT_WEIGHT_KG = _safe_int(os.environ.get("ATHLETE_CURRENT_WEIGHT_KG"), 0)
+ATHLETE_GOAL_WEIGHT_KG = _safe_int(os.environ.get("ATHLETE_GOAL_WEIGHT_KG"), 0)
 
 client = None
 
