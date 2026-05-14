@@ -253,18 +253,25 @@ struct WorkoutModeView: View {
                         emptyPrescriptionCard
                     }
 
-                    // Set log input
-                    SetLogInput(
-                        weight: $viewModel.inputWeight,
-                        reps: $viewModel.inputReps,
-                        rpe: $viewModel.inputRPE,
-                        onLog: {
-                            Haptic.medium()
-                            Task { await viewModel.logSet() }
-                        },
-                        isLoading: false,
-                        phase: viewModel.currentPhase
-                    )
+                    // Set log input — only meaningful when we actually
+                    // have a prescription to log against. If a network
+                    // error left `currentPrescription` nil on resume, the
+                    // input form rendered below the "No plan yet" card
+                    // anyway, offering "Log warm-up: 0kg × 8" with no
+                    // target. Suppress it until the coach replies again.
+                    if viewModel.currentPrescription != nil {
+                        SetLogInput(
+                            weight: $viewModel.inputWeight,
+                            reps: $viewModel.inputReps,
+                            rpe: $viewModel.inputRPE,
+                            onLog: {
+                                Haptic.medium()
+                                Task { await viewModel.logSet() }
+                            },
+                            isLoading: false,
+                            phase: viewModel.currentPhase
+                        )
+                    }
 
                     // Logged sets progress
                     if !viewModel.exerciseSetsForCurrentExercise.isEmpty {

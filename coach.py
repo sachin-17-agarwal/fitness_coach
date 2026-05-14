@@ -364,13 +364,16 @@ def is_warmup_set(text: str) -> bool:
 
 # iOS app sends structured log messages after it has already persisted the set
 # directly to Supabase, e.g.:
-#   "Logged warm-up: Leg Press - 60 kg x 10. Set 1 for this exercise, 0 working sets total. What's next?"
-#   "Logged working: Leg Press - 170 kg x 8 @ RPE 8.0. Set 3 for this exercise, 2 working sets total. What's next?"
-#   "Logged back-off: Leg Press - 130 kg x 12 @ RPE 7.0. Set 5 for this exercise, 3 working sets total. What's next?"
+#   "Logged warm-up: Leg Press - 60 kg x 10. ..."  (legacy)
+#   "Logged warm-up 2 of 2: Leg Press — actual: 60kg × 10 (target was 60kg × 10). ..."  (current)
+#   "Logged working 1 of 2: Leg Press — actual: 170kg × 8 @ RPE 8.0 (target was 170kg × 8 @ RPE 8). ..."
+#   "Logged back-off 1 of 1: Leg Press — actual: 130kg × 12 @ RPE 7.0 (target was 130kg × 12 @ RPE 7). ..."
 # The backend must NOT re-parse and re-log these — that would double-count the
 # set and desync the coach's phase tracking from the app's visual state.
+# Anything between the phase label and the first colon (e.g. " 2 of 2") is
+# allowed so the parser stays robust as the message format evolves.
 _IOS_LOG_PATTERN = re.compile(
-    r'^\s*logged\s+(warm[\s-]?up|working|back[\s-]?off)\s*:',
+    r'^\s*logged\s+(warm[\s-]?up|working|back[\s-]?off)\b[^:\n]*:',
     re.IGNORECASE,
 )
 

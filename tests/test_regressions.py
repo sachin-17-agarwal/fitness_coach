@@ -499,9 +499,9 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(rx["backoff"], [{"weight": 130.0, "reps": 12, "rpe": 7.0}])
 
     def test_is_ios_structured_log_detects_all_phases(self):
-        # The exact shapes WorkoutViewModel.swift sends — both the legacy
-        # "Logged <phase>: <ex> - …" form (still in older clients) and the
-        # new "Logged <phase>: <ex> — actual: … (target was …)" form.
+        # WorkoutViewModel.swift has shipped a few formats. The detector must
+        # tolerate all of them so backend deploys don't have to land in lock
+        # step with iOS releases.
         self.assertTrue(is_ios_structured_log(
             "Logged warm-up: Leg Press - 60 kg x 10. Set 1 for this exercise, 0 working sets total. What's next?"
         ))
@@ -516,6 +516,16 @@ class RegressionTests(unittest.TestCase):
         ))
         self.assertTrue(is_ios_structured_log(
             "Logged warm-up: Lat Pulldown — actual: 60kg × 10 (target was 60kg × 10). Set 1 for this exercise, 0 working sets total. Quote the actual numbers (60kg × 10) when responding, not the target. What's next?"
+        ))
+        # Current shape — "Logged <phase> X of Y: …".
+        self.assertTrue(is_ios_structured_log(
+            "Logged warm-up 2 of 2: Machine Shoulder Press — actual: 60kg × 8 (target was 60kg × 8). 0 working sets done so far. Acknowledge the athlete's actual numbers (60kg × 8) — do NOT echo any other phase's target as the result. What's next?"
+        ))
+        self.assertTrue(is_ios_structured_log(
+            "Logged working 1 of 2: Lat Pulldown — actual: 95kg × 6 @ RPE 8.5 (target was 95kg × 6 @ RPE 8). 1 working sets done so far. What's next?"
+        ))
+        self.assertTrue(is_ios_structured_log(
+            "Logged back-off 1 of 1: Leg Press — actual: 130kg × 12 @ RPE 7 (target was 130kg × 12 @ RPE 7). 2 working sets done so far. What's next?"
         ))
         # Ad-hoc user messages must not match
         self.assertFalse(is_ios_structured_log("Done 100 x 12 @8"))

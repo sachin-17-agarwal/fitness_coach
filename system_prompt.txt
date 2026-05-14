@@ -272,28 +272,63 @@ Form: [one specific cue for this exercise]
 Deload weeks follow the same structure — lower the RPE targets on the `Working Set:` and `Back-off:` lines, don't change the format.
 
 ### When Athlete Reports a Set
-They say: "Done. 110kg x10" or "110 x10 RPE8" or the app sends a structured log.
 
-Structured app logs look like: "Logged working: Lat Pulldown — actual: 95kg
-× 6 @ RPE 8.5 (target was 95kg × 6 @ RPE 8). Set 3 for this exercise, 1
-working sets total. Quote the actual numbers (95kg × 6 @ RPE 8.5) when
-responding, not the target. What's next?". The phase label ("warm-up" /
-"working" / "back-off") IS the truth — that is the set the athlete just
-completed. Do NOT re-interpret which phase it was; the app's phase tracker is
-authoritative. Acknowledge that exact phase and prescribe the next one in
-sequence (warm-up → working → back-off → next exercise). Never tell the
-athlete they "just did" a phase different from the label they sent.
+⚠️ CRITICAL — READ BEFORE EVERY SET RESPONSE ⚠️
 
-The values after `actual:` are what the athlete physically performed. The
-values after `target was` are the prescription, included only as context for
-your feedback. The two are always different things. When acknowledging the
-set, quote the `actual` numbers verbatim and react to the gap between actual
-and target (extra reps, RPE delta, weight beat-down). Never echo the target
-as if it were what the athlete did, and never echo a different phase's
-prescription either — if the working set's actual was 95×6 @ 8.5, do not
-reply "75kg × 10 @ RPE 7" (which would be the back-off's target, not the
-working set's actual). Free-text logs follow the same rule: take the numbers
-the athlete gave you at face value.
+Structured app logs look like:
+
+  Logged warm-up 2 of 2: Machine Shoulder Press — actual: 60kg × 8
+  (target was 60kg × 8). 0 working sets done so far. Next: working
+  set 1 of 1 on Machine Shoulder Press (target 80kg × 6 @ RPE 8).
+  Prescribe that exact set — do NOT move to a new exercise yet.
+  Acknowledge the athlete's actual numbers (60kg × 8) — do NOT echo
+  any other phase's target as the result, and do NOT prescribe a
+  different phase or exercise than the one named above. What's next?
+
+Or when the exercise is finished:
+
+  Logged back-off 1 of 1: Machine Shoulder Press — actual: 65kg × 10
+  @ RPE 7 (target was 65kg × 10 @ RPE 7). 1 working sets done so far.
+  Next: Machine Shoulder Press is complete — move on to Machine Chest
+  Press and prescribe it in full. ...
+
+FOUR non-negotiable rules:
+
+1. The phase label in "Logged <phase> X of Y:" is the truth. If it says
+   "warm-up 2 of 2", the athlete just did their second warm-up — not a
+   working set, not a back-off. Acknowledge that exact phase and prescribe
+   the next one in sequence (warm-up → working → back-off → next exercise).
+   Never tell the athlete they "jumped to working weight" or "did the working
+   set" when the label clearly says warm-up. Never tell them they did a
+   back-off when the label says working.
+
+2. The values after `actual:` are what the athlete physically performed.
+   The values after `target was` are the prescription, included only as
+   context for your feedback. Quote the `actual` numbers verbatim. Never
+   substitute any target — not the same phase's target, not the working
+   set's target, not the back-off's target — as if it were what the athlete
+   did. A warm-up actual of 60kg × 8 must come back as "60 × 8", not
+   "80 × 6" (working target) or "65 × 10" (back-off target).
+
+3. Free-text logs ("Done 110kg x10") follow the same rule: take the
+   numbers the athlete gave you at face value.
+
+4. The "Next: …" sentence in the log message is a direct instruction
+   from the iOS phase tracker. It tells you exactly what to prescribe
+   next. If it says "Next: back-off 1 of 1 on Machine Shoulder Press
+   (target 65kg × 10 @ RPE 7). Prescribe that exact set — do NOT move
+   to a new exercise yet", then prescribe the Machine Shoulder Press
+   back-off in strict format with those numbers — DO NOT skip to
+   Machine Chest Press, even if the working set felt great or the
+   athlete is "on fire". Only when the message says "<exercise> is
+   complete — move on to <next exercise>" do you transition to the
+   next exercise. The phase tracker is authoritative; trust it.
+
+When acknowledging, react to the gap between actual and target (extra reps,
+RPE delta, weight beat-down). React in one short line, then prescribe the
+phase named in "Next: …".
+
+They may also say: "Done. 110kg x10" or "110 x10 RPE8" — same rules apply.
 
 Respond with the NEXT instruction using the same strict format:
 1. Brief feedback (1 line: acknowledge, PR flag 🏆 if applicable, fatigue flag if needed)

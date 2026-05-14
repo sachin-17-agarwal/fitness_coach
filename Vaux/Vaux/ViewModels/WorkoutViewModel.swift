@@ -325,19 +325,46 @@ final class WorkoutViewModel {
         case .working: label = "working"
         case .backoff: label = "back-off"
         }
+        let phaseTotal: Int = {
+            guard let rx = currentPrescription else { return 0 }
+            switch loggedPhase {
+            case .warmup:  return rx.warmupSets.count
+            case .working: return rx.workingSets.count
+            case .backoff: return rx.backoffSets.count
+            }
+        }()
+        // Spell out *which* set inside the phase was just done ("warm-up 2 of 2")
+        // so Claude can't mistake the running-set counter for a working-set
+        // index — that misread was making it quote the working prescription's
+        // weight × reps as the recap of a warm-up.
+        let phaseProgress: String
+        if phaseTotal > 0 {
+            phaseProgress = "\(label) \(loggedPhaseSetIndex + 1) of \(phaseTotal)"
+        } else {
+            phaseProgress = label
+        }
         let actual = "\(inputWeight.weightString) × \(inputReps)" + (isWarmup ? "" : " @ RPE \(inputRPE.oneDecimal)")
         let targetSuffix = formatTargetSuffix(
             phase: loggedPhase,
             phaseSetIndex: loggedPhaseSetIndex,
             isWarmup: isWarmup
         )
+        // Tell the coach *exactly* what to prescribe next. Without this
+        // hint, Claude would sometimes skip the back-off entirely and jump
+        // to the next exercise after the working set — the post-advance
+        // phase tracker on this side knows whether there's a phase left.
+        let nextHint = nextPhaseHintForCoach(currentExercise: exercise)
         // Spell out actual vs target so the coach can't quote the prescription's
         // target as if it were the performed set. Claude was previously echoing
-        // back the back-off prescription as the working-set result.
-        let setMsg = "Logged \(label): \(exercise) — actual: \(actual)\(targetSuffix). Set \(exerciseSetIndex) for this exercise, \(setCount) working sets total. Quote the actual numbers (\(actual)) when responding, not the target. What's next?"
+        // back the back-off prescription as the working-set result, and the
+        // working set's target as a warm-up's actual.
+        let setMsg = "Logged \(phaseProgress): \(exercise) — actual: \(actual)\(targetSuffix). \(setCount) working sets done so far. \(nextHint) Acknowledge the athlete's actual numbers (\(actual)) — do NOT echo any other phase's target as the result, and do NOT prescribe a different phase or exercise than the one named above. What's next?"
+        // The next-phase decision belongs to the iOS phase tracker, not the
+        // coach — pass `allowExerciseChange: false` so a stray "moving to
+        // chest" in the response can't skip the back-off that's still owed.
         do {
             let response = try await chatService.sendMessage(setMsg)
-            applyAIResponse(response)
+            applyAIResponse(response, allowExerciseChange: false)
         } catch {
             print("Coach feedback failed: \(error)")
         }
@@ -551,7 +578,24 @@ final class WorkoutViewModel {
 
     // MARK: - AI response handling
 
-    private func applyAIResponse(_ chatResponse: ChatResponse) {
+    /// Whether every prescribed warm-up / working / back-off set on the
+    /// current exercise has already been logged. Used by `applyAIResponse`
+    /// to refuse the coach's attempts to skip ahead to a new exercise
+    /// before the current one is finished — a recurring failure mode
+    /// where Claude jumped from a working set straight to the next
+    /// exercise, silently dropping the back-off from the session.
+    private func isCurrentExerciseComplete() -> Bool {
+        guard let rx = currentPrescription else { return true }
+        let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
+        let nonWarmupsDone = exerciseSetsForCurrentExercise.count - warmupsDone
+        let totalNonWarmup = rx.workingSets.count + rx.backoffSets.count
+        return warmupsDone >= rx.warmupSets.count && nonWarmupsDone >= totalNonWarmup
+    }
+
+    private func applyAIResponse(
+        _ chatResponse: ChatResponse,
+        allowExerciseChange: Bool = true
+    ) {
         let text = chatResponse.response
         let oldExercise = currentPrescription?.exerciseName
 
@@ -577,12 +621,28 @@ final class WorkoutViewModel {
         }
 
         if !prescriptions.isEmpty {
-            allPrescriptions = prescriptions
-            currentPrescription = prescriptions.first
-        } else if let next = nextExerciseMentioned(in: text, after: oldExercise) {
+            let newFirstName = prescriptions.first?.exerciseName
+            let wantsDifferentExercise = newFirstName != oldExercise
+            let blockChange = !allowExerciseChange
+                && wantsDifferentExercise
+                && !isCurrentExerciseComplete()
+            if !blockChange {
+                allPrescriptions = prescriptions
+                currentPrescription = prescriptions.first
+            } else {
+                // Coach tried to skip ahead — keep the current prescription
+                // so the back-off (or whichever phase is unfilled) stays on
+                // screen. The coach's narrative still flows into the note
+                // strip via `extractCoachNote` below.
+                print("[Coach] Ignored premature exercise change: \(newFirstName ?? "?") (current=\(oldExercise ?? "?"))")
+            }
+        } else if allowExerciseChange || isCurrentExerciseComplete(),
+                  let next = nextExerciseMentioned(in: text, after: oldExercise) {
             // Coach transitions without re-sending the full prescription
             // ("moving to calves…") — advance to the next known exercise so
-            // the UI doesn't stay stuck on the previous card.
+            // the UI doesn't stay stuck on the previous card. Suppressed
+            // mid-exercise after a logSet so the back-off can't be skipped
+            // by a stray "moving on to chest" line in the narrative.
             currentPrescription = next
             allPrescriptions = rearrangedPrescriptions(startingAt: next)
         }
@@ -675,6 +735,73 @@ final class WorkoutViewModel {
             currentPhase = rx.warmupSets.isEmpty ? .working : (workingPrescribed > 0 ? .working : .warmup)
             phaseSetIndex = max(0, min(nonWarmupsDone, max(0, workingPrescribed - 1)))
         }
+    }
+
+    /// Builds the "Next: …" sentence appended to the iOS log message so
+    /// the coach knows whether to prescribe the next phase of the current
+    /// exercise or move on. Without this, Claude would jump straight to
+    /// the next exercise after a working set, silently skipping the
+    /// back-off that was still in the prescription. Run *after* the
+    /// phase has been advanced — `currentPhase` / `phaseSetIndex` now
+    /// point at the next set to do.
+    private func nextPhaseHintForCoach(currentExercise: String) -> String {
+        guard let rx = currentPrescription else { return "" }
+        let phaseLabel: String?
+        let phaseTotal: Int
+        let phaseIndex = phaseSetIndex
+        switch currentPhase {
+        case .warmup:
+            phaseLabel = phaseIndex < rx.warmupSets.count ? "warm-up" : nil
+            phaseTotal = rx.warmupSets.count
+        case .working:
+            phaseLabel = phaseIndex < rx.workingSets.count ? "working set" : nil
+            phaseTotal = rx.workingSets.count
+        case .backoff:
+            phaseLabel = phaseIndex < rx.backoffSets.count ? "back-off" : nil
+            phaseTotal = rx.backoffSets.count
+        }
+
+        if let label = phaseLabel {
+            let nextTarget = targetForNextPhase()
+            return "Next: \(label) \(phaseIndex + 1) of \(phaseTotal) on \(currentExercise)\(nextTarget). Prescribe that exact set — do NOT move to a new exercise yet."
+        }
+
+        // No more sets left in the current exercise → coach should move on.
+        // Hand them the next exercise's name (if known) so they don't
+        // hallucinate one.
+        let upcoming = upcomingPrescriptions.first?.exerciseName
+        if let upcoming {
+            return "Next: \(currentExercise) is complete — move on to \(upcoming) and prescribe it in full."
+        }
+        return "Next: \(currentExercise) is complete — move on to the next exercise in today's plan."
+    }
+
+    /// Returns " (target X × Y @ RPE Z)" for the next set we expect the
+    /// coach to prescribe, so the coach has both the phase name and the
+    /// numbers it should echo back.
+    private func targetForNextPhase() -> String {
+        guard let rx = currentPrescription else { return "" }
+        let target: (weight: Double, reps: Int, rpe: Double?)? = {
+            switch currentPhase {
+            case .warmup:
+                guard phaseSetIndex < rx.warmupSets.count else { return nil }
+                let t = rx.warmupSets[phaseSetIndex]
+                return (t.weight, t.reps, nil)
+            case .working:
+                guard phaseSetIndex < rx.workingSets.count else { return nil }
+                return rx.workingSets[phaseSetIndex]
+            case .backoff:
+                guard phaseSetIndex < rx.backoffSets.count else { return nil }
+                return rx.backoffSets[phaseSetIndex]
+            }
+        }()
+        guard let t = target else { return "" }
+        var s = " (target \(t.weight.weightString) × \(t.reps)"
+        if let rpe = t.rpe {
+            s += " @ RPE \(rpe.oneDecimal)"
+        }
+        s += ")"
+        return s
     }
 
     /// Returns " (target was 95kg × 6 @ RPE 8)" when we know what was
