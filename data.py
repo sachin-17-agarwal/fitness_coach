@@ -4,9 +4,13 @@ Apple Health data is written to Supabase via the health webhook in webhook.py.
 Falls back to mock data if no real data exists yet.
 """
 
-import os
+import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from settings import get_settings
+
+log = logging.getLogger(__name__)
 
 
 _supabase_client = None
@@ -20,11 +24,10 @@ def get_supabase():
 
     from supabase import create_client
 
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
+    settings = get_settings()
+    if not settings.supabase_url or not settings.supabase_key:
         return None
-    _supabase_client = create_client(url, key)
+    _supabase_client = create_client(settings.supabase_url, settings.supabase_key)
     return _supabase_client
 
 
@@ -32,7 +35,7 @@ CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
 
 
 def get_app_timezone() -> ZoneInfo:
-    timezone_name = os.environ.get("APP_TIMEZONE", "Australia/Sydney")
+    timezone_name = get_settings().app_timezone
     try:
         return ZoneInfo(timezone_name)
     except Exception:
@@ -141,8 +144,8 @@ def get_athlete_context() -> dict:
             "resting_hr": row.get("resting_hr", "N/A"),
             "resting_hr_baseline": rhr_baseline,
         }
-    except Exception as e:
-        print(f"Supabase data fetch failed: {e}. Using mock data.")
+    except Exception:
+        log.exception("Supabase data fetch failed; using mock data")
         return get_mock_data()
 
 

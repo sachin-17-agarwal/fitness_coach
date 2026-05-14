@@ -120,12 +120,17 @@ final class ChatService: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 60
+        request.timeoutInterval = RetryConfig.chatTimeout
 
         let payload: [String: Any] = ["message": message]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Retry only on transient URLError. HTTP 5xx is NOT retried because
+        // the backend may have already persisted the user message + Claude
+        // response to the conversations table, and a retry would duplicate.
+        let (data, response) = try await withRetry {
+            try await URLSession.shared.data(for: request)
+        }
 
         if let http = response as? HTTPURLResponse,
            !(200...299).contains(http.statusCode) {

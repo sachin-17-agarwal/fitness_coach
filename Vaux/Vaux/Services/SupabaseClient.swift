@@ -50,8 +50,15 @@ final class SupabaseClient: Sendable {
 
     // MARK: Init
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    init(session: URLSession? = nil) {
+        if let session {
+            self.session = session
+        } else {
+            let cfg = URLSessionConfiguration.default
+            cfg.timeoutIntervalForRequest = RetryConfig.defaultTimeout
+            cfg.timeoutIntervalForResource = RetryConfig.defaultTimeout * 2
+            self.session = URLSession(configuration: cfg)
+        }
 
         let dec = JSONDecoder()
         dec.dateDecodingStrategy = .iso8601
@@ -89,7 +96,11 @@ final class SupabaseClient: Sendable {
         request.httpMethod = "GET"
         applyHeaders(to: &request)
 
-        let (data, response) = try await session.data(for: request)
+        // Reads are idempotent — retry freely on transient errors.
+        let session = self.session
+        let (data, response) = try await withRetry {
+            try await session.data(for: request)
+        }
         try validate(response: response, data: data)
 
         do {
