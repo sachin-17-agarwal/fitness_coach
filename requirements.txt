@@ -1,6 +1,6 @@
-anthropic
-supabase
-flask
-requests
-schedule
-gunicorn
+anthropic>=0.40,<1.0
+supabase>=2.0,<3.0
+flask>=3.0,<4.0
+requests>=2.31,<3.0
+schedule>=1.2,<2.0
+gunicorn>=21.0,<24.0
