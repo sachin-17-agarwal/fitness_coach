@@ -3,14 +3,15 @@ webhook.py — Flask server for Telegram messages and Apple Health data.
 """
 
 import logging
-import os
 import re
 import secrets
 import traceback
 from flask import Flask, request, jsonify
 
+from settings import get_settings
+
 logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    level=get_settings().log_level.upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 log = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ def webhook():
     username = message.get("from", {}).get("first_name", "unknown")
 
     # Only respond to the authorised chat ID
-    allowed_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    allowed_chat_id = get_settings().telegram_chat_id
     if allowed_chat_id and chat_id != allowed_chat_id:
         print(f"⛔ Unauthorised message from chat_id {chat_id}")
         return jsonify({"ok": True})
@@ -109,7 +110,7 @@ def apple_health():
     """
     # Validate secret token to prevent random people posting to this endpoint
     token = request.headers.get("X-Health-Token", "")
-    expected_token = os.environ.get("HEALTH_WEBHOOK_TOKEN", "")
+    expected_token = get_settings().health_webhook_token
     if not expected_token:
         print("WARNING: HEALTH_WEBHOOK_TOKEN not set — rejecting health webhook")
         return jsonify({"error": "Webhook token not configured"}), 503
@@ -195,7 +196,7 @@ def api_chat():
     instead of sending to Telegram.
     """
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    expected_token = os.environ.get("APP_API_TOKEN", "")
+    expected_token = get_settings().app_api_token
     if not expected_token:
         return jsonify({"error": "APP_API_TOKEN not configured"}), 503
     if not secrets.compare_digest(token, expected_token):
@@ -424,6 +425,6 @@ def status():
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = get_settings().port
     print(f"🚀 Server starting on port {port}")
     app.run(host="0.0.0.0", port=port)

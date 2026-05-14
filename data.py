@@ -5,9 +5,10 @@ Falls back to mock data if no real data exists yet.
 """
 
 import logging
-import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from settings import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -23,11 +24,10 @@ def get_supabase():
 
     from supabase import create_client
 
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
+    settings = get_settings()
+    if not settings.supabase_url or not settings.supabase_key:
         return None
-    _supabase_client = create_client(url, key)
+    _supabase_client = create_client(settings.supabase_url, settings.supabase_key)
     return _supabase_client
 
 
@@ -35,7 +35,7 @@ CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
 
 
 def get_app_timezone() -> ZoneInfo:
-    timezone_name = os.environ.get("APP_TIMEZONE", "Australia/Sydney")
+    timezone_name = get_settings().app_timezone
     try:
         return ZoneInfo(timezone_name)
     except Exception:

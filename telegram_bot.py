@@ -2,18 +2,19 @@
 telegram_bot.py - Send and receive Telegram messages via Bot API.
 """
 
-import os
 import requests
+
+from settings import get_settings
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
 
 def get_token():
-    return os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    return get_settings().telegram_bot_token
 
 
 def get_chat_id():
-    return os.environ.get("TELEGRAM_CHAT_ID", "")
+    return get_settings().telegram_chat_id
 
 
 def send_message(text: str, chat_id: str = None):
