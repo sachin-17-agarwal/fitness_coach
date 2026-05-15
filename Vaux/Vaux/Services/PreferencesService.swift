@@ -32,12 +32,6 @@ enum BriefingStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Row shape for the `memory` table — `(key, value, updated_at)`.
-private struct MemoryRow: Decodable {
-    let key: String
-    let value: String
-}
-
 final class PreferencesService: Sendable {
     private let client: SupabaseClient
 
