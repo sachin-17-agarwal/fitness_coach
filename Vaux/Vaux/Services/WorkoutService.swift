@@ -210,6 +210,14 @@ final class WorkoutService: Sendable {
 
     /// Logs a single set to the `workout_sets` table and advances the set counter
     /// in the `memory` table.
+    ///
+    /// Mirrors the backend's `log_set` dedup on
+    /// `(workout_session_id, exercise, set_number, is_warmup)`: if a row with
+    /// those four already exists we return it instead of inserting a second
+    /// copy. The duplicate `#1`/`#2` warm-ups seen in history were getting
+    /// in via this path — the resume flow used to reset `exerciseSetIndex`
+    /// back to 0, so re-logging the first warm-up after a resume re-used
+    /// `setNumber=1` and the insert went through unchallenged.
     func logSet(
         sessionId: UUID,
         exercise: String,
@@ -221,6 +229,19 @@ final class WorkoutService: Sendable {
     ) async throws -> WorkoutSet {
         let today = Self.todayString()
         let now = ISO8601DateFormatter().string(from: Date())
+
+        if let existing = try? await fetchExistingSet(
+            sessionId: sessionId,
+            exercise: exercise,
+            setNumber: setNumber,
+            isWarmup: isWarmup
+        ) {
+            // Keep the memory counters consistent with the highest set_number
+            // we already have on disk so the next call advances cleanly.
+            try? await setMemory(key: "current_set_number", value: String(setNumber + 1))
+            try? await setMemory(key: "current_exercise_name", value: exercise)
+            return existing
+        }
 
         var body: [String: Any] = [
             "workout_session_id": sessionId.uuidString,
@@ -246,6 +267,25 @@ final class WorkoutService: Sendable {
         try? await setMemory(key: "current_exercise_name", value: exercise)
 
         return logged
+    }
+
+    private func fetchExistingSet(
+        sessionId: UUID,
+        exercise: String,
+        setNumber: Int,
+        isWarmup: Bool
+    ) async throws -> WorkoutSet? {
+        let rows: [WorkoutSet] = try await client.fetch(
+            "workout_sets",
+            query: [
+                "workout_session_id": "eq.\(sessionId.uuidString)",
+                "exercise": "eq.\(exercise)",
+                "set_number": "eq.\(setNumber)",
+                "is_warmup": "eq.\(isWarmup)",
+            ],
+            limit: 1
+        )
+        return rows.first
     }
 
     /// Fetches all sets for a given session, ordered by set number.
@@ -284,38 +324,119 @@ final class WorkoutService: Sendable {
         )
     }
 
-    /// Sweeps session rows left stuck in `in_progress` from past days — an
-    /// accidental back-swipe used to mint a fresh session on every re-entry
-    /// because the view never called `endSession`. Empty rows (no logged
-    /// sets) are deleted; rows with actual sets get finalised so they stop
-    /// showing as In_Progress in history. Today's sessions are left alone
-    /// so a currently-open workout isn't disturbed.
+    /// Sweeps session rows left stuck open — an accidental back-swipe used
+    /// to mint a fresh session on every re-entry because the view never
+    /// called `endSession`. Empty rows get deleted; rows with sets get
+    /// finalised so they stop showing as in_progress / active in history.
+    ///
+    /// Catches three failure modes:
+    ///
+    /// 1. Sessions from *prior* days that never ended (the original case).
+    /// 2. Sessions created by the backend's implicit-start path, which use
+    ///    `status="active"` rather than the iOS `"in_progress"` — these are
+    ///    the orphan "Pull / Push / Legs" cards with one stray set.
+    /// 3. *Today's* sessions whose newest set is more than 6 hours old: a
+    ///    legit workout never spans that long, so anything past that is a
+    ///    forgotten session, not a currently-open one. Picks the most
+    ///    recently active session (by latest `logged_at`) per (date, type)
+    ///    as the survivor when several overlap.
     func cleanupStaleSessions() async {
         let today = Self.todayString()
-        guard let sessions: [WorkoutSession] = try? await client.fetch(
-            "workout_sessions",
-            query: ["status": "eq.in_progress", "date": "lt.\(today)"]
-        ) else { return }
+        let openStatuses = ["in_progress", "active"]
 
-        for session in sessions {
-            guard let id = session.id else { continue }
-            let sets = (try? await fetchSets(sessionId: id)) ?? []
-
-            if sets.isEmpty {
-                _ = try? await client.delete(
-                    "workout_sessions",
-                    match: ["id": id.uuidString]
-                )
-            } else {
-                let tonnage = sets.reduce(0.0) { total, s in
-                    total + (s.actualWeightKg ?? 0) * Double(s.actualReps ?? 0)
-                }
-                _ = try? await client.update(
-                    "workout_sessions",
-                    body: ["status": "completed", "tonnage_kg": tonnage],
-                    match: ["id": id.uuidString]
-                )
+        var openSessions: [WorkoutSession] = []
+        for status in openStatuses {
+            if let rows: [WorkoutSession] = try? await client.fetch(
+                "workout_sessions",
+                query: ["status": "eq.\(status)"]
+            ) {
+                openSessions.append(contentsOf: rows)
             }
+        }
+
+        let staleCutoff = Date().addingTimeInterval(-6 * 60 * 60)
+        let isoFormatter = ISO8601DateFormatter()
+
+        // Group today's open sessions by type so we only kill the *idle*
+        // siblings and never the one the user is actively logging into.
+        var todaysByType: [String: [(WorkoutSession, Date?)]] = [:]
+        var stalePast: [WorkoutSession] = []
+
+        for session in openSessions {
+            if session.date < today {
+                stalePast.append(session)
+                continue
+            }
+            if session.date == today {
+                // Fall back to start_time when no sets have been logged
+                // yet — a session created seconds ago must not be mistaken
+                // for an idle one just because its sets list is empty.
+                let lastActivity: Date? = await mostRecentSetLoggedAt(
+                    sessionId: session.id, formatter: isoFormatter
+                ) ?? session.startTime.flatMap { isoFormatter.date(from: $0) }
+                todaysByType[session.type, default: []].append((session, lastActivity))
+            }
+        }
+
+        var todaysToClose: [WorkoutSession] = []
+        for (_, group) in todaysByType {
+            guard group.count > 1 || group.contains(where: { ($0.1 ?? .distantPast) < staleCutoff }) else {
+                continue
+            }
+            let sorted = group.sorted { ($0.1 ?? .distantPast) > ($1.1 ?? .distantPast) }
+            // Keep the most recently active session in the group; treat the
+            // others as orphans regardless of activity, since two open
+            // sessions of the same type on the same day is always a bug.
+            for (idx, entry) in sorted.enumerated() {
+                if idx == 0 {
+                    if (entry.1 ?? .distantPast) < staleCutoff {
+                        todaysToClose.append(entry.0)
+                    }
+                } else {
+                    todaysToClose.append(entry.0)
+                }
+            }
+        }
+
+        for session in stalePast + todaysToClose {
+            await finaliseOrDelete(session)
+        }
+    }
+
+    private func mostRecentSetLoggedAt(
+        sessionId: UUID?,
+        formatter: ISO8601DateFormatter
+    ) async -> Date? {
+        guard let sessionId else { return nil }
+        let sets: [WorkoutSet]? = try? await client.fetch(
+            "workout_sets",
+            query: ["workout_session_id": "eq.\(sessionId.uuidString)"],
+            order: "logged_at.desc",
+            limit: 1
+        )
+        guard let raw = sets?.first?.loggedAt else { return nil }
+        return formatter.date(from: raw)
+    }
+
+    private func finaliseOrDelete(_ session: WorkoutSession) async {
+        guard let id = session.id else { return }
+        let sets = (try? await fetchSets(sessionId: id)) ?? []
+
+        if sets.isEmpty {
+            _ = try? await client.delete(
+                "workout_sessions",
+                match: ["id": id.uuidString]
+            )
+        } else {
+            let tonnage = sets.reduce(0.0) { total, s in
+                guard s.isWarmup != true else { return total }
+                return total + (s.actualWeightKg ?? 0) * Double(s.actualReps ?? 0)
+            }
+            _ = try? await client.update(
+                "workout_sessions",
+                body: ["status": "completed", "tonnage_kg": tonnage],
+                match: ["id": id.uuidString]
+            )
         }
     }
 

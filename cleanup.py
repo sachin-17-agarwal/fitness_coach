@@ -1,10 +1,11 @@
 """
-cleanup.py — One-off DB cleanup for bugs fixed in PR #5.
+cleanup.py — One-off DB cleanup for bugs fixed in PR #5 and later.
 
-Addresses three data issues caused by the previous broken behavior:
+Addresses five data issues caused by previous broken behaviour:
 
-1. Stale active session(s) — workout_sessions rows with status='active' whose
-   start_time is before today. Mark them complete and clear workout_mode.
+1. Stale open session(s) — workout_sessions rows with status='active' or
+   'in_progress' whose date is before today. Mark them complete and clear
+   workout_mode.
 
 2. "Warm up" mis-labeled sets — workout_sets rows where exercise='Warm up'
    (or similar) were created because the extractor accepted user messages
@@ -15,12 +16,26 @@ Addresses three data issues caused by the previous broken behavior:
    mesocycle_week / mesocycle_day from when save_memory() upserted without
    on_conflict. Keep only the row with the latest updated_at per key.
 
+4. Orphan duplicate-day sessions — when the coach's implicit-start path
+   spawned a phantom session on top of an already-completed one (visible
+   in the UI as a second "Active" card for the same date), the phantom
+   sticks around forever. Delete any open session that shares a (date,
+   type) with a completed sibling.
+
+5. Duplicate `workout_sets` rows — when the iOS resume flow re-used a
+   `set_number` that was already on disk for the same exercise/phase, the
+   iOS insert path (no dedup) wrote a second row with identical keys.
+   Collapse those groups to a single (earliest-logged) row and recompute
+   each affected session's tonnage.
+
 Usage:
     python cleanup.py                 # dry run — prints what would change
     python cleanup.py --execute       # actually apply changes
     python cleanup.py --only sessions # only run the sessions cleanup
     python cleanup.py --only sets     # only run the mis-labeled sets cleanup
     python cleanup.py --only memory   # only dedupe memory keys
+    python cleanup.py --only orphans  # only delete same-day orphan sessions
+    python cleanup.py --only dupsets  # only collapse duplicate set rows
 
 For the mis-labeled sets, by default the script DELETES rows. Pass
 --relabel-to "<name>" to rename them instead (e.g. the exercise they were
@@ -48,21 +63,24 @@ def _is_bad_exercise_name(name: str) -> bool:
 
 # ── 1. Stale sessions ────────────────────────────────────────────────────────
 
+OPEN_STATUSES = ("active", "in_progress")
+
+
 def cleanup_stale_sessions(supabase, execute: bool) -> None:
     today = today_local_str()
-    print(f"\n[1/3] Checking for stale active sessions (start_time < {today})...")
+    print(f"\n[1/5] Checking for stale open sessions (date < {today})...")
 
     result = (
         supabase.table("workout_sessions")
         .select("id, date, type, status, start_time")
-        .eq("status", "active")
+        .in_("status", list(OPEN_STATUSES))
         .execute()
     )
     rows = result.data or []
     stale = [r for r in rows if (r.get("date") or "") < today]
 
     if not stale:
-        print("  No stale active sessions found.")
+        print("  No stale open sessions found.")
     else:
         for row in stale:
             print(f"  Stale session {row['id']} ({row['type']} on {row['date']}) "
@@ -124,7 +142,7 @@ def cleanup_stale_sessions(supabase, execute: bool) -> None:
 
 def cleanup_bad_exercise_sets(supabase, execute: bool, relabel_to: str) -> None:
     action = f"relabel to {relabel_to!r}" if relabel_to else "delete"
-    print(f"\n[2/3] Finding workout_sets rows with bad exercise names ({action})...")
+    print(f"\n[2/5] Finding workout_sets rows with bad exercise names ({action})...")
 
     # We can't OR on the server easily; fetch all and filter locally.
     result = (
@@ -173,7 +191,7 @@ def cleanup_bad_exercise_sets(supabase, execute: bool, relabel_to: str) -> None:
 # ── 3. Duplicate memory keys ─────────────────────────────────────────────────
 
 def cleanup_duplicate_memory_keys(supabase, execute: bool) -> None:
-    print("\n[3/3] Checking for duplicate memory rows per key...")
+    print("\n[3/5] Checking for duplicate memory rows per key...")
 
     result = (
         supabase.table("memory")
@@ -219,6 +237,165 @@ def cleanup_duplicate_memory_keys(supabase, execute: bool) -> None:
         print("  No duplicate memory keys found.")
 
 
+# ── 4. Orphan duplicate-day sessions ─────────────────────────────────────────
+
+def cleanup_orphan_duplicate_sessions(supabase, execute: bool) -> None:
+    """Delete same-day orphan sessions left over from the implicit-start bug.
+
+    Pattern: for some (date, type), the user has one legitimately completed
+    session AND one or more sessions still tagged active/in_progress with a
+    handful of stray sets — those latter rows are the phantom sessions
+    coach.py used to spawn when a `weight x reps` chat message arrived
+    after the real workout had already ended.
+
+    Strategy: for every (date, type) where a completed session exists,
+    remove the open sibling sessions (and their workout_sets via the
+    ON DELETE CASCADE).
+    """
+    print("\n[4/4] Finding orphan open sessions next to a completed same-day session...")
+
+    result = (
+        supabase.table("workout_sessions")
+        .select("id, date, type, status, start_time")
+        .execute()
+    )
+    rows = result.data or []
+
+    by_key: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for r in rows:
+        date = r.get("date")
+        type_ = r.get("type")
+        if not date or not type_:
+            continue
+        by_key[(date, type_)].append(r)
+
+    orphans: list[dict] = []
+    for (date, type_), entries in sorted(by_key.items()):
+        has_completed = any(
+            (e.get("status") or "").lower() in {"complete", "completed"}
+            for e in entries
+        )
+        if not has_completed:
+            continue
+        for e in entries:
+            status = (e.get("status") or "").lower()
+            if status in {s.lower() for s in OPEN_STATUSES}:
+                orphans.append(e)
+
+    if not orphans:
+        print("  No same-day orphan sessions found.")
+        return
+
+    for o in orphans:
+        sets_result = (
+            supabase.table("workout_sets")
+            .select("exercise, set_number, actual_weight_kg, actual_reps, is_warmup")
+            .eq("workout_session_id", o["id"])
+            .execute()
+        )
+        sets = sets_result.data or []
+        print(f"  Orphan {o['id']} ({o['type']} on {o['date']}, status={o['status']}) "
+              f"— {len(sets)} set(s) to remove:")
+        for s in sets[:5]:
+            warm = " WARM-UP" if s.get("is_warmup") else ""
+            print(f"    - {s.get('exercise')!r} set{s.get('set_number')} "
+                  f"{s.get('actual_weight_kg')}kg x {s.get('actual_reps')}{warm}")
+        if len(sets) > 5:
+            print(f"    ... and {len(sets) - 5} more")
+
+    if not execute:
+        print(f"  [dry-run] Would delete {len(orphans)} orphan session(s) "
+              f"(workout_sets cascade).")
+        return
+
+    for o in orphans:
+        # Belt-and-braces: explicitly nuke the child sets first, in case the
+        # ON DELETE CASCADE was never applied to this Supabase project.
+        supabase.table("workout_sets").delete().eq(
+            "workout_session_id", o["id"]
+        ).execute()
+        supabase.table("workout_sessions").delete().eq("id", o["id"]).execute()
+        print(f"  -> Deleted orphan session {o['id']}.")
+
+
+# ── 5. Duplicate set rows ────────────────────────────────────────────────────
+
+def cleanup_duplicate_sets(supabase, execute: bool) -> None:
+    """Collapse `workout_sets` rows that share the dedup key.
+
+    The iOS resume flow used to reset `exerciseSetIndex` to 0, causing the
+    next logged set after a resume to re-use a `set_number` that was already
+    present in the DB. Backend `log_set` dedupes, but the iOS path inserts
+    directly — so the duplicates slipped in via that path.
+
+    Key = (workout_session_id, exercise, set_number, is_warmup). When a
+    group has more than one row, keep the earliest-logged copy and delete
+    the rest.
+    """
+    print("\n[5/5] Finding duplicate workout_sets rows...")
+
+    result = (
+        supabase.table("workout_sets")
+        .select("id, workout_session_id, exercise, set_number, is_warmup, "
+                "actual_weight_kg, actual_reps, logged_at")
+        .execute()
+    )
+    rows = result.data or []
+
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for r in rows:
+        key = (
+            r.get("workout_session_id"),
+            (r.get("exercise") or "").strip(),
+            r.get("set_number"),
+            bool(r.get("is_warmup")),
+        )
+        groups[key].append(r)
+
+    to_delete: list[dict] = []
+    for key, entries in groups.items():
+        if len(entries) <= 1:
+            continue
+        entries_sorted = sorted(entries, key=lambda r: (r.get("logged_at") or ""))
+        keeper = entries_sorted[0]
+        for dup in entries_sorted[1:]:
+            to_delete.append(dup)
+        print(f"  Dup ({key[1]} set{key[2]}{' WARMUP' if key[3] else ''} in "
+              f"session {key[0]}): keeping id={keeper['id']}, dropping "
+              f"{len(entries_sorted) - 1} sibling(s)")
+
+    if not to_delete:
+        print("  No duplicate set rows found.")
+        return
+
+    if not execute:
+        print(f"  [dry-run] Would delete {len(to_delete)} duplicate set row(s).")
+        return
+
+    for r in to_delete:
+        supabase.table("workout_sets").delete().eq("id", r["id"]).execute()
+    print(f"  -> Deleted {len(to_delete)} duplicate set row(s).")
+
+    # Recompute tonnage for affected sessions
+    affected_sessions = {r.get("workout_session_id") for r in to_delete if r.get("workout_session_id")}
+    for session_id in affected_sessions:
+        sets_result = (
+            supabase.table("workout_sets")
+            .select("actual_weight_kg, actual_reps, is_warmup")
+            .eq("workout_session_id", session_id)
+            .execute()
+        )
+        new_tonnage = sum(
+            (s.get("actual_weight_kg") or 0) * (s.get("actual_reps") or 0)
+            for s in (sets_result.data or [])
+            if not s.get("is_warmup")
+        )
+        supabase.table("workout_sessions").update({
+            "tonnage_kg": round(new_tonnage, 1),
+        }).eq("id", session_id).execute()
+        print(f"  -> Recomputed tonnage for session {session_id}: {new_tonnage:.1f}kg")
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -230,7 +407,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--only",
-        choices=["sessions", "sets", "memory"],
+        choices=["sessions", "sets", "memory", "orphans", "dupsets"],
         help="Only run one of the cleanup steps.",
     )
     parser.add_argument(
@@ -249,7 +426,7 @@ def main() -> int:
     mode = "EXECUTE" if args.execute else "DRY RUN"
     print(f"Running cleanup in {mode} mode.")
 
-    steps = {"sessions", "sets", "memory"}
+    steps = {"sessions", "sets", "memory", "orphans", "dupsets"}
     if args.only:
         steps = {args.only}
 
@@ -259,6 +436,10 @@ def main() -> int:
         cleanup_bad_exercise_sets(supabase, args.execute, args.relabel_to)
     if "memory" in steps:
         cleanup_duplicate_memory_keys(supabase, args.execute)
+    if "orphans" in steps:
+        cleanup_orphan_duplicate_sessions(supabase, args.execute)
+    if "dupsets" in steps:
+        cleanup_duplicate_sets(supabase, args.execute)
 
     print("\nDone.")
     if not args.execute:

@@ -346,6 +346,55 @@ class RegressionTests(unittest.TestCase):
         start_mock.assert_called_once_with("Push")
         log_set_mock.assert_called_once()
 
+    def test_set_log_does_not_implicit_start_when_today_has_session(self):
+        """Once today has any workout_session row (active or completed), a
+        chat message containing `weight x reps` must not spawn a second
+        phantom session. Without this guard the implicit-start path was
+        creating an orphan "Active" session whenever the user discussed an
+        extra exercise after the real workout had ended — those phantoms
+        then stuck around because no end-of-workout phrase ever followed.
+        """
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Reply"), \
+             patch("coach.get_workout_state", return_value={
+                 "workout_mode": "inactive",
+                 "current_session_id": "",
+                 "current_set_number": "0",
+             }), \
+             patch("coach.has_session_for_today", return_value=True), \
+             patch("coach.start_session") as start_mock, \
+             patch("coach.log_set") as log_set_mock, \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("Incline dumbbell curl 70 x 12", memory)
+
+        start_mock.assert_not_called()
+        log_set_mock.assert_not_called()
+
+    def test_unknown_exercise_does_not_log_set(self):
+        """If we can't resolve the set's exercise to anything — neither from
+        the message text, the conversation context, nor the last set logged
+        in this session — we must NOT persist a row tagged "Unknown".
+        Those rows clutter history and make sessions look broken.
+        """
+        memory = {"mesocycle_day": 3, "mesocycle_week": 1}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="What exercise was that?"), \
+             patch("coach.get_workout_state", return_value={
+                 "workout_mode": "active",
+                 "current_session_id": "abc",
+                 "current_set_number": "0",
+                 "current_exercise_name": "",
+             }), \
+             patch("coach.extract_exercise_from_context", return_value="Unknown"), \
+             patch("coach.get_last_logged_exercise", return_value=""), \
+             patch("coach.log_set") as log_set_mock, \
+             patch("coach.set_workout_state"), \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message("100 x 8", memory)
+
+        log_set_mock.assert_not_called()
+
     def test_plain_text_does_not_implicitly_start_workout(self):
         memory = {"mesocycle_day": 2, "mesocycle_week": 1}
         with patch("coach.load_today_conversation", return_value=[]), \

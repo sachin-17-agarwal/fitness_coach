@@ -47,6 +47,28 @@ def is_workout_active() -> bool:
     state = get_workout_state()
     return state.get("workout_mode") == "active"
 
+def has_session_for_today() -> bool:
+    """Return True if any workout_session row exists for today's local date.
+
+    Used to block the implicit-start path in the coach: once the user has
+    started a session for today (whether it's still active, was properly
+    completed, or was created by iOS), further chat messages that happen to
+    contain a `weight x reps` pattern must not spawn a phantom second session.
+    """
+    try:
+        supabase = get_supabase()
+        if not supabase:
+            return False
+        result = supabase.table("workout_sessions")\
+            .select("id")\
+            .eq("date", today_local_str())\
+            .limit(1)\
+            .execute()
+        return bool(result.data)
+    except Exception:
+        log.exception("has_session_for_today failed")
+        return False
+
 def start_session(session_type: str) -> str:
     """Create a new workout session and activate workout mode."""
     try:
