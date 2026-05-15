@@ -16,8 +16,11 @@ struct SettingsView: View {
     @State private var syncStatus: StatusMessage?
     @State private var saveStatus: StatusMessage?
     @State private var lastSyncAt: Date? = HealthKitManager.shared.lastSyncDate
+    @State private var briefingStyle: BriefingStyle = .detailed
+    @State private var briefingStatus: StatusMessage?
 
     private let mesocycleService = MesocycleService()
+    private let preferences = PreferencesService()
 
     struct StatusMessage {
         let text: String
@@ -33,6 +36,8 @@ struct SettingsView: View {
                     VStack(spacing: 16) {
                         profileHeader
                         mesocycleCard
+                        coachStyleCard
+                        exerciseLibraryCard
                         healthCard
                         backendCard
                         aboutCard
@@ -43,7 +48,109 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
-            .task { await loadMesocycle() }
+            .task {
+                await loadMesocycle()
+                briefingStyle = await preferences.loadBriefingStyle()
+            }
+        }
+    }
+
+    // MARK: - Coach style
+
+    private var coachStyleCard: some View {
+        settingsCard(title: "Briefing style") {
+            Text("Sets the tone of your morning briefing — used by both the in-app Briefing button and the Telegram morning auto.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.textSecondary)
+
+            ForEach(BriefingStyle.allCases) { style in
+                Button {
+                    Haptic.selection()
+                    let previous = briefingStyle
+                    briefingStyle = style
+                    Task {
+                        do {
+                            try await preferences.saveBriefingStyle(style)
+                            briefingStatus = StatusMessage(text: "Saved", isError: false)
+                        } catch {
+                            briefingStyle = previous
+                            briefingStatus = StatusMessage(
+                                text: "Failed: \(error.localizedDescription)",
+                                isError: true
+                            )
+                        }
+                    }
+                } label: {
+                    styleRow(style: style, selected: briefingStyle == style)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let status = briefingStatus {
+                statusLabel(status)
+            }
+        }
+    }
+
+    private func styleRow(style: BriefingStyle, selected: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(selected ? Color.recoveryGreen : Color.textTertiary)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(style.displayName)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(style.blurb)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.textSecondary)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(selected ? Color.recoveryGreen.opacity(0.08) : Color.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(selected ? Color.recoveryGreen.opacity(0.4) : Color.cardBorder,
+                        lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - Exercise library
+
+    private var exerciseLibraryCard: some View {
+        settingsCard(title: "Exercise library") {
+            Text("Manage the exercises Vaux recognises when you log a set.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.textSecondary)
+
+            NavigationLink(destination: ExerciseLibraryView()) {
+                HStack {
+                    Text("Open library")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color.textTertiary)
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.surfaceRaised)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.cardBorder, lineWidth: 0.5)
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 

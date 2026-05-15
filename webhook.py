@@ -189,6 +189,53 @@ def _get_hrv_status(hrv) -> str:
 
 # ── iOS App Chat API ─────────────────────────────────────────────────────────
 
+@app.route("/api/briefing", methods=["POST"])
+def api_briefing():
+    """Run the morning briefing using the user's saved `briefing_style`.
+
+    Replaces the iOS app having to construct its own prompt — keeps a single
+    source of truth so the Telegram morning auto and the in-app Briefing
+    button always speak the same style.
+    """
+    from coach import build_briefing_prompt, handle_incoming_message
+
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    expected_token = get_settings().app_api_token
+    if not expected_token:
+        return jsonify({"error": "APP_API_TOKEN not configured"}), 503
+    if not secrets.compare_digest(token, expected_token):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        memory = load_memory()
+        style = str(memory.get("briefing_style", "detailed")).strip().lower()
+        prompt = build_briefing_prompt(style)
+        prs: list = []
+        response = handle_incoming_message(prompt, memory, send_reply=False, out_prs=prs)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({
+            "error": "briefing_failed",
+            "message": f"{type(e).__name__}: {e}",
+        }), 502
+
+    def _int_or_default(val, default=1):
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return default
+
+    result = {
+        "response": response,
+        "mesocycle_day": _int_or_default(memory.get("mesocycle_day"), 1),
+        "mesocycle_week": _int_or_default(memory.get("mesocycle_week"), 1),
+        "style": style,
+    }
+    if prs:
+        result["prs"] = prs
+    return jsonify(result)
+
+
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     """
@@ -209,7 +256,8 @@ def api_chat():
 
     try:
         memory = load_memory()
-        response = handle_incoming_message(text, memory, send_reply=False)
+        prs: list = []
+        response = handle_incoming_message(text, memory, send_reply=False, out_prs=prs)
     except Exception as e:
         # Log full traceback to Railway/Flask logs for debugging, but return
         # a clean JSON error so the iOS app surfaces something useful instead
@@ -235,6 +283,8 @@ def api_chat():
     }
     if prescription:
         result["prescription"] = prescription
+    if prs:
+        result["prs"] = prs
 
     return jsonify(result)
 

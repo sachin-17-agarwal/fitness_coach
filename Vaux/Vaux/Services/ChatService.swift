@@ -14,12 +14,35 @@ struct ChatResponse: Codable, Sendable {
     let mesocycleDay: Int?
     let mesocycleWeek: Int?
     let prescription: ServerPrescription?
+    let prs: [PRInfo]?
 
     enum CodingKeys: String, CodingKey {
         case response
         case mesocycleDay = "mesocycle_day"
         case mesocycleWeek = "mesocycle_week"
         case prescription
+        case prs
+    }
+}
+
+/// A personal-record event flagged by the backend when a logged set beats
+/// the historical estimated 1RM. One PRInfo per set that PR'd in this
+/// message (a "warm-up 100 x 8, working 110 x 8" might emit two).
+struct PRInfo: Codable, Sendable, Hashable {
+    let exercise: String
+    let weightKg: Double
+    let reps: Int
+    let estimated1RM: Double?
+    let previousBest: Double?
+    let improvementPct: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case exercise
+        case weightKg = "weight_kg"
+        case reps
+        case estimated1RM = "estimated_1rm"
+        case previousBest = "previous_best"
+        case improvementPct = "improvement_pct"
     }
 }
 
@@ -46,14 +69,20 @@ struct ServerSetWithRPE: Codable, Sendable {
 }
 
 /// A single message in the conversation history (maps to the `conversations` table).
+///
+/// The synthetic `role == "pr"` value is generated client-side from the
+/// /api/chat `prs` payload and rendered as a celebration bubble. It is
+/// NOT persisted to Supabase.
 struct ChatMessage: Codable, Identifiable, Sendable {
     var id: UUID?
     let date: String
     let role: String
     let content: String
     let createdAt: String?
+    let pr: PRInfo?
 
     var isUser: Bool { role == "user" }
+    var isPR: Bool { role == "pr" }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -61,6 +90,27 @@ struct ChatMessage: Codable, Identifiable, Sendable {
         case role
         case content
         case createdAt = "created_at"
+        case pr
+    }
+
+    init(id: UUID? = nil, date: String, role: String, content: String,
+         createdAt: String? = nil, pr: PRInfo? = nil) {
+        self.id = id
+        self.date = date
+        self.role = role
+        self.content = content
+        self.createdAt = createdAt
+        self.pr = pr
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decodeIfPresent(UUID.self, forKey: .id)
+        self.date = try c.decode(String.self, forKey: .date)
+        self.role = try c.decode(String.self, forKey: .role)
+        self.content = try c.decode(String.self, forKey: .content)
+        self.createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        self.pr = try c.decodeIfPresent(PRInfo.self, forKey: .pr)
     }
 }
 
@@ -82,6 +132,13 @@ final class ChatService: Sendable {
     /// so would double-insert every message).
     func sendMessage(_ text: String) async throws -> ChatResponse {
         return try await callBackend(text)
+    }
+
+    /// Trigger the backend's morning briefing using the user's saved
+    /// `briefing_style` preference. The backend constructs the prompt so
+    /// the iOS button and the Telegram morning auto stay in sync.
+    func runMorningBriefing() async throws -> ChatResponse {
+        return try await callBriefingBackend()
     }
 
     // MARK: - Conversation history
@@ -141,6 +198,46 @@ final class ChatService: Sendable {
         do {
             let decoder = JSONDecoder()
             return try decoder.decode(ChatResponse.self, from: data)
+        } catch {
+            throw ChatServiceError.decodingFailed(error)
+        }
+    }
+
+    private func callBriefingBackend() async throws -> ChatResponse {
+        let rawURL = Config.backendURL
+        let token = Config.appAPIToken
+
+        let base = rawURL.hasSuffix("/") ? String(rawURL.dropLast()) : rawURL
+        // Strip a trailing /api/chat if the user pasted the chat URL into
+        // settings — both endpoints share the same base.
+        let trimmed = base.hasSuffix("/api/chat")
+            ? String(base.dropLast("/api/chat".count))
+            : base
+        let urlString = "\(trimmed)/api/briefing"
+
+        guard let url = URL(string: urlString) else {
+            throw ChatServiceError.invalidURL(urlString)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = RetryConfig.chatTimeout
+        request.httpBody = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
+
+        let (data, response) = try await withRetry {
+            try await URLSession.shared.data(for: request)
+        }
+
+        if let http = response as? HTTPURLResponse,
+           !(200...299).contains(http.statusCode) {
+            let body = String(data: data, encoding: .utf8) ?? "(no body)"
+            throw ChatServiceError.backendError(statusCode: http.statusCode, body: body)
+        }
+
+        do {
+            return try JSONDecoder().decode(ChatResponse.self, from: data)
         } catch {
             throw ChatServiceError.decodingFailed(error)
         }
