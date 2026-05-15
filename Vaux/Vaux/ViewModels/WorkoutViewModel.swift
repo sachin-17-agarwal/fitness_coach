@@ -359,12 +359,27 @@ final class WorkoutViewModel {
         // back the back-off prescription as the working-set result, and the
         // working set's target as a warm-up's actual.
         let setMsg = "Logged \(phaseProgress): \(exercise) — actual: \(actual)\(targetSuffix). \(setCount) working sets done so far. \(nextHint) Acknowledge the athlete's actual numbers (\(actual)) — do NOT echo any other phase's target as the result, and do NOT prescribe a different phase or exercise than the one named above. What's next?"
+        // Locally-authored ground truth. Prepended to the displayed coach
+        // note after `applyAIResponse` so the athlete always sees the
+        // correct phase + numbers even when Claude misquotes them. This
+        // failure mode has been recurring (working-set target shown as
+        // the warm-up's actual, back-off target shown as the working-set
+        // result, etc.), and the only thing the iOS can reliably trust
+        // is what the iOS itself just logged.
+        let factPrefix = "Logged \(phaseProgress): \(actual)."
         // The next-phase decision belongs to the iOS phase tracker, not the
         // coach — pass `allowExerciseChange: false` so a stray "moving to
         // chest" in the response can't skip the back-off that's still owed.
         do {
             let response = try await chatService.sendMessage(setMsg)
             applyAIResponse(response, allowExerciseChange: false)
+            // Prepend the fact AFTER applyAIResponse, because that call
+            // resets `coachNote` from the parsed response.
+            if let existing = coachNote, !existing.isEmpty {
+                coachNote = "\(factPrefix)\n\n\(existing)"
+            } else {
+                coachNote = factPrefix
+            }
         } catch {
             print("Coach feedback failed: \(error)")
         }
