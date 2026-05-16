@@ -267,6 +267,26 @@ final class WorkoutViewModel {
         }
         exerciseSetIndex += 1
 
+        // Pull the prescribed target for the just-logged phase index so
+        // it gets persisted alongside the actual — the live-workout
+        // context block on the backend uses this to show actual-vs-target
+        // per set without re-parsing chat history.
+        let target: (weight: Double, reps: Int, rpe: Double?)? = {
+            guard let rx = currentPrescription else { return nil }
+            switch loggedPhase {
+            case .warmup:
+                guard loggedPhaseSetIndex < rx.warmupSets.count else { return nil }
+                let t = rx.warmupSets[loggedPhaseSetIndex]
+                return (t.weight, t.reps, nil)
+            case .working:
+                guard loggedPhaseSetIndex < rx.workingSets.count else { return nil }
+                return rx.workingSets[loggedPhaseSetIndex]
+            case .backoff:
+                guard loggedPhaseSetIndex < rx.backoffSets.count else { return nil }
+                return rx.backoffSets[loggedPhaseSetIndex]
+            }
+        }()
+
         do {
             let set = try await workoutService.logSet(
                 sessionId: sessionId,
@@ -275,7 +295,10 @@ final class WorkoutViewModel {
                 weight: inputWeight,
                 reps: inputReps,
                 rpe: isWarmup ? nil : inputRPE,
-                isWarmup: isWarmup
+                isWarmup: isWarmup,
+                targetWeight: target?.weight,
+                targetReps: target?.reps,
+                targetRpe: target?.rpe
             )
             loggedSets.append(set)
             exerciseSetsForCurrentExercise.append(set)

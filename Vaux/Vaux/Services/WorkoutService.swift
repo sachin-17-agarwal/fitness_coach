@@ -217,7 +217,10 @@ final class WorkoutService: Sendable {
         weight: Double,
         reps: Int,
         rpe: Double? = nil,
-        isWarmup: Bool = false
+        isWarmup: Bool = false,
+        targetWeight: Double? = nil,
+        targetReps: Int? = nil,
+        targetRpe: Double? = nil
     ) async throws -> WorkoutSet {
         let today = Self.todayString()
         let now = ISO8601DateFormatter().string(from: Date())
@@ -234,6 +237,21 @@ final class WorkoutService: Sendable {
         ]
         if let rpe {
             body["actual_rpe"] = rpe
+        }
+        // Persist the prescribed target alongside the actual so the
+        // live-workout context block injected into the coach prompt can
+        // surface actual-vs-target per set without having to re-parse the
+        // chat history. Without this, the coach has to guess what the
+        // athlete was aiming for and tends to substitute the wrong phase's
+        // numbers when reacting to the log.
+        if let targetWeight {
+            body["target_weight_kg"] = targetWeight
+        }
+        if let targetReps {
+            body["target_reps"] = targetReps
+        }
+        if let targetRpe {
+            body["target_rpe"] = targetRpe
         }
 
         let logged: WorkoutSet = try await client.insertAndDecode(
