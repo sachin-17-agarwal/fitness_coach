@@ -23,8 +23,8 @@ from settings import get_settings
 from telegram_bot import send_message as send_telegram_message
 from workout import (
     end_session, get_last_logged_exercise, get_workout_state,
-    is_workout_active, log_set, log_substitution, set_workout_state,
-    start_session,
+    has_session_for_today, is_workout_active, log_set, log_substitution,
+    set_workout_state, start_session,
 )
 
 # Re-exported from the split modules so external callers (tests, scripts)
@@ -257,7 +257,10 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
 
     if not workout_active and not ios_log:
         parsed_preview = parse_set_from_message(incoming_text)
-        should_implicit_start = bool(parsed_preview)
+        # Skip the implicit-start path when today already has a session: a
+        # stray set-shaped message after the real workout ended must not
+        # spawn a phantom "Active" session that lingers for days.
+        should_implicit_start = bool(parsed_preview) and not has_session_for_today()
         if should_implicit_start:
             implicit_type = infer_session_type_from_recent(conversation_history, expected_session_type)
             session_id = start_session(implicit_type)
@@ -302,38 +305,39 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             if not exercise:
                 exercise = unresolved_candidate or "Unknown"
 
-            for i, set_entry in enumerate(all_sets):
-                current_set = current_set_base + i + 1
-                pr_info = log_set(
-                    session_id=session_id,
-                    exercise=exercise,
-                    set_number=current_set,
-                    actual_weight=set_entry["weight"],
-                    actual_reps=set_entry["reps"],
-                    actual_rpe=set_entry.get("rpe"),
-                    is_warmup=warmup,
-                )
-                if pr_info.get("is_pr"):
-                    print(f"PR detected: {exercise} {set_entry['weight']}kg x {set_entry['reps']}")
-                    if out_prs is not None:
-                        out_prs.append({
-                            "exercise": exercise,
-                            "weight_kg": set_entry["weight"],
-                            "reps": set_entry["reps"],
-                            "estimated_1rm": pr_info.get("estimated_1rm"),
-                            "previous_best": pr_info.get("previous_best"),
-                            "improvement_pct": pr_info.get("improvement_pct"),
-                        })
-                warmup_tag = " (warmup)" if warmup else ""
-                print(f"Set logged: {exercise} set{current_set}{warmup_tag} - "
-                      f"{set_entry['weight']}kg x {set_entry['reps']}"
-                      + (f" @RPE{set_entry['rpe']}" if set_entry.get("rpe") else ""))
+            # Refuse to persist a set when we can't pin it to an exercise.
+            # Writing rows under the literal string "Unknown" buries the data
+            # in history and makes the user think the session is broken.
+            # Instead, leave the set unlogged and surface the unresolved
+            # candidate (or a generic "what was that?") via the coach reply.
+            if exercise == "Unknown":
+                print(f"Skipping log_set: no resolvable exercise for {len(all_sets)} set(s)")
+                if not unresolved_candidate:
+                    unresolved_candidate = "that set"
+            else:
+                for i, set_entry in enumerate(all_sets):
+                    current_set = current_set_base + i + 1
+                    pr_info = log_set(
+                        session_id=session_id,
+                        exercise=exercise,
+                        set_number=current_set,
+                        actual_weight=set_entry["weight"],
+                        actual_reps=set_entry["reps"],
+                        actual_rpe=set_entry.get("rpe"),
+                        is_warmup=warmup,
+                    )
+                    if pr_info.get("is_pr"):
+                        print(f"PR detected: {exercise} {set_entry['weight']}kg x {set_entry['reps']}")
+                    warmup_tag = " (warmup)" if warmup else ""
+                    print(f"Set logged: {exercise} set{current_set}{warmup_tag} - "
+                          f"{set_entry['weight']}kg x {set_entry['reps']}"
+                          + (f" @RPE{set_entry['rpe']}" if set_entry.get("rpe") else ""))
 
-            _active_exercise = exercise if exercise != "Unknown" else ""
-            set_workout_state({
-                "current_set_number": str(current_set_base + len(all_sets)),
-                "current_exercise_name": _active_exercise,
-            })
+                _active_exercise = exercise
+                set_workout_state({
+                    "current_set_number": str(current_set_base + len(all_sets)),
+                    "current_exercise_name": _active_exercise,
+                })
 
     # ── Get coach response ────────────────────────────────────────────────────
     response = chat_with_coach(incoming_text, conversation_history, memory)

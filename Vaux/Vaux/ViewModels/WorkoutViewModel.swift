@@ -202,10 +202,37 @@ final class WorkoutViewModel {
         do {
             let response = try await chatService.sendMessage(prompt)
             applyAIResponse(response)
+            rehydrateCurrentExerciseStateFromLoggedSets()
         } catch {
             errorMessage = "Coach didn't respond (\(error.localizedDescription))."
         }
         isLoading = false
+    }
+
+    /// After `resume()` applies the coach's prescription, the
+    /// `exercise-changed` branch in `applyAIResponse` resets
+    /// `exerciseSetIndex` to 0 and clears `exerciseSetsForCurrentExercise`,
+    /// because the prior `currentPrescription` was nil. That's a bug for
+    /// resume: the session already has sets persisted for the prescribed
+    /// exercise, and starting `setNumber` back at 1 collides with the rows
+    /// already in `workout_sets` — producing duplicate `#1`/`#2` warm-ups
+    /// in history. Rebuild the counters and phase from what's actually in
+    /// the DB before the next `logSet` runs.
+    private func rehydrateCurrentExerciseStateFromLoggedSets() {
+        guard let rx = currentPrescription else { return }
+        let target = PrescriptionParser.normalizeExerciseName(rx.exerciseName).lowercased()
+        let matching = loggedSets.filter {
+            PrescriptionParser.normalizeExerciseName($0.exercise).lowercased() == target
+        }
+        guard !matching.isEmpty else { return }
+
+        exerciseSetsForCurrentExercise = matching
+        // Pick the largest set_number we've already used so the next insert
+        // gets a fresh, non-colliding value — protects against gaps if any
+        // intermediate set was deleted.
+        exerciseSetIndex = matching.map { $0.setNumber }.max() ?? matching.count
+        syncPhaseToPrescription()
+        prefillFromCurrentTarget()
     }
 
     private static let dateFormatter: DateFormatter = {
