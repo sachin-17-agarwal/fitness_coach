@@ -138,22 +138,57 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict)
     return assistant_message
 
 
-def send_morning_briefing(memory: dict):
-    print("Sending morning briefing...")
-    conversation_history = []
-    message = (
+BRIEFING_STYLE_INSTRUCTIONS = {
+    "concise": (
+        "Keep it short — 4-6 bullet lines, max ~150 words. No preamble, no "
+        "filler. Lead with today's session type and the headline recovery number."
+    ),
+    "detailed": (
+        "Give the full breakdown: recovery numbers with context, today's full "
+        "exercise list with sets/reps/weights/RPE, progression notes vs last "
+        "week, anything to watch."
+    ),
+    "drill_sergeant": (
+        "Talk like a no-nonsense strength coach. Direct, demanding, zero "
+        "fluff. Tell me what to do, why it matters, and what would be a "
+        "cop-out. Still cover recovery + today's plan + key targets."
+    ),
+}
+
+
+def build_briefing_prompt(style: str) -> str:
+    """Compose the morning briefing prompt with a style-specific tone."""
+    base = (
         "Good morning. Give me my morning briefing: "
         "review my recovery data, tell me today's session with full "
         "exercise list, sets, reps, weights and RPE targets based on "
         "my recent performance, and flag anything I need to know. "
         "If the latest recovery data is not from today, say the exact date you are using."
     )
+    instruction = BRIEFING_STYLE_INSTRUCTIONS.get(
+        style, BRIEFING_STYLE_INSTRUCTIONS["detailed"]
+    )
+    return f"{base}\n\nStyle: {instruction}"
+
+
+def send_morning_briefing(memory: dict):
+    print("Sending morning briefing...")
+    conversation_history = []
+    style = str(memory.get("briefing_style", "detailed")).strip().lower()
+    message = build_briefing_prompt(style)
     response = chat_with_coach(message, conversation_history, memory)
     send_telegram_message(response)
-    print("Morning briefing sent.")
+    print(f"Morning briefing sent (style={style}).")
 
 
-def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool = True) -> str:
+def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool = True,
+                            out_prs: list | None = None) -> str:
+    """Process a user message, log any sets, and return the coach reply.
+
+    If `out_prs` is provided, every set that beats the historical e1RM by >1%
+    is appended as a dict so callers (the iOS /api/chat endpoint) can surface
+    the celebration in-app. Telegram callers can leave it None.
+    """
     conversation_history = load_today_conversation()
     normalised_text = incoming_text.lower().replace("'", "'").strip()
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
