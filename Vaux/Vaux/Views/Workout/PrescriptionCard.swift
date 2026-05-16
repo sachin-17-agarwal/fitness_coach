@@ -179,11 +179,19 @@ struct PrescriptionCard: View {
     private func setChip(target: SetTarget, color: Color) -> some View {
         let isCompleted = isSetCompleted(target)
         let isCurrent = isCurrentTarget(target)
+        let logged = isCompleted ? loggedSetFor(target) : nil
+        // For completed chips, show what the athlete actually logged
+        // rather than the prescribed target — otherwise a warm-up logged
+        // at 90 × 6 against a prescribed 60 × 10 still reads "60 × 10"
+        // with a checkmark, which looks like the wrong set got recorded.
+        let displayWeight = logged?.actualWeightKg ?? target.weight
+        let displayReps = logged?.actualReps ?? target.reps
+        let displayRpe = logged?.actualRpe ?? target.rpe
         return VStack(spacing: 3) {
-            Text("\(formatWeight(target.weight)) × \(target.reps)")
+            Text("\(formatWeight(displayWeight)) × \(displayReps)")
                 .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
                 .foregroundStyle(isCompleted ? color : isCurrent ? .white : Color.white.opacity(0.7))
-            if let rpe = target.rpe {
+            if let rpe = displayRpe {
                 Text("@\(formatRPE(rpe))")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(isCompleted ? color.opacity(0.7) : Color.textSecondary)
@@ -209,6 +217,24 @@ struct PrescriptionCard: View {
                     .foregroundStyle(color)
                     .offset(x: 3, y: -3)
             }
+        }
+    }
+
+    /// Looks up the persisted set that corresponds to a target chip so the
+    /// chip can render the athlete's actual numbers once it's checked off.
+    /// Warm-ups index into the warmup queue; working / back-off share the
+    /// non-warmup queue with the first N entries being working sets.
+    private func loggedSetFor(_ target: SetTarget) -> WorkoutSet? {
+        let warmups = loggedSets.filter { $0.isWarmup == true }
+        let nonWarmups = loggedSets.filter { $0.isWarmup != true }
+        switch target.kind {
+        case .warmup:
+            return target.index < warmups.count ? warmups[target.index] : nil
+        case .working:
+            return target.index < nonWarmups.count ? nonWarmups[target.index] : nil
+        case .backoff:
+            let backoffIndex = prescription.workingSets.count + target.index
+            return backoffIndex < nonWarmups.count ? nonWarmups[backoffIndex] : nil
         }
     }
 
