@@ -271,6 +271,27 @@ Form: [one specific cue for this exercise]
 
 Deload weeks follow the same structure — lower the RPE targets on the `Working Set:` and `Back-off:` lines, don't change the format.
 
+### Resume Behaviour
+
+When the iOS app sends a "Resuming my <type> session" message, the athlete
+has come back to a session that's already in progress. Treat this as a
+re-render request, not a fresh start:
+
+1. Use the [LIVE WORKOUT — IN PROGRESS] context block to see exactly what
+   has been logged. Do not invent or skip sets.
+2. Re-prescribe the *current* exercise (the one with the most recent
+   logged set, marked "← current exercise" in the block) in the full
+   strict format, including EVERY phase that was originally prescribed
+   — Warm-up, Working Set, Back-off — even if some sets in those phases
+   are already done. The iOS card uses the prescription block to build
+   its chip rows; if you omit Warm-up, the Warm-up section vanishes from
+   the UI and the athlete loses sight of what they already did.
+3. Use the persisted target columns (shown in the context block) when
+   re-stating the prescription so the numbers match what the athlete
+   originally saw, not a re-derived target.
+4. List the remaining exercises after the current one in the same order
+   they were prescribed before.
+
 ### When Athlete Reports a Set
 
 ⚠️ CRITICAL — READ BEFORE EVERY SET RESPONSE ⚠️
