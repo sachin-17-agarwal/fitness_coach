@@ -197,7 +197,11 @@ final class WorkoutViewModel {
         if session.type == "Cardio+Abs" {
             prompt = "I've finished cardio for my \(session.type) session. Prescribe the first abs exercise in detail — sets, reps, weight, RPE, rest."
         } else {
-            prompt = "Resuming my \(session.type) session. Resend today's full plan and prescribe the next exercise."
+            // Explicit demand for the full phase list — the iOS card uses
+            // Warm-up / Working Set / Back-off as the structure for its
+            // chips, and Claude has a habit of dropping already-completed
+            // phases on resume, which then erases them from the UI.
+            prompt = "Resuming my \(session.type) session. The [LIVE WORKOUT — IN PROGRESS] block in your context shows exactly what I've logged. Resend today's full plan and re-prescribe the current exercise in the strict format with ALL phases present — Warm-up, Working Set, and Back-off lines — even if some of those sets are already done. I need the full block so my card can show the complete progress, not just the unfinished phases."
         }
         do {
             let response = try await chatService.sendMessage(prompt)
@@ -294,6 +298,26 @@ final class WorkoutViewModel {
         }
         exerciseSetIndex += 1
 
+        // Pull the prescribed target for the just-logged phase index so
+        // it gets persisted alongside the actual — the live-workout
+        // context block on the backend uses this to show actual-vs-target
+        // per set without re-parsing chat history.
+        let target: (weight: Double, reps: Int, rpe: Double?)? = {
+            guard let rx = currentPrescription else { return nil }
+            switch loggedPhase {
+            case .warmup:
+                guard loggedPhaseSetIndex < rx.warmupSets.count else { return nil }
+                let t = rx.warmupSets[loggedPhaseSetIndex]
+                return (t.weight, t.reps, nil)
+            case .working:
+                guard loggedPhaseSetIndex < rx.workingSets.count else { return nil }
+                return rx.workingSets[loggedPhaseSetIndex]
+            case .backoff:
+                guard loggedPhaseSetIndex < rx.backoffSets.count else { return nil }
+                return rx.backoffSets[loggedPhaseSetIndex]
+            }
+        }()
+
         do {
             let set = try await workoutService.logSet(
                 sessionId: sessionId,
@@ -302,7 +326,10 @@ final class WorkoutViewModel {
                 weight: inputWeight,
                 reps: inputReps,
                 rpe: isWarmup ? nil : inputRPE,
-                isWarmup: isWarmup
+                isWarmup: isWarmup,
+                targetWeight: target?.weight,
+                targetReps: target?.reps,
+                targetRpe: target?.rpe
             )
             loggedSets.append(set)
             exerciseSetsForCurrentExercise.append(set)
@@ -691,9 +718,23 @@ final class WorkoutViewModel {
 
         if let rx = currentPrescription {
             if rx.exerciseName != oldExercise {
-                exerciseSetIndex = 0
-                exerciseSetsForCurrentExercise = []
+                // Hydrate per-exercise state from the session-wide log so
+                // a resume picks up any sets already logged against this
+                // exercise — without this, swiping back into a workout
+                // forgot every set on the current lift and the chip
+                // display + phase tracker started from zero.
+                let matching = loggedSets.filter {
+                    PrescriptionParser.normalizeExerciseName($0.exercise) == rx.exerciseName
+                }
+                exerciseSetsForCurrentExercise = matching
+                exerciseSetIndex = matching.count
             }
+            // If the coach left warm-ups out of a re-prescription but the
+            // athlete has already logged some on this exercise (the resume
+            // case — Claude tends to skip done phases), reattach them so
+            // the card still shows them as ✓ instead of vanishing the
+            // whole WARM-UP section.
+            currentPrescription = backfillWarmupsFromLog(rx)
             // Re-derive the phase from what's already logged for this
             // exercise so a re-prescription that *adds* warm-ups or
             // back-offs (e.g. user asks "give me warm-up + back-off too")
@@ -748,6 +789,32 @@ final class WorkoutViewModel {
         let item = reordered.remove(at: idx)
         reordered.insert(item, at: 0)
         return reordered
+    }
+
+    /// If the supplied prescription has no warm-up sets but the athlete
+    /// has logged warm-ups for this exercise (the resume scenario where
+    /// the coach drops already-completed phases), rebuild the warmup
+    /// list from the persisted target/actual columns so the chip
+    /// section still renders. Falls through unchanged when the
+    /// prescription already carries warm-ups or no warm-ups were ever
+    /// logged.
+    private func backfillWarmupsFromLog(_ rx: ExercisePrescription) -> ExercisePrescription {
+        guard rx.warmupSets.isEmpty else { return rx }
+        let loggedWarmups = exerciseSetsForCurrentExercise
+            .filter { $0.isWarmup == true }
+            .sorted { $0.setNumber < $1.setNumber }
+        guard !loggedWarmups.isEmpty else { return rx }
+        var merged = rx
+        merged.warmupSets = loggedWarmups.map { set in
+            // Prefer the prescribed target so the chip text matches what
+            // was originally on screen — fall back to actuals when the
+            // target columns weren't populated (sets logged before the
+            // target columns were added).
+            let weight = set.targetWeightKg ?? set.actualWeightKg ?? 0
+            let reps = set.targetReps ?? set.actualReps ?? 0
+            return (weight: weight, reps: reps)
+        }
+        return merged
     }
 
     /// Re-derives `currentPhase` and `phaseSetIndex` from the sets already

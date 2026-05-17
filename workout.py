@@ -333,61 +333,174 @@ def get_substitution_history() -> str:
 
 # -- Context for Coach ---------------------------------------------------------
 
-def get_workout_context(state: dict) -> str:
-    """Build workout mode context block for injection into coach."""
-    if state.get("workout_mode") != "active":
-        return ""
+def _find_live_session() -> dict | None:
+    """Returns today's `in_progress` workout_sessions row, or None.
 
-    session_id = state.get("current_session_id", "")
+    Used as a fallback when the `memory` table doesn't show an active
+    session — the iOS app writes directly to workout_sessions and never
+    touches the memory key, so without this the coach gets no live
+    context at all for app-initiated sessions and has to guess what
+    was logged from the chat history alone.
+    """
     try:
-        exercise_index = int(state.get("current_exercise_index", 0))
-    except (TypeError, ValueError):
-        exercise_index = 0
-    try:
-        set_number = int(state.get("current_set_number", 0))
-    except (TypeError, ValueError):
-        set_number = 0
-    duration = get_session_duration_minutes(state)
+        supabase = get_supabase()
+        if not supabase:
+            return None
+        today = today_local_str()
+        result = supabase.table("workout_sessions")\
+            .select("id, type, date, start_time, status")\
+            .eq("date", today)\
+            .eq("status", "in_progress")\
+            .order("start_time", desc=True)\
+            .limit(1)\
+            .execute()
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception as e:
+        print(f"Failed to find live session: {e}")
+        return None
+
+
+def get_workout_context(state: dict) -> str:
+    """Build the live-session context block injected into the coach prompt.
+
+    Reads from both the memory state (Telegram flow) and today's
+    in-progress workout_sessions row (iOS flow). The block is the coach's
+    only structured ground truth about what's already been logged this
+    session — without it Claude was misquoting actuals (warm-ups quoted
+    as working sets, back-off targets quoted as working actuals) because
+    the only signal was the latest "Logged …" chat message, which is
+    easy to misread mid-conversation.
+    """
+    session_id = state.get("current_session_id", "") if state else ""
+    session_type = None
+    duration = 0
+
+    if state and state.get("workout_mode") == "active" and session_id:
+        duration = get_session_duration_minutes(state)
+    else:
+        live = _find_live_session()
+        if not live:
+            return ""
+        session_id = live.get("id", "")
+        session_type = live.get("type")
+        start_iso = live.get("start_time") or ""
+        if start_iso:
+            try:
+                started = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+                duration = max(0, int((now_local() - started.astimezone(now_local().tzinfo)).total_seconds() // 60))
+            except Exception:
+                duration = 0
+
+    if not session_id:
+        return ""
 
     try:
         supabase = get_supabase()
+        if not supabase:
+            return ""
 
-        session = supabase.table("workout_sessions")\
-            .select("type, date")\
-            .eq("id", session_id)\
-            .execute()
-        session_type = session.data[0]["type"] if session.data else "Unknown"
+        if session_type is None:
+            session = supabase.table("workout_sessions")\
+                .select("type")\
+                .eq("id", session_id)\
+                .execute()
+            session_type = session.data[0]["type"] if session.data else "Unknown"
 
-        sets = supabase.table("workout_sets")\
-            .select("exercise, set_number, actual_weight_kg, actual_reps, actual_rpe, is_warmup")\
+        sets_result = supabase.table("workout_sets")\
+            .select("exercise, set_number, actual_weight_kg, actual_reps, "
+                    "actual_rpe, target_weight_kg, target_reps, target_rpe, "
+                    "is_warmup, notes, logged_at")\
             .eq("workout_session_id", session_id)\
             .order("logged_at")\
             .execute()
+        rows = sets_result.data or []
 
-        sets_text = ""
-        if sets.data:
-            lines = []
-            for s in sets.data:
-                warmup_tag = " (warmup)" if s.get("is_warmup") else ""
-                rpe_tag = f" @RPE{s['actual_rpe']}" if s.get("actual_rpe") else ""
-                lines.append(f"  {s['exercise']} set{s['set_number']}{warmup_tag}: "
-                            f"{s['actual_weight_kg']}kg x {s['actual_reps']}{rpe_tag}")
-            sets_text = "\n".join(lines)
+        # Skip cardio/yoga entries — they share the session but encode
+        # duration in actual_reps and would otherwise confuse the
+        # strength-focused recap below.
+        strength_rows = [
+            r for r in rows
+            if not (r.get("notes") or "").lower().startswith(("cardio", "yoga"))
+        ]
+
+        # Group by exercise so the coach sees structured progress per lift
+        # rather than a flat dump. The most recently logged exercise is
+        # treated as "current".
+        groups: list[tuple[str, list[dict]]] = []
+        seen: dict[str, int] = {}
+        for r in strength_rows:
+            ex = r.get("exercise") or "Unknown"
+            if ex in seen:
+                groups[seen[ex]][1].append(r)
+            else:
+                seen[ex] = len(groups)
+                groups.append((ex, [r]))
+
+        current_exercise = groups[-1][0] if groups else None
+
+        def fmt_set(r: dict, n: int) -> str:
+            phase = "warm-up" if r.get("is_warmup") else "working/back-off"
+            w = r.get("actual_weight_kg")
+            reps = r.get("actual_reps")
+            rpe = r.get("actual_rpe")
+            tw = r.get("target_weight_kg")
+            treps = r.get("target_reps")
+            trpe = r.get("target_rpe")
+            actual = f"{w}kg × {reps}" if w is not None and reps is not None else "(no values)"
+            if rpe is not None:
+                actual += f" @ RPE {rpe}"
+            target_parts = []
+            if tw is not None and treps is not None:
+                t = f"{tw}kg × {treps}"
+                if trpe is not None:
+                    t += f" @ RPE {trpe}"
+                target_parts.append(f"target {t}")
+            target_suffix = f" ({', '.join(target_parts)})" if target_parts else ""
+            return f"    set {n} {phase}: actual {actual}{target_suffix}"
+
+        lines: list[str] = []
+        if groups:
+            for ex, ex_sets in groups:
+                marker = " ← current exercise" if ex == current_exercise else ""
+                lines.append(f"  {ex}{marker}")
+                warmups = [r for r in ex_sets if r.get("is_warmup")]
+                non_warmups = [r for r in ex_sets if not r.get("is_warmup")]
+                for i, r in enumerate(warmups, start=1):
+                    lines.append(fmt_set(r, i))
+                for i, r in enumerate(non_warmups, start=1):
+                    lines.append(fmt_set(r, i))
+        sets_text = "\n".join(lines) if lines else "  None yet"
+
+        last_line = ""
+        if strength_rows:
+            last = strength_rows[-1]
+            phase = "warm-up" if last.get("is_warmup") else "working/back-off"
+            w = last.get("actual_weight_kg")
+            reps = last.get("actual_reps")
+            rpe = last.get("actual_rpe")
+            rpe_s = f" @ RPE {rpe}" if rpe is not None else ""
+            last_line = f"\nMost recently logged: {last.get('exercise')} {phase} {w}kg × {reps}{rpe_s}"
 
         duration_warning = ""
         if duration >= 90:
-            duration_warning = f"\n WARNING SESSION TIME: {duration} minutes - suggest wrapping up"
+            duration_warning = f"\nWARNING SESSION TIME: {duration} minutes — suggest wrapping up"
+
+        current_line = f"\nCurrent exercise: {current_exercise}" if current_exercise else ""
 
         return f"""
-[WORKOUT MODE - ACTIVE]
+[LIVE WORKOUT — IN PROGRESS]
 Session type: {session_type}
-Exercise index: {exercise_index}
-Current set: {set_number}
-Session duration: {duration} minutes{duration_warning}
+Session duration: {duration} minutes{duration_warning}{current_line}{last_line}
 
-Sets logged this session:
-{sets_text or 'None yet'}
-[END WORKOUT CONTEXT]
+Logged this session (grouped by exercise, in order):
+{sets_text}
+
+NOTE TO COACH: the values above are persisted ground truth. When the
+athlete (or the app) sends a "Logged …" message, those numbers also
+appear here — quote them exactly. Never substitute a prescription
+target for an actual performance.
+[END LIVE WORKOUT]
 """
     except Exception as e:
-        return f"[WORKOUT MODE - ACTIVE] (context load failed: {e})"
+        return f"[LIVE WORKOUT — IN PROGRESS] (context load failed: {e})"
