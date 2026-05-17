@@ -472,6 +472,76 @@ def _parse_set_list_with_rpe(text: str) -> list:
 def status():
     return jsonify({"status": "running", "service": "fitness-coach"}), 200
 
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+@app.route("/admin/cleanup", methods=["POST"])
+def admin_cleanup():
+    """One-shot DB cleanup runner exposed for Railway-hosted deploys.
+
+    Body (JSON, optional):
+      { "step": "orphans"|"dupsets"|"sessions"|"sets"|"memory"|"all",
+        "execute": false }
+
+    Defaults: step="orphans", execute=false (dry-run). Returns the captured
+    cleanup log so you can review before re-posting with execute=true.
+
+    Auth: Authorization: Bearer <APP_API_TOKEN>.
+    """
+    import io
+    from contextlib import redirect_stdout
+
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    expected_token = get_settings().app_api_token
+    if not expected_token:
+        return jsonify({"error": "APP_API_TOKEN not configured"}), 503
+    if not secrets.compare_digest(token, expected_token):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    body = request.get_json(silent=True) or {}
+    step = (body.get("step") or "orphans").lower()
+    execute = bool(body.get("execute", False))
+    relabel_to = body.get("relabel_to", "") or ""
+
+    allowed_steps = {"orphans", "dupsets", "sessions", "sets", "memory", "all"}
+    if step not in allowed_steps:
+        return jsonify({"error": f"step must be one of {sorted(allowed_steps)}"}), 400
+
+    supabase = get_supabase()
+    if not supabase:
+        return jsonify({"error": "Supabase not configured"}), 503
+
+    import cleanup as cleanup_module
+
+    runners = {
+        "sessions": lambda: cleanup_module.cleanup_stale_sessions(supabase, execute),
+        "sets":     lambda: cleanup_module.cleanup_bad_exercise_sets(supabase, execute, relabel_to),
+        "memory":   lambda: cleanup_module.cleanup_duplicate_memory_keys(supabase, execute),
+        "orphans":  lambda: cleanup_module.cleanup_orphan_duplicate_sessions(supabase, execute),
+        "dupsets":  lambda: cleanup_module.cleanup_duplicate_sets(supabase, execute),
+    }
+    selected = list(runners.values()) if step == "all" else [runners[step]]
+
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            for run in selected:
+                run()
+    except Exception as exc:
+        log.exception("Admin cleanup failed")
+        return jsonify({
+            "error": "cleanup_failed",
+            "message": f"{type(exc).__name__}: {exc}",
+            "log": buf.getvalue(),
+        }), 500
+
+    return jsonify({
+        "step": step,
+        "execute": execute,
+        "log": buf.getvalue(),
+    })
+
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
