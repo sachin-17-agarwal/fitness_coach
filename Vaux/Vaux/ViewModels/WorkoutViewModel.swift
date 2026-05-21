@@ -263,6 +263,16 @@ final class WorkoutViewModel {
         let loggedPhaseSetIndex = phaseSetIndex
         let isWarmup = loggedPhase == .warmup
         let exercise = PrescriptionParser.normalizeExerciseName(rawExercise)
+        // Snapshot the input values too. `advancePhase()` calls
+        // `prefillFromCurrentTarget()` which mutates `inputWeight` /
+        // `inputReps` / `inputRPE` to the *next* phase's target — building
+        // the recap from `inputWeight` after that point would read those
+        // next-phase prefills, which is why the fact line was reporting
+        // "0kg × 7" after a BW × 5 warm-up (the working set's prefill
+        // sneaking into the recap).
+        let loggedWeight = inputWeight
+        let loggedReps = inputReps
+        let loggedRPE = inputRPE
 
         if !isWarmup {
             setCount += 1
@@ -296,9 +306,9 @@ final class WorkoutViewModel {
                 sessionId: sessionId,
                 exercise: exercise,
                 setNumber: exerciseSetIndex,
-                weight: inputWeight,
-                reps: inputReps,
-                rpe: isWarmup ? nil : inputRPE,
+                weight: loggedWeight,
+                reps: loggedReps,
+                rpe: isWarmup ? nil : loggedRPE,
                 isWarmup: isWarmup,
                 targetWeight: target?.weight,
                 targetReps: target?.reps,
@@ -307,7 +317,7 @@ final class WorkoutViewModel {
             loggedSets.append(set)
             exerciseSetsForCurrentExercise.append(set)
             if !isWarmup {
-                totalTonnage += inputWeight * Double(inputReps)
+                totalTonnage += loggedWeight * Double(loggedReps)
             }
         } catch {
             if !isWarmup { setCount -= 1 } else { warmupCount -= 1 }
@@ -321,8 +331,8 @@ final class WorkoutViewModel {
             do {
                 let prResult = try await workoutService.checkPR(
                     exercise: exercise,
-                    weight: inputWeight,
-                    reps: inputReps
+                    weight: loggedWeight,
+                    reps: loggedReps
                 )
                 if prResult.isPR {
                     latestPR = prResult
@@ -370,7 +380,7 @@ final class WorkoutViewModel {
         } else {
             phaseProgress = label
         }
-        let actual = "\(inputWeight.weightString) × \(inputReps)" + (isWarmup ? "" : " @ RPE \(inputRPE.oneDecimal)")
+        let actual = "\(loggedWeight.weightString) × \(loggedReps)" + (isWarmup ? "" : " @ RPE \(loggedRPE.oneDecimal)")
         let targetSuffix = formatTargetSuffix(
             phase: loggedPhase,
             phaseSetIndex: loggedPhaseSetIndex,
