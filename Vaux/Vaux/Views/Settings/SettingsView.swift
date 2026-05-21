@@ -52,6 +52,12 @@ struct SettingsView: View {
                 await loadMesocycle()
                 briefingStyle = await preferences.loadBriefingStyle()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
+                // Keep the stepper in sync with `advance()` calls fired from
+                // workout completion, so reopening Settings doesn't show a
+                // day behind what the rest of the app is using.
+                Task { await loadMesocycle() }
+            }
         }
     }
 

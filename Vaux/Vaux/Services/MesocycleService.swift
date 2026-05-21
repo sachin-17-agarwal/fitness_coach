@@ -47,9 +47,16 @@ final class MesocycleService: Sendable {
     // MARK: - Save
 
     /// Persists the given mesocycle state to the `memory` table.
+    ///
+    /// Posts `.mesocycleDidChange` after a successful write so views that
+    /// cached the previous state (Dashboard's session card, the Train tab's
+    /// resolved session type) refresh instead of showing stale data. Without
+    /// this, Settings → Train and Settings → Dashboard would silently
+    /// disagree until the app was relaunched.
     func saveState(_ state: MesocycleState) async throws {
         try await setMemory(key: "mesocycle_day", value: String(state.day))
         try await setMemory(key: "mesocycle_week", value: String(state.week))
+        NotificationCenter.default.post(name: .mesocycleDidChange, object: state)
     }
 
     // MARK: - Advance
@@ -86,6 +93,14 @@ final class MesocycleService: Sendable {
             onConflict: "key"
         )
     }
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Fired after the mesocycle state has been persisted, so dependent views
+    /// (Dashboard's today card, the Train tab) can refresh their local copy.
+    static let mesocycleDidChange = Notification.Name("mesocycleDidChange")
 }
 
 // MARK: - Memory row model (private to this module)

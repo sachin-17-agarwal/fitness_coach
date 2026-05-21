@@ -86,6 +86,19 @@ struct WorkoutModeView: View {
             }
             didCheckResume = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
+            // Settings (or post-workout advance) changed today's session.
+            // Only re-resolve when this view is showing today's auto-picked
+            // type — if the Dashboard navigated in with an explicit
+            // `sessionType`, that's the workout the user committed to and
+            // we shouldn't swap it out mid-flow.
+            guard sessionType.isEmpty, !viewModel.isActive else { return }
+            Task {
+                if let state = try? await MesocycleService().loadState() {
+                    resolvedSessionType = state.todayType
+                }
+            }
+        }
         .navigationTitle(viewModel.isActive ? viewModel.sessionType : (effectiveSessionType.isEmpty ? "Workout" : effectiveSessionType))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
