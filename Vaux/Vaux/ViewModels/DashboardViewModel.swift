@@ -90,6 +90,16 @@ final class DashboardViewModel {
         isLoading = false
     }
 
+    /// Refreshes only the mesocycle slice. Called when Settings (or
+    /// `MesocycleService.advance()` after a workout) posts
+    /// `.mesocycleDidChange` — a full `load()` would needlessly re-pull
+    /// recovery and history for what's really a one-field update.
+    func refreshMesocycle() async {
+        if let state = try? await mesocycleService.loadState() {
+            mesocycle = state
+        }
+    }
+
     // MARK: - Streak / tonnage
 
     /// Returns the number of consecutive days ending today that have at least

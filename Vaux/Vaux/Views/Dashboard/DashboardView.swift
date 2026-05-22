@@ -37,6 +37,9 @@ struct DashboardView: View {
                 }
             }
             .task { await viewModel.load() }
+            .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
+                Task { await viewModel.refreshMesocycle() }
+            }
         }
     }
 
