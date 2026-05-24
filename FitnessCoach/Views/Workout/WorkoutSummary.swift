@@ -10,11 +10,12 @@ struct WorkoutSummaryView: View {
                 Text("Workout Complete")
                     .font(.title.weight(.bold))
                     .foregroundColor(.white)
+                    .staggeredAppearance(index: 0)
 
                 HStack(spacing: 24) {
-                    summaryItem(value: summary.tonnage.weightString, label: "Tonnage")
-                    summaryItem(value: "\(summary.totalSets)", label: "Sets")
-                    summaryItem(value: formatDuration(summary.duration), label: "Duration")
+                    summaryItem(value: summary.tonnage.weightString, label: "Tonnage", index: 1)
+                    summaryItem(value: "\(summary.totalSets)", label: "Sets", index: 2)
+                    summaryItem(value: formatDuration(summary.duration), label: "Duration", index: 3)
                 }
 
                 if !summary.prs.isEmpty {
@@ -55,11 +56,12 @@ struct WorkoutSummaryView: View {
         }
     }
 
-    private func summaryItem(value: String, label: String) -> some View {
+    private func summaryItem(value: String, label: String, index: Int = 0) -> some View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.title2.weight(.bold).monospacedDigit())
                 .foregroundColor(.white)
+                .contentTransition(.numericText())
             Text(label)
                 .font(.caption)
                 .foregroundColor(.gray)
@@ -67,6 +69,7 @@ struct WorkoutSummaryView: View {
         .frame(maxWidth: .infinity)
         .padding()
         .modifier(DarkCardStyle())
+        .staggeredAppearance(index: index)
     }
 
     private func formatDuration(_ d: TimeInterval) -> String {

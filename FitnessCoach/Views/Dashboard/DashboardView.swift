@@ -21,21 +21,20 @@ struct DashboardView: View {
                 } else {
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 16) {
-                            // Recovery Ring
                             RecoveryRing(
                                 score: viewModel.recoveryScore,
                                 level: viewModel.recoveryColor,
                                 statusText: recoveryStatusText
                             )
                             .padding(.top, 8)
+                            .staggeredAppearance(index: 0)
 
-                            // HRV Sparkline
                             HRVSparkline(
                                 history: viewModel.hrvHistory,
                                 average: viewModel.hrvAvg
                             )
+                            .staggeredAppearance(index: 1)
 
-                            // Metric cards row
                             HStack(spacing: 12) {
                                 MetricCard(
                                     icon: "moon.fill",
@@ -54,8 +53,8 @@ struct DashboardView: View {
                                     accentColor: .recoveryRed
                                 )
                             }
+                            .staggeredAppearance(index: 2)
 
-                            // Weight card
                             if let weight = viewModel.recovery?.weightKg {
                                 MetricCard(
                                     icon: "scalemass.fill",
@@ -63,14 +62,14 @@ struct DashboardView: View {
                                     value: weight.weightString,
                                     subtitle: viewModel.recovery?.bodyFatPct.map { "\($0.oneDecimal)% body fat" }
                                 )
+                                .staggeredAppearance(index: 3)
                             }
 
-                            // Session Type Card
                             SessionTypeCard(mesocycle: viewModel.mesocycle) {
                                 navigateToWorkout = true
                             }
+                            .staggeredAppearance(index: 4)
 
-                            // Additional metrics
                             if let steps = viewModel.recovery?.steps {
                                 MetricCard(
                                     icon: "figure.walk",
@@ -78,6 +77,7 @@ struct DashboardView: View {
                                     value: formatSteps(steps),
                                     accentColor: .recoveryGreen
                                 )
+                                .staggeredAppearance(index: 5)
                             }
 
                             Spacer(minLength: 20)

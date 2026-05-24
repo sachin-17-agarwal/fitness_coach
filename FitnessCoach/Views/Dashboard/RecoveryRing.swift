@@ -11,6 +11,9 @@ struct RecoveryRing: View {
     let level: DashboardViewModel.RecoveryLevel
     let statusText: String
 
+    @State private var animatedScore: Int = 0
+    @State private var glowPulse = false
+
     private var progress: Double {
         Double(score) / 100.0
     }
@@ -36,12 +39,10 @@ struct RecoveryRing: View {
     var body: some View {
         VStack(spacing: 12) {
             ZStack {
-                // Background ring
                 Circle()
                     .stroke(Color.cardBorder, lineWidth: 14)
                     .frame(width: 180, height: 180)
 
-                // Progress ring
                 Circle()
                     .trim(from: 0, to: progress)
                     .stroke(
@@ -52,23 +53,22 @@ struct RecoveryRing: View {
                     .rotationEffect(.degrees(-90))
                     .animation(.easeInOut(duration: 1.0), value: progress)
 
-                // Glow effect
                 Circle()
                     .trim(from: 0, to: progress)
                     .stroke(
-                        ringColor.opacity(0.3),
+                        ringColor.opacity(glowPulse ? 0.4 : 0.2),
                         style: StrokeStyle(lineWidth: 24, lineCap: .round)
                     )
                     .frame(width: 180, height: 180)
                     .rotationEffect(.degrees(-90))
-                    .blur(radius: 8)
+                    .blur(radius: glowPulse ? 10 : 6)
                     .animation(.easeInOut(duration: 1.0), value: progress)
 
-                // Center content
                 VStack(spacing: 4) {
-                    Text("\(score)")
+                    Text("\(animatedScore)")
                         .font(.system(size: 52, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
+                        .contentTransition(.numericText(value: Double(animatedScore)))
 
                     Text(statusLabel)
                         .font(.system(size: 14, weight: .medium))
@@ -76,7 +76,6 @@ struct RecoveryRing: View {
                 }
             }
 
-            // Label
             VStack(spacing: 2) {
                 Text("Recovery")
                     .font(.system(size: 16, weight: .semibold))
@@ -88,6 +87,29 @@ struct RecoveryRing: View {
                         .foregroundStyle(Color.textSecondary)
                 }
             }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                glowPulse = true
+            }
+            animateScore()
+        }
+        .onChange(of: score) { animateScore() }
+    }
+
+    private func animateScore() {
+        animatedScore = 0
+        let steps = min(score, 60)
+        let interval = 0.8 / Double(max(steps, 1))
+        for i in 0...steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * interval) {
+                withAnimation(.easeOut(duration: interval)) {
+                    animatedScore = Int(Double(score) * Double(i) / Double(steps))
+                }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            withAnimation(.easeOut) { animatedScore = score }
         }
     }
 }

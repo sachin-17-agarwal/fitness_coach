@@ -5,8 +5,9 @@ struct RecoveryTimeline: View {
 
     var body: some View {
         LazyVStack(spacing: 12) {
-            ForEach(history, id: \.date) { day in
+            ForEach(Array(history.enumerated()), id: \.element.date) { index, day in
                 RecoveryDayCard(recovery: day)
+                    .staggeredAppearance(index: index)
             }
         }
     }
@@ -33,9 +34,10 @@ struct RecoveryDayCard: View {
                             .foregroundColor(.white)
                     }
                 }
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                Image(systemName: "chevron.down")
                     .font(.caption)
                     .foregroundColor(.gray)
+                    .rotationEffect(.degrees(isExpanded ? -180 : 0))
             }
 
             HStack(spacing: 16) {
@@ -68,13 +70,13 @@ struct RecoveryDayCard: View {
                         detailRow("Status", value: status)
                     }
                 }
-                .transition(.opacity)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding()
         .modifier(DarkCardStyle())
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isExpanded.toggle() }
         }
     }
 

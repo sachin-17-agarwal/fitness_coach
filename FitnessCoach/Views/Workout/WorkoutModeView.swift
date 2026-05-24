@@ -55,12 +55,20 @@ struct WorkoutModeView: View {
         }
     }
 
+    @State private var breatheScale: CGFloat = 1.0
+
     private var startView: some View {
         VStack(spacing: 24) {
             Spacer()
             Image(systemName: "figure.strengthtraining.traditional")
                 .font(.system(size: 64))
                 .foregroundColor(Color.recoveryGreen)
+                .scaleEffect(breatheScale)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                        breatheScale = 1.06
+                    }
+                }
 
             Text(sessionType.isEmpty ? "Ready to train?" : "\(sessionType) Day")
                 .font(.title.weight(.bold))
@@ -77,6 +85,7 @@ struct WorkoutModeView: View {
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
             }
+            .pressableButton()
             .padding(.horizontal, 40)
             Spacer()
         }

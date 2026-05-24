@@ -56,6 +56,7 @@ struct MetricCard: View {
             Text(value)
                 .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
+                .contentTransition(.numericText())
 
             if let subtitle {
                 Text(subtitle)

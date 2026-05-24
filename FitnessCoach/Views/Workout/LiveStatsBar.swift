@@ -27,6 +27,7 @@ struct LiveStatsBar: View {
                 Text(value)
                     .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundColor(.white)
+                    .contentTransition(.numericText())
                 Text(label)
                     .font(.caption2)
                     .foregroundColor(.gray)

@@ -7,11 +7,14 @@ struct PRCelebration: View {
 
     @State private var scale: CGFloat = 0.3
     @State private var opacity: Double = 0
+    @State private var rotation: Double = -5
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.8)
                 .ignoresSafeArea()
+
+            ConfettiView()
 
             VStack(spacing: 16) {
                 Text("PR!")
@@ -23,6 +26,7 @@ struct PRCelebration: View {
                             endPoint: .bottomTrailing
                         )
                     )
+                    .rotationEffect(.degrees(rotation))
 
                 Text(exercise)
                     .font(.title2.weight(.bold))
@@ -36,11 +40,14 @@ struct PRCelebration: View {
             .opacity(opacity)
         }
         .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.5)) {
                 scale = 1.0
                 opacity = 1.0
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.3).delay(0.2)) {
+                rotation = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                 withAnimation(.easeOut(duration: 0.3)) {
                     opacity = 0
                 }
