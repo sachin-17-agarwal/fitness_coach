@@ -34,6 +34,7 @@ struct MessageBubble: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Gradients.recovery)
                 )
+                .shadow(color: Color.mint.opacity(0.15), radius: 8, y: 4)
 
             if let time = message.createdAt {
                 Text(formatTime(time))
@@ -60,6 +61,7 @@ struct MessageBubble: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(Color.cardBorder, lineWidth: 0.5)
                 )
+                .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
 
             if let time = message.createdAt {
                 Text(formatTime(time))

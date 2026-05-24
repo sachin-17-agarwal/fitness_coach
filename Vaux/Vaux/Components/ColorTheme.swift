@@ -244,6 +244,19 @@ enum Motion {
     static let soft: Animation = .easeInOut(duration: 0.4)
 }
 
+// MARK: - Press scale button style
+
+struct PressScaleStyle: ButtonStyle {
+    var scale: CGFloat = 0.97
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1.0)
+            .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
 // MARK: - Small UI building blocks
 
 /// Small rounded pill label. Used for trend chips, status badges, streak tags.

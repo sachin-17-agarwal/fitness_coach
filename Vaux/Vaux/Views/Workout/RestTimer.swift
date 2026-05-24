@@ -48,8 +48,12 @@ struct RestTimer: View {
                             .foregroundStyle(ringColor)
                     }
                 }
-                .scaleEffect(pulse ? 1.015 : 1.0)
-                .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: pulse)
+                .scaleEffect(isUrgent ? (pulse ? 1.04 : 1.0) : (pulse ? 1.015 : 1.0))
+                .animation(isUrgent
+                    ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true)
+                    : .easeInOut(duration: 1).repeatForever(autoreverses: true),
+                    value: pulse
+                )
 
                 HStack(spacing: 10) {
                     Button {
@@ -96,6 +100,8 @@ struct RestTimer: View {
         guard totalSeconds > 0 else { return 0 }
         return min(1, max(0, Double(remainingSeconds) / Double(totalSeconds)))
     }
+
+    private var isUrgent: Bool { remainingSeconds <= 10 }
 
     private var ringColor: Color {
         if remainingSeconds <= 10 { return .recoveryRed }

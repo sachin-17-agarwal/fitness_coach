@@ -152,7 +152,7 @@ struct MetricCard: View {
                 )
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [accentColor.opacity(0.22), accentColor.opacity(0)],
+                        colors: [accentColor.opacity(0.15), accentColor.opacity(0.04), .clear],
                         startPoint: .top,
                         endPoint: .bottom
                     )
