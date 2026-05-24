@@ -114,6 +114,7 @@ struct SetLogInput: View {
                 }
                 .shadow(color: isWarmup ? .clear : phaseColor.opacity(0.3), radius: 14, x: 0, y: 8)
             }
+            .buttonStyle(PressScaleStyle())
             .disabled(isLoading)
         }
         .padding(16)

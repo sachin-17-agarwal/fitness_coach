@@ -92,7 +92,7 @@ struct SessionTypeCard: View {
             .padding(.vertical, 10)
             .background(Capsule().fill(Color.signal))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressScaleStyle(scale: 0.93))
     }
 }
 

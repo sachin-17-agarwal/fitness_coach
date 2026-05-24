@@ -74,8 +74,17 @@ struct TrendChart: View {
                         y: .value("Value", point.value)
                     )
                     .foregroundStyle(color)
-                    .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     .interpolationMethod(.catmullRom)
+
+                    if point.id == sorted.last?.id {
+                        PointMark(
+                            x: .value("Date", point.date),
+                            y: .value("Value", point.value)
+                        )
+                        .foregroundStyle(color)
+                        .symbolSize(40)
+                    }
 
                     AreaMark(
                         x: .value("Date", point.date),
@@ -83,7 +92,7 @@ struct TrendChart: View {
                     )
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [color.opacity(0.35), color.opacity(0)],
+                            colors: [color.opacity(0.18), color.opacity(0.06), .clear],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -95,15 +104,19 @@ struct TrendChart: View {
                     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                         AxisValueLabel(format: .dateTime.day().month(.abbreviated))
                             .foregroundStyle(Color.textTertiary)
+                            .font(.system(size: 10))
                     }
                 }
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
                         AxisValueLabel()
                             .foregroundStyle(Color.textTertiary)
+                            .font(.system(size: 10))
+                        AxisGridLine()
+                            .foregroundStyle(Color.line.opacity(0.5))
                     }
                 }
-                .frame(height: 130)
+                .frame(height: 140)
             } else {
                 Text("Not enough data")
                     .font(.system(size: 12))

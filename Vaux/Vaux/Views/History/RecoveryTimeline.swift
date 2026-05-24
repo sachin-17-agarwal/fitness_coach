@@ -27,7 +27,7 @@ struct RecoveryDayCard: View {
             metricsRow
             if isExpanded {
                 details
-                    .transition(.opacity)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -35,7 +35,7 @@ struct RecoveryDayCard: View {
         .contentShape(Rectangle())
         .onTapGesture {
             Haptic.light()
-            withAnimation(Motion.smooth) { isExpanded.toggle() }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isExpanded.toggle() }
         }
     }
 

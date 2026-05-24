@@ -254,19 +254,20 @@ struct CoachChatView: View {
 
 struct TypingIndicator: View {
     @State private var phase: Int = 0
-    private let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    private let timer = Timer.publish(every: 0.35, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             CoachAvatar()
 
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 ForEach(0..<3) { i in
                     Circle()
-                        .fill(Color.textSecondary)
-                        .frame(width: 6, height: 6)
-                        .opacity(phase == i ? 1 : 0.35)
-                        .scaleEffect(phase == i ? 1.1 : 1)
+                        .fill(Color.mint)
+                        .frame(width: 7, height: 7)
+                        .opacity(phase == i ? 1 : 0.3)
+                        .offset(y: phase == i ? -4 : 0)
+                        .scaleEffect(phase == i ? 1.15 : 0.85)
                 }
             }
             .padding(.horizontal, 12)
