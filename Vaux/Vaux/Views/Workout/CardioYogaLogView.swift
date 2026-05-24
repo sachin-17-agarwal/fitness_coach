@@ -563,7 +563,7 @@ struct CardioYogaLogView: View {
         isLogging = true
         defer { isLogging = false }
 
-        let kcal = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
+        let kcal = workout.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie())
         let note = "hk:\(workout.uuid.uuidString)" + (kcal.map { " · \(Int($0))kcal" } ?? "")
 
         do {

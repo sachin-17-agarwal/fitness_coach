@@ -39,7 +39,7 @@ enum RetryableRequestError: LocalizedError {
 /// rethrown immediately because retrying a write the server already
 /// committed would duplicate data.
 func withRetry<T: Sendable>(
-    maxAttempts: Int = RetryConfig.defaultMaxAttempts,
+    maxAttempts: Int = 3,
     attempt: @Sendable () async throws -> T
 ) async throws -> T {
     var lastError: Error?
