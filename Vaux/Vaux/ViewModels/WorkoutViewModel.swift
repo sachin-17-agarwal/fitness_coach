@@ -706,8 +706,14 @@ final class WorkoutViewModel {
                 && wantsDifferentExercise
                 && !isCurrentExerciseComplete()
             if !blockChange {
-                allPrescriptions = prescriptions
+                // Merge new prescriptions into the existing plan instead of
+                // replacing it wholesale. A set-log response typically only
+                // mentions one exercise; replacing `allPrescriptions` with
+                // that single entry would wipe the full plan that was loaded
+                // at workout start — destroying the "up next" list and
+                // preventing `nextExerciseMentioned` from ever matching.
                 currentPrescription = prescriptions.first
+                mergeIntoAllPrescriptions(prescriptions)
             } else {
                 // Coach tried to skip ahead — keep the current prescription
                 // so the back-off (or whichever phase is unfilled) stays on
@@ -786,6 +792,43 @@ final class WorkoutViewModel {
             in: text, candidates: candidates
         ) else { return nil }
         return allPrescriptions.first { $0.exerciseName == matched }
+    }
+
+    /// Merges a coach-returned prescription list into `allPrescriptions`
+    /// without wiping exercises the coach didn't mention this time.
+    ///
+    /// When the response contains a full session plan (workout start),
+    /// `allPrescriptions` will be replaced entirely — the initial plan is
+    /// the definitive list. During a set-log reply that only mentions one
+    /// exercise, the matching entry is updated in place (or inserted at
+    /// the front if it's genuinely new), preserving the rest of the plan
+    /// so transitions and "up next" keep working.
+    private func mergeIntoAllPrescriptions(_ incoming: [ExercisePrescription]) {
+        guard !incoming.isEmpty else { return }
+        // Heuristic: if the coach sent 3+ prescriptions, treat it as a full
+        // plan refresh (the start-of-session response or a "re-send the
+        // plan" reply). Below that, merge.
+        if incoming.count >= 3 {
+            allPrescriptions = incoming
+            return
+        }
+        var merged = allPrescriptions
+        for rx in incoming {
+            let name = rx.exerciseName
+            if let idx = merged.firstIndex(where: { $0.exerciseName == name }) {
+                merged[idx] = rx
+            } else {
+                merged.insert(rx, at: 0)
+            }
+        }
+        // Keep the current exercise at the front
+        if let current = currentPrescription,
+           let idx = merged.firstIndex(where: { $0.exerciseName == current.exerciseName }),
+           idx != 0 {
+            let item = merged.remove(at: idx)
+            merged.insert(item, at: 0)
+        }
+        allPrescriptions = merged
     }
 
     /// Moves `target` to the head of the prescription list while preserving
