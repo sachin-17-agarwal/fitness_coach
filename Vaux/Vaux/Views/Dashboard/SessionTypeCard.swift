@@ -67,12 +67,29 @@ struct SessionTypeCard: View {
         }
         .padding(18)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.ink2)
+            ZStack {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color.ink2)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.signal.opacity(0.05), .clear],
+                            startPoint: .trailing,
+                            endPoint: .leading
+                        )
+                    )
+            }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.signal.opacity(0.3), Color.line],
+                        startPoint: .topTrailing,
+                        endPoint: .bottomLeading
+                    ),
+                    lineWidth: 1
+                )
         )
     }
 

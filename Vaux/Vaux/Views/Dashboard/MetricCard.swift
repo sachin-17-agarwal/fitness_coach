@@ -1,8 +1,5 @@
 // MetricCard.swift
-// Vaux — editorial redesign
-//
-// Quiet hairline card: eyebrow label, serif value + mono unit, sparkline in
-// fg-2 with a faint fill, optional mono sub-copy. No colored glows.
+// Vaux
 
 import SwiftUI
 import Charts
@@ -48,7 +45,6 @@ struct MetricCard: View {
     }
 
     private var unit: String? {
-        // Split "54 ms" → ("54", "ms"). If no space, we render value whole.
         let parts = value.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
         return parts.count == 2 ? String(parts[1]) : nil
     }
@@ -59,45 +55,61 @@ struct MetricCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                iconTile
-                Eyebrow(text: title)
-                Spacer()
-                if let trend {
-                    trendChip(trend)
-                }
-            }
-
-            HStack(alignment: .bottom, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(numberPart)
-                        .font(.serifLG)
-                        .foregroundStyle(Color.fg0)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                    if let unit {
-                        Text(unit)
-                            .font(.eyebrow)
-                            .foregroundStyle(accentColor)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    iconTile
+                    Eyebrow(text: title)
+                    Spacer()
+                    if let trend {
+                        trendChip(trend)
                     }
                 }
-                Spacer()
-                if let sparkline, sparkline.count >= 2 {
-                    sparklineView(sparkline)
-                        .frame(width: 72, height: 24)
+
+                HStack(alignment: .bottom, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(numberPart)
+                            .font(.serifLG)
+                            .foregroundStyle(Color.fg0)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                        if let unit {
+                            Text(unit)
+                                .font(.eyebrow)
+                                .foregroundStyle(accentColor)
+                        }
+                    }
+                    Spacer()
+                    if let sparkline, sparkline.count >= 2 {
+                        sparklineView(sparkline)
+                            .frame(width: 72, height: 24)
+                    }
+                }
+
+                if let subtitle {
+                    Text(subtitle.uppercased())
+                        .font(.eyebrowSmall)
+                        .kerning(1.2)
+                        .foregroundStyle(Color.fg2)
                 }
             }
+            .padding(16)
 
-            if let subtitle {
-                Text(subtitle.uppercased())
-                    .font(.eyebrowSmall)
-                    .kerning(1.2)
-                    .foregroundStyle(Color.fg2)
-            }
+            Spacer(minLength: 0)
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(
+                    LinearGradient(
+                        colors: [accentColor, accentColor.opacity(0.3)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 3)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 140, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color.ink2)
@@ -116,7 +128,7 @@ struct MetricCard: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(accentColor)
         }
-        .frame(width: 22, height: 22)
+        .frame(width: 24, height: 24)
     }
 
     private func trendChip(_ trend: Trend) -> some View {
@@ -129,8 +141,8 @@ struct MetricCard: View {
                 .kerning(1.0)
         }
         .foregroundStyle(chipColor)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
         .background(Capsule().fill(chipColor.opacity(0.10)))
         .overlay(Capsule().stroke(chipColor.opacity(0.22), lineWidth: 0.5))
     }
@@ -167,22 +179,38 @@ struct MetricCard: View {
 }
 
 #Preview {
-    VStack(spacing: 12) {
+    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
         MetricCard(
             icon: "moon.fill",
             title: "Sleep",
-            value: "8.7 hrs",
-            subtitle: "Deep 2h · REM 1.5h",
-            trend: .up,
-            sparkline: [6.8, 7.1, 6.5, 7.3, 7.0, 7.4, 8.7]
+            value: "6:09 hrs",
+            subtitle: "Moderate",
+            accentColor: .iris,
+            sparkline: [6.8, 7.1, 6.5, 7.3, 7.0, 7.4, 6.1]
         )
         MetricCard(
             icon: "heart.fill",
             title: "Resting HR",
-            value: "49 bpm",
-            subtitle: "7d avg 51 bpm",
-            trend: .down,
-            sparkline: [52, 51, 53, 52, 50, 51, 49]
+            value: "59 bpm",
+            subtitle: "7d avg 57 bpm",
+            trend: .flat,
+            accentColor: .ember,
+            sparkline: [57, 58, 57, 58, 59, 58, 59]
+        )
+        MetricCard(
+            icon: "scalemass.fill",
+            title: "Weight",
+            value: "84.2 kg",
+            subtitle: "18.6% body fat",
+            accentColor: .amber,
+            sparkline: [87, 86.5, 86, 85.5, 85, 84.5, 84.2]
+        )
+        MetricCard(
+            icon: "flame.fill",
+            title: "Tonnage",
+            value: "41.1 t",
+            subtitle: "19 sessions",
+            accentColor: .signal
         )
     }
     .padding()
