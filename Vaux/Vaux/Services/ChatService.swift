@@ -173,14 +173,15 @@ final class ChatService: Sendable {
             throw ChatServiceError.invalidURL(urlString)
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = RetryConfig.chatTimeout
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = RetryConfig.chatTimeout
 
         let payload: [String: Any] = ["message": message]
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let request = req
 
         // Retry only on transient URLError. HTTP 5xx is NOT retried because
         // the backend may have already persisted the user message + Claude
@@ -219,12 +220,13 @@ final class ChatService: Sendable {
             throw ChatServiceError.invalidURL(urlString)
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = RetryConfig.chatTimeout
-        request.httpBody = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = RetryConfig.chatTimeout
+        req.httpBody = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
+        let request = req
 
         let (data, response) = try await withRetry {
             try await URLSession.shared.data(for: request)

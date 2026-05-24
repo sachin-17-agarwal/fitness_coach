@@ -126,24 +126,10 @@ struct RecoveryRing: View {
         if let delta = hrvDelta {
             let sign = delta >= 0 ? "+" : ""
             let deltaColor: Color = delta >= 0 ? .mint : .ember
-            (
-                Text("HRV ")
-                    .font(.uiSmall)
-                    .foregroundStyle(Color.fg1)
-                +
-                Text("\(sign)\(delta)ms")
-                    .font(.numSM)
-                    .foregroundStyle(deltaColor)
-                +
-                Text(" vs baseline. ")
-                    .font(.uiSmall)
-                    .foregroundStyle(Color.fg1)
-                +
-                Text(trainingVerdict)
-                    .font(.uiSmall)
-                    .foregroundStyle(Color.fg1)
-            )
-            .lineSpacing(2)
+            Text("HRV \(Text("\(sign)\(delta)ms").font(.numSM).foregroundStyle(deltaColor)) vs baseline. \(trainingVerdict)")
+                .font(.uiSmall)
+                .foregroundStyle(Color.fg1)
+                .lineSpacing(2)
         } else if !statusText.isEmpty {
             Text(statusText)
                 .font(.uiSmall)

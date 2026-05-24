@@ -131,6 +131,7 @@ final class WorkoutService: Sendable {
 
     /// Ends a session: calculates tonnage, marks it `completed`, checks PRs,
     /// resets workout state, and returns a summary.
+    @discardableResult
     func endSession(id: UUID) async throws -> WorkoutSummary {
         let sets = try await fetchSets(sessionId: id)
         let now = ISO8601DateFormatter().string(from: Date())

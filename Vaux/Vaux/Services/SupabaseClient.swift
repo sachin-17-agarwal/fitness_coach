@@ -92,9 +92,10 @@ final class SupabaseClient: Sendable {
         if let limit { params["limit"] = String(limit) }
 
         let url = try buildURL(table: table, params: params)
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        applyHeaders(to: &request)
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        applyHeaders(to: &req)
+        let request = req
 
         // Reads are idempotent — retry freely on transient errors.
         let session = self.session
