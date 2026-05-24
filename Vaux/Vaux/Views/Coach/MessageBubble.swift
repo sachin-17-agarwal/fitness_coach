@@ -24,50 +24,69 @@ struct MessageBubble: View {
     }
 
     private var userBubble: some View {
-        VStack(alignment: .trailing, spacing: 4) {
+        VStack(alignment: .trailing, spacing: 5) {
             Text(message.content)
                 .font(.system(size: 15))
-                .foregroundStyle(.black)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                .foregroundStyle(Color.fg0)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Gradients.recovery)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.ink3)
                 )
-                .shadow(color: Color.mint.opacity(0.15), radius: 8, y: 4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.line2, lineWidth: 0.5)
+                )
 
             if let time = message.createdAt {
                 Text(formatTime(time))
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.textTertiary)
-                    .padding(.trailing, 4)
+                    .foregroundStyle(Color.fg3)
+                    .padding(.trailing, 6)
             }
         }
     }
 
     private var coachBubble: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             MarkdownText(content: message.content)
                 .font(.system(size: 15))
-                .foregroundStyle(Color.white.opacity(0.95))
-                .lineSpacing(3)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                .foregroundStyle(Color.fg0.opacity(0.92))
+                .lineSpacing(4)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.cardBackground)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color.ink2)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.iris.opacity(0.04), .clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.cardBorder, lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.iris.opacity(0.2), Color.line],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.5
+                        )
                 )
-                .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
 
             if let time = message.createdAt {
                 Text(formatTime(time))
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.textTertiary)
-                    .padding(.leading, 4)
+                    .foregroundStyle(Color.fg3)
+                    .padding(.leading, 6)
             }
         }
     }
@@ -81,9 +100,6 @@ struct MessageBubble: View {
 
 // MARK: - PR celebration bubble
 
-/// Centred celebration bubble shown when the backend reports a new
-/// personal-record set. Distinct from user/coach bubbles so it reads as
-/// a "moment" rather than a normal chat message.
 struct PRBubble: View {
     let pr: PRInfo
 

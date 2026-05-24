@@ -48,7 +48,7 @@ struct SessionCard: View {
         .contentShape(Rectangle())
         .onTapGesture {
             Haptic.light()
-            withAnimation(Motion.smooth) { isExpanded.toggle() }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isExpanded.toggle() }
             if isExpanded && sets.isEmpty {
                 Task { await loadSets() }
             }

@@ -57,10 +57,15 @@ struct MetricCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     iconTile
-                    Eyebrow(text: title)
-                    Spacer()
+                    Text(title.uppercased())
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .kerning(0.8)
+                        .foregroundStyle(Color.fg2)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 2)
                     if let trend {
                         trendChip(trend)
                     }
