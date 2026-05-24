@@ -22,13 +22,13 @@ struct FitnessCoachApp: App {
             TabView(selection: $selectedTab) {
                 DashboardView()
                     .tabItem {
-                        Label("Dashboard", systemImage: "heart.text.square")
+                        Label("Home", systemImage: "square.grid.2x2")
                     }
                     .tag(Tab.dashboard)
 
                 CoachChatView()
                     .tabItem {
-                        Label("Coach", systemImage: "message")
+                        Label("Coach", systemImage: "sparkles")
                     }
                     .tag(Tab.coach)
 
@@ -46,7 +46,7 @@ struct FitnessCoachApp: App {
 
                 SettingsView()
                     .tabItem {
-                        Label("Settings", systemImage: "gear")
+                        Label("Settings", systemImage: "slider.horizontal.3")
                     }
                     .tag(Tab.settings)
             }

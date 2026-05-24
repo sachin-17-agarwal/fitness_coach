@@ -1,9 +1,5 @@
-// SessionTypeCard.swift
-// FitnessCoach
-
 import SwiftUI
 
-/// Card showing today's session type with mesocycle info and a Start Workout button.
 struct SessionTypeCard: View {
     let mesocycle: MesocycleState
     let onStartWorkout: () -> Void
@@ -30,59 +26,70 @@ struct SessionTypeCard: View {
         }
     }
 
+    private var sessionSubtitle: String {
+        switch mesocycle.todayType {
+        case "Pull": return "BACK \u{2022} BICEPS"
+        case "Push": return "CHEST \u{2022} SHOULDERS \u{2022} TRICEPS"
+        case "Legs": return "QUADS \u{2022} HAMSTRINGS \u{2022} GLUTES"
+        case "Cardio+Abs": return "CONDITIONING \u{2022} CORE"
+        case "Yoga": return "MOBILITY \u{2022} STRETCHING"
+        default: return "TRAINING"
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Today's Session")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.textSecondary)
+                Text("TODAY'S SESSION")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(Color.textSecondary)
+                Spacer()
+                Text("WEEK \(mesocycle.week) \u{2022} DAY \(mesocycle.day)")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.5)
+                    .foregroundStyle(Color.textSecondary)
+            }
 
-                    HStack(spacing: 10) {
-                        Image(systemName: sessionIcon)
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(sessionColor)
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(sessionColor.opacity(0.12))
+                        .frame(width: 48, height: 48)
 
-                        Text(mesocycle.todayType)
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                    }
+                    Image(systemName: sessionIcon)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(sessionColor)
+                }
 
-                    Text("Week \(mesocycle.week) \u{2022} Day \(mesocycle.day)")
-                        .font(.system(size: 13, weight: .medium))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(mesocycle.todayType)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+
+                    Text(sessionSubtitle)
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(0.5)
                         .foregroundStyle(Color.textSecondary)
                 }
 
                 Spacer()
 
-                // Session type badge
-                ZStack {
-                    Circle()
-                        .fill(sessionColor.opacity(0.15))
-                        .frame(width: 56, height: 56)
-
-                    Image(systemName: sessionIcon)
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(sessionColor)
+                Button(action: onStartWorkout) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Start")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(sessionColor)
+                    .clipShape(Capsule())
                 }
+                .pressableButton()
             }
-
-            Button(action: onStartWorkout) {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 14, weight: .semibold))
-
-                    Text("Start Workout")
-                        .font(.system(size: 16, weight: .semibold))
-                }
-                .foregroundStyle(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(sessionColor)
-                .cornerRadius(12)
-                .shimmer()
-            }
-            .pressableButton()
         }
         .darkCard()
     }
@@ -90,7 +97,7 @@ struct SessionTypeCard: View {
 
 #Preview {
     SessionTypeCard(
-        mesocycle: MesocycleState(day: 2, week: 3)
+        mesocycle: MesocycleState(day: 5, week: 1)
     ) {
         print("Start workout")
     }
