@@ -57,13 +57,33 @@ struct RecoveryRing: View {
         }
         .padding(22)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.ink2)
+            ZStack {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.ink2)
+
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(
+                        RadialGradient(
+                            colors: [zoneColor.opacity(0.08), .clear],
+                            center: .topLeading,
+                            startRadius: 10,
+                            endRadius: 300
+                        )
+                    )
+            }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
+                .stroke(
+                    LinearGradient(
+                        colors: [zoneColor.opacity(0.4), zoneColor.opacity(0.08), Color.line],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
         )
+        .shadow(color: zoneColor.opacity(0.12), radius: 20, y: 8)
         .onAppear {
             withAnimation(.easeOut(duration: 1.0)) {
                 animatedProgress = Double(score) / 100.0
