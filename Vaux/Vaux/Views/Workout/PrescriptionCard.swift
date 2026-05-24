@@ -55,8 +55,10 @@ struct PrescriptionCard: View {
                 restPill(rest)
             }
 
-            // Current target indicator
-            currentTargetLabel
+            // Current target indicator — hidden once all prescribed sets are done
+            if !isExerciseFullyLogged {
+                currentTargetLabel
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
@@ -241,6 +243,13 @@ struct PrescriptionCard: View {
         case .backoff:
             return nonWarmupsDone > workingPrescribed + target.index
         }
+    }
+
+    private var isExerciseFullyLogged: Bool {
+        let warmupsDone = loggedSets.filter { $0.isWarmup == true }.count
+        let nonWarmupsDone = loggedSets.count - warmupsDone
+        let totalNonWarmup = prescription.workingSets.count + prescription.backoffSets.count
+        return warmupsDone >= prescription.warmupSets.count && nonWarmupsDone >= totalNonWarmup
     }
 
     // MARK: - Current target label
