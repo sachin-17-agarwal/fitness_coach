@@ -29,9 +29,10 @@ struct SessionCard: View {
 
                 statusBadge(session.status)
 
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                Image(systemName: "chevron.down")
                     .font(.caption)
                     .foregroundColor(.gray)
+                    .rotationEffect(.degrees(isExpanded ? -180 : 0))
             }
 
             if isExpanded && !sets.isEmpty {
@@ -67,7 +68,7 @@ struct SessionCard: View {
         .padding()
         .modifier(DarkCardStyle())
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 isExpanded.toggle()
             }
             if isExpanded && sets.isEmpty {

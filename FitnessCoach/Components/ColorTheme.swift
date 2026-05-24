@@ -25,6 +25,18 @@ struct DarkCardStyle: ViewModifier {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(Color.cardBorder, lineWidth: 1)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.04), Color.clear],
+                            startPoint: .top,
+                            endPoint: .center
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
     }
 }
 

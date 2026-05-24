@@ -15,20 +15,23 @@ struct SetLogInput: View {
                         .font(.caption)
                         .foregroundColor(.gray)
                     HStack(spacing: 0) {
-                        Button { weight = max(0, weight - 2.5) } label: {
+                        Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { weight = max(0, weight - 2.5) } } label: {
                             Image(systemName: "minus.circle.fill")
                                 .font(.title2)
                                 .foregroundColor(.gray)
                         }
+                        .pressableButton()
                         Text(weight.weightString)
                             .font(.title3.weight(.bold).monospacedDigit())
                             .foregroundColor(.white)
                             .frame(minWidth: 80)
-                        Button { weight += 2.5 } label: {
+                            .contentTransition(.numericText())
+                        Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { weight += 2.5 } } label: {
                             Image(systemName: "plus.circle.fill")
                                 .font(.title2)
                                 .foregroundColor(.gray)
                         }
+                        .pressableButton()
                     }
                 }
 
@@ -37,20 +40,23 @@ struct SetLogInput: View {
                         .font(.caption)
                         .foregroundColor(.gray)
                     HStack(spacing: 0) {
-                        Button { reps = max(1, reps - 1) } label: {
+                        Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { reps = max(1, reps - 1) } } label: {
                             Image(systemName: "minus.circle.fill")
                                 .font(.title2)
                                 .foregroundColor(.gray)
                         }
+                        .pressableButton()
                         Text("\(reps)")
                             .font(.title3.weight(.bold).monospacedDigit())
                             .foregroundColor(.white)
                             .frame(minWidth: 40)
-                        Button { reps += 1 } label: {
+                            .contentTransition(.numericText())
+                        Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { reps += 1 } } label: {
                             Image(systemName: "plus.circle.fill")
                                 .font(.title2)
                                 .foregroundColor(.gray)
                         }
+                        .pressableButton()
                     }
                 }
             }
@@ -72,6 +78,7 @@ struct SetLogInput: View {
             .foregroundColor(.white)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .disabled(isLoading)
+            .pressableButton()
         }
         .padding()
         .modifier(DarkCardStyle())

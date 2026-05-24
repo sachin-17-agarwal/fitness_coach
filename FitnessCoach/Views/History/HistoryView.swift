@@ -38,13 +38,15 @@ struct HistoryView: View {
                     .foregroundColor(.gray)
                     .padding(.top, 40)
             }
-            ForEach(viewModel.sessions) { session in
+            ForEach(Array(viewModel.sessions.enumerated()), id: \.element.id) { index, session in
                 SessionCard(session: session)
+                    .staggeredAppearance(index: index)
             }
 
             if !viewModel.sessions.isEmpty {
                 ProgressionChart(sessions: viewModel.sessions)
                     .padding(.top, 8)
+                    .staggeredAppearance(index: viewModel.sessions.count)
             }
         }
         .padding(.horizontal)

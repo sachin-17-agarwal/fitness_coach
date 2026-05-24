@@ -7,6 +7,7 @@ struct RestTimer: View {
     let onSkip: () -> Void
 
     @State private var timer: Timer?
+    @State private var urgentPulse = false
 
     var body: some View {
         ZStack {
@@ -25,11 +26,17 @@ struct RestTimer: View {
                         .frame(width: 180, height: 180)
                         .rotationEffect(.degrees(-90))
                         .animation(.linear(duration: 1), value: remainingSeconds)
+                        .shadow(
+                            color: remainingSeconds <= 10 ? timerColor.opacity(urgentPulse ? 0.6 : 0.2) : .clear,
+                            radius: urgentPulse ? 14 : 6
+                        )
 
                     VStack(spacing: 4) {
                         Text(timeString)
                             .font(.system(size: 48, weight: .bold, design: .monospaced))
                             .foregroundColor(.white)
+                            .scaleEffect(remainingSeconds <= 5 && urgentPulse ? 1.05 : 1.0)
+                            .contentTransition(.numericText())
                         Text("REST")
                             .font(.caption.weight(.semibold))
                             .foregroundColor(.gray)
@@ -45,9 +52,15 @@ struct RestTimer: View {
                         .background(Color.cardBackground)
                         .clipShape(Capsule())
                 }
+                .pressableButton()
             }
         }
-        .onAppear { startTimer() }
+        .onAppear {
+            startTimer()
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                urgentPulse = true
+            }
+        }
         .onDisappear { timer?.invalidate() }
     }
 

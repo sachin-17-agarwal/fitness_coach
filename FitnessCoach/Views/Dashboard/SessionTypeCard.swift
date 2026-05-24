@@ -80,7 +80,9 @@ struct SessionTypeCard: View {
                 .padding(.vertical, 14)
                 .background(sessionColor)
                 .cornerRadius(12)
+                .shimmer()
             }
+            .pressableButton()
         }
         .darkCard()
     }

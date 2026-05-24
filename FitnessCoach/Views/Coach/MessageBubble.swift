@@ -14,6 +14,13 @@ struct MessageBubble: View {
                     .padding(12)
                     .background(message.isUser ? Color.recoveryGreen.opacity(0.8) : Color.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .shadow(
+                        color: message.isUser
+                            ? Color.recoveryGreen.opacity(0.2)
+                            : Color.black.opacity(0.3),
+                        radius: message.isUser ? 8 : 6,
+                        y: message.isUser ? 4 : 3
+                    )
 
                 if let time = message.createdAt {
                     Text(formatTime(time))

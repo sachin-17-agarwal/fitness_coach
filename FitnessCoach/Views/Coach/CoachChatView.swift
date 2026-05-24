@@ -12,25 +12,28 @@ struct CoachChatView: View {
                             ForEach(Array(viewModel.messages.enumerated()), id: \.offset) { index, msg in
                                 MessageBubble(message: msg)
                                     .id(index)
+                                    .transition(.asymmetric(
+                                        insertion: .move(edge: msg.isUser ? .trailing : .leading)
+                                            .combined(with: .opacity)
+                                            .combined(with: .scale(scale: 0.95)),
+                                        removal: .opacity
+                                    ))
                             }
 
                             if viewModel.isLoading {
                                 HStack {
-                                    ProgressView()
-                                        .tint(.gray)
-                                    Text("Coach is thinking...")
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
+                                    TypingIndicator()
                                     Spacer()
                                 }
                                 .padding(.horizontal)
                                 .id("loading")
+                                .transition(.scale.combined(with: .opacity))
                             }
                         }
                         .padding()
                     }
                     .onChange(of: viewModel.messages.count) {
-                        withAnimation {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                             proxy.scrollTo(viewModel.messages.count - 1, anchor: .bottom)
                         }
                     }
