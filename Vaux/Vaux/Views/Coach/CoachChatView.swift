@@ -189,7 +189,7 @@ struct CoachChatView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(inputFocused ? Color.recoveryGreen.opacity(0.5) : Color.cardBorder, lineWidth: 0.5)
+                    .stroke(inputFocused ? Color.iris.opacity(0.5) : Color.cardBorder, lineWidth: 0.5)
             )
 
             sendButton
