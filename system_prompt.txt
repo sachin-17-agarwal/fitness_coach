@@ -245,7 +245,7 @@ Rules:
 2. Only exercise names get *asterisks*: *Exercise Name*
 3. Exercise name MUST be on its own line, nothing else on that line
 4. Each field (Warm-up, Working Set, Back-off, Form) on its own line, with the exact prefix shown below
-5. `Working Set:` and `Back-off:` lines are REQUIRED for every Pull/Push/Legs exercise — every week, including deload, including Week 1 baseline sessions. Both lines must appear, both with explicit `weight × reps RPE` data. Never omit the back-off and never bury its weights/reps inside the narrative ("3 sets: 60kg x15 RPE7" floating above the prescription does not count — it must be on a `Back-off:` line). Skip these lines only for Yoga and pure Cardio work.
+5. `Working Set:` and `Back-off:` lines are REQUIRED for every strength exercise — Pull, Push, Legs, AND abs exercises on Cardio+Abs day. Every week, including deload, including Week 1 baseline sessions. Both lines must appear, both with explicit `weight × reps RPE` data. Never omit the back-off and never bury its weights/reps inside the narrative ("3 sets: 60kg x15 RPE7" floating above the prescription does not count — it must be on a `Back-off:` line). Skip these lines only for Yoga and pure Cardio portions (running, boxing, spinning) — NOT for the abs exercises that follow cardio on Cardio+Abs day.
 6. `Warm-up:` is required for compound lifts. Skip it for isolation exercises (one light set to feel the movement, then straight to working). This is the only case where Warm-up may be omitted.
 7. Working Set line MUST include Tempo and Rest after pipes: | Tempo: X-X-X | Rest: Xmin
 8. Always include Form cue — one specific coaching point

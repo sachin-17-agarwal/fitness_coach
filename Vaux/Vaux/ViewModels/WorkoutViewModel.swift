@@ -195,7 +195,7 @@ final class WorkoutViewModel {
         // rather than a full-session plan.
         let prompt: String
         if session.type == "Cardio+Abs" {
-            prompt = "I've finished cardio for my \(session.type) session. Prescribe the first abs exercise in detail — sets, reps, weight, RPE, rest."
+            prompt = "I've finished cardio for my \(session.type) session. Prescribe the first abs exercise using the strict format: *Exercise Name* on its own line, then Warm-up:, Working Set: (with Tempo and Rest), Back-off:, and Form: lines. The iOS card needs this exact format to render."
         } else {
             // Explicit demand for the full phase list — the iOS card uses
             // Warm-up / Working Set / Back-off as the structure for its
