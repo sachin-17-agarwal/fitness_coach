@@ -27,16 +27,12 @@ struct MessageBubble: View {
         VStack(alignment: .trailing, spacing: 5) {
             Text(message.content)
                 .font(.system(size: 15))
-                .foregroundStyle(Color.fg0)
+                .foregroundStyle(Color.signalInk)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.ink3)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.line2, lineWidth: 0.5)
+                        .fill(Color.signal)
                 )
 
             if let time = message.createdAt {
@@ -57,29 +53,12 @@ struct MessageBubble: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(Color.ink2)
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.iris.opacity(0.04), .clear],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    }
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.ink3)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [Color.iris.opacity(0.2), Color.line],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 0.5
-                        )
+                        .stroke(Color.line, lineWidth: 0.5)
                 )
 
             if let time = message.createdAt {

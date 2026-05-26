@@ -133,15 +133,15 @@ struct HistoryView: View {
     private func miniStat(value: String, label: String, color: Color, icon: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack {
-                Circle()
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(color.opacity(0.14))
-                    .frame(width: 26, height: 26)
+                    .frame(width: 28, height: 28)
                 Image(systemName: icon)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(color)
             }
             Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
+                .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
                 .foregroundStyle(.white)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
@@ -149,9 +149,27 @@ struct HistoryView: View {
                 .font(.system(size: 9, weight: .bold, design: .rounded))
                 .kerning(0.8)
                 .foregroundStyle(Color.textTertiary)
+
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(
+                    LinearGradient(
+                        colors: [color, color.opacity(0.2)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .darkCard(padding: 12, cornerRadius: 14)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.ink2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.line, lineWidth: 1)
+        )
     }
 
     private var emptyTraining: some View {
