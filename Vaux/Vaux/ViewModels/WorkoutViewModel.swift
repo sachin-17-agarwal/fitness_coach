@@ -21,9 +21,20 @@ final class WorkoutViewModel {
     var currentPrescription: ExercisePrescription?
     var allPrescriptions: [ExercisePrescription] = []
 
-    /// Everything in `allPrescriptions` after the one we're currently working on.
+    /// Everything in `allPrescriptions` after the current exercise that
+    /// the athlete hasn't already worked through. Without this filter,
+    /// exercises that were fully logged earlier in the session (Cable Row,
+    /// Lat Pulldown, etc.) kept sitting in "UP NEXT" even though they
+    /// were done — confusing when the plan list had already been completed.
     var upcomingPrescriptions: [ExercisePrescription] {
-        Array(allPrescriptions.dropFirst())
+        let completedNames = Set(
+            loggedSets
+                .filter { $0.isWarmup != true }
+                .map { PrescriptionParser.normalizeExerciseName($0.exercise) }
+        )
+        return allPrescriptions
+            .dropFirst()
+            .filter { !completedNames.contains($0.exerciseName) }
     }
     var totalTonnage: Double = 0
     var setCount = 0
