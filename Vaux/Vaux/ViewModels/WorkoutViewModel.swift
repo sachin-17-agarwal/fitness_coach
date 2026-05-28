@@ -817,7 +817,17 @@ final class WorkoutViewModel {
                 // that single entry would wipe the full plan that was loaded
                 // at workout start — destroying the "up next" list and
                 // preventing `nextExerciseMentioned` from ever matching.
-                currentPrescription = prescriptions.first
+                //
+                // On a *fresh resume* (no current exercise yet) the coach
+                // re-sends the whole plan from exercise 1, but the athlete
+                // may have been three exercises deep. Pick the exercise they
+                // were actually mid-way through — derived from the session
+                // log — instead of blindly snapping to the first one.
+                if oldExercise == nil, let resumed = resumeExercise(among: prescriptions) {
+                    currentPrescription = resumed
+                } else {
+                    currentPrescription = prescriptions.first
+                }
                 mergeIntoAllPrescriptions(prescriptions)
             } else {
                 // Coach tried to skip ahead — keep the current prescription
@@ -908,6 +918,33 @@ final class WorkoutViewModel {
     /// exercise, the matching entry is updated in place (or inserted at
     /// the front if it's genuinely new), preserving the rest of the plan
     /// so transitions and "up next" keep working.
+    /// Picks the exercise the athlete was actually working on when a session
+    /// is resumed from the log, rather than the first exercise in the
+    /// coach's re-sent plan. The exercise of the most recently logged set is
+    /// "where they were"; if that exercise is already fully logged, resume
+    /// on the next one in the plan. Returns nil when nothing is logged yet
+    /// or the logged exercise isn't in the plan (caller falls back to first).
+    private func resumeExercise(among prescriptions: [ExercisePrescription]) -> ExercisePrescription? {
+        guard !loggedSets.isEmpty else { return nil }
+        let sorted = loggedSets.sorted { ($0.loggedAt ?? "") < ($1.loggedAt ?? "") }
+        guard let lastName = sorted.last.map({ PrescriptionParser.normalizeExerciseName($0.exercise) }),
+              let idx = prescriptions.firstIndex(where: { $0.exerciseName == lastName })
+        else { return nil }
+
+        let rx = prescriptions[idx]
+        let exSets = loggedSets.filter {
+            PrescriptionParser.normalizeExerciseName($0.exercise) == lastName
+        }
+        let warmupsDone = exSets.filter { $0.isWarmup == true }.count
+        let nonWarmupsDone = exSets.count - warmupsDone
+        let complete = warmupsDone >= rx.warmupSets.count
+            && nonWarmupsDone >= (rx.workingSets.count + rx.backoffSets.count)
+        if complete, idx + 1 < prescriptions.count {
+            return prescriptions[idx + 1]
+        }
+        return rx
+    }
+
     private func mergeIntoAllPrescriptions(_ incoming: [ExercisePrescription]) {
         guard !incoming.isEmpty else { return }
         // Heuristic: if the coach sent 3+ prescriptions, treat it as a full
