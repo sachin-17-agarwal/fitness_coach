@@ -468,16 +468,17 @@ final class WorkoutViewModel {
         isCoachThinking = true
         // Capture skip intent against the phase the athlete is looking at
         // *now* — applyAIResponse may re-sync the phase from the log below.
-        let wantsWarmupSkip = isSkipWarmupRequest(text)
+        let athleteAskedToSkip = athleteRequestedWarmupSkip(text)
 
         do {
             let response = try await chatService.sendMessage(text)
             applyAIResponse(response)
-            // The coach can agree to "skip my last warm-up" in prose but it
-            // can't move the iOS phase tracker — which otherwise kept showing
-            // "NEXT: WARM-UP 3 OF 3" after the skip. Honour the athlete's
-            // request locally by dropping the un-done warm-ups.
-            if wantsWarmupSkip {
+            // Only skip when BOTH the athlete clearly asked to skip the
+            // warm-up AND the coach agreed. The coach can't move the iOS
+            // phase tracker on its own, but we also won't drop a set on a
+            // loose "skip" mention or a question the coach declined — the
+            // double-gate is what keeps this from skipping randomly.
+            if athleteAskedToSkip && coachAgreedToWarmupSkip(response.response) {
                 skipRemainingWarmups()
             }
         } catch {
@@ -486,21 +487,66 @@ final class WorkoutViewModel {
         isCoachThinking = false
     }
 
-    /// Heuristic: did the athlete ask to skip the warm-up while they're in
-    /// the warm-up phase? Deliberately conservative — only fires while a
-    /// warm-up is the active phase so a stray "skip" in another context
-    /// can't drop sets.
-    private func isSkipWarmupRequest(_ text: String) -> Bool {
+    /// True only when the athlete gave an explicit, affirmative instruction
+    /// to skip the warm-up while the warm-up phase is active. Questions
+    /// ("should I skip the warm-up?") and negations ("don't skip the
+    /// warm-up", "I never skip warm-ups") are rejected so a casual mention
+    /// of the word never drops a set.
+    private func athleteRequestedWarmupSkip(_ text: String) -> Bool {
         guard currentPhase == .warmup else { return false }
         let lower = text.lowercased()
-        if lower.contains("skip") {
-            return true
-        }
-        if (lower.contains("straight to") || lower.contains("go to") || lower.contains("jump to"))
-            && (lower.contains("work") || lower.contains("set")) {
-            return true
-        }
-        return false
+
+        // Questions are requests for advice, not commands.
+        if lower.contains("?") { return false }
+
+        // Negations / hypotheticals override any skip phrase.
+        let blockers = [
+            "don't skip", "dont skip", "do not skip", "shouldn't skip",
+            "should not skip", "can't skip", "cannot skip", "won't skip",
+            "would not skip", "wouldn't skip", "not skip", "never skip",
+            "without skipping", "rather not skip", "no need to skip",
+        ]
+        if blockers.contains(where: lower.contains) { return false }
+
+        // Explicit skip directives aimed at the warm-up or at jumping to
+        // the working set. Each phrase names the thing being skipped so a
+        // bare "skip" can't match.
+        let directives = [
+            "skip the warm", "skip warm", "skip my warm", "skip this warm",
+            "skip last warm", "skip the last warm", "skip remaining warm",
+            "skip the rest of the warm", "skip rest of the warm",
+            "skip the final warm", "skip final warm",
+            "skip the third warm", "skip the 3rd warm", "skip third warm",
+            "skip 3rd warm", "skip the second warm", "skip 2nd warm",
+            "skip to working", "skip to the working", "skip to work",
+            "skip straight to work", "straight to the working set",
+            "no more warm", "done warming up", "done with warm",
+            "finished warming up",
+        ]
+        return directives.contains(where: lower.contains)
+    }
+
+    /// True when the coach's reply affirms the skip. Refusals ("keep the
+    /// warm-up", "finish your warm-up") veto it, so a request the coach
+    /// declined never advances the tracker.
+    private func coachAgreedToWarmupSkip(_ response: String) -> Bool {
+        let lower = response.lowercased()
+        let refusals = [
+            "don't skip", "do not skip", "keep the warm", "keep your warm",
+            "finish your warm", "finish the warm", "do the warm",
+            "one more warm", "stick with the warm", "complete your warm",
+            "still need the warm", "need that warm", "needs the warm",
+            "wouldn't skip", "would not skip", "let's not skip",
+            "i'd keep", "recommend the warm",
+        ]
+        if refusals.contains(where: lower.contains) { return false }
+
+        let affirmations = [
+            "skip", "straight to", "straight into", "load up",
+            "go ahead", "jump to", "onto the working", "to the working set",
+            "into the working set", "into your working",
+        ]
+        return affirmations.contains(where: lower.contains)
     }
 
     /// Drops any not-yet-logged warm-up sets from the current prescription
