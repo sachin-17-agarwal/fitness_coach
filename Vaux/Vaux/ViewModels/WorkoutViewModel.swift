@@ -466,14 +466,62 @@ final class WorkoutViewModel {
         guard !text.isEmpty else { return }
         inlineChatText = ""
         isCoachThinking = true
+        // Capture skip intent against the phase the athlete is looking at
+        // *now* — applyAIResponse may re-sync the phase from the log below.
+        let wantsWarmupSkip = isSkipWarmupRequest(text)
 
         do {
             let response = try await chatService.sendMessage(text)
             applyAIResponse(response)
+            // The coach can agree to "skip my last warm-up" in prose but it
+            // can't move the iOS phase tracker — which otherwise kept showing
+            // "NEXT: WARM-UP 3 OF 3" after the skip. Honour the athlete's
+            // request locally by dropping the un-done warm-ups.
+            if wantsWarmupSkip {
+                skipRemainingWarmups()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
         isCoachThinking = false
+    }
+
+    /// Heuristic: did the athlete ask to skip the warm-up while they're in
+    /// the warm-up phase? Deliberately conservative — only fires while a
+    /// warm-up is the active phase so a stray "skip" in another context
+    /// can't drop sets.
+    private func isSkipWarmupRequest(_ text: String) -> Bool {
+        guard currentPhase == .warmup else { return false }
+        let lower = text.lowercased()
+        if lower.contains("skip") {
+            return true
+        }
+        if (lower.contains("straight to") || lower.contains("go to") || lower.contains("jump to"))
+            && (lower.contains("work") || lower.contains("set")) {
+            return true
+        }
+        return false
+    }
+
+    /// Drops any not-yet-logged warm-up sets from the current prescription
+    /// so the phase advances to the working set. Trimming (rather than just
+    /// bumping the phase index) also removes the skipped chip from the card
+    /// and keeps `syncPhaseToPrescription` stable on subsequent calls — it
+    /// re-derives the phase from logged-vs-prescribed counts, so a skipped
+    /// set that stayed in the prescription would otherwise snap the phase
+    /// back to the warm-up.
+    private func skipRemainingWarmups() {
+        guard currentPhase == .warmup, var rx = currentPrescription else { return }
+        let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
+        guard warmupsDone < rx.warmupSets.count else { return }
+        rx.warmupSets = Array(rx.warmupSets.prefix(warmupsDone))
+        currentPrescription = rx
+        if !allPrescriptions.isEmpty,
+           allPrescriptions[0].exerciseName == rx.exerciseName {
+            allPrescriptions[0] = rx
+        }
+        syncPhaseToPrescription()
+        prefillFromCurrentTarget()
     }
 
     func endWorkout() async {
