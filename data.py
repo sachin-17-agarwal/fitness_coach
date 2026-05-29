@@ -76,6 +76,17 @@ def _pick_recovery_row(rows: list[dict]) -> dict | None:
     return rows[0] if rows else None
 
 
+def _data_age_days(row_date) -> int | None:
+    """How many days old the recovery row is relative to today (local)."""
+    if not row_date:
+        return None
+    try:
+        d = datetime.strptime(str(row_date), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    return (now_local().date() - d).days
+
+
 def get_athlete_context() -> dict:
     """
     Returns the most recent recovery data up to today's local date.
@@ -134,8 +145,13 @@ def get_athlete_context() -> dict:
         sleep_hours = row.get("sleep_hours")
         sleep_quality = _derive_sleep_quality(sleep_hours)
 
+        def _v(field):
+            value = row.get(field)
+            return value if value is not None else "N/A"
+
         return {
             "date": row.get("date", today),
+            "data_age_days": _data_age_days(row.get("date")),
             "sleep_hours": sleep_hours if sleep_hours is not None else "N/A",
             "sleep_quality": sleep_quality,
             "hrv": row.get("hrv", "N/A"),
@@ -143,6 +159,14 @@ def get_athlete_context() -> dict:
             "hrv_status": row.get("hrv_status", "Unknown"),
             "resting_hr": row.get("resting_hr", "N/A"),
             "resting_hr_baseline": rhr_baseline,
+            "heart_rate": _v("heart_rate"),
+            "steps": _v("steps"),
+            "active_energy_kcal": _v("active_energy_kcal"),
+            "exercise_minutes": _v("exercise_minutes"),
+            "respiratory_rate": _v("respiratory_rate"),
+            "weight_kg": _v("weight_kg"),
+            "body_fat_pct": _v("body_fat_pct"),
+            "vo2_max": _v("vo2_max"),
         }
     except Exception:
         log.exception("Supabase data fetch failed; using mock data")
@@ -153,6 +177,7 @@ def get_mock_data() -> dict:
     """Mock data for testing before Apple Health is connected."""
     return {
         "date": now_local().strftime("%Y-%m-%d"),
+        "data_age_days": 0,
         "sleep_hours": 6.5,
         "sleep_quality": "Average",
         "hrv": 58,
@@ -160,4 +185,12 @@ def get_mock_data() -> dict:
         "hrv_status": "Suppressed",
         "resting_hr": 54,
         "resting_hr_baseline": 52,
+        "heart_rate": 68,
+        "steps": 8200,
+        "active_energy_kcal": 540,
+        "exercise_minutes": 42,
+        "respiratory_rate": 14.5,
+        "weight_kg": 82,
+        "body_fat_pct": 18.5,
+        "vo2_max": 44,
     }
