@@ -144,7 +144,7 @@ def get_apple_workouts(days: int = 30) -> str:
         return f"Could not load Apple Watch workouts: {e}"
 
 
-def get_recovery_history(days: int = 14) -> str:
+def get_recovery_history(days: int = 30) -> str:
     try:
         supabase = get_supabase()
         if not supabase:
@@ -188,7 +188,7 @@ def build_context_block(memory: dict, athlete_name: str,
         futures = {
             executor.submit(get_athlete_context): "data",
             executor.submit(get_full_session_history, 30): "session_history",
-            executor.submit(get_recovery_history, 14): "recovery_history",
+            executor.submit(get_recovery_history, 30): "recovery_history",
             executor.submit(get_substitution_history): "substitution_history",
             executor.submit(get_apple_workouts, 30): "apple_workouts",
             executor.submit(get_workout_state): "workout_state",
@@ -202,6 +202,17 @@ def build_context_block(memory: dict, athlete_name: str,
                 results[key] = None
 
     data = results.get("data") or {}
+
+    age = data.get("data_age_days")
+    if age is None:
+        freshness = "⚠️ Recovery data freshness unknown — verify Apple Health has synced before trusting these numbers."
+    elif age <= 0:
+        freshness = "Fresh (synced today)."
+    elif age == 1:
+        freshness = "⚠️ STALE: this is yesterday's data — today's Apple Health metrics have not synced yet. Note this to the athlete and don't over-index on it."
+    else:
+        freshness = f"⚠️ STALE: recovery data is {age} days old — Apple Health has not synced recently. Flag this and program conservatively."
+
     session_history = results.get("session_history") or "No sessions found."
     recovery_history = results.get("recovery_history") or "No recovery data."
     substitution_history = results.get("substitution_history") or ""
@@ -218,11 +229,13 @@ TODAY'S SESSION TYPE: {today_session}
 NEXT SESSION: {next_session}
 
 TODAY'S RECOVERY:
-Recovery data date: {data.get('date', 'Unknown')}
+Recovery data date: {data.get('date', 'Unknown')} | Freshness: {freshness}
 Sleep: {data.get('sleep_hours', 'N/A')} hrs | HRV: {data.get('hrv', 'N/A')} (7-day avg: {data.get('hrv_avg', 'N/A')}) | Status: {data.get('hrv_status', 'Unknown')}
 Resting HR: {data.get('resting_hr', 'N/A')} bpm (7-day avg: {data.get('resting_hr_baseline', 'N/A')})
+Avg HR: {data.get('heart_rate', 'N/A')} bpm | Respiratory rate: {data.get('respiratory_rate', 'N/A')} | Steps: {data.get('steps', 'N/A')} | Active energy: {data.get('active_energy_kcal', 'N/A')} kcal | Exercise minutes: {data.get('exercise_minutes', 'N/A')}
+Body weight: {data.get('weight_kg', 'N/A')}kg | Body fat: {data.get('body_fat_pct', 'N/A')}% | VO2 max: {data.get('vo2_max', 'N/A')}
 
-LAST 14 DAYS RECOVERY:
+LAST 30 DAYS RECOVERY:
 {recovery_history}
 
 LAST 30 DAYS SESSIONS:
