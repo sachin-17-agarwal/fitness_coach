@@ -466,14 +466,108 @@ final class WorkoutViewModel {
         guard !text.isEmpty else { return }
         inlineChatText = ""
         isCoachThinking = true
+        // Capture skip intent against the phase the athlete is looking at
+        // *now* — applyAIResponse may re-sync the phase from the log below.
+        let athleteAskedToSkip = athleteRequestedWarmupSkip(text)
 
         do {
             let response = try await chatService.sendMessage(text)
             applyAIResponse(response)
+            // Only skip when BOTH the athlete clearly asked to skip the
+            // warm-up AND the coach agreed. The coach can't move the iOS
+            // phase tracker on its own, but we also won't drop a set on a
+            // loose "skip" mention or a question the coach declined — the
+            // double-gate is what keeps this from skipping randomly.
+            if athleteAskedToSkip && coachAgreedToWarmupSkip(response.response) {
+                skipRemainingWarmups()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
         isCoachThinking = false
+    }
+
+    /// True only when the athlete gave an explicit, affirmative instruction
+    /// to skip the warm-up while the warm-up phase is active. Questions
+    /// ("should I skip the warm-up?") and negations ("don't skip the
+    /// warm-up", "I never skip warm-ups") are rejected so a casual mention
+    /// of the word never drops a set.
+    private func athleteRequestedWarmupSkip(_ text: String) -> Bool {
+        guard currentPhase == .warmup else { return false }
+        let lower = text.lowercased()
+
+        // Questions are requests for advice, not commands.
+        if lower.contains("?") { return false }
+
+        // Negations / hypotheticals override any skip phrase.
+        let blockers = [
+            "don't skip", "dont skip", "do not skip", "shouldn't skip",
+            "should not skip", "can't skip", "cannot skip", "won't skip",
+            "would not skip", "wouldn't skip", "not skip", "never skip",
+            "without skipping", "rather not skip", "no need to skip",
+        ]
+        if blockers.contains(where: lower.contains) { return false }
+
+        // Explicit skip directives aimed at the warm-up or at jumping to
+        // the working set. Each phrase names the thing being skipped so a
+        // bare "skip" can't match.
+        let directives = [
+            "skip the warm", "skip warm", "skip my warm", "skip this warm",
+            "skip last warm", "skip the last warm", "skip remaining warm",
+            "skip the rest of the warm", "skip rest of the warm",
+            "skip the final warm", "skip final warm",
+            "skip the third warm", "skip the 3rd warm", "skip third warm",
+            "skip 3rd warm", "skip the second warm", "skip 2nd warm",
+            "skip to working", "skip to the working", "skip to work",
+            "skip straight to work", "straight to the working set",
+            "no more warm", "done warming up", "done with warm",
+            "finished warming up",
+        ]
+        return directives.contains(where: lower.contains)
+    }
+
+    /// True when the coach's reply affirms the skip. Refusals ("keep the
+    /// warm-up", "finish your warm-up") veto it, so a request the coach
+    /// declined never advances the tracker.
+    private func coachAgreedToWarmupSkip(_ response: String) -> Bool {
+        let lower = response.lowercased()
+        let refusals = [
+            "don't skip", "do not skip", "keep the warm", "keep your warm",
+            "finish your warm", "finish the warm", "do the warm",
+            "one more warm", "stick with the warm", "complete your warm",
+            "still need the warm", "need that warm", "needs the warm",
+            "wouldn't skip", "would not skip", "let's not skip",
+            "i'd keep", "recommend the warm",
+        ]
+        if refusals.contains(where: lower.contains) { return false }
+
+        let affirmations = [
+            "skip", "straight to", "straight into", "load up",
+            "go ahead", "jump to", "onto the working", "to the working set",
+            "into the working set", "into your working",
+        ]
+        return affirmations.contains(where: lower.contains)
+    }
+
+    /// Drops any not-yet-logged warm-up sets from the current prescription
+    /// so the phase advances to the working set. Trimming (rather than just
+    /// bumping the phase index) also removes the skipped chip from the card
+    /// and keeps `syncPhaseToPrescription` stable on subsequent calls — it
+    /// re-derives the phase from logged-vs-prescribed counts, so a skipped
+    /// set that stayed in the prescription would otherwise snap the phase
+    /// back to the warm-up.
+    private func skipRemainingWarmups() {
+        guard currentPhase == .warmup, var rx = currentPrescription else { return }
+        let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
+        guard warmupsDone < rx.warmupSets.count else { return }
+        rx.warmupSets = Array(rx.warmupSets.prefix(warmupsDone))
+        currentPrescription = rx
+        if !allPrescriptions.isEmpty,
+           allPrescriptions[0].exerciseName == rx.exerciseName {
+            allPrescriptions[0] = rx
+        }
+        syncPhaseToPrescription()
+        prefillFromCurrentTarget()
     }
 
     func endWorkout() async {
@@ -723,7 +817,17 @@ final class WorkoutViewModel {
                 // that single entry would wipe the full plan that was loaded
                 // at workout start — destroying the "up next" list and
                 // preventing `nextExerciseMentioned` from ever matching.
-                currentPrescription = prescriptions.first
+                //
+                // On a *fresh resume* (no current exercise yet) the coach
+                // re-sends the whole plan from exercise 1, but the athlete
+                // may have been three exercises deep. Pick the exercise they
+                // were actually mid-way through — derived from the session
+                // log — instead of blindly snapping to the first one.
+                if oldExercise == nil, let resumed = resumeExercise(among: prescriptions) {
+                    currentPrescription = resumed
+                } else {
+                    currentPrescription = prescriptions.first
+                }
                 mergeIntoAllPrescriptions(prescriptions)
             } else {
                 // Coach tried to skip ahead — keep the current prescription
@@ -814,6 +918,33 @@ final class WorkoutViewModel {
     /// exercise, the matching entry is updated in place (or inserted at
     /// the front if it's genuinely new), preserving the rest of the plan
     /// so transitions and "up next" keep working.
+    /// Picks the exercise the athlete was actually working on when a session
+    /// is resumed from the log, rather than the first exercise in the
+    /// coach's re-sent plan. The exercise of the most recently logged set is
+    /// "where they were"; if that exercise is already fully logged, resume
+    /// on the next one in the plan. Returns nil when nothing is logged yet
+    /// or the logged exercise isn't in the plan (caller falls back to first).
+    private func resumeExercise(among prescriptions: [ExercisePrescription]) -> ExercisePrescription? {
+        guard !loggedSets.isEmpty else { return nil }
+        let sorted = loggedSets.sorted { ($0.loggedAt ?? "") < ($1.loggedAt ?? "") }
+        guard let lastName = sorted.last.map({ PrescriptionParser.normalizeExerciseName($0.exercise) }),
+              let idx = prescriptions.firstIndex(where: { $0.exerciseName == lastName })
+        else { return nil }
+
+        let rx = prescriptions[idx]
+        let exSets = loggedSets.filter {
+            PrescriptionParser.normalizeExerciseName($0.exercise) == lastName
+        }
+        let warmupsDone = exSets.filter { $0.isWarmup == true }.count
+        let nonWarmupsDone = exSets.count - warmupsDone
+        let complete = warmupsDone >= rx.warmupSets.count
+            && nonWarmupsDone >= (rx.workingSets.count + rx.backoffSets.count)
+        if complete, idx + 1 < prescriptions.count {
+            return prescriptions[idx + 1]
+        }
+        return rx
+    }
+
     private func mergeIntoAllPrescriptions(_ incoming: [ExercisePrescription]) {
         guard !incoming.isEmpty else { return }
         // Heuristic: if the coach sent 3+ prescriptions, treat it as a full
