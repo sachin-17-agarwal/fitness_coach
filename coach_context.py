@@ -174,10 +174,48 @@ def get_recovery_history(days: int = 30) -> str:
         return f"Could not load recovery data: {e}"
 
 
+def _recovery_from_override(payload: dict) -> dict:
+    """Shape a client-supplied recovery snapshot into today's recovery dict.
+
+    The iOS app already holds the authoritative recovery snapshot it renders on
+    the dashboard — same HealthKit read, same definition of "today", same row.
+    When it sends that snapshot alongside the chat request we use it verbatim
+    instead of re-deriving from the database, so the coach reasons over exactly
+    the numbers the athlete is looking at. This removes the entire class of
+    dashboard/coach disagreements caused by timezone-split rows and the
+    fall-back row-picking in get_athlete_context().
+    """
+    def _g(key):
+        value = payload.get(key)
+        return value if value is not None else "N/A"
+
+    return {
+        "date": payload.get("date") or now_local().strftime("%Y-%m-%d"),
+        "data_age_days": 0,  # a live client snapshot is current by definition
+        "source": "device",
+        "sleep_hours": _g("sleep_hours"),
+        "hrv": _g("hrv"),
+        "hrv_avg": _g("hrv_avg"),
+        "hrv_status": payload.get("hrv_status") or "Unknown",
+        "resting_hr": _g("resting_hr"),
+        "resting_hr_baseline": _g("resting_hr_baseline"),
+        "heart_rate": _g("heart_rate"),
+        "steps": _g("steps"),
+        "active_energy_kcal": _g("active_energy_kcal"),
+        "exercise_minutes": _g("exercise_minutes"),
+        "respiratory_rate": _g("respiratory_rate"),
+        "weight_kg": _g("weight_kg"),
+        "body_fat_pct": _g("body_fat_pct"),
+        "vo2_max": _g("vo2_max"),
+        "recovery_score": _g("recovery_score"),
+        "recovery_zone": payload.get("recovery_zone") or "",
+    }
+
+
 def build_context_block(memory: dict, athlete_name: str,
                         athlete_current_weight_kg: int,
                         athlete_goal_weight_kg: int,
-                        log) -> str:
+                        log, recovery_override: dict | None = None) -> str:
     today = now_local().strftime("%A %d %B %Y")
     mesocycle_week = memory.get("mesocycle_week", 1)
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
@@ -186,13 +224,16 @@ def build_context_block(memory: dict, athlete_name: str,
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
-            executor.submit(get_athlete_context): "data",
             executor.submit(get_full_session_history, 30): "session_history",
             executor.submit(get_recovery_history, 30): "recovery_history",
             executor.submit(get_substitution_history): "substitution_history",
             executor.submit(get_apple_workouts, 30): "apple_workouts",
             executor.submit(get_workout_state): "workout_state",
         }
+        # Only hit the DB for today's recovery when the client hasn't supplied
+        # its own authoritative snapshot.
+        if recovery_override is None:
+            futures[executor.submit(get_athlete_context)] = "data"
         results = {}
         for future, key in futures.items():
             try:
@@ -201,17 +242,30 @@ def build_context_block(memory: dict, athlete_name: str,
                 log.exception("Context fetch failed (%s)", key)
                 results[key] = None
 
-    data = results.get("data") or {}
-
-    age = data.get("data_age_days")
-    if age is None:
-        freshness = "⚠️ Recovery data freshness unknown — verify Apple Health has synced before trusting these numbers."
-    elif age <= 0:
-        freshness = "Fresh (synced today)."
-    elif age == 1:
-        freshness = "⚠️ STALE: this is yesterday's data — today's Apple Health metrics have not synced yet. Note this to the athlete and don't over-index on it."
+    if recovery_override:
+        data = _recovery_from_override(recovery_override)
+        freshness = ("Live from the athlete's device — these are the exact "
+                     "numbers shown on their dashboard right now.")
     else:
-        freshness = f"⚠️ STALE: recovery data is {age} days old — Apple Health has not synced recently. Flag this and program conservatively."
+        data = results.get("data") or {}
+        age = data.get("data_age_days")
+        if age is None:
+            freshness = "⚠️ Recovery data freshness unknown — verify Apple Health has synced before trusting these numbers."
+        elif age <= 0:
+            freshness = "Fresh (synced today)."
+        elif age == 1:
+            freshness = "⚠️ STALE: this is yesterday's data — today's Apple Health metrics have not synced yet. Note this to the athlete and don't over-index on it."
+        else:
+            freshness = f"⚠️ STALE: recovery data is {age} days old — Apple Health has not synced recently. Flag this and program conservatively."
+
+    score = data.get("recovery_score")
+    zone = data.get("recovery_zone") or ""
+    if score not in (None, "N/A", ""):
+        zone_str = f" ({zone})" if zone else ""
+        score_line = (f"Recovery score: {score}/100{zone_str} — the headline "
+                      f"figure on the athlete's dashboard.\n")
+    else:
+        score_line = ""
 
     session_history = results.get("session_history") or "No sessions found."
     recovery_history = results.get("recovery_history") or "No recovery data."
@@ -230,7 +284,7 @@ NEXT SESSION: {next_session}
 
 TODAY'S RECOVERY:
 Recovery data date: {data.get('date', 'Unknown')} | Freshness: {freshness}
-Sleep: {data.get('sleep_hours', 'N/A')} hrs | HRV: {data.get('hrv', 'N/A')} (7-day avg: {data.get('hrv_avg', 'N/A')}) | Status: {data.get('hrv_status', 'Unknown')}
+{score_line}Sleep: {data.get('sleep_hours', 'N/A')} hrs | HRV: {data.get('hrv', 'N/A')} (7-day avg: {data.get('hrv_avg', 'N/A')}) | Status: {data.get('hrv_status', 'Unknown')}
 Resting HR: {data.get('resting_hr', 'N/A')} bpm (7-day avg: {data.get('resting_hr_baseline', 'N/A')})
 Avg HR: {data.get('heart_rate', 'N/A')} bpm | Respiratory rate: {data.get('respiratory_rate', 'N/A')} | Steps: {data.get('steps', 'N/A')} | Active energy: {data.get('active_energy_kcal', 'N/A')} kcal | Exercise minutes: {data.get('exercise_minutes', 'N/A')}
 Body weight: {data.get('weight_kg', 'N/A')}kg | Body fat: {data.get('body_fat_pct', 'N/A')}% | VO2 max: {data.get('vo2_max', 'N/A')}
