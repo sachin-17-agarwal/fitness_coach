@@ -189,6 +189,20 @@ def _get_hrv_status(hrv) -> str:
 
 # ── iOS App Chat API ─────────────────────────────────────────────────────────
 
+def _recovery_override_from(payload) -> dict | None:
+    """Extract the optional authoritative recovery snapshot from a request body.
+
+    The iOS app sends the recovery snapshot it already shows on the dashboard so
+    the coach reasons over the exact numbers the athlete sees. Returns None for
+    any caller that doesn't supply one (Telegram, older app builds), which keeps
+    the database-derived fallback in place.
+    """
+    if not isinstance(payload, dict):
+        return None
+    recovery = payload.get("recovery")
+    return recovery if isinstance(recovery, dict) and recovery else None
+
+
 @app.route("/api/briefing", methods=["POST"])
 def api_briefing():
     """Run the morning briefing using the user's saved `briefing_style`.
@@ -206,12 +220,15 @@ def api_briefing():
     if not secrets.compare_digest(token, expected_token):
         return jsonify({"error": "Unauthorized"}), 401
 
+    recovery_override = _recovery_override_from(request.get_json(silent=True))
+
     try:
         memory = load_memory()
         style = str(memory.get("briefing_style", "detailed")).strip().lower()
         prompt = build_briefing_prompt(style)
         prs: list = []
-        response = handle_incoming_message(prompt, memory, send_reply=False, out_prs=prs)
+        response = handle_incoming_message(prompt, memory, send_reply=False, out_prs=prs,
+                                           recovery_override=recovery_override)
     except Exception as e:
         traceback.print_exc()
         return jsonify({
@@ -254,10 +271,13 @@ def api_chat():
     if not text:
         return jsonify({"error": "empty message"}), 400
 
+    recovery_override = _recovery_override_from(data)
+
     try:
         memory = load_memory()
         prs: list = []
-        response = handle_incoming_message(text, memory, send_reply=False, out_prs=prs)
+        response = handle_incoming_message(text, memory, send_reply=False, out_prs=prs,
+                                           recovery_override=recovery_override)
     except Exception as e:
         # Log full traceback to Railway/Flask logs for debugging, but return
         # a clean JSON error so the iOS app surfaces something useful instead

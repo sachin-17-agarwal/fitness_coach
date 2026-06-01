@@ -119,9 +119,62 @@ struct ChatMessage: Codable, Identifiable, Sendable {
 final class ChatService: Sendable {
 
     private let client: SupabaseClient
+    private let recoveryService: RecoveryService
 
     init(client: SupabaseClient = .shared) {
         self.client = client
+        self.recoveryService = RecoveryService(client: client)
+    }
+
+    // MARK: - Authoritative recovery snapshot
+
+    /// Builds the recovery snapshot the dashboard is currently showing, to send
+    /// alongside chat/briefing requests. The backend coach uses this verbatim
+    /// so its "today's recovery" can never disagree with what's on screen —
+    /// it's read through the *same* `RecoveryService` the dashboard uses, so
+    /// the row, the timezone, and the 7-day averages all match exactly.
+    ///
+    /// Returns `nil` if it can't be built; the backend then falls back to its
+    /// own database-derived snapshot, so chat still works.
+    private func recoverySnapshot() async -> [String: Any]? {
+        do {
+            async let latest = recoveryService.fetchLatest()
+            async let averages = recoveryService.fetch7DayAverages()
+
+            guard let rec = try await latest else { return nil }
+            let (hrvAvg, rhrAvg) = try await averages
+
+            var snap: [String: Any] = ["date": rec.date]
+            if let v = rec.sleepHours       { snap["sleep_hours"] = v }
+            if let v = rec.hrv              { snap["hrv"] = v }
+            if let v = rec.hrvStatus        { snap["hrv_status"] = v }
+            if let v = rec.restingHr        { snap["resting_hr"] = v }
+            if let v = rec.heartRate        { snap["heart_rate"] = v }
+            if let v = rec.steps            { snap["steps"] = v }
+            if let v = rec.activeEnergyKcal { snap["active_energy_kcal"] = v }
+            if let v = rec.weightKg         { snap["weight_kg"] = v }
+            if let v = rec.bodyFatPct       { snap["body_fat_pct"] = v }
+            if let v = rec.exerciseMinutes  { snap["exercise_minutes"] = v }
+            if let v = rec.respiratoryRate  { snap["respiratory_rate"] = v }
+            if let v = rec.vo2Max           { snap["vo2_max"] = v }
+            if let v = hrvAvg               { snap["hrv_avg"] = v }
+            if let v = rhrAvg               { snap["resting_hr_baseline"] = v }
+            if let score = rec.compositeScore(hrv7DayAvg: hrvAvg, rhr7DayAvg: rhrAvg) {
+                snap["recovery_score"] = score
+                snap["recovery_zone"] = Self.zone(for: score)
+            }
+            return snap
+        } catch {
+            return nil
+        }
+    }
+
+    /// Mirrors `DashboardViewModel.recoveryColor` so the coach names the same
+    /// zone the dashboard paints.
+    private static func zone(for score: Int) -> String {
+        if score >= 75 { return "GREEN" }
+        if score >= 55 { return "YELLOW" }
+        return "RED"
     }
 
     // MARK: - Send message to backend
@@ -179,7 +232,10 @@ final class ChatService: Sendable {
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = RetryConfig.chatTimeout
 
-        let payload: [String: Any] = ["message": message]
+        var payload: [String: Any] = ["message": message]
+        if let recovery = await recoverySnapshot() {
+            payload["recovery"] = recovery
+        }
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let request = req
 
@@ -225,7 +281,11 @@ final class ChatService: Sendable {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = RetryConfig.chatTimeout
-        req.httpBody = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
+        var payload: [String: Any] = [:]
+        if let recovery = await recoverySnapshot() {
+            payload["recovery"] = recovery
+        }
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let request = req
 
         let (data, response) = try await withRetry {
