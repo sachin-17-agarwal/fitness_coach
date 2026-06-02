@@ -100,7 +100,8 @@ def load_system_prompt() -> str:
     return _SYSTEM_PROMPT_CACHE
 
 
-def chat_with_coach(user_message: str, conversation_history: list, memory: dict) -> str:
+def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
+                    recovery_override: dict | None = None) -> str:
     system_prompt = load_system_prompt()
     context_block = build_context_block(
         memory,
@@ -108,6 +109,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict)
         ATHLETE_CURRENT_WEIGHT_KG,
         ATHLETE_GOAL_WEIGHT_KG,
         log,
+        recovery_override=recovery_override,
     )
 
     conversation_history.append({"role": "user", "content": user_message})
@@ -182,12 +184,19 @@ def send_morning_briefing(memory: dict):
 
 
 def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool = True,
-                            out_prs: list | None = None) -> str:
+                            out_prs: list | None = None,
+                            recovery_override: dict | None = None) -> str:
     """Process a user message, log any sets, and return the coach reply.
 
     If `out_prs` is provided, every set that beats the historical e1RM by >1%
     is appended as a dict so callers (the iOS /api/chat endpoint) can surface
     the celebration in-app. Telegram callers can leave it None.
+
+    `recovery_override`, when provided by the iOS app, is the authoritative
+    recovery snapshot already shown on the dashboard. The coach reasons over it
+    verbatim so its "today's recovery" can never disagree with what the athlete
+    sees on screen. Telegram/CLI callers leave it None and fall back to the
+    database-derived snapshot.
     """
     conversation_history = load_today_conversation()
     normalised_text = incoming_text.lower().replace("'", "'").strip()
@@ -340,7 +349,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                 })
 
     # ── Get coach response ────────────────────────────────────────────────────
-    response = chat_with_coach(incoming_text, conversation_history, memory)
+    response = chat_with_coach(incoming_text, conversation_history, memory,
+                               recovery_override=recovery_override)
 
     if workout_active and all_sets and unresolved_candidate:
         note = build_exercise_note(unresolved_candidate)
