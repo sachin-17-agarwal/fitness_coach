@@ -156,6 +156,17 @@ struct SetLogInput: View {
                     .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(.white)
                     .frame(minWidth: 70)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.surface)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(weightFieldFocused ? phaseColor : Color.cardBorder,
+                                            lineWidth: weightFieldFocused ? 1.5 : 0.5)
+                            )
+                    )
                     .onChange(of: weight) { _, newValue in
                         if newValue < 0 { weight = 0 }
                     }
