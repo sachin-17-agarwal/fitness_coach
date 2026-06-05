@@ -11,6 +11,8 @@ struct SetLogInput: View {
     let isLoading: Bool
     var phase: SetPhase = .working
 
+    @FocusState private var weightFieldFocused: Bool
+
     private var isWarmup: Bool { phase == .warmup }
 
     private var phaseColor: Color {
@@ -55,9 +57,7 @@ struct SetLogInput: View {
             }
 
             HStack(spacing: 10) {
-                stepper(
-                    label: "Weight",
-                    value: weight.weightString,
+                weightStepper(
                     minus: {
                         Haptic.soft()
                         weight = max(0, weight - 2.5)
@@ -119,6 +119,62 @@ struct SetLogInput: View {
         }
         .padding(16)
         .darkCard(padding: 0, cornerRadius: 18)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { weightFieldFocused = false }
+                    .font(.system(size: 16, weight: .semibold))
+            }
+        }
+    }
+
+    /// Weight entry: ±2.5 kg buttons for quick nudges, plus a tappable numeric
+    /// field so the athlete can type the exact load any machine, cable stack,
+    /// or fixed dumbbell actually provides (e.g. 24 kg, 57.5 kg, 1.25 kg micro
+    /// jumps) instead of being locked to 2.5 kg increments.
+    private func weightStepper(minus: @escaping () -> Void, plus: @escaping () -> Void) -> some View {
+        VStack(spacing: 6) {
+            Text("WEIGHT")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .kerning(0.8)
+                .foregroundStyle(Color.textTertiary)
+
+            HStack(spacing: 8) {
+                Button(action: minus) {
+                    Image(systemName: "minus")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.surface))
+                }
+
+                TextField("0", value: $weight,
+                          format: .number.precision(.fractionLength(0...2)))
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.center)
+                    .focused($weightFieldFocused)
+                    .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 70)
+                    .onChange(of: weight) { _, newValue in
+                        if newValue < 0 { weight = 0 }
+                    }
+
+                Button(action: plus) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.surface))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.surfaceRaised)
+        )
     }
 
     private func stepper(label: String, value: String, minus: @escaping () -> Void, plus: @escaping () -> Void) -> some View {
