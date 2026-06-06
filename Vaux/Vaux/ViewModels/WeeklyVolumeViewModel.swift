@@ -59,6 +59,8 @@ final class WeeklyVolumeViewModel {
 
         // Working sets only — warm-ups (is_warmup == true) inflate the
         // tonnage bars without representing real training stimulus.
+        // Also exclude cardio/yoga entries from the per-muscle-group bucket
+        // (they have no muscle_group and would all dump into "Other").
         let working = allSets.filter { $0.isWarmup != true }
 
         let dayFormatter = Self.dateFormatter
@@ -80,11 +82,16 @@ final class WeeklyVolumeViewModel {
                 thisWeekByDay[setDay, default: 0] += tonnage
                 thisWeekTonnageTotal += tonnage
                 thisWeekSetsTotal += 1
-                let group = ExerciseCatalog.shared.muscleGroup(for: set.exercise) ?? "Other"
-                var bucket = thisWeekByGroup[group] ?? (0, 0)
-                bucket.count += 1
-                bucket.tonnage += tonnage
-                thisWeekByGroup[group] = bucket
+
+                // Skip cardio/yoga in the muscle-group breakdown — those are
+                // tagged in `notes` by CardioYogaLogView and have no useful
+                // muscle group association.
+                if !Self.isCardioOrYoga(set), let group = ExerciseCatalog.shared.muscleGroup(for: set.exercise) {
+                    var bucket = thisWeekByGroup[group] ?? (0, 0)
+                    bucket.count += 1
+                    bucket.tonnage += tonnage
+                    thisWeekByGroup[group] = bucket
+                }
             } else if setDay >= priorWeekStart {
                 priorWeekTonnage += tonnage
             }
@@ -121,4 +128,14 @@ final class WeeklyVolumeViewModel {
         f.timeZone = .current
         return f
     }()
+
+    /// Cardio/yoga entries are tagged via the `notes` column on write
+    /// (see `CardioYogaLogView`). Mirror the same detection used by
+    /// `SessionCard` so they're excluded from the strength-volume bucket.
+    private static func isCardioOrYoga(_ set: WorkoutSet) -> Bool {
+        let note = (set.notes ?? "").lowercased()
+        if note.hasPrefix("yoga") || note.contains(" yoga") { return true }
+        if note.hasPrefix("cardio") || note.contains(" cardio") { return true }
+        return false
+    }
 }
