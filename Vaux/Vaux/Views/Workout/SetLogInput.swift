@@ -132,6 +132,11 @@ struct SetLogInput: View {
     /// field so the athlete can type the exact load any machine, cable stack,
     /// or fixed dumbbell actually provides (e.g. 24 kg, 57.5 kg, 1.25 kg micro
     /// jumps) instead of being locked to 2.5 kg increments.
+    ///
+    /// The text field renders as plain text on the same surfaceRaised
+    /// background as the reps stepper — no inset rectangle. A 1pt
+    /// underline shows in `textTertiary` by default (a quiet "this is
+    /// editable" cue) and shifts to the phase accent at 2pt on focus.
     private func weightStepper(minus: @escaping () -> Void, plus: @escaping () -> Void) -> some View {
         VStack(spacing: 6) {
             Text("WEIGHT")
@@ -148,28 +153,24 @@ struct SetLogInput: View {
                         .background(Circle().fill(Color.surface))
                 }
 
-                TextField("0", value: $weight,
-                          format: .number.precision(.fractionLength(0...2)))
-                    .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.center)
-                    .focused($weightFieldFocused)
-                    .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white)
-                    .frame(minWidth: 70)
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.surface)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(weightFieldFocused ? phaseColor : Color.cardBorder,
-                                            lineWidth: weightFieldFocused ? 1.5 : 0.5)
-                            )
-                    )
-                    .onChange(of: weight) { _, newValue in
-                        if newValue < 0 { weight = 0 }
-                    }
+                VStack(spacing: 3) {
+                    TextField("0", value: $weight,
+                              format: .number.precision(.fractionLength(0...2)))
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.center)
+                        .focused($weightFieldFocused)
+                        .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 70)
+                        .onChange(of: weight) { _, newValue in
+                            if newValue < 0 { weight = 0 }
+                        }
+
+                    Rectangle()
+                        .fill(weightFieldFocused ? phaseColor : Color.textTertiary.opacity(0.35))
+                        .frame(width: 36, height: weightFieldFocused ? 2 : 1)
+                        .animation(.easeOut(duration: 0.15), value: weightFieldFocused)
+                }
 
                 Button(action: plus) {
                     Image(systemName: "plus")
