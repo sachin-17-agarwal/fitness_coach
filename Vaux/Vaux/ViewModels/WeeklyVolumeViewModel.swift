@@ -26,6 +26,11 @@ struct MuscleGroupVolume: Identifiable, Hashable {
 final class WeeklyVolumeViewModel {
     private(set) var tonnageByDay: [DayTonnage] = []
     private(set) var setsByMuscleGroup: [MuscleGroupVolume] = []
+    /// Strength exercises logged this week that have no `muscle_group`
+    /// in the catalog. Surfaced so the user can see which logged names
+    /// aren't being matched and either fix the name or add the catalog
+    /// entry. Sorted by set count descending.
+    private(set) var uncategorizedExercises: [(name: String, setCount: Int)] = []
     /// % change in tonnage vs. the prior 7 days. `nil` when the prior
     /// week has no data (avoids divide-by-zero noise on a fresh user).
     private(set) var tonnageDeltaPct: Double?
@@ -59,13 +64,12 @@ final class WeeklyVolumeViewModel {
 
         // Working sets only — warm-ups (is_warmup == true) inflate the
         // tonnage bars without representing real training stimulus.
-        // Also exclude cardio/yoga entries from the per-muscle-group bucket
-        // (they have no muscle_group and would all dump into "Other").
         let working = allSets.filter { $0.isWarmup != true }
 
         let dayFormatter = Self.dateFormatter
         var thisWeekByDay: [Date: Double] = [:]
         var thisWeekByGroup: [String: (count: Int, tonnage: Double)] = [:]
+        var unmatchedByExercise: [String: Int] = [:]
         var thisWeekTonnageTotal: Double = 0
         var thisWeekSetsTotal: Int = 0
         var priorWeekTonnage: Double = 0
@@ -83,14 +87,21 @@ final class WeeklyVolumeViewModel {
                 thisWeekTonnageTotal += tonnage
                 thisWeekSetsTotal += 1
 
-                // Skip cardio/yoga in the muscle-group breakdown — those are
-                // tagged in `notes` by CardioYogaLogView and have no useful
-                // muscle group association.
-                if !Self.isCardioOrYoga(set), let group = ExerciseCatalog.shared.muscleGroup(for: set.exercise) {
+                // Cardio/yoga entries are tagged in `notes` by CardioYogaLogView
+                // and have no useful muscle-group mapping — exclude them entirely
+                // from the strength breakdown.
+                if Self.isCardioOrYoga(set) { continue }
+
+                if let group = ExerciseCatalog.shared.muscleGroup(for: set.exercise) {
                     var bucket = thisWeekByGroup[group] ?? (0, 0)
                     bucket.count += 1
                     bucket.tonnage += tonnage
                     thisWeekByGroup[group] = bucket
+                } else {
+                    // Strength set with no catalog match. Track by display name
+                    // so the user can see which exercises need a catalog entry.
+                    let name = set.exercise.trimmingCharacters(in: .whitespacesAndNewlines)
+                    unmatchedByExercise[name, default: 0] += 1
                 }
             } else if setDay >= priorWeekStart {
                 priorWeekTonnage += tonnage
@@ -108,6 +119,10 @@ final class WeeklyVolumeViewModel {
 
         setsByMuscleGroup = thisWeekByGroup
             .map { MuscleGroupVolume(group: $0.key, setCount: $0.value.count, tonnage: $0.value.tonnage) }
+            .sorted { $0.setCount > $1.setCount }
+
+        uncategorizedExercises = unmatchedByExercise
+            .map { (name: $0.key, setCount: $0.value) }
             .sorted { $0.setCount > $1.setCount }
 
         thisWeekTonnage = thisWeekTonnageTotal

@@ -17,6 +17,9 @@ struct WeeklyVolumeView: View {
             insightsRow
             tonnageChartCard
             muscleGroupCard
+            if !viewModel.uncategorizedExercises.isEmpty {
+                uncategorizedCard
+            }
         }
     }
 
@@ -368,6 +371,68 @@ struct WeeklyVolumeView: View {
 
     private var displayGroups: [MuscleGroupVolume] {
         viewModel.setsByMuscleGroup
+    }
+
+    // MARK: - Uncategorized exercises
+
+    private var uncategorizedSetCount: Int {
+        viewModel.uncategorizedExercises.reduce(0) { $0 + $1.setCount }
+    }
+
+    private var uncategorizedCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("UNCATEGORIZED")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .kerning(1)
+                        .foregroundStyle(Color.fg2)
+                    Text("Exercises without a muscle group in the catalog")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.fg3)
+                }
+                Spacer()
+                Text("\(uncategorizedSetCount) SETS")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .kerning(0.8)
+                    .foregroundStyle(Color.amber)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.amber.opacity(0.12)))
+            }
+
+            VStack(spacing: 8) {
+                ForEach(viewModel.uncategorizedExercises, id: \.name) { entry in
+                    HStack(spacing: 10) {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.fg2)
+                        Text(entry.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer()
+                        Text("\(entry.setCount)")
+                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 22, alignment: .trailing)
+                        Text(entry.setCount == 1 ? "set" : "sets")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.fg3)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.ink2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.line, lineWidth: 1)
+        )
     }
 
     private func muscleRow(group: MuscleGroupVolume) -> some View {
