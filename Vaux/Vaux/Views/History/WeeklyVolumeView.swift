@@ -367,10 +367,7 @@ struct WeeklyVolumeView: View {
     }
 
     private var displayGroups: [MuscleGroupVolume] {
-        // Surface meaningful groups first, push "Other" to the bottom.
-        let known = viewModel.setsByMuscleGroup.filter { $0.group.lowercased() != "other" }
-        let other = viewModel.setsByMuscleGroup.filter { $0.group.lowercased() == "other" }
-        return known + other
+        viewModel.setsByMuscleGroup
     }
 
     private func muscleRow(group: MuscleGroupVolume) -> some View {
@@ -481,12 +478,19 @@ struct WeeklyVolumeView: View {
         }
     }
 
+    /// Weekly set ranges tuned for the Pull/Push/Legs/Cardio+Abs/Yoga
+    /// rotation where each muscle is trained once per week. Hypertrophy
+    /// guidelines that assume 2–3 weekly sessions per muscle don't apply
+    /// here, so these targets describe a productive single-session dose.
     private func targetRange(for group: String) -> ClosedRange<Int> {
         switch group.lowercased() {
-        case "chest", "back", "legs", "quads", "hamstrings", "glutes": return 10...20
-        case "shoulders", "abs", "core": return 8...16
-        case "biceps", "triceps", "rear delts": return 6...12
-        default: return 8...16
+        case "legs", "quads", "hamstrings", "glutes": return 8...14
+        case "back", "chest": return 6...12
+        case "shoulders": return 4...8
+        case "biceps", "triceps": return 3...6
+        case "rear delts": return 2...5
+        case "abs", "core": return 3...8
+        default: return 4...10
         }
     }
 
