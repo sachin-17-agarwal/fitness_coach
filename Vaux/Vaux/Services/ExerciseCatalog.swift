@@ -56,12 +56,27 @@ final class ExerciseCatalog {
     /// substring match against catalog keys (handles cases where the
     /// logged name has extra qualifiers like "incline barbell bench
     /// press" vs. catalog entry "bench press").
+    ///
+    /// Substring matching prefers the **longest** catalog key that fits,
+    /// so "leg press" wins over "press" when both are present. Without
+    /// this the dictionary iteration order would non-deterministically
+    /// match a short generic key first.
     func muscleGroup(for exercise: String) -> String? {
         let key = PrescriptionParser.normalizeExerciseName(exercise).lowercased()
         if let direct = lookup[key] { return direct }
-        for (catalogKey, group) in lookup where key.contains(catalogKey) || catalogKey.contains(key) {
-            return group
+
+        var bestMatch: (length: Int, group: String)?
+        for (catalogKey, group) in lookup where catalogKey.count >= 4 {
+            // Only the `key.contains(catalogKey)` direction is safe:
+            // a longer logged name with extra qualifiers ("incline
+            // barbell bench press") should still match the catalog's
+            // "bench press". The reverse ("bench" matching "bench
+            // press") would mismatch when the user logs an abbrev.
+            guard key.contains(catalogKey) else { continue }
+            if bestMatch == nil || catalogKey.count > bestMatch!.length {
+                bestMatch = (catalogKey.count, group)
+            }
         }
-        return nil
+        return bestMatch?.group
     }
 }
