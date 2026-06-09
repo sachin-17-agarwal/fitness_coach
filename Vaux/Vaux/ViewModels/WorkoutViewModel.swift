@@ -59,8 +59,11 @@ final class WorkoutViewModel {
 
     var isCurrentSetWarmup: Bool { currentPhase == .warmup }
 
-    // Rest timer
-    var restTimeRemaining: Int = 0
+    // Rest timer — driven by an absolute deadline so the on-screen ring
+    // tracks wall-clock time exactly. The RestTimer view renders from this
+    // date via TimelineView; there is intentionally no per-second Timer here
+    // (two timers decrementing one value caused an irregular, glitchy tick).
+    var restEndDate: Date?
     var isResting = false
 
     // PR
@@ -88,7 +91,6 @@ final class WorkoutViewModel {
     private let chatService = ChatService()
     private let mesocycleService = MesocycleService()
     private var durationTimer: Timer?
-    private var restTimer: Timer?
 
     func startWorkout(type: String) async {
         sessionType = type
@@ -661,25 +663,13 @@ final class WorkoutViewModel {
     }
 
     func startRestTimer(seconds: Int) {
-        restTimeRemaining = seconds
+        restEndDate = Date().addingTimeInterval(Double(seconds))
         isResting = true
-        restTimer?.invalidate()
-        restTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
-            guard let self else { timer.invalidate(); return }
-            if self.restTimeRemaining > 0 {
-                self.restTimeRemaining -= 1
-            } else {
-                self.isResting = false
-                timer.invalidate()
-                self.triggerHaptic(.warning)
-            }
-        }
     }
 
     func skipRest() {
-        restTimer?.invalidate()
         isResting = false
-        restTimeRemaining = 0
+        restEndDate = nil
     }
 
     func updateDuration() {
@@ -1167,7 +1157,8 @@ final class WorkoutViewModel {
 
     private func stopTimers() {
         durationTimer?.invalidate()
-        restTimer?.invalidate()
+        isResting = false
+        restEndDate = nil
     }
 
     private func resetState() {

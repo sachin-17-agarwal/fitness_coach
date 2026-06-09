@@ -52,7 +52,7 @@ struct WorkoutModeView: View {
             if viewModel.isResting {
                 RestTimer(
                     totalSeconds: viewModel.currentPrescription?.restSeconds ?? 120,
-                    remainingSeconds: $viewModel.restTimeRemaining,
+                    endDate: $viewModel.restEndDate,
                     isActive: $viewModel.isResting,
                     onSkip: { viewModel.skipRest() }
                 )
