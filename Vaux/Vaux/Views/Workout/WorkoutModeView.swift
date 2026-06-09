@@ -125,6 +125,15 @@ struct WorkoutModeView: View {
                 }
             }
         }
+        // Block the swipe-from-edge back gesture while a workout is in
+        // progress (or while we're probing for one to resume). The view
+        // will auto-resume after an accidental dismissal, but the flash
+        // of the start screen looked like the session had been thrown
+        // away — disabling the gesture avoids the surprise entirely.
+        // Idle state (no active session, resume probe finished) keeps
+        // the back-swipe so the Begin screen still feels like a normal
+        // push.
+        .interactivePopGesture(enabled: !viewModel.isActive && didCheckResume)
     }
 
     // MARK: - Resume probe
