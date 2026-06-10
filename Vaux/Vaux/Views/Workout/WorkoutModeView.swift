@@ -108,12 +108,14 @@ struct WorkoutModeView: View {
                         Haptic.warning()
                         Task { await viewModel.endWorkout() }
                     } label: {
-                        Text("End")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.recoveryRed)
+                        Text("END")
+                            .font(.eyebrowSmall)
+                            .kerning(1.2)
+                            .foregroundStyle(Color.ember)
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(Color.recoveryRed.opacity(0.14)))
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color.ember.opacity(0.08)))
+                            .overlay(Capsule().stroke(Color.ember.opacity(0.22), lineWidth: 1))
                     }
                 }
             }
@@ -150,7 +152,7 @@ struct WorkoutModeView: View {
                 .scaleEffect(1.1)
             Text("Checking for an active session…")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.textSecondary)
+                .foregroundStyle(Color.fg1)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -160,39 +162,33 @@ struct WorkoutModeView: View {
 
     private var startView: some View {
         let type = effectiveSessionType.isEmpty ? "Session" : effectiveSessionType
-        let gradient = Gradients.forSession(type)
         let accent = Color.forSession(type)
         return VStack(spacing: 28) {
             Spacer()
 
             ZStack {
                 Circle()
-                    .fill(gradient)
-                    .frame(width: 140, height: 140)
-                    .blur(radius: 40)
-                    .opacity(0.55)
-
+                    .fill(accent.opacity(0.10))
+                    .frame(width: 120, height: 120)
                 Circle()
-                    .fill(gradient)
-                    .frame(width: 110, height: 110)
-
+                    .stroke(accent.opacity(0.25), lineWidth: 1)
+                    .frame(width: 120, height: 120)
                 Image(systemName: iconForType(type))
-                    .font(.system(size: 46, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 42, weight: .medium))
+                    .foregroundStyle(accent)
             }
 
-            VStack(spacing: 8) {
-                Text("Ready to train?")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Color.textSecondary)
+            VStack(spacing: 10) {
+                Eyebrow(text: "Ready to train")
 
                 Text(effectiveSessionType.isEmpty ? "Start workout" : "\(effectiveSessionType) Day")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.serifLG)
+                    .foregroundStyle(Color.fg0)
 
-                Text(focusForType(type))
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.textTertiary)
+                Text(focusForType(type).uppercased())
+                    .font(.eyebrowSmall)
+                    .kerning(1.2)
+                    .foregroundStyle(Color.fg2)
                     .padding(.top, 2)
             }
 
@@ -204,23 +200,24 @@ struct WorkoutModeView: View {
             } label: {
                 HStack(spacing: 8) {
                     if viewModel.isLoading {
-                        ProgressView().tint(.black)
+                        ProgressView().tint(Color.signalInk)
                     } else {
                         Image(systemName: "play.fill")
                             .font(.system(size: 13, weight: .bold))
                         Text("Begin session")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.system(size: 16, weight: .semibold))
                     }
                 }
-                .foregroundStyle(.black)
+                .foregroundStyle(Color.signalInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(gradient)
+                        .fill(Color.signal)
                 )
-                .shadow(color: accent.opacity(0.35), radius: 18, x: 0, y: 10)
+                .shadow(color: Color.signal.opacity(0.25), radius: 18, x: 0, y: 10)
             }
+            .buttonStyle(PressScaleStyle())
             .disabled(viewModel.isLoading)
             .padding(.horizontal, 24)
             .padding(.bottom, 32)
@@ -319,18 +316,18 @@ struct WorkoutModeView: View {
         HStack(spacing: 8) {
             CoachAvatar()
             Text("Coach is thinking…")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.textSecondary)
+                .font(.uiSmall)
+                .foregroundStyle(Color.fg1)
             Spacer()
             ProgressView()
                 .scaleEffect(0.7)
-                .tint(Color.accentTeal)
+                .tint(Color.signal)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.surfaceRaised)
+                .fill(Color.ink3)
         )
     }
 
@@ -341,27 +338,28 @@ struct WorkoutModeView: View {
             Text(message)
                 .font(.system(size: 11, weight: .medium))
         }
-        .foregroundStyle(Color.recoveryRed)
+        .foregroundStyle(Color.ember)
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.recoveryRed.opacity(0.1))
+                .fill(Color.ember.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.ember.opacity(0.22), lineWidth: 1)
         )
     }
 
     private var emptyPrescriptionCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("NO PLAN YET")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .kerning(1.0)
-                .foregroundStyle(Color.textTertiary)
+            Eyebrow(text: "No plan yet")
             Text("The coach didn't send exercises for this session.")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.textPrimary)
+                .font(.uiStrong)
+                .foregroundStyle(Color.fg0)
             Text("Tap retry to ask again, or end the session and start a new one.")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.textSecondary)
+                .font(.uiSmall)
+                .foregroundStyle(Color.fg1)
                 .fixedSize(horizontal: false, vertical: true)
 
             Button {
@@ -374,16 +372,16 @@ struct WorkoutModeView: View {
                     Text("Retry")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                .foregroundStyle(Color.textPrimary)
+                .foregroundStyle(Color.fg0)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.surfaceRaised)
+                        .fill(Color.ink3)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.cardBorder, lineWidth: 0.5)
+                        .stroke(Color.line2, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -469,25 +467,25 @@ struct CoachNoteStrip: View {
 
                 Text(note)
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(Color.fg0.opacity(0.9))
                     .lineLimit(expanded ? nil : 2)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Color.textTertiary)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.fg2)
                     .padding(.top, 4)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.surfaceRaised)
+                    .fill(Color.ink3)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.cardBorder, lineWidth: 0.5)
+                    .stroke(Color.line, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -502,14 +500,12 @@ struct SetProgressRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("LOGGED")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .kerning(1.0)
-                    .foregroundStyle(Color.textTertiary)
+                Eyebrow(text: "Logged")
                 Spacer()
-                Text("\(sets.count) set\(sets.count == 1 ? "" : "s")")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.textSecondary)
+                Text("\(sets.count) set\(sets.count == 1 ? "" : "s")".uppercased())
+                    .font(.eyebrowSmall)
+                    .kerning(1.0)
+                    .foregroundStyle(Color.fg2)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -540,22 +536,22 @@ struct SetProgressRow: View {
         let weightLabel = weight > 0 ? "\(Int(weight))" : "BW"
         return VStack(spacing: 3) {
             Text("SET \(index)")
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.textTertiary)
+                .font(.eyebrowSmall)
+                .foregroundStyle(Color.fg2)
             Text("\(weightLabel)×\(reps)")
-                .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
+                .foregroundStyle(Color.fg0)
             if let rpe {
                 Text("RPE \(rpe.oneDecimal)")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color.recoveryGreen)
+                    .foregroundStyle(Color.mint)
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.surface)
+                .fill(Color.ink3)
         )
     }
 }
@@ -568,26 +564,23 @@ struct UpcomingExercisesCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("UP NEXT")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .kerning(1.0)
-                    .foregroundStyle(Color.textTertiary)
+                Eyebrow(text: "Up next")
                 Spacer()
                 Text("\(names.count)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.textSecondary)
+                    .font(.eyebrowSmall)
+                    .foregroundStyle(Color.fg2)
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(names.enumerated()), id: \.offset) { idx, name in
                     HStack(spacing: 10) {
                         Text("\(idx + 2).")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.textTertiary)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced).monospacedDigit())
+                            .foregroundStyle(Color.fg2)
                             .frame(width: 22, alignment: .leading)
                         Text(name)
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.textSecondary)
+                            .foregroundStyle(Color.fg1)
                             .lineLimit(1)
                         Spacer()
                     }

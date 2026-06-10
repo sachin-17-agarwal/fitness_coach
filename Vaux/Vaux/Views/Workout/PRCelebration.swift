@@ -17,28 +17,26 @@ struct PRCelebration: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color.black.opacity(0.94), Color.accentPurple.opacity(0.35)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            Color.ink0.opacity(0.94)
+                .ignoresSafeArea()
 
             VStack(spacing: 22) {
                 ZStack {
                     Circle()
-                        .fill(Gradients.push)
+                        .fill(Color.signal.opacity(0.25))
                         .frame(width: 160, height: 160)
                         .blur(radius: 40)
-                        .opacity(0.6)
 
                     ZStack {
                         Circle()
-                            .fill(Gradients.push)
+                            .fill(Color.signal.opacity(0.10))
+                            .frame(width: 130, height: 130)
+                        Circle()
+                            .stroke(Color.signal.opacity(0.45), lineWidth: 1)
                             .frame(width: 130, height: 130)
                         Image(systemName: "trophy.fill")
-                            .font(.system(size: 52, weight: .bold))
-                            .foregroundStyle(.white)
+                            .font(.system(size: 52, weight: .medium))
+                            .foregroundStyle(Color.signal)
                     }
                     .scaleEffect(badgeScale)
                     .rotationEffect(.degrees(rotation))
@@ -46,32 +44,33 @@ struct PRCelebration: View {
 
                 VStack(spacing: 8) {
                     Text("NEW PR")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(.eyebrow)
                         .kerning(3)
-                        .foregroundStyle(Color.accentAmber)
+                        .foregroundStyle(Color.signal)
 
                     Text(exercise)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.serifMD)
+                        .foregroundStyle(Color.fg0)
                         .multilineTextAlignment(.center)
 
                     HStack(spacing: 8) {
-                        Text("Est. 1RM")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.textSecondary)
+                        Text("EST. 1RM")
+                            .font(.eyebrowSmall)
+                            .kerning(1.0)
+                            .foregroundStyle(Color.fg2)
                         Text(estimated1RM.weightString)
-                            .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(Color.recoveryGreen)
+                            .font(.numMD)
+                            .foregroundStyle(Color.signal)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(
                         Capsule()
-                            .fill(Color.white.opacity(0.08))
+                            .fill(Color.signal.opacity(0.08))
                     )
                     .overlay(
                         Capsule()
-                            .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+                            .stroke(Color.signal.opacity(0.22), lineWidth: 1)
                     )
                     .padding(.top, 6)
                 }

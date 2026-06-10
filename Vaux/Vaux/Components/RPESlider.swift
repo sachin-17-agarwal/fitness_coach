@@ -16,8 +16,9 @@ struct RPESlider: View {
         VStack(spacing: 12) {
             // Current value display
             Text("RPE \(value.oneDecimal)")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .font(.system(size: 26, weight: .medium, design: .monospaced).monospacedDigit())
                 .foregroundStyle(rpeColor)
+                .contentTransition(.numericText(value: value))
 
             // Custom slider track
             GeometryReader { geometry in
@@ -30,7 +31,7 @@ struct RPESlider: View {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(
                             LinearGradient(
-                                colors: [.recoveryGreen, .recoveryYellow, .recoveryRed],
+                                colors: [.mint, .amber, .ember],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -42,7 +43,7 @@ struct RPESlider: View {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(
                             LinearGradient(
-                                colors: [.recoveryGreen, .recoveryYellow, .recoveryRed],
+                                colors: [.mint, .amber, .ember],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -73,8 +74,8 @@ struct RPESlider: View {
             HStack {
                 ForEach(Array(stride(from: 6.0, through: 10.0, by: 1.0)), id: \.self) { tick in
                     Text("\(Int(tick))")
-                        .font(.caption2)
-                        .foregroundStyle(Color.textSecondary)
+                        .font(.eyebrowSmall)
+                        .foregroundStyle(Color.fg2)
                     if tick < 10.0 {
                         Spacer()
                     }
@@ -87,11 +88,11 @@ struct RPESlider: View {
     private var rpeColor: Color {
         let normalized = (value - 6.0) / 4.0
         if normalized <= 0.5 {
-            return .recoveryGreen
+            return .mint
         } else if normalized <= 0.75 {
-            return .recoveryYellow
+            return .amber
         } else {
-            return .recoveryRed
+            return .ember
         }
     }
 }

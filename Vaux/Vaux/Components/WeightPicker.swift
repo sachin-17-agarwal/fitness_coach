@@ -36,11 +36,12 @@ struct WeightPicker: View {
             // Display value
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(weight.wholeOrOne)
-                    .font(.system(size: 42, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 44, weight: .light, design: .serif))
+                    .foregroundStyle(Color.fg0)
+                    .contentTransition(.numericText(value: weight))
                 Text("kg")
-                    .font(.system(size: 20, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.textSecondary)
+                    .font(.serifSM)
+                    .foregroundStyle(Color.fg2)
             }
 
             // Wheel picker
@@ -68,17 +69,25 @@ struct WeightPicker: View {
 
     private func adjustButton(delta: Double, label: String) -> some View {
         Button {
+            Haptic.soft()
             let newWeight = weight + delta
             weight = min(max(newWeight, minWeight), maxWeight)
         } label: {
             Text(label)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(.white)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.fg0)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .background(Color.cardBorder)
-                .cornerRadius(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.ink3)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.line2, lineWidth: 1)
+                )
         }
+        .buttonStyle(.plain)
     }
 }
 

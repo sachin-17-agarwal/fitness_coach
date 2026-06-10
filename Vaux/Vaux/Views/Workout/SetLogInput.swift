@@ -17,9 +17,9 @@ struct SetLogInput: View {
 
     private var phaseColor: Color {
         switch phase {
-        case .warmup: return .textSecondary
-        case .working: return .recoveryGreen
-        case .backoff: return .recoveryYellow
+        case .warmup: return .fg1
+        case .working: return .mint
+        case .backoff: return .amber
         }
     }
 
@@ -31,16 +31,16 @@ struct SetLogInput: View {
         }
     }
 
-    private var buttonGradient: AnyShapeStyle {
+    private var buttonFill: Color {
         switch phase {
-        case .warmup: return AnyShapeStyle(Color.surfaceRaised)
-        case .working: return AnyShapeStyle(Gradients.recovery)
-        case .backoff: return AnyShapeStyle(Gradients.cool)
+        case .warmup: return .ink3
+        case .working: return .signal
+        case .backoff: return .amber
         }
     }
 
     private var buttonTextColor: Color {
-        phase == .warmup ? .white : .black
+        phase == .warmup ? .fg0 : .signalInk
     }
 
     var body: some View {
@@ -49,8 +49,8 @@ struct SetLogInput: View {
                 HStack(spacing: 6) {
                     Circle().fill(phaseColor).frame(width: 6, height: 6)
                     Text(phase.rawValue.uppercased())
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .kerning(1)
+                        .font(.eyebrow)
+                        .kerning(1.4)
                         .foregroundStyle(phaseColor)
                 }
                 Spacer()
@@ -96,7 +96,7 @@ struct SetLogInput: View {
                         Image(systemName: isWarmup ? "flame" : "checkmark")
                             .font(.system(size: 13, weight: .bold))
                         Text(buttonLabel)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .font(.system(size: 16, weight: .semibold))
                     }
                 }
                 .foregroundStyle(buttonTextColor)
@@ -104,15 +104,15 @@ struct SetLogInput: View {
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(buttonGradient)
+                        .fill(buttonFill)
                 )
                 .overlay {
                     if isWarmup {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.cardBorder, lineWidth: 0.5)
+                            .stroke(Color.line2, lineWidth: 1)
                     }
                 }
-                .shadow(color: isWarmup ? .clear : phaseColor.opacity(0.3), radius: 14, x: 0, y: 8)
+                .shadow(color: isWarmup ? .clear : buttonFill.opacity(0.25), radius: 14, x: 0, y: 8)
             }
             .buttonStyle(PressScaleStyle())
             .disabled(isLoading)
@@ -140,17 +140,17 @@ struct SetLogInput: View {
     private func weightStepper(minus: @escaping () -> Void, plus: @escaping () -> Void) -> some View {
         VStack(spacing: 6) {
             Text("WEIGHT")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .kerning(0.8)
-                .foregroundStyle(Color.textTertiary)
+                .font(.eyebrowSmall)
+                .kerning(1.0)
+                .foregroundStyle(Color.fg2)
 
             HStack(spacing: 8) {
                 Button(action: minus) {
                     Image(systemName: "minus")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.fg0)
                         .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.surface))
+                        .background(Circle().fill(Color.ink1))
                 }
 
                 VStack(spacing: 3) {
@@ -159,15 +159,15 @@ struct SetLogInput: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.center)
                         .focused($weightFieldFocused)
-                        .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white)
+                        .font(.system(size: 20, weight: .medium, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(Color.fg0)
                         .frame(minWidth: 70)
                         .onChange(of: weight) { _, newValue in
                             if newValue < 0 { weight = 0 }
                         }
 
                     Rectangle()
-                        .fill(weightFieldFocused ? phaseColor : Color.textTertiary.opacity(0.35))
+                        .fill(weightFieldFocused ? phaseColor : Color.fg2.opacity(0.35))
                         .frame(width: 36, height: weightFieldFocused ? 2 : 1)
                         .animation(.easeOut(duration: 0.15), value: weightFieldFocused)
                 }
@@ -175,9 +175,9 @@ struct SetLogInput: View {
                 Button(action: plus) {
                     Image(systemName: "plus")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.fg0)
                         .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.surface))
+                        .background(Circle().fill(Color.ink1))
                 }
             }
         }
@@ -185,38 +185,38 @@ struct SetLogInput: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.surfaceRaised)
+                .fill(Color.ink3)
         )
     }
 
     private func stepper(label: String, value: String, minus: @escaping () -> Void, plus: @escaping () -> Void) -> some View {
         VStack(spacing: 6) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .kerning(0.8)
-                .foregroundStyle(Color.textTertiary)
+                .font(.eyebrowSmall)
+                .kerning(1.0)
+                .foregroundStyle(Color.fg2)
 
             HStack(spacing: 8) {
                 Button(action: minus) {
                     Image(systemName: "minus")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.fg0)
                         .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.surface))
+                        .background(Circle().fill(Color.ink1))
                 }
 
                 Text(value)
-                    .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white)
+                    .font(.system(size: 20, weight: .medium, design: .monospaced).monospacedDigit())
+                    .foregroundStyle(Color.fg0)
                     .frame(minWidth: 70)
                     .contentTransition(.numericText())
 
                 Button(action: plus) {
                     Image(systemName: "plus")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.fg0)
                         .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.surface))
+                        .background(Circle().fill(Color.ink1))
                 }
             }
         }
@@ -224,7 +224,7 @@ struct SetLogInput: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.surfaceRaised)
+                .fill(Color.ink3)
         )
     }
 }
