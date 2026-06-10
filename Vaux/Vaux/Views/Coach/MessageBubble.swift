@@ -91,24 +91,24 @@ struct PRBubble: View {
                     Image(systemName: "trophy.fill")
                         .font(.system(size: 13, weight: .bold))
                     Text("NEW PR")
-                        .font(.system(size: 11, weight: .heavy, design: .rounded))
+                        .font(.eyebrow)
                         .kerning(1.4)
                 }
                 .foregroundStyle(Color.signal)
 
                 Text(pr.exercise)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.serifSM)
+                    .foregroundStyle(Color.fg0)
                     .multilineTextAlignment(.center)
 
                 Text(setLine)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(.numSM)
                     .foregroundStyle(Color.signal.opacity(0.95))
 
                 if let improvement = improvementLine {
                     Text(improvement)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.textSecondary)
+                        .foregroundStyle(Color.fg1)
                 }
             }
             .padding(.horizontal, 18)

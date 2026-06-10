@@ -113,7 +113,7 @@ struct ExerciseLibraryView: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 22))
-                        .foregroundStyle(Color.recoveryGreen)
+                        .foregroundStyle(Color.signal)
                 }
             }
         }
@@ -205,29 +205,26 @@ struct ExerciseLibraryView: View {
 
     private func sectionHeader(_ title: String, count: Int) -> some View {
         HStack {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .heavy, design: .rounded))
-                .kerning(1.3)
-                .foregroundStyle(Color.signal)
+            Eyebrow(text: title, color: .signal)
             Text("\(count)")
-                .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(Color.textTertiary)
+                .font(.eyebrowSmall)
+                .foregroundStyle(Color.fg2)
             Spacer()
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 4)
-        .background(Color.background)
+        .background(Color.ink0)
     }
 
     private func exerciseRow(_ ex: Exercise) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(ex.name)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.fg0)
             if let aliases = ex.aliases, !aliases.isEmpty {
                 Text(aliases.joined(separator: " • "))
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.textTertiary)
+                    .foregroundStyle(Color.fg2)
                     .lineLimit(1)
             }
         }
@@ -295,10 +292,7 @@ struct AddExerciseSheet: View {
 
     private var nameField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Name")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .kerning(1)
-                .foregroundStyle(Color.textTertiary)
+            Eyebrow(text: "Name")
             TextField("e.g. Romanian Deadlift", text: $name)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
@@ -318,28 +312,28 @@ struct AddExerciseSheet: View {
 
     private var muscleGroupPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Muscle group")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .kerning(1)
-                .foregroundStyle(Color.textTertiary)
+            Eyebrow(text: "Muscle group")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(muscleGroupOptions, id: \.self) { option in
+                        let isSelected = muscleGroup == option
                         Button {
                             Haptic.selection()
                             muscleGroup = option
                         } label: {
                             Text(option)
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundStyle(muscleGroup == option ? .black : Color.textSecondary)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(isSelected ? Color.signal : Color.fg1)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
                                 .background(
                                     Capsule()
-                                        .fill(muscleGroup == option
-                                              ? AnyShapeStyle(Gradients.recovery)
-                                              : AnyShapeStyle(Color.surfaceRaised))
+                                        .fill(isSelected ? Color.signal.opacity(0.08) : Color.ink3)
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(isSelected ? Color.signal.opacity(0.22) : Color.line2, lineWidth: 1)
                                 )
                         }
                         .buttonStyle(.plain)
@@ -376,23 +370,23 @@ struct AddExerciseSheet: View {
         } label: {
             HStack {
                 if isSaving {
-                    ProgressView().tint(.black).scaleEffect(0.85)
+                    ProgressView().tint(Color.signalInk).scaleEffect(0.85)
                 } else {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .bold))
                 }
                 Text(isSaving ? "Saving…" : "Save")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 15, weight: .semibold))
             }
-            .foregroundStyle(.black)
+            .foregroundStyle(canSave ? Color.signalInk : Color.fg2)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(canSave ? AnyShapeStyle(Gradients.recovery)
-                                  : AnyShapeStyle(Color.surfaceRaised))
+                    .fill(canSave ? Color.signal : Color.ink3)
             )
         }
+        .buttonStyle(PressScaleStyle())
         .disabled(!canSave)
     }
 }

@@ -24,35 +24,37 @@ struct WeightLogSheet: View {
                 VStack(spacing: 24) {
                     VStack(spacing: 8) {
                         Text("Log your weight")
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text("Today, \(Date().formatted(date: .abbreviated, time: .omitted))")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.textSecondary)
+                            .font(.serifMD)
+                            .foregroundStyle(Color.fg0)
+                        Eyebrow(text: "Today · \(Date().formatted(date: .abbreviated, time: .omitted))")
                     }
 
                     WeightPicker(weight: $weight)
                         .darkCard()
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("BODY FAT %")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .kerning(1.0)
-                            .foregroundStyle(Color.textSecondary)
+                        Eyebrow(text: "Body fat %")
                         TextField("optional", text: $bodyFat)
                             .keyboardType(.decimalPad)
                             .textInputAutocapitalization(.never)
+                            .font(.system(size: 15, design: .monospaced))
                             .padding(14)
-                            .background(Color.cardBackground)
-                            .foregroundStyle(.white)
-                            .cornerRadius(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.ink2)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.line, lineWidth: 1)
+                            )
+                            .foregroundStyle(Color.fg0)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     if !status.isEmpty {
                         Text(status)
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(status.contains("Saved") ? Color.recoveryGreen : Color.recoveryRed)
+                            .foregroundStyle(status.contains("Saved") ? Color.mint : Color.ember)
                     }
 
                     Spacer()
@@ -60,20 +62,21 @@ struct WeightLogSheet: View {
                     Button(action: save) {
                         HStack {
                             if isSaving {
-                                ProgressView().tint(.black)
+                                ProgressView().tint(Color.signalInk)
                             } else {
                                 Text("Save")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .font(.system(size: 16, weight: .semibold))
                             }
                         }
-                        .foregroundStyle(.black)
+                        .foregroundStyle(Color.signalInk)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Gradients.recovery)
+                                .fill(Color.signal)
                         )
                     }
+                    .buttonStyle(PressScaleStyle())
                     .disabled(isSaving)
                 }
                 .padding(20)

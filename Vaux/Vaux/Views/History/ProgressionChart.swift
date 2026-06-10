@@ -62,15 +62,12 @@ struct ProgressionChart: View {
 
     private var header: some View {
         HStack {
-            Text("STRENGTH")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .kerning(1)
-                .foregroundStyle(Color.textTertiary)
+            Eyebrow(text: "Strength")
             Spacer()
             if let last = chartPoints.last {
                 Text("\(Int(last.value)) kg")
-                    .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(Color.recoveryGreen)
+                    .font(.numSM)
+                    .foregroundStyle(Color.signal)
             }
         }
     }
@@ -79,21 +76,27 @@ struct ProgressionChart: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(availableExercises, id: \.self) { name in
+                    let isSelected = selectedExercise == name
                     Button {
                         Haptic.selection()
                         selectedExercise = name
                         Task { await loadSetsForExercise() }
                     } label: {
                         Text(name)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundStyle(selectedExercise == name ? .black : Color.textSecondary)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(isSelected ? Color.signal : Color.fg1)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(
                                 Capsule()
-                                    .fill(selectedExercise == name ? AnyShapeStyle(Gradients.recovery) : AnyShapeStyle(Color.surface))
+                                    .fill(isSelected ? Color.signal.opacity(0.08) : Color.ink3)
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(isSelected ? Color.signal.opacity(0.22) : Color.line, lineWidth: 1)
                             )
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -105,7 +108,7 @@ struct ProgressionChart: View {
                 x: .value("Date", point.date),
                 y: .value("Weight", point.value)
             )
-            .foregroundStyle(Color.recoveryGreen)
+            .foregroundStyle(Color.signal)
             .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round))
             .interpolationMethod(.catmullRom)
 
@@ -113,7 +116,7 @@ struct ProgressionChart: View {
                 x: .value("Date", point.date),
                 y: .value("Weight", point.value)
             )
-            .foregroundStyle(Color.recoveryGreen)
+            .foregroundStyle(Color.signal)
             .symbolSize(40)
 
             AreaMark(
@@ -122,7 +125,7 @@ struct ProgressionChart: View {
             )
             .foregroundStyle(
                 LinearGradient(
-                    colors: [Color.recoveryGreen.opacity(0.3), Color.recoveryGreen.opacity(0)],
+                    colors: [Color.signal.opacity(0.18), Color.signal.opacity(0)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -132,13 +135,18 @@ struct ProgressionChart: View {
         .chartYScale(domain: .automatic(includesZero: false))
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
-                AxisValueLabel().foregroundStyle(Color.textTertiary)
+                AxisValueLabel()
+                    .foregroundStyle(Color.fg2)
+                    .font(.system(size: 10))
+                AxisGridLine()
+                    .foregroundStyle(Color.line)
             }
         }
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                 AxisValueLabel(format: .dateTime.day().month(.abbreviated))
-                    .foregroundStyle(Color.textTertiary)
+                    .foregroundStyle(Color.fg2)
+                    .font(.system(size: 10))
             }
         }
         .frame(height: 170)

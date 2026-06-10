@@ -42,8 +42,8 @@ struct RecoveryDayCard: View {
     private var header: some View {
         HStack {
             Text(prettyDate(recovery.date))
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+                .font(.uiStrong)
+                .foregroundStyle(Color.fg0)
 
             Spacer()
 
@@ -53,17 +53,17 @@ struct RecoveryDayCard: View {
                         .fill(hrvColor(hrv))
                         .frame(width: 7, height: 7)
                     Text("HRV \(Int(hrv))")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(Color.fg0)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Capsule().fill(Color.surface))
+                .background(Capsule().fill(Color.ink3))
             }
 
             Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.textTertiary)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.fg2)
                 .rotationEffect(.degrees(isExpanded ? 180 : 0))
         }
     }
@@ -113,8 +113,8 @@ struct RecoveryDayCard: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(color)
             Text(value)
-                .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(Color.textSecondary)
+                .font(.system(size: 11, weight: .medium, design: .monospaced).monospacedDigit())
+                .foregroundStyle(Color.fg1)
         }
     }
 
@@ -122,11 +122,11 @@ struct RecoveryDayCard: View {
         HStack {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.textTertiary)
+                .foregroundStyle(Color.fg2)
             Spacer()
             Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.system(size: 12, weight: .medium, design: .monospaced).monospacedDigit())
+                .foregroundStyle(Color.fg0)
         }
     }
 

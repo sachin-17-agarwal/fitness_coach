@@ -99,12 +99,12 @@ struct TrendChart: View {
                         .symbolSize(60)
                         .annotation(position: .top, spacing: 6) {
                             Text(point.value.oneDecimal)
-                                .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
-                                .foregroundStyle(.white)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced).monospacedDigit())
+                                .foregroundStyle(Color.ink0)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)
                                 .background(
-                                    Capsule().fill(color.opacity(0.8))
+                                    Capsule().fill(color.opacity(0.85))
                                 )
                         }
                     }
@@ -180,7 +180,7 @@ struct TrendChart: View {
             Image(systemName: up ? "arrow.up.right" : "arrow.down.right")
                 .font(.system(size: 10, weight: .bold))
             Text("\(up ? "+" : "")\(delta.oneDecimal)")
-                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                .font(.system(size: 11, weight: .medium, design: .monospaced).monospacedDigit())
         }
         .foregroundStyle(chipColor)
         .padding(.horizontal, 10)
