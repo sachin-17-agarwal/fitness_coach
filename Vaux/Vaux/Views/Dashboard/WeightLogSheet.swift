@@ -20,7 +20,7 @@ struct WeightLogSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.background.ignoresSafeArea()
+                TechBackground(accent: .amber)
                 VStack(spacing: 24) {
                     VStack(spacing: 8) {
                         Text("Log your weight")

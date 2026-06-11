@@ -12,7 +12,7 @@ struct WorkoutSummaryView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.background.ignoresSafeArea()
+                TechBackground(accent: .signal)
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 18) {
@@ -40,15 +40,7 @@ struct WorkoutSummaryView: View {
                             Haptic.light()
                             onDismiss()
                         }) {
-                            Text("Done")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(Color.signalInk)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 15)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(Color.signal)
-                                )
+                            CTALabel(text: "Done", icon: "checkmark")
                         }
                         .buttonStyle(PressScaleStyle())
                     }

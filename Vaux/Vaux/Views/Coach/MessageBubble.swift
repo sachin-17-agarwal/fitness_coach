@@ -34,6 +34,12 @@ struct MessageBubble: View {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(Color.signal)
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        .blendMode(.plusLighter)
+                )
+                .shadow(color: Color.signal.opacity(0.20), radius: 10, x: 0, y: 4)
 
             if let time = message.createdAt {
                 Text(formatTime(time))
@@ -54,11 +60,18 @@ struct MessageBubble: View {
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.ink3)
+                        .fill(Color.ink3.opacity(0.94))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.line, lineWidth: 0.5)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.10), Color.line],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
                 )
 
             if let time = message.createdAt {

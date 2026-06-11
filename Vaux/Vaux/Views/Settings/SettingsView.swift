@@ -30,10 +30,17 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.background.ignoresSafeArea()
+                TechBackground(accent: .signal)
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
+                        ScreenHeader(
+                            eyebrow: "System configuration",
+                            title: "Settings"
+                        )
+                        .padding(.horizontal, 4)
+                        .padding(.top, 8)
+
                         profileHeader
                         mesocycleCard
                         coachStyleCard
@@ -46,8 +53,7 @@ struct SettingsView: View {
                     .padding(.horizontal, 18)
                 }
             }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarHidden(true)
             .task {
                 await loadMesocycle()
                 briefingStyle = await preferences.loadBriefingStyle()

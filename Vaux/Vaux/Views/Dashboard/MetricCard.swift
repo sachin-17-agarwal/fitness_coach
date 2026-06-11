@@ -1,5 +1,9 @@
 // MetricCard.swift
 // Vaux
+//
+// Compact metric tile: mono header with a small accent icon, serif value
+// with mono unit, optional trend chip, glowing sparkline, and an eyebrow
+// subtitle. Sits on the standard machined card surface.
 
 import SwiftUI
 import Charts
@@ -55,85 +59,57 @@ struct MetricCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    iconTile
-                    Text(title.uppercased())
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(accentColor)
+                Text(title.uppercased())
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .kerning(0.8)
+                    .foregroundStyle(Color.fg2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: 2)
+                if let trend {
+                    trendChip(trend)
+                }
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(numberPart)
+                    .font(.serifLG)
+                    .foregroundStyle(Color.fg0)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                if let unit {
+                    Text(unit.uppercased())
+                        .font(.eyebrow)
                         .kerning(0.8)
-                        .foregroundStyle(Color.fg2)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                    Spacer(minLength: 2)
-                    if let trend {
-                        trendChip(trend)
-                    }
+                        .foregroundStyle(accentColor)
                 }
+            }
 
-                HStack(alignment: .bottom, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(numberPart)
-                            .font(.serifLG)
-                            .foregroundStyle(Color.fg0)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                        if let unit {
-                            Text(unit)
-                                .font(.eyebrow)
-                                .foregroundStyle(accentColor)
-                        }
-                    }
-                    Spacer()
-                    if let sparkline, sparkline.count >= 2 {
-                        sparklineView(sparkline)
-                            .frame(width: 72, height: 24)
-                    }
-                }
+            Spacer(minLength: 0)
 
+            HStack(alignment: .bottom) {
                 if let subtitle {
                     Text(subtitle.uppercased())
                         .font(.eyebrowSmall)
                         .kerning(1.2)
                         .foregroundStyle(Color.fg2)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 4)
+                if let sparkline, sparkline.count >= 2 {
+                    sparklineView(sparkline)
+                        .frame(width: 64, height: 22)
                 }
             }
-            .padding(16)
-
-            Spacer(minLength: 0)
-
-            RoundedRectangle(cornerRadius: 2)
-                .fill(
-                    LinearGradient(
-                        colors: [accentColor, accentColor.opacity(0.3)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 3)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
         }
-        .frame(maxWidth: .infinity, minHeight: 140, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.ink2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
-    }
-
-    private var iconTile: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(accentColor.opacity(0.14))
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(accentColor)
-        }
-        .frame(width: 24, height: 24)
+        .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
+        .darkCard(padding: 16, cornerRadius: 18)
     }
 
     private func trendChip(_ trend: Trend) -> some View {
@@ -162,6 +138,7 @@ struct MetricCard: View {
                 .foregroundStyle(accentColor)
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .interpolationMethod(.catmullRom)
+                .shadow(color: accentColor.opacity(0.5), radius: 3)
 
                 AreaMark(
                     x: .value("idx", i),
@@ -169,7 +146,7 @@ struct MetricCard: View {
                 )
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [accentColor.opacity(0.15), accentColor.opacity(0.04), .clear],
+                        colors: [accentColor.opacity(0.18), accentColor.opacity(0.04), .clear],
                         startPoint: .top,
                         endPoint: .bottom
                     )

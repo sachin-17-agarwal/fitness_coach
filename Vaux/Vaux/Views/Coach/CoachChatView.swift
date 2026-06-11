@@ -21,9 +21,19 @@ struct CoachChatView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.background.ignoresSafeArea()
+                TechBackground(accent: .signal)
 
                 VStack(spacing: 0) {
+                    ScreenHeader(
+                        eyebrow: "Vaux Coach · Online",
+                        title: "Coach",
+                        showsLiveDot: true,
+                        accessory: AnyView(briefingButton)
+                    )
+                    .padding(.horizontal, 22)
+                    .padding(.top, 8)
+                    .padding(.bottom, 10)
+
                     if viewModel.messages.isEmpty && !viewModel.isLoading {
                         emptyState
                     } else {
@@ -39,13 +49,7 @@ struct CoachChatView: View {
                     inputBar
                 }
             }
-            .navigationTitle("Coach")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    briefingButton
-                }
-            }
+            .navigationBarHidden(true)
             .task { await viewModel.loadConversation() }
         }
     }
@@ -112,18 +116,31 @@ struct CoachChatView: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 18) {
             Spacer()
-            VauxLogo(size: 56, color: .signal)
 
-            VStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .stroke(Color.signal.opacity(0.10), lineWidth: 1)
+                    .frame(width: 132, height: 132)
+                Circle()
+                    .stroke(Color.signal.opacity(0.20), lineWidth: 1)
+                    .frame(width: 96, height: 96)
+                Circle()
+                    .fill(Color.signal.opacity(0.06))
+                    .frame(width: 96, height: 96)
+                VauxLogo(size: 40, color: .signal)
+                    .shadow(color: Color.signal.opacity(0.6), radius: 14)
+            }
+
+            VStack(spacing: 8) {
                 Text("Ask your coach")
-                    .font(.serifLG)
+                    .font(.serifMD)
                     .foregroundStyle(Color.fg0)
-                Text("Programming. Form. Recovery.\nAsk anything, stay factual.")
-                    .multilineTextAlignment(.center)
-                    .font(.uiSmall)
-                    .foregroundStyle(Color.fg1)
+                Text("PROGRAMMING · FORM · RECOVERY")
+                    .font(.eyebrowSmall)
+                    .kerning(1.6)
+                    .foregroundStyle(Color.fg2)
             }
 
             Spacer()
@@ -191,11 +208,22 @@ struct CoachChatView: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.surface)
+                    .fill(Color.ink2.opacity(0.9))
+                    .background(
+                        .ultraThinMaterial.opacity(0.5),
+                        in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(inputFocused ? Color.signal.opacity(0.35) : Color.line, lineWidth: 1)
+                    .stroke(
+                        inputFocused ? Color.signal.opacity(0.40) : Color.line,
+                        lineWidth: 1
+                    )
+            )
+            .shadow(
+                color: inputFocused ? Color.signal.opacity(0.12) : .clear,
+                radius: 12
             )
             .animation(Motion.snappy, value: inputFocused)
 
@@ -205,13 +233,15 @@ struct CoachChatView: View {
         .padding(.top, 8)
         .padding(.bottom, 10)
         .background(
-            Color.background
+            Color.ink0.opacity(0.85)
+                .background(.ultraThinMaterial.opacity(0.4))
                 .overlay(
                     Rectangle()
-                        .fill(Color.cardBorder.opacity(0.5))
-                        .frame(height: 0.5),
+                        .fill(Color.line.opacity(0.6))
+                        .frame(height: 1),
                     alignment: .top
                 )
+                .ignoresSafeArea(edges: .bottom)
         )
     }
 
@@ -229,6 +259,7 @@ struct CoachChatView: View {
                     Circle()
                         .fill(canSend ? Color.signal : Color.ink3)
                 )
+                .shadow(color: canSend ? Color.signal.opacity(0.40) : .clear, radius: 10, x: 0, y: 4)
         }
         .disabled(!canSend)
         .buttonStyle(PressScaleStyle(scale: 0.92))

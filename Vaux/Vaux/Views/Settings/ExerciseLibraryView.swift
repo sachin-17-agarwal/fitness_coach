@@ -96,7 +96,7 @@ struct ExerciseLibraryView: View {
 
     var body: some View {
         ZStack {
-            Color.background.ignoresSafeArea()
+            TechBackground(accent: .signal)
 
             VStack(spacing: 0) {
                 searchBar
@@ -265,7 +265,7 @@ struct AddExerciseSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.background.ignoresSafeArea()
+                TechBackground(accent: .signal)
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {

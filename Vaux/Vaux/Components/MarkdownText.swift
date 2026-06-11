@@ -95,7 +95,7 @@ struct MarkdownText: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .top, spacing: 8) {
                         Text("•")
-                            .foregroundStyle(Color.recoveryGreen)
+                            .foregroundStyle(Color.signal)
                         Text(inlineAttributed(item))
                     }
                 }
@@ -105,7 +105,7 @@ struct MarkdownText: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { i, item in
                     HStack(alignment: .top, spacing: 8) {
                         Text("\(i + 1).")
-                            .foregroundStyle(Color.recoveryGreen)
+                            .foregroundStyle(Color.signal)
                             .fontWeight(.semibold)
                         Text(inlineAttributed(item))
                     }

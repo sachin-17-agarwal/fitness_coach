@@ -44,44 +44,23 @@ struct WeeklyVolumeView: View {
     }
 
     private func metric(value: String, label: String, color: Color, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(color.opacity(0.14))
-                    .frame(width: 28, height: 28)
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(color)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(height: 16)
             Text(value)
-                .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.numMD)
+                .foregroundStyle(Color.fg0)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.textSecondary)
-
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(
-                    LinearGradient(
-                        colors: [color, color.opacity(0.2)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 3)
+            Text(label.uppercased())
+                .font(.eyebrowSmall)
+                .kerning(1.2)
+                .foregroundStyle(Color.fg2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.ink2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
+        .darkCard(padding: 14, cornerRadius: 14)
     }
 
     private var deltaCard: some View {
@@ -93,44 +72,23 @@ struct WeeklyVolumeView: View {
             return String(format: "%@%.0f%%", delta >= 0 ? "+" : "", delta)
         }()
 
-        return VStack(alignment: .leading, spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(color.opacity(0.14))
-                    .frame(width: 28, height: 28)
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(color)
-            }
+        return VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(height: 16)
             Text(label)
-                .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.numMD)
+                .foregroundStyle(color)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
-            Text("vs. last week")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.textSecondary)
-
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(
-                    LinearGradient(
-                        colors: [color, color.opacity(0.2)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 3)
+            Text("VS LAST WEEK")
+                .font(.eyebrowSmall)
+                .kerning(1.2)
+                .foregroundStyle(Color.fg2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.ink2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
+        .darkCard(padding: 14, cornerRadius: 14)
     }
 
     // MARK: - Insights row
@@ -195,8 +153,8 @@ struct WeeklyVolumeView: View {
                     .foregroundStyle(Color.fg2)
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(value)
-                        .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(Color.fg0)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                     if !sub.isEmpty {
@@ -211,14 +169,7 @@ struct WeeklyVolumeView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.ink2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
+        .darkCard(padding: 0, cornerRadius: 12)
     }
 
     // MARK: - Daily tonnage chart
@@ -297,15 +248,7 @@ struct WeeklyVolumeView: View {
                 .frame(height: 150)
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.ink2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
+        .darkCard(padding: 16, cornerRadius: 18)
     }
 
     private var emptyChartPlaceholder: some View {
@@ -358,15 +301,7 @@ struct WeeklyVolumeView: View {
                 }
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.ink2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
+        .darkCard(padding: 16, cornerRadius: 18)
     }
 
     private var displayGroups: [MuscleGroupVolume] {
@@ -409,13 +344,13 @@ struct WeeklyVolumeView: View {
                             .foregroundStyle(Color.fg2)
                         Text(entry.name)
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.fg0)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer()
                         Text("\(entry.setCount)")
-                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(.white)
+                            .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
+                            .foregroundStyle(Color.fg0)
                             .frame(minWidth: 22, alignment: .trailing)
                         Text(entry.setCount == 1 ? "set" : "sets")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -424,15 +359,7 @@ struct WeeklyVolumeView: View {
                 }
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.ink2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
+        .darkCard(padding: 16, cornerRadius: 18)
     }
 
     private func muscleRow(group: MuscleGroupVolume) -> some View {
@@ -445,9 +372,10 @@ struct WeeklyVolumeView: View {
                 Circle()
                     .fill(color)
                     .frame(width: 8, height: 8)
+                    .shadow(color: color.opacity(0.6), radius: 4)
                 Text(group.group.capitalized)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.fg0)
                 Spacer()
                 HStack(spacing: 3) {
                     Image(systemName: status.icon)
@@ -462,8 +390,8 @@ struct WeeklyVolumeView: View {
                 .background(Capsule().fill(status.color.opacity(0.12)))
 
                 Text("\(group.setCount)")
-                    .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white)
+                    .font(.system(size: 14, weight: .medium, design: .monospaced).monospacedDigit())
+                    .foregroundStyle(Color.fg0)
                     .frame(width: 28, alignment: .trailing)
             }
 

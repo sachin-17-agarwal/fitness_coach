@@ -81,7 +81,8 @@ struct InlineChatInput: View {
             }
         }
         .background(
-            Color.ink1
+            Color.ink1.opacity(0.85)
+                .background(.ultraThinMaterial.opacity(0.5))
                 .overlay(
                     Rectangle()
                         .fill(Color.line)

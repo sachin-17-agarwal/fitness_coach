@@ -131,20 +131,20 @@ struct FitnessCoachApp: App {
     }
 }
 
-// MARK: - Capsule tab bar (editorial)
+// MARK: - Capsule tab bar
 //
-// Fixed-height floating capsule at the bottom, ink-2 @ ~82% alpha with blur,
-// r=28, 16pt outer inset. Active tab: signal lime icon + label, others fg-2
-// icon with no label. Deliberately constrained in height so the bar never
-// fights the content area above it (previous implementation had no height
-// bound and could stretch when layout changed).
+// Floating instrument-panel bar: blurred ink surface with a machined
+// top-highlight border. Every tab shows its icon plus a small mono label;
+// the active tab glows signal-lime with a matched-geometry highlight that
+// slides between items.
 
 struct CapsuleTabBar: View {
     @Binding var selected: FitnessCoachApp.Tab
+    @Namespace private var indicator
 
     /// Outer space (bar height + bottom inset) the tab bar occupies — used
     /// by the app root to leave room below scrolling content.
-    static let reservedHeight: CGFloat = 72
+    static let reservedHeight: CGFloat = 80
 
     var body: some View {
         HStack(spacing: 2) {
@@ -152,22 +152,28 @@ struct CapsuleTabBar: View {
                 tabItem(tab)
             }
         }
-        .padding(.horizontal, 8)
-        .frame(height: 56)
+        .padding(6)
         .frame(maxWidth: .infinity)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color.ink2.opacity(0.82))
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .fill(Color.ink1.opacity(0.86))
                     .background(
                         .ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: 30, style: .continuous)
                     )
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(Color.line, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.10), Color.line],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
             }
         )
-        .shadow(color: Color.black.opacity(0.5), radius: 20, x: 0, y: 10)
+        .shadow(color: Color.black.opacity(0.55), radius: 22, x: 0, y: 12)
     }
 
     private func tabItem(_ tab: FitnessCoachApp.Tab) -> some View {
@@ -175,37 +181,33 @@ struct CapsuleTabBar: View {
         return Button {
             guard selected != tab else { return }
             Haptic.light()
-            withAnimation(.easeOut(duration: 0.18)) { selected = tab }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { selected = tab }
         } label: {
-            HStack(spacing: 6) {
+            VStack(spacing: 4) {
                 Image(systemName: tab.icon)
-                    .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 17, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Color.signal : Color.fg2)
+                    .shadow(color: isSelected ? Color.signal.opacity(0.6) : .clear, radius: 7)
 
+                Text(tab.title.uppercased())
+                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .kerning(0.8)
+                    .foregroundStyle(isSelected ? Color.signal : Color.fg3)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background {
                 if isSelected {
-                    Text(tab.title.uppercased())
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .kerning(1.2)
-                        .foregroundStyle(Color.signal)
-                        .fixedSize()
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(Color.signal.opacity(0.09))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(Color.signal.opacity(0.18), lineWidth: 1)
+                        )
+                        .matchedGeometryEffect(id: "activeTab", in: indicator)
                 }
             }
-            .padding(.horizontal, isSelected ? 14 : 10)
-            .frame(maxWidth: .infinity)
-            .frame(height: 40)
-            .background(
-                Capsule()
-                    .fill(isSelected ? Color.signal.opacity(0.08) : Color.clear)
-            )
-            .overlay(
-                Capsule()
-                    .stroke(
-                        isSelected ? Color.signal.opacity(0.22) : Color.clear,
-                        lineWidth: 1
-                    )
-            )
-            .contentShape(Capsule())
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .buttonStyle(.plain)
     }

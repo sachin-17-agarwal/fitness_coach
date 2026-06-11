@@ -1,8 +1,9 @@
 // MorningBriefingView.swift
 // Vaux
 //
-// Full-screen morning briefing. Shows a greeting, a recovery hero card,
-// today's session plan, and a coach-generated note.
+// Full-screen morning briefing on the editorial design system: serif
+// greeting masthead, recovery hero with instrument ring, today's plan,
+// and the coach-generated note.
 
 import SwiftUI
 
@@ -15,13 +16,10 @@ struct MorningBriefingView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.background.ignoresSafeArea()
-                ambientBackground
+                TechBackground(accent: .signal)
 
                 if viewModel.isLoading && viewModel.briefing == nil {
-                    ProgressView()
-                        .tint(.recoveryGreen)
-                        .scaleEffect(1.2)
+                    loadingState
                 } else if let b = viewModel.briefing {
                     content(b)
                 } else {
@@ -37,11 +35,7 @@ struct MorningBriefingView: View {
                         viewModel.markShown()
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Color.textSecondary)
-                            .padding(8)
-                            .background(Circle().fill(Color.surface))
+                        toolbarIcon("xmark")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -49,11 +43,7 @@ struct MorningBriefingView: View {
                         Haptic.selection()
                         Task { await viewModel.refresh() }
                     } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Color.textSecondary)
-                            .padding(8)
-                            .background(Circle().fill(Color.surface))
+                        toolbarIcon("arrow.clockwise")
                     }
                     .disabled(viewModel.isLoading)
                 }
@@ -66,24 +56,26 @@ struct MorningBriefingView: View {
         }
     }
 
-    // MARK: - Ambient background (subtle gradient glow)
+    private func toolbarIcon(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 13, weight: .bold))
+            .foregroundStyle(Color.fg1)
+            .frame(width: 32, height: 32)
+            .background(Circle().fill(Color.ink2.opacity(0.9)))
+            .overlay(Circle().stroke(Color.line, lineWidth: 1))
+    }
 
-    private var ambientBackground: some View {
-        GeometryReader { geo in
-            ZStack {
-                Circle()
-                    .fill(Color.accentPurple.opacity(0.18))
-                    .frame(width: 320, height: 320)
-                    .blur(radius: 80)
-                    .offset(x: -geo.size.width * 0.4, y: -geo.size.height * 0.3)
-
-                Circle()
-                    .fill(Color.accentTeal.opacity(0.14))
-                    .frame(width: 360, height: 360)
-                    .blur(radius: 100)
-                    .offset(x: geo.size.width * 0.4, y: -geo.size.height * 0.1)
+    private var loadingState: some View {
+        VStack(spacing: 18) {
+            VauxLogo(size: 30, color: .signal)
+                .shadow(color: Color.signal.opacity(0.5), radius: 14)
+            HStack(spacing: 8) {
+                GlowDot(color: .signal, size: 5)
+                Text("COMPOSING BRIEFING")
+                    .font(.eyebrowSmall)
+                    .kerning(1.6)
+                    .foregroundStyle(Color.fg2)
             }
-            .ignoresSafeArea()
         }
     }
 
@@ -110,27 +102,18 @@ struct MorningBriefingView: View {
         }
     }
 
-    // MARK: - Greeting
+    // MARK: - Greeting masthead
 
     private func greeting(_ b: Briefing) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                GlowDot(color: .signal, size: 4)
+                Eyebrow(text: "Morning briefing · \(prettyDate(b.date))")
+            }
+
             Text(timeOfDayGreeting())
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Color.textSecondary)
-
-            Text("Morning briefing")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.white, Color.white.opacity(0.75)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-
-            Text(prettyDate(b.date))
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.textTertiary)
+                .font(.serifLG)
+                .foregroundStyle(Color.fg0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -145,21 +128,9 @@ struct MorningBriefingView: View {
                 dismiss()
                 onStartWorkout?(b.mesocycle.sessionType)
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 13, weight: .bold))
-                    Text("Start \(b.mesocycle.sessionType) workout")
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                }
-                .foregroundStyle(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Gradients.recovery)
-                )
-                .shadow(color: Color.recoveryGreen.opacity(0.35), radius: 18, x: 0, y: 10)
+                CTALabel(text: "Start \(b.mesocycle.sessionType) workout", icon: "play.fill")
             }
+            .buttonStyle(PressScaleStyle())
 
             Button {
                 Haptic.light()
@@ -169,48 +140,53 @@ struct MorningBriefingView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "message.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                     Text("Chat with coach")
                         .font(.system(size: 15, weight: .semibold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.fg0)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.surface)
+                        .fill(Color.ink2.opacity(0.94))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.cardBorder, lineWidth: 1)
+                        .stroke(Color.line2, lineWidth: 1)
                 )
             }
+            .buttonStyle(PressScaleStyle())
         }
     }
 
     private var errorState: some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
-                .foregroundStyle(Color.recoveryYellow)
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(Color.amber)
             Text("Couldn't load briefing")
-                .font(.headline)
-                .foregroundStyle(.white)
+                .font(.serifSM)
+                .foregroundStyle(Color.fg0)
             if let err = viewModel.errorMessage {
                 Text(err)
-                    .font(.caption)
-                    .foregroundStyle(Color.textSecondary)
+                    .font(.uiSmall)
+                    .foregroundStyle(Color.fg2)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
-            Button("Retry") {
+            Button {
+                Haptic.light()
                 Task { await viewModel.load() }
+            } label: {
+                Text("Retry")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.signalInk)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Color.signal))
             }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.black)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(Capsule().fill(Color.recoveryGreen))
+            .buttonStyle(PressScaleStyle())
             .padding(.top, 8)
         }
     }
@@ -220,30 +196,20 @@ struct MorningBriefingView: View {
     private func timeOfDayGreeting() -> String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
-        case 5..<12: return "Good morning"
-        case 12..<17: return "Good afternoon"
-        case 17..<22: return "Good evening"
-        default: return "Welcome back"
+        case 5..<12: return "Good morning, Sachin"
+        case 12..<17: return "Good afternoon, Sachin"
+        case 17..<22: return "Good evening, Sachin"
+        default: return "Welcome back, Sachin"
         }
     }
 
     private func prettyDate(_ dateString: String) -> String {
-        let parts = dateString.split(separator: "-")
-        guard parts.count == 3,
-              let month = Int(parts[1]),
-              let day = Int(parts[2]) else { return dateString }
-        let months = ["", "January", "February", "March", "April", "May", "June",
-                      "July", "August", "September", "October", "November", "December"]
-        guard month >= 1, month <= 12 else { return dateString }
-
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
-        if let date = f.date(from: dateString) {
-            let wd = DateFormatter()
-            wd.dateFormat = "EEEE"
-            return "\(wd.string(from: date)), \(months[month]) \(day)"
-        }
-        return "\(months[month]) \(day)"
+        guard let date = f.date(from: dateString) else { return dateString }
+        let out = DateFormatter()
+        out.dateFormat = "EEEE · MMM d"
+        return out.string(from: date)
     }
 }
 
@@ -254,52 +220,82 @@ struct BriefingRecoveryHero: View {
 
     private var accent: Color {
         switch briefing.recoveryLevel {
-        case .good: return .recoveryGreen
-        case .moderate: return .recoveryYellow
-        case .low: return .recoveryRed
-        case .unknown: return .textSecondary
+        case .good: return .mint
+        case .moderate: return .amber
+        case .low: return .ember
+        case .unknown: return .fg2
         }
-    }
-
-    private var gradient: LinearGradient {
-        Gradients.forRecovery(briefing.recoveryScore)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("RECOVERY")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .kerning(1.2)
-                        .foregroundStyle(Color.textSecondary)
-                    Text(briefing.recoveryLevel.label)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                }
+                Eyebrow(text: "Recovery")
                 Spacer()
-                ZStack {
-                    Circle()
-                        .stroke(accent.opacity(0.18), lineWidth: 6)
-                        .frame(width: 78, height: 78)
-                    Circle()
-                        .trim(from: 0, to: Double(briefing.recoveryScore) / 100)
-                        .stroke(gradient, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .frame(width: 78, height: 78)
-                    Text("\(briefing.recoveryScore)")
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                HStack(spacing: 6) {
+                    GlowDot(color: accent, size: 5)
+                    Text(briefing.recoveryLevel.label.uppercased())
+                        .font(.eyebrow)
+                        .kerning(1.2)
+                        .foregroundStyle(accent)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(accent.opacity(0.08)))
+                .overlay(Capsule().stroke(accent.opacity(0.22), lineWidth: 1))
             }
 
-            HStack(spacing: 10) {
-                metricPill(icon: "waveform.path.ecg", label: "HRV", value: hrvValue, delta: briefing.hrvDelta)
-                metricPill(icon: "moon.fill", label: "Sleep", value: sleepValue, delta: nil)
-                metricPill(icon: "heart.fill", label: "RHR", value: rhrValue, delta: nil)
+            HStack(alignment: .center, spacing: 20) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.line, lineWidth: 6)
+                        .frame(width: 86, height: 86)
+                    Circle()
+                        .trim(from: 0, to: Double(briefing.recoveryScore) / 100)
+                        .stroke(accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 86, height: 86)
+                        .shadow(color: accent.opacity(0.4), radius: 6)
+                    Text("\(briefing.recoveryScore)")
+                        .font(.system(size: 28, weight: .light, design: .serif))
+                        .foregroundStyle(Color.fg0)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(verdict)
+                        .font(.uiSmall)
+                        .foregroundStyle(Color.fg1)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("HRV \(briefing.hrvDelta) VS BASELINE")
+                        .font(.eyebrowSmall)
+                        .kerning(1.0)
+                        .foregroundStyle(Color.fg2)
+                }
+                Spacer(minLength: 0)
+            }
+
+            Hairline()
+
+            HStack(spacing: 0) {
+                metricCell(label: "HRV", value: hrvValue, unit: "ms")
+                Rectangle().fill(Color.line).frame(width: 1)
+                metricCell(label: "Sleep", value: sleepValue, unit: "hrs")
+                Rectangle().fill(Color.line).frame(width: 1)
+                metricCell(label: "RHR", value: rhrValue, unit: "bpm")
             }
         }
-        .heroCard(accent: accent)
+        .heroCard(accent: accent, padding: 20, cornerRadius: 26)
+    }
+
+    private var verdict: String {
+        switch briefing.recoveryLevel {
+        case .good: return "Systems are go. Today is a day to push."
+        case .moderate: return "Partially recovered — train, but manage intensity."
+        case .low: return "Recovery is compromised. Keep it light."
+        case .unknown: return "No recovery data synced yet."
+        }
     }
 
     private var hrvValue: String {
@@ -309,7 +305,9 @@ struct BriefingRecoveryHero: View {
 
     private var sleepValue: String {
         guard let s = briefing.recovery?.sleepHours else { return "—" }
-        return String(format: "%.1fh", s)
+        let h = Int(s)
+        let m = Int((s - Double(h)) * 60)
+        return String(format: "%d:%02d", h, m)
     }
 
     private var rhrValue: String {
@@ -317,38 +315,20 @@ struct BriefingRecoveryHero: View {
         return "\(Int(rhr))"
     }
 
-    private func metricPill(icon: String, label: String, value: String, delta: String?) -> some View {
+    private func metricCell(label: String, value: String, unit: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
-                Text(label)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .kerning(0.5)
-            }
-            .foregroundStyle(Color.textSecondary)
-
-            Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-
-            if let delta {
-                Text(delta)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.textSecondary)
+            Eyebrow(text: label)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value)
+                    .font(.numMD)
+                    .foregroundStyle(Color.fg0)
+                Text(unit)
+                    .font(.eyebrow)
+                    .foregroundStyle(Color.fg2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
-        )
+        .padding(.horizontal, 4)
     }
 }
 
@@ -373,59 +353,63 @@ struct BriefingPlanCard: View {
 
     private var sessionFocus: String {
         switch briefing.mesocycle.sessionType {
-        case "Pull": return "Back, rear delts, biceps"
-        case "Push": return "Chest, shoulders, triceps"
-        case "Legs": return "Quads, hamstrings, glutes"
-        case "Cardio+Abs": return "Zone 2 cardio + core"
-        case "Yoga": return "Mobility, stretching, recovery"
-        default: return "Full body"
+        case "Pull": return "BACK · REAR DELTS · BICEPS"
+        case "Push": return "CHEST · SHOULDERS · TRICEPS"
+        case "Legs": return "QUADS · HAMS · GLUTES"
+        case "Cardio+Abs": return "ZONE 2 · CORE"
+        case "Yoga": return "MOBILITY · STRETCHING"
+        default: return "FULL BODY"
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("TODAY'S PLAN")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .kerning(1.2)
-                    .foregroundStyle(Color.textSecondary)
+                Eyebrow(text: "Today's plan")
                 Spacer()
-                Text("Week \(briefing.mesocycle.week) · Day \(briefing.mesocycle.day)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.textSecondary)
+                Text("W\(briefing.mesocycle.week) · D\(briefing.mesocycle.day)")
+                    .font(.eyebrowSmall)
+                    .kerning(1.2)
+                    .foregroundStyle(Color.fg2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.ink1.opacity(0.8)))
+                    .overlay(Capsule().stroke(Color.line, lineWidth: 1))
             }
 
             HStack(spacing: 14) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Gradients.forSession(briefing.mesocycle.sessionType))
-                        .frame(width: 64, height: 64)
-
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(accent.opacity(0.10))
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .stroke(accent.opacity(0.25), lineWidth: 1)
                     Image(systemName: sessionIcon)
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(accent)
+                        .shadow(color: accent.opacity(0.5), radius: 6)
                 }
-                .shadow(color: accent.opacity(0.4), radius: 14, x: 0, y: 8)
+                .frame(width: 50, height: 50)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(briefing.mesocycle.sessionType)
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.serifMD)
+                        .foregroundStyle(Color.fg0)
 
                     Text(sessionFocus)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.textSecondary)
+                        .font(.eyebrowSmall)
+                        .kerning(1.2)
+                        .foregroundStyle(Color.fg2)
                 }
 
                 Spacer()
             }
 
-            // Next-up pill rail
+            // Next-up rail
             HStack(spacing: 6) {
                 Text("COMING UP")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .kerning(1)
-                    .foregroundStyle(Color.textTertiary)
+                    .font(.eyebrowSmall)
+                    .kerning(1.0)
+                    .foregroundStyle(Color.fg3)
                 upcomingChip(offset: 1)
                 upcomingChip(offset: 2)
                 upcomingChip(offset: 3)
@@ -439,12 +423,14 @@ struct BriefingPlanCard: View {
         let idx = (briefing.mesocycle.day - 1 + offset) % Config.cycleLength
         let type = Config.cycle[idx]
         let color = Color.forSession(type)
-        return Text(type)
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
+        return Text(type.uppercased())
+            .font(.eyebrowSmall)
+            .kerning(0.8)
             .foregroundStyle(color)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Capsule().fill(color.opacity(0.12)))
+            .background(Capsule().fill(color.opacity(0.10)))
+            .overlay(Capsule().stroke(color.opacity(0.20), lineWidth: 0.5))
     }
 }
 
@@ -456,25 +442,14 @@ struct BriefingNoteCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(Gradients.cool)
-                        .frame(width: 28, height: 28)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-
-                Text("Coach's note")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-
+                CoachAvatar()
+                Eyebrow(text: "Coach's note")
                 Spacer()
             }
 
             MarkdownText(content: note)
-                .foregroundStyle(Color.white.opacity(0.92))
-                .font(.system(size: 15, design: .rounded))
+                .foregroundStyle(Color.fg0.opacity(0.92))
+                .font(.system(size: 14))
                 .lineSpacing(4)
         }
         .darkCard(padding: 18, cornerRadius: 22)

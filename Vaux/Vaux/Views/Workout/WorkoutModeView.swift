@@ -30,7 +30,7 @@ struct WorkoutModeView: View {
 
     var body: some View {
         ZStack {
-            Color.background.ignoresSafeArea()
+            TechBackground(accent: Color.forSession(effectiveSessionType.isEmpty ? "Session" : effectiveSessionType))
 
             if isNonStrengthDay && !viewModel.isActive && !viewModel.showSummary {
                 CardioYogaLogView(
@@ -145,41 +145,49 @@ struct WorkoutModeView: View {
     /// from flashing into view when the user is actually re-entering a
     /// workout that's still in progress on the server.
     private var resumeCheckView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             Spacer()
-            ProgressView()
-                .tint(.signal)
-                .scaleEffect(1.1)
-            Text("Checking for an active session…")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.fg1)
+            VauxLogo(size: 30, color: .signal)
+                .shadow(color: Color.signal.opacity(0.5), radius: 14)
+            HStack(spacing: 8) {
+                GlowDot(color: .signal, size: 5)
+                Text("SYNCING SESSION STATE")
+                    .font(.eyebrowSmall)
+                    .kerning(1.6)
+                    .foregroundStyle(Color.fg2)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Start screen
+    // MARK: - Start screen — session brief
 
     private var startView: some View {
         let type = effectiveSessionType.isEmpty ? "Session" : effectiveSessionType
         let accent = Color.forSession(type)
-        return VStack(spacing: 28) {
+        return VStack(spacing: 0) {
             Spacer()
 
             ZStack {
                 Circle()
-                    .fill(accent.opacity(0.10))
+                    .stroke(accent.opacity(0.10), lineWidth: 1)
+                    .frame(width: 156, height: 156)
+                Circle()
+                    .stroke(accent.opacity(0.22), lineWidth: 1)
                     .frame(width: 120, height: 120)
                 Circle()
-                    .stroke(accent.opacity(0.25), lineWidth: 1)
+                    .fill(accent.opacity(0.08))
                     .frame(width: 120, height: 120)
                 Image(systemName: iconForType(type))
                     .font(.system(size: 42, weight: .medium))
                     .foregroundStyle(accent)
+                    .shadow(color: accent.opacity(0.6), radius: 12)
             }
+            .padding(.bottom, 28)
 
             VStack(spacing: 10) {
-                Eyebrow(text: "Ready to train")
+                Eyebrow(text: "Session brief")
 
                 Text(effectiveSessionType.isEmpty ? "Start workout" : "\(effectiveSessionType) Day")
                     .font(.serifLG)
@@ -187,10 +195,14 @@ struct WorkoutModeView: View {
 
                 Text(focusForType(type).uppercased())
                     .font(.eyebrowSmall)
-                    .kerning(1.2)
+                    .kerning(1.6)
                     .foregroundStyle(Color.fg2)
                     .padding(.top, 2)
             }
+
+            briefStrip(accent: accent)
+                .padding(.horizontal, 24)
+                .padding(.top, 28)
 
             Spacer()
 
@@ -198,30 +210,53 @@ struct WorkoutModeView: View {
                 Haptic.medium()
                 Task { await viewModel.startOrResumeWorkout(type: effectiveSessionType) }
             } label: {
-                HStack(spacing: 8) {
-                    if viewModel.isLoading {
-                        ProgressView().tint(Color.signalInk)
-                    } else {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 13, weight: .bold))
-                        Text("Begin session")
-                            .font(.system(size: 16, weight: .semibold))
-                    }
-                }
-                .foregroundStyle(Color.signalInk)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.signal)
+                CTALabel(
+                    text: "Begin session",
+                    icon: "play.fill",
+                    busy: viewModel.isLoading
                 )
-                .shadow(color: Color.signal.opacity(0.25), radius: 18, x: 0, y: 10)
             }
             .buttonStyle(PressScaleStyle())
             .disabled(viewModel.isLoading)
             .padding(.horizontal, 24)
             .padding(.bottom, 32)
         }
+    }
+
+    /// Mono data strip under the session title: coach mode, live tracking,
+    /// and progression — quiet reassurance that the system is armed.
+    private func briefStrip(accent: Color) -> some View {
+        HStack(spacing: 0) {
+            briefCell(label: "Coach", value: "ARMED")
+            Rectangle().fill(Color.line).frame(width: 1, height: 30)
+            briefCell(label: "Tracking", value: "LIVE")
+            Rectangle().fill(Color.line).frame(width: 1, height: 30)
+            briefCell(label: "Plan", value: "ADAPTIVE")
+        }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.ink1.opacity(0.75))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.line, lineWidth: 1)
+        )
+    }
+
+    private func briefCell(label: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(label.uppercased())
+                .font(.eyebrowSmall)
+                .kerning(1.2)
+                .foregroundStyle(Color.fg3)
+            Text(value)
+                .font(.eyebrow)
+                .kerning(1.2)
+                .foregroundStyle(Color.fg0)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Active workout

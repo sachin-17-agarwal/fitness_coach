@@ -27,10 +27,17 @@ struct LiveStatsBar: View {
         .padding(.vertical, 12)
         .background(
             Rectangle()
-                .fill(Color.ink1)
+                .fill(Color.ink1.opacity(0.85))
+                .background(.ultraThinMaterial.opacity(0.5))
                 .overlay(
                     Rectangle()
-                        .fill(Color.line)
+                        .fill(
+                            LinearGradient(
+                                colors: [.clear, Color.signal.opacity(0.35), .clear],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                         .frame(height: 1),
                     alignment: .bottom
                 )

@@ -1,13 +1,134 @@
 // ColorTheme.swift
 // Vaux
 //
-// Card styles, typography, animation & shadow tokens for the design system.
+// Design system core: backgrounds, card styles, typography, headers,
+// animation & haptic tokens. The visual language is a dark "precision
+// instrument" aesthetic — ink surfaces, hairline borders with a machined
+// top highlight, mono microlabels, serif display numerals, and a single
+// signal accent reserved for primary actions and live data.
 
 import SwiftUI
 
+// MARK: - Screen background
+//
+// Every tab root sits on this: ink-0 base, an ultra-faint blueprint dot
+// grid, and two soft radial glows that give the black depth without
+// turning it into a gradient poster. Purely decorative — never blocks
+// touches.
+
+struct TechBackground: View {
+    var accent: Color = .signal
+
+    var body: some View {
+        ZStack {
+            Color.ink0
+
+            DotGrid()
+
+            RadialGradient(
+                colors: [accent.opacity(0.06), .clear],
+                center: UnitPoint(x: 0.9, y: -0.08),
+                startRadius: 0,
+                endRadius: 440
+            )
+
+            RadialGradient(
+                colors: [Color.iris.opacity(0.045), .clear],
+                center: UnitPoint(x: 0.02, y: 0.02),
+                startRadius: 0,
+                endRadius: 380
+            )
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+/// Faint engineering-paper dot matrix.
+struct DotGrid: View {
+    var spacing: CGFloat = 24
+    var dotSize: CGFloat = 1.4
+    var opacity: Double = 0.05
+
+    var body: some View {
+        Canvas { context, size in
+            let color = Color.white.opacity(opacity)
+            var x: CGFloat = 0
+            while x <= size.width {
+                var y: CGFloat = 0
+                while y <= size.height {
+                    let rect = CGRect(
+                        x: x - dotSize / 2,
+                        y: y - dotSize / 2,
+                        width: dotSize,
+                        height: dotSize
+                    )
+                    context.fill(Path(ellipseIn: rect), with: .color(color))
+                    y += spacing
+                }
+                x += spacing
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Screen header
+//
+// Unified editorial header used on every tab in place of the stock UIKit
+// large title: kerned mono eyebrow line (with optional live dot and
+// trailing accessory) above a light serif title.
+
+struct ScreenHeader: View {
+    let eyebrow: String
+    let title: String
+    var showsLiveDot: Bool = false
+    var accessory: AnyView? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                if showsLiveDot {
+                    GlowDot(color: .signal, size: 5)
+                }
+                Eyebrow(text: eyebrow)
+                Spacer()
+                if let accessory { accessory }
+            }
+
+            Text(title)
+                .font(.serifLG)
+                .foregroundStyle(Color.fg0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Live status dot
+
+struct GlowDot: View {
+    var color: Color = .signal
+    var size: CGFloat = 6
+    @State private var pulse = false
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: size, height: size)
+            .shadow(color: color.opacity(0.9), radius: pulse ? size : size * 0.3)
+            .scaleEffect(pulse ? 1.0 : 0.8)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) {
+                    pulse = true
+                }
+            }
+    }
+}
+
 // MARK: - Card styles
 
-/// Standard card: subtle gradient fill + hairline border.
+/// Standard card: ink fill, hairline border with a machined top-edge
+/// highlight, deep soft shadow.
 struct DarkCardStyle: ViewModifier {
     var padding: CGFloat = 16
     var cornerRadius: CGFloat = 20
@@ -17,13 +138,20 @@ struct DarkCardStyle: ViewModifier {
             .padding(padding)
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Gradients.card)
+                    .fill(Color.ink2.opacity(0.94))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.cardBorder, lineWidth: 0.6)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.10), Color.line, Color.line],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
             )
-            .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: 6)
+            .shadow(color: .black.opacity(0.45), radius: 18, x: 0, y: 10)
     }
 }
 
@@ -55,7 +183,7 @@ struct GlassCardStyle: ViewModifier {
     }
 }
 
-/// Hero card — large gradient surface used for the recovery block and morning briefing.
+/// Hero card — large accent-tinted surface for the recovery block and briefing.
 struct HeroCardStyle: ViewModifier {
     let accent: Color
     var cornerRadius: CGFloat = 28
@@ -67,16 +195,15 @@ struct HeroCardStyle: ViewModifier {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Gradients.hero)
+                        .fill(Color.ink2.opacity(0.94))
 
-                    // Colored glow
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(
                             RadialGradient(
-                                colors: [accent.opacity(0.22), .clear],
-                                center: .topTrailing,
+                                colors: [accent.opacity(0.10), .clear],
+                                center: .topLeading,
                                 startRadius: 10,
-                                endRadius: 260
+                                endRadius: 320
                             )
                         )
                 }
@@ -85,14 +212,15 @@ struct HeroCardStyle: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [accent.opacity(0.35), accent.opacity(0.05)],
+                            colors: [accent.opacity(0.40), accent.opacity(0.08), Color.line],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
                         lineWidth: 1
                     )
             )
-            .shadow(color: accent.opacity(0.18), radius: 28, x: 0, y: 14)
+            .shadow(color: accent.opacity(0.14), radius: 24, x: 0, y: 12)
+            .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 8)
     }
 }
 
@@ -137,23 +265,65 @@ extension View {
     }
 }
 
+// MARK: - Primary CTA
+//
+// The single filled signal-lime action of a screen. Soft accent glow,
+// pressed scale via PressScaleStyle at the call site.
+
+struct CTALabel: View {
+    let text: String
+    var icon: String? = nil
+    var busy: Bool = false
+    var fill: Color = .signal
+    var textColor: Color = .signalInk
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if busy {
+                ProgressView().tint(textColor)
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .bold))
+            }
+            if !busy {
+                Text(text)
+                    .font(.system(size: 16, weight: .semibold))
+                    .kerning(0.2)
+            }
+        }
+        .foregroundStyle(textColor)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(fill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                .blendMode(.plusLighter)
+        )
+        .shadow(color: fill.opacity(0.30), radius: 18, x: 0, y: 10)
+    }
+}
+
 // MARK: - Typography presets
 
 extension Font {
-    // Editorial redesign — Fraunces serif for hero numbers/titles, JetBrains
-    // Mono for numerics/eyebrows, system sans for UI. We fall back to the
-    // system serif/mono until custom font files are registered in Info.plist.
+    // Editorial direction — serif for hero numbers/titles, mono for
+    // numerics/eyebrows, system sans for UI.
 
     // Hero serif numbers
     static let numHero = Font.system(size: 96, weight: .light, design: .serif)
     static let numXL = Font.system(size: 68, weight: .light, design: .serif)
+    static let numDisplay = Font.system(size: 46, weight: .light, design: .serif)
     static let numLG = Font.system(size: 36, weight: .medium, design: .monospaced).monospacedDigit()
     static let numMD = Font.system(size: 22, weight: .medium, design: .monospaced).monospacedDigit()
     static let numSM = Font.system(size: 16, weight: .medium, design: .monospaced).monospacedDigit()
 
     // Editorial serif titles
     static let serifXL = Font.system(size: 52, weight: .light, design: .serif)
-    static let serifLG = Font.system(size: 36, weight: .light, design: .serif)
+    static let serifLG = Font.system(size: 34, weight: .light, design: .serif)
     static let serifMD = Font.system(size: 24, weight: .regular, design: .serif)
     static let serifSM = Font.system(size: 18, weight: .medium, design: .serif)
     static let serifBrand = Font.system(size: 22, weight: .medium, design: .serif)
@@ -180,7 +350,7 @@ extension Font {
 // MARK: - Eyebrow label
 //
 // Small, mono, uppercase, kerned label used above hero numbers, cards, and
-// sections. Corresponds to `.eyebrow` in the prototype's CSS.
+// sections.
 
 struct Eyebrow: View {
     let text: String

@@ -22,13 +22,18 @@ struct RestTimer: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.82).ignoresSafeArea()
+            Color.ink0.opacity(0.88)
+                .background(.ultraThinMaterial)
+                .ignoresSafeArea()
 
             VStack(spacing: 22) {
-                Text("REST")
-                    .font(.eyebrow)
-                    .kerning(2.5)
-                    .foregroundStyle(Color.fg2)
+                HStack(spacing: 8) {
+                    GlowDot(color: .mint, size: 5)
+                    Text("REST")
+                        .font(.eyebrow)
+                        .kerning(2.5)
+                        .foregroundStyle(Color.fg2)
+                }
 
                 TimelineView(.animation) { context in
                     let remaining = remaining(at: context.date)

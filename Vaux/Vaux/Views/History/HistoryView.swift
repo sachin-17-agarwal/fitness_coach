@@ -19,12 +19,19 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.background.ignoresSafeArea()
+                TechBackground(accent: .iris)
 
                 VStack(spacing: 0) {
+                    ScreenHeader(
+                        eyebrow: "Training log",
+                        title: "History"
+                    )
+                    .padding(.horizontal, 22)
+                    .padding(.top, 8)
+                    .padding(.bottom, 14)
+
                     tabSelector
                         .padding(.horizontal, 18)
-                        .padding(.top, 4)
                         .padding(.bottom, 14)
 
                     ScrollView(showsIndicators: false) {
@@ -41,8 +48,7 @@ struct HistoryView: View {
                     .refreshable { await viewModel.load() }
                 }
             }
-            .navigationTitle("History")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarHidden(true)
             .task { await viewModel.load() }
         }
     }
@@ -137,14 +143,10 @@ struct HistoryView: View {
 
     private func miniStat(value: String, label: String, color: Color, icon: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(color.opacity(0.14))
-                    .frame(width: 28, height: 28)
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(color)
-            }
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(height: 16)
             Text(value)
                 .font(.numMD)
                 .foregroundStyle(Color.fg0)
@@ -154,27 +156,9 @@ struct HistoryView: View {
                 .font(.eyebrowSmall)
                 .kerning(1.2)
                 .foregroundStyle(Color.fg2)
-
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(
-                    LinearGradient(
-                        colors: [color, color.opacity(0.2)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.ink2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
+        .darkCard(padding: 14, cornerRadius: 14)
     }
 
     private var emptyTraining: some View {

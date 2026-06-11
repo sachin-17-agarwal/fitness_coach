@@ -17,12 +17,10 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.ink0.ignoresSafeArea()
+                TechBackground(accent: .signal)
 
                 if viewModel.isLoading && viewModel.recovery == nil {
-                    ProgressView()
-                        .tint(.signal)
-                        .scaleEffect(1.0)
+                    loadingState
                 } else {
                     content
                 }
@@ -39,6 +37,22 @@ struct DashboardView: View {
             .task { await viewModel.load() }
             .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
                 Task { await viewModel.refreshMesocycle() }
+            }
+        }
+    }
+
+    // MARK: - Loading
+
+    private var loadingState: some View {
+        VStack(spacing: 18) {
+            VauxLogo(size: 34, color: .signal)
+                .shadow(color: Color.signal.opacity(0.5), radius: 16)
+            HStack(spacing: 8) {
+                GlowDot(color: .signal, size: 5)
+                Text("SYNCING RECOVERY DATA")
+                    .font(.eyebrowSmall)
+                    .kerning(1.6)
+                    .foregroundStyle(Color.fg2)
             }
         }
     }
@@ -106,35 +120,48 @@ struct DashboardView: View {
             .reversed()
     }
 
-    // MARK: - Header — editorial (wordmark left, streak chip right)
+    // MARK: - Header — editorial masthead
 
     private var header: some View {
-        HStack(alignment: .center) {
-            HStack(spacing: 10) {
-                VauxLogo(size: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Eyebrow(text: formattedDate)
-                    Text("\(greeting), Sachin")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.fg0)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                HStack(spacing: 8) {
+                    VauxLogo(size: 16, color: .fg1)
+                    Text("VAUX")
+                        .font(.system(size: 12, weight: .semibold))
+                        .kerning(3)
+                        .foregroundStyle(Color.fg1)
+                }
+                Spacer()
+                if viewModel.currentStreak > 0 {
+                    streakPill
                 }
             }
-            Spacer()
-            if viewModel.currentStreak > 0 {
-                streakPill
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(greeting), Sachin")
+                    .font(.serifLG)
+                    .foregroundStyle(Color.fg0)
+
+                HStack(spacing: 8) {
+                    GlowDot(color: .signal, size: 4)
+                    Eyebrow(text: formattedDate)
+                    Eyebrow(text: "·", color: .fg3)
+                    Eyebrow(text: "Week \(viewModel.mesocycle.week) Day \(viewModel.mesocycle.day)")
+                }
             }
         }
     }
 
     private var formattedDate: String {
         let f = DateFormatter()
-        f.dateFormat = "EEE · MMM d"
+        f.dateFormat = "EEEE · MMM d"
         return f.string(from: Date())
     }
 
     private var streakPill: some View {
         HStack(spacing: 5) {
-            Image(systemName: "flame")
+            Image(systemName: "flame.fill")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Color.amber)
             Text("\(viewModel.currentStreak)D STREAK")
@@ -144,9 +171,10 @@ struct DashboardView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
+        .background(Capsule().fill(Color.amber.opacity(0.08)))
         .overlay(
             Capsule()
-                .stroke(Color.amber.opacity(0.35), lineWidth: 1)
+                .stroke(Color.amber.opacity(0.30), lineWidth: 1)
         )
     }
 
