@@ -177,16 +177,30 @@ struct DashboardView: View {
                     sparkline: rhrSparkline
                 )
 
-                if let weight = viewModel.latestWeightKg {
-                    MetricCard(
-                        icon: "scalemass.fill",
-                        title: "Weight",
-                        value: "\(weight.oneDecimal) kg",
-                        subtitle: viewModel.latestBodyFatPct.map { "\($0.oneDecimal)% body fat" },
-                        accentColor: .amber,
-                        sparkline: weightSparkline
-                    )
+                Button {
+                    Haptic.light()
+                    showWeightSheet = true
+                } label: {
+                    if let weight = viewModel.latestWeightKg {
+                        MetricCard(
+                            icon: "scalemass.fill",
+                            title: "Weight",
+                            value: "\(weight.oneDecimal) kg",
+                            subtitle: viewModel.latestBodyFatPct.map { "\($0.oneDecimal)% body fat" } ?? "Tap to log",
+                            accentColor: .amber,
+                            sparkline: weightSparkline
+                        )
+                    } else {
+                        MetricCard(
+                            icon: "scalemass.fill",
+                            title: "Weight",
+                            value: "—",
+                            subtitle: "Tap to log",
+                            accentColor: .amber
+                        )
+                    }
                 }
+                .buttonStyle(PressScaleStyle())
 
                 if viewModel.weekTonnage > 0 {
                     MetricCard(

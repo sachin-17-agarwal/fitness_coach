@@ -77,18 +77,23 @@ struct CoachChatView: View {
                             Text(error)
                                 .font(.system(size: 11, weight: .medium))
                         }
-                        .foregroundStyle(Color.recoveryRed)
+                        .foregroundStyle(Color.ember)
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.recoveryRed.opacity(0.1))
+                                .fill(Color.ember.opacity(0.08))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(Color.ember.opacity(0.22), lineWidth: 1)
                         )
                     }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: viewModel.messages.count) {
                 withAnimation(Motion.smooth) {
                     proxy.scrollTo(viewModel.messages.count - 1, anchor: .bottom)
@@ -138,19 +143,20 @@ struct CoachChatView: View {
                         Task { await viewModel.sendMessage() }
                     } label: {
                         Text(prompt)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.fg1)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .background(
                                 Capsule()
-                                    .fill(Color.surfaceRaised)
+                                    .fill(Color.ink3)
                             )
                             .overlay(
                                 Capsule()
-                                    .stroke(Color.cardBorder, lineWidth: 0.5)
+                                    .stroke(Color.line2, lineWidth: 1)
                             )
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 2)
@@ -165,7 +171,7 @@ struct CoachChatView: View {
                 TextField("Message your coach…", text: $viewModel.inputText, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.fg0)
                     .focused($inputFocused)
                     .lineLimit(1...5)
                     .padding(.vertical, 10)
@@ -189,8 +195,9 @@ struct CoachChatView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(inputFocused ? Color.iris.opacity(0.5) : Color.cardBorder, lineWidth: 0.5)
+                    .stroke(inputFocused ? Color.signal.opacity(0.35) : Color.line, lineWidth: 1)
             )
+            .animation(Motion.snappy, value: inputFocused)
 
             sendButton
         }
@@ -216,14 +223,15 @@ struct CoachChatView: View {
         } label: {
             Image(systemName: "arrow.up")
                 .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.black)
+                .foregroundStyle(canSend ? Color.signalInk : Color.fg2)
                 .frame(width: 40, height: 40)
                 .background(
                     Circle()
-                        .fill(canSend ? AnyShapeStyle(Gradients.recovery) : AnyShapeStyle(Color.surfaceRaised))
+                        .fill(canSend ? Color.signal : Color.ink3)
                 )
         }
         .disabled(!canSend)
+        .buttonStyle(PressScaleStyle(scale: 0.92))
         .animation(Motion.snappy, value: canSend)
     }
 
@@ -232,19 +240,18 @@ struct CoachChatView: View {
             Haptic.medium()
             Task { await viewModel.sendMorningBriefing() }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .bold))
-                Text("Briefing")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(.system(size: 10, weight: .semibold))
+                Text("BRIEFING")
+                    .font(.eyebrowSmall)
+                    .kerning(1.2)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(Color.signal)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(Gradients.cool)
-            )
+            .background(Capsule().fill(Color.signal.opacity(0.08)))
+            .overlay(Capsule().stroke(Color.signal.opacity(0.22), lineWidth: 1))
         }
         .disabled(viewModel.isLoading)
     }
@@ -263,7 +270,7 @@ struct TypingIndicator: View {
             HStack(spacing: 5) {
                 ForEach(0..<3) { i in
                     Circle()
-                        .fill(Color.mint)
+                        .fill(Color.signal)
                         .frame(width: 7, height: 7)
                         .opacity(phase == i ? 1 : 0.3)
                         .offset(y: phase == i ? -4 : 0)
@@ -297,12 +304,14 @@ struct CoachAvatar: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(Gradients.cool)
-                .frame(width: 30, height: 30)
+                .fill(Color.ink3)
+            Circle()
+                .stroke(Color.line2, lineWidth: 1)
             Image(systemName: "sparkles")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.white)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.signal)
         }
+        .frame(width: 30, height: 30)
     }
 }
 

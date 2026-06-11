@@ -102,28 +102,27 @@ struct SettingsView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(selected ? Color.recoveryGreen : Color.textTertiary)
+                .foregroundStyle(selected ? Color.signal : Color.fg2)
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(style.displayName)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.uiStrong)
+                    .foregroundStyle(Color.fg0)
                 Text(style.blurb)
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.textSecondary)
+                    .foregroundStyle(Color.fg1)
             }
             Spacer()
         }
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(selected ? Color.recoveryGreen.opacity(0.08) : Color.surface)
+                .fill(selected ? Color.signal.opacity(0.06) : Color.ink1)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(selected ? Color.recoveryGreen.opacity(0.4) : Color.cardBorder,
-                        lineWidth: 0.5)
+                .stroke(selected ? Color.signal.opacity(0.35) : Color.line, lineWidth: 1)
         )
     }
 
@@ -138,22 +137,22 @@ struct SettingsView: View {
             NavigationLink(destination: ExerciseLibraryView()) {
                 HStack {
                     Text("Open library")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.fg0)
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.textTertiary)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.fg2)
                 }
                 .padding(.vertical, 12)
                 .padding(.horizontal, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.surfaceRaised)
+                        .fill(Color.ink3)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.cardBorder, lineWidth: 0.5)
+                        .stroke(Color.line2, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -165,15 +164,16 @@ struct SettingsView: View {
     private var profileHeader: some View {
         HStack(spacing: 14) {
             VauxLogo(size: 48)
-                .shadow(color: .recoveryGreen.opacity(0.4), radius: 12, x: 0, y: 4)
+                .shadow(color: .signal.opacity(0.3), radius: 12, x: 0, y: 4)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Vaux")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text("AI Fitness Coach")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.textSecondary)
+                    .font(.serifBrand)
+                    .foregroundStyle(Color.fg0)
+                Text("AI FITNESS COACH")
+                    .font(.eyebrowSmall)
+                    .kerning(1.4)
+                    .foregroundStyle(Color.fg2)
             }
 
             Spacer()
@@ -203,32 +203,27 @@ struct SettingsView: View {
 
             HStack {
                 Text("Today's session")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.textSecondary)
+                    .font(.uiBody)
+                    .foregroundStyle(Color.fg1)
                 Spacer()
                 let type = Config.cycle[(mesocycleDay - 1) % Config.cycleLength]
-                Text(type)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                Text(type.uppercased())
+                    .font(.eyebrowSmall)
+                    .kerning(1.0)
                     .foregroundStyle(Color.forSession(type))
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.forSession(type).opacity(0.14)))
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.forSession(type).opacity(0.10)))
+                    .overlay(Capsule().stroke(Color.forSession(type).opacity(0.22), lineWidth: 1))
             }
 
             Button {
                 Haptic.medium()
                 Task { await saveMesocycle() }
             } label: {
-                Text("Save mesocycle")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Gradients.recovery)
-                    )
+                primaryButtonLabel("Save mesocycle")
             }
+            .buttonStyle(PressScaleStyle())
 
             if let status = saveStatus {
                 statusLabel(status)
@@ -259,52 +254,18 @@ struct SettingsView: View {
                 Haptic.medium()
                 Task { await syncHealthData() }
             } label: {
-                HStack(spacing: 8) {
-                    if isSyncing {
-                        ProgressView().tint(.black).scaleEffect(0.85)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .bold))
-                    }
-                    Text(isSyncing ? "Syncing…" : "Sync now")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                }
-                .foregroundStyle(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Gradients.cool)
-                )
+                primaryButtonLabel(isSyncing ? "Syncing…" : "Sync now", icon: "arrow.clockwise", busy: isSyncing)
             }
+            .buttonStyle(PressScaleStyle())
             .disabled(isSyncing || isBackfilling)
 
             Button {
                 Haptic.light()
                 Task { await backfillLastWeek() }
             } label: {
-                HStack(spacing: 8) {
-                    if isBackfilling {
-                        ProgressView().tint(.white).scaleEffect(0.85)
-                    } else {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 12, weight: .bold))
-                    }
-                    Text(isBackfilling ? "Back-filling…" : "Back-fill last 7 days")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.surfaceRaised)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.cardBorder, lineWidth: 0.5)
-                )
+                secondaryButtonLabel(isBackfilling ? "Back-filling…" : "Back-fill last 7 days", icon: "calendar", busy: isBackfilling)
             }
+            .buttonStyle(PressScaleStyle())
             .disabled(isSyncing || isBackfilling)
 
             if let status = syncStatus {
@@ -323,37 +284,41 @@ struct SettingsView: View {
 
     private var backendCard: some View {
         settingsCard(title: "Backend") {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Backend URL")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.textTertiary)
+            VStack(alignment: .leading, spacing: 5) {
+                Eyebrow(text: "Backend URL")
                 TextField("https://…", text: $backendURL)
                     .textFieldStyle(.plain)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.fg0)
                     .padding(10)
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.surface)
+                            .fill(Color.ink1)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.line, lineWidth: 1)
                     )
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("API token")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.textTertiary)
+            VStack(alignment: .leading, spacing: 5) {
+                Eyebrow(text: "API token")
                 SecureField("••••••", text: $apiToken)
                     .textFieldStyle(.plain)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.fg0)
                     .padding(10)
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.surface)
+                            .fill(Color.ink1)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.line, lineWidth: 1)
                     )
             }
 
@@ -363,20 +328,9 @@ struct SettingsView: View {
                 UserDefaults.standard.set(apiToken, forKey: "appAPIToken")
                 SupabaseClient.reconfigure()
             } label: {
-                Text("Save")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.surfaceRaised)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.cardBorder, lineWidth: 0.5)
-                    )
+                secondaryButtonLabel("Save")
             }
+            .buttonStyle(PressScaleStyle())
         }
     }
 
@@ -398,10 +352,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func settingsCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .kerning(1)
-                .foregroundStyle(Color.textTertiary)
+            Eyebrow(text: title)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -409,15 +360,61 @@ struct SettingsView: View {
         .darkCard(padding: 0, cornerRadius: 18)
     }
 
+    /// Filled signal-lime button — the single primary action of a card.
+    private func primaryButtonLabel(_ text: String, icon: String? = nil, busy: Bool = false) -> some View {
+        HStack(spacing: 8) {
+            if busy {
+                ProgressView().tint(Color.signalInk).scaleEffect(0.85)
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .bold))
+            }
+            Text(text)
+                .font(.system(size: 14, weight: .semibold))
+        }
+        .foregroundStyle(Color.signalInk)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.signal)
+        )
+    }
+
+    /// Quiet bordered button — secondary actions.
+    private func secondaryButtonLabel(_ text: String, icon: String? = nil, busy: Bool = false) -> some View {
+        HStack(spacing: 8) {
+            if busy {
+                ProgressView().tint(Color.fg0).scaleEffect(0.85)
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            Text(text)
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .foregroundStyle(Color.fg0)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.ink3)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.line2, lineWidth: 1)
+        )
+    }
+
     private func row<Accessory: View>(label: String, value: String, @ViewBuilder accessory: () -> Accessory) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 14))
-                .foregroundStyle(Color.textSecondary)
+                .font(.uiBody)
+                .foregroundStyle(Color.fg1)
             Spacer()
             Text(value)
-                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.numSM)
+                .foregroundStyle(Color.fg0)
             accessory()
                 .fixedSize()
         }
@@ -426,12 +423,12 @@ struct SettingsView: View {
     private func infoRow(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 14))
-                .foregroundStyle(Color.textSecondary)
+                .font(.uiBody)
+                .foregroundStyle(Color.fg1)
             Spacer()
             Text(value)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.fg0)
         }
     }
 
@@ -442,7 +439,7 @@ struct SettingsView: View {
             Text(status.text)
                 .font(.system(size: 11, weight: .medium))
         }
-        .foregroundStyle(status.isError ? Color.recoveryRed : Color.recoveryGreen)
+        .foregroundStyle(status.isError ? Color.ember : Color.mint)
     }
 
     // MARK: - Actions

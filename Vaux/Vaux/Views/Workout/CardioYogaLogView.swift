@@ -104,25 +104,25 @@ struct CardioYogaLogView: View {
 
     private var heroHeader: some View {
         let accent = Color.forSession(sessionType)
-        let gradient = Gradients.forSession(sessionType)
         return VStack(alignment: .leading, spacing: 10) {
             Eyebrow(text: "Today's session")
             HStack(alignment: .center, spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(gradient)
+                        .fill(accent.opacity(0.12))
                         .frame(width: 52, height: 52)
                     Image(systemName: isYoga ? "figure.mind.and.body" : "heart.circle.fill")
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(accent)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(sessionType)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text(isYoga ? "Mobility · Stretching" : "Zone 2 · Core")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.textSecondary)
+                        .font(.serifMD)
+                        .foregroundStyle(Color.fg0)
+                    Text((isYoga ? "Mobility · Stretching" : "Zone 2 · Core").uppercased())
+                        .font(.eyebrowSmall)
+                        .kerning(1.2)
+                        .foregroundStyle(Color.fg2)
                 }
                 Spacer()
             }
@@ -133,7 +133,7 @@ struct CardioYogaLogView: View {
                     ProgressView().tint(accent).scaleEffect(0.7)
                     Text("Opening today's session…")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.textTertiary)
+                        .foregroundStyle(Color.fg2)
                 }
             }
         }
@@ -146,11 +146,8 @@ struct CardioYogaLogView: View {
             HStack {
                 Image(systemName: "applewatch")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.textSecondary)
-                Text("APPLE WATCH")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .kerning(1.0)
-                    .foregroundStyle(Color.textSecondary)
+                    .foregroundStyle(Color.fg2)
+                Eyebrow(text: "Apple Watch")
                 Spacer()
                 Button {
                     Haptic.light()
@@ -158,7 +155,7 @@ struct CardioYogaLogView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.textTertiary)
+                        .foregroundStyle(Color.fg2)
                 }
                 .buttonStyle(.plain)
                 .disabled(isLoadingHK)
@@ -166,21 +163,21 @@ struct CardioYogaLogView: View {
 
             if isLoadingHK {
                 HStack(spacing: 8) {
-                    ProgressView().tint(Color.textSecondary).scaleEffect(0.7)
+                    ProgressView().tint(Color.fg1).scaleEffect(0.7)
                     Text("Reading today's workouts…")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.textTertiary)
+                        .foregroundStyle(Color.fg2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 4)
             } else if let err = hkError {
                 Text(err)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.recoveryRed)
+                    .foregroundStyle(Color.ember)
             } else if healthWorkouts.isEmpty {
                 Text("No workouts recorded on your Watch today. Record one or log manually below.")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.textTertiary)
+                    .foregroundStyle(Color.fg2)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(spacing: 8) {
@@ -204,17 +201,17 @@ struct CardioYogaLogView: View {
         return HStack(spacing: 12) {
             Image(systemName: Self.icon(for: workout.workoutActivityType))
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.textPrimary)
+                .foregroundStyle(Color.fg0)
                 .frame(width: 30, height: 30)
-                .background(Circle().fill(Color.surface))
+                .background(Circle().fill(Color.ink3))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.fg0)
                 Text("\(minutes) min · \(start)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.textTertiary)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced).monospacedDigit())
+                    .foregroundStyle(Color.fg2)
             }
             Spacer()
 
@@ -226,13 +223,13 @@ struct CardioYogaLogView: View {
                     Image(systemName: alreadyImported ? "checkmark" : "square.and.arrow.down")
                         .font(.system(size: 10, weight: .bold))
                     Text(alreadyImported ? "Imported" : "Import")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.system(size: 11, weight: .semibold))
                 }
-                .foregroundStyle(alreadyImported ? Color.recoveryGreen : Color.signalInk)
+                .foregroundStyle(alreadyImported ? Color.mint : Color.signalInk)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(
-                    Capsule().fill(alreadyImported ? Color.recoveryGreen.opacity(0.12) : Color.signal)
+                    Capsule().fill(alreadyImported ? Color.mint.opacity(0.12) : Color.signal)
                 )
             }
             .buttonStyle(.plain)
@@ -244,10 +241,7 @@ struct CardioYogaLogView: View {
 
     private var manualEntrySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("LOG \(isYoga ? "YOGA" : "CARDIO") MANUALLY")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .kerning(1.0)
-                .foregroundStyle(Color.textSecondary)
+            Eyebrow(text: "Log \(isYoga ? "yoga" : "cardio") manually")
 
             // Activity picker — horizontal scroll
             ScrollView(.horizontal, showsIndicators: false) {
@@ -262,7 +256,7 @@ struct CardioYogaLogView: View {
             HStack {
                 Text("Duration")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.textSecondary)
+                    .foregroundStyle(Color.fg1)
                 Spacer()
                 Button {
                     Haptic.light()
@@ -270,14 +264,15 @@ struct CardioYogaLogView: View {
                 } label: {
                     Image(systemName: "minus.circle.fill")
                         .font(.system(size: 20))
-                        .foregroundStyle(Color.textSecondary)
+                        .foregroundStyle(Color.fg1)
                 }
                 .buttonStyle(.plain)
 
                 Text("\(durationMinutes) min")
-                    .font(.system(size: 16, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white)
+                    .font(.numSM)
+                    .foregroundStyle(Color.fg0)
                     .frame(minWidth: 70)
+                    .contentTransition(.numericText())
 
                 Button {
                     Haptic.light()
@@ -285,7 +280,7 @@ struct CardioYogaLogView: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 20))
-                        .foregroundStyle(Color.textSecondary)
+                        .foregroundStyle(Color.fg1)
                 }
                 .buttonStyle(.plain)
             }
@@ -295,10 +290,10 @@ struct CardioYogaLogView: View {
                 HStack {
                     Text("Intensity")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.textSecondary)
+                        .foregroundStyle(Color.fg1)
                     Spacer()
                     Text("RPE \(intensity.oneDecimal)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(.numSM)
                         .foregroundStyle(Color.forSession(sessionType))
                 }
                 Slider(value: $intensity, in: 1...10, step: 0.5)
@@ -308,11 +303,15 @@ struct CardioYogaLogView: View {
             // Notes
             TextField("Notes (optional)", text: $notes, axis: .vertical)
                 .font(.system(size: 13))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.fg0)
                 .padding(10)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.surface)
+                        .fill(Color.ink1)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.line, lineWidth: 1)
                 )
                 .lineLimit(1...3)
 
@@ -323,22 +322,23 @@ struct CardioYogaLogView: View {
             } label: {
                 HStack(spacing: 6) {
                     if isLogging {
-                        ProgressView().tint(.black).scaleEffect(0.8)
+                        ProgressView().tint(Color.signalInk).scaleEffect(0.8)
                     } else {
                         Image(systemName: "plus")
                             .font(.system(size: 12, weight: .bold))
                     }
                     Text("Log entry")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(.system(size: 14, weight: .semibold))
                 }
-                .foregroundStyle(.black)
+                .foregroundStyle(Color.signalInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Gradients.forSession(sessionType))
+                        .fill(Color.signal)
                 )
             }
+            .buttonStyle(PressScaleStyle())
             .disabled(isLogging || todaysSession == nil)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -353,15 +353,15 @@ struct CardioYogaLogView: View {
             selectedActivity = option
         } label: {
             Text(option)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(isSelected ? Color.signalInk : Color.textPrimary)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isSelected ? accent : Color.fg1)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
-                    Capsule().fill(isSelected ? accent : Color.surface)
+                    Capsule().fill(isSelected ? accent.opacity(0.10) : Color.ink3)
                 )
                 .overlay(
-                    Capsule().stroke(isSelected ? Color.clear : Color.cardBorder, lineWidth: 0.5)
+                    Capsule().stroke(isSelected ? accent.opacity(0.35) : Color.line2, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -372,14 +372,11 @@ struct CardioYogaLogView: View {
     private var loggedEntriesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("TODAY'S ENTRIES")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .kerning(1.0)
-                    .foregroundStyle(Color.textSecondary)
+                Eyebrow(text: "Today's entries")
                 Spacer()
                 Text("\(loggedEntries.count)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.textTertiary)
+                    .font(.eyebrowSmall)
+                    .foregroundStyle(Color.fg2)
             }
             VStack(spacing: 8) {
                 ForEach(Array(loggedEntries.enumerated()), id: \.offset) { _, entry in
@@ -397,14 +394,14 @@ struct CardioYogaLogView: View {
         return HStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 14))
-                .foregroundStyle(Color.recoveryGreen)
+                .foregroundStyle(Color.mint)
             VStack(alignment: .leading, spacing: 1) {
                 Text(entry.exercise)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.fg0)
                 Text("\(minutes) min\(rpe.map { " · RPE \($0.oneDecimal)" } ?? "")")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.textTertiary)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced).monospacedDigit())
+                    .foregroundStyle(Color.fg2)
             }
             Spacer()
         }
@@ -412,7 +409,7 @@ struct CardioYogaLogView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.surface)
+                .fill(Color.ink1)
         )
     }
 
@@ -434,27 +431,34 @@ struct CardioYogaLogView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Log abs exercises")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.fg0)
                     Text("Switch to strength mode for planks, crunches, etc.")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.textSecondary)
+                        .foregroundStyle(Color.fg1)
                         .lineLimit(2)
                 }
                 Spacer()
                 Image(systemName: "arrow.right")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.textSecondary)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.fg2)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.cardBackground)
+                    .fill(Color.ink2)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.cardBorder, lineWidth: 0.5)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.signal.opacity(0.3), Color.line],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
             )
         }
         .buttonStyle(.plain)
@@ -467,12 +471,16 @@ struct CardioYogaLogView: View {
             Text(message)
                 .font(.system(size: 11, weight: .medium))
         }
-        .foregroundStyle(Color.recoveryRed)
+        .foregroundStyle(Color.ember)
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.recoveryRed.opacity(0.1))
+                .fill(Color.ember.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.ember.opacity(0.22), lineWidth: 1)
         )
     }
 

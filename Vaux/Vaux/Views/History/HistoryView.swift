@@ -56,26 +56,36 @@ struct HistoryView: View {
                     Haptic.selection()
                     withAnimation(Motion.snappy) { selectedTab = tab }
                 } label: {
-                    Text(tab.rawValue)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(selectedTab == tab ? .black : Color.textSecondary)
+                    Text(tab.rawValue.uppercased())
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .kerning(1.0)
+                        .foregroundStyle(selectedTab == tab ? Color.signal : Color.fg2)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(
                             ZStack {
                                 if selectedTab == tab {
                                     Capsule()
-                                        .fill(Gradients.recovery)
+                                        .fill(Color.signal.opacity(0.08))
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(Color.signal.opacity(0.22), lineWidth: 1)
+                                        )
                                         .matchedGeometryEffect(id: "tabBG", in: tabNamespace)
                                 }
                             }
                         )
+                        .contentShape(Capsule())
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(4)
         .background(
-            Capsule().fill(Color.surface)
+            Capsule().fill(Color.ink2)
+        )
+        .overlay(
+            Capsule().stroke(Color.line, lineWidth: 1)
         )
     }
 
@@ -107,14 +117,9 @@ struct HistoryView: View {
     private var heatmapCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("TRAINING ACTIVITY")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .kerning(1)
-                    .foregroundStyle(Color.textTertiary)
+                Eyebrow(text: "Training activity")
                 Spacer()
-                Text("Last 8 weeks")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.textSecondary)
+                Eyebrow(text: "Last 8 weeks")
             }
 
             WorkoutHeatmap(sessions: viewModel.sessions)
@@ -137,18 +142,18 @@ struct HistoryView: View {
                     .fill(color.opacity(0.14))
                     .frame(width: 28, height: 28)
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(color)
             }
             Text(value)
-                .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.numMD)
+                .foregroundStyle(Color.fg0)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
             Text(label.uppercased())
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .kerning(0.8)
-                .foregroundStyle(Color.textTertiary)
+                .font(.eyebrowSmall)
+                .kerning(1.2)
+                .foregroundStyle(Color.fg2)
 
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(
@@ -173,19 +178,20 @@ struct HistoryView: View {
     }
 
     private var emptyTraining: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             Image(systemName: "figure.strengthtraining.traditional")
-                .font(.system(size: 30))
-                .foregroundStyle(Color.textTertiary)
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(Color.fg2)
             Text("No sessions yet")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.textSecondary)
-            Text("Start your first workout to see history here")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.textTertiary)
+                .font(.serifSM)
+                .foregroundStyle(Color.fg0)
+            Text("Start your first workout in the Train tab\nto see history here")
+                .font(.uiSmall)
+                .foregroundStyle(Color.fg2)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 30)
+        .padding(.vertical, 36)
     }
 
     // MARK: - Volume
@@ -213,20 +219,20 @@ struct HistoryView: View {
             }
 
             if viewModel.recoveryHistory.isEmpty && !viewModel.isLoading {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 30))
-                        .foregroundStyle(Color.textTertiary)
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(Color.fg2)
                     Text("No recovery data")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.textSecondary)
+                        .font(.serifSM)
+                        .foregroundStyle(Color.fg0)
                     Text("Sync Apple Health or log a weight to get started")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.textTertiary)
+                        .font(.uiSmall)
+                        .foregroundStyle(Color.fg2)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 30)
+                .padding(.vertical, 36)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     SectionHeader(title: "Daily log")
@@ -301,8 +307,8 @@ struct WorkoutHeatmap: View {
             VStack(alignment: .trailing, spacing: Self.spacing) {
                 ForEach(0..<7, id: \.self) { dayIdx in
                     Text(Self.dayLabels[dayIdx])
-                        .font(.system(size: 9, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.textTertiary)
+                        .font(.eyebrowSmall)
+                        .foregroundStyle(Color.fg2)
                         .frame(height: Self.cellHeight)
                 }
             }
@@ -330,9 +336,9 @@ struct WorkoutHeatmap: View {
     }
 
     private func cellColor(_ intensity: Double) -> Color {
-        if intensity <= 0 { return Color.surface }
-        if intensity < 0.3 { return Color.recoveryGreen.opacity(0.25) }
-        if intensity < 0.6 { return Color.recoveryGreen.opacity(0.55) }
-        return Color.recoveryGreen
+        if intensity <= 0 { return Color.ink3 }
+        if intensity < 0.3 { return Color.signal.opacity(0.25) }
+        if intensity < 0.6 { return Color.signal.opacity(0.55) }
+        return Color.signal
     }
 }

@@ -294,10 +294,7 @@ struct SectionHeader: View {
 
     var body: some View {
         HStack {
-            Text(title.uppercased())
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .kerning(0.8)
-                .foregroundStyle(Color.textSecondary)
+            Eyebrow(text: title)
             Spacer()
             if let accessory { accessory }
         }

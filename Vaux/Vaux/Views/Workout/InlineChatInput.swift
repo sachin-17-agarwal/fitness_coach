@@ -29,14 +29,14 @@ struct InlineChatInput: View {
                 HStack(spacing: 8) {
                     Image(systemName: "message.fill")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.accentTeal)
+                        .foregroundStyle(Color.signal)
                     Text("Ask coach")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.fg0)
                     Spacer()
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.textSecondary)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.fg2)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -49,11 +49,15 @@ struct InlineChatInput: View {
                         .focused($focused)
                         .lineLimit(1...3)
                         .font(.system(size: 14))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.fg0)
                         .padding(10)
                         .background(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.surface)
+                                .fill(Color.ink2)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(focused ? Color.signal.opacity(0.35) : Color.line, lineWidth: 1)
                         )
 
                     Button {
@@ -62,11 +66,11 @@ struct InlineChatInput: View {
                     } label: {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(text.isEmpty ? Color.fg2 : Color.signalInk)
                             .frame(width: 36, height: 36)
                             .background(
                                 Circle()
-                                    .fill(text.isEmpty ? AnyShapeStyle(Color.surfaceRaised) : AnyShapeStyle(Gradients.cool))
+                                    .fill(text.isEmpty ? Color.ink3 : Color.signal)
                             )
                     }
                     .disabled(text.isEmpty || isLoading)
@@ -77,11 +81,11 @@ struct InlineChatInput: View {
             }
         }
         .background(
-            Color.surface
+            Color.ink1
                 .overlay(
                     Rectangle()
-                        .fill(Color.cardBorder.opacity(0.6))
-                        .frame(height: 0.5),
+                        .fill(Color.line)
+                        .frame(height: 1),
                     alignment: .top
                 )
         )

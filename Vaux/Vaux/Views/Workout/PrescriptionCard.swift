@@ -17,7 +17,7 @@ struct PrescriptionCard: View {
             if !prescription.warmupSets.isEmpty {
                 setSection(
                     label: "WARM-UP",
-                    color: .textSecondary,
+                    color: .fg1,
                     icon: "flame",
                     sets: prescription.warmupSets.enumerated().map { i, s in
                         SetTarget(weight: s.weight, reps: s.reps, rpe: nil, kind: .warmup, index: i)
@@ -28,7 +28,7 @@ struct PrescriptionCard: View {
             if !prescription.workingSets.isEmpty {
                 setSection(
                     label: "WORKING",
-                    color: .recoveryGreen,
+                    color: .mint,
                     icon: "bolt.fill",
                     sets: prescription.workingSets.enumerated().map { i, s in
                         SetTarget(weight: s.weight, reps: s.reps, rpe: s.rpe, kind: .working, index: i)
@@ -39,7 +39,7 @@ struct PrescriptionCard: View {
             if !prescription.backoffSets.isEmpty {
                 setSection(
                     label: "BACK-OFF",
-                    color: .recoveryYellow,
+                    color: .amber,
                     icon: "arrow.down.right",
                     sets: prescription.backoffSets.enumerated().map { i, s in
                         SetTarget(weight: s.weight, reps: s.reps, rpe: s.rpe, kind: .backoff, index: i)
@@ -64,13 +64,13 @@ struct PrescriptionCard: View {
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.cardBackground)
+                .fill(Color.ink2)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(
                     LinearGradient(
-                        colors: [Color.recoveryGreen.opacity(0.4), Color.accentTeal.opacity(0.2)],
+                        colors: [Color.signal.opacity(0.3), Color.line],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -85,29 +85,27 @@ struct PrescriptionCard: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Gradients.recovery)
+                    .fill(Color.signal.opacity(0.12))
                     .frame(width: 42, height: 42)
                 Image(systemName: "dumbbell.fill")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.signal)
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 if exerciseSetIndex > 0 {
                     Text("SET \(exerciseSetIndex) COMPLETE")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .kerning(0.8)
-                        .foregroundStyle(Color.recoveryGreen)
+                        .font(.eyebrowSmall)
+                        .kerning(1.0)
+                        .foregroundStyle(Color.mint)
                 } else {
-                    Text("CURRENT EXERCISE")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .kerning(0.8)
-                        .foregroundStyle(Color.textTertiary)
+                    Eyebrow(text: "Current exercise")
                 }
                 Text(prescription.exerciseName)
-                    .font(.system(size: 21, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.serifMD)
+                    .foregroundStyle(Color.fg0)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.7)
             }
 
             Spacer(minLength: 0)
@@ -121,23 +119,23 @@ struct PrescriptionCard: View {
     private func targetBadge(weight: Double, reps: Int, rpe: Double?) -> some View {
         VStack(spacing: 2) {
             Text("\(formatWeight(weight)) × \(reps)")
-                .font(.system(size: 16, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.numSM)
+                .foregroundStyle(Color.fg0)
             if let rpe {
                 Text("RPE \(formatRPE(rpe))")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.recoveryGreen)
+                    .font(.eyebrowSmall)
+                    .foregroundStyle(Color.mint)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.recoveryGreen.opacity(0.12))
+                .fill(Color.mint.opacity(0.08))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.recoveryGreen.opacity(0.3), lineWidth: 0.5)
+                .stroke(Color.mint.opacity(0.25), lineWidth: 1)
         )
     }
 
@@ -156,11 +154,11 @@ struct PrescriptionCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(color)
                 Text(label)
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .kerning(0.8)
+                    .font(.eyebrow)
+                    .kerning(1.2)
                     .foregroundStyle(color)
             }
 
@@ -191,19 +189,19 @@ struct PrescriptionCard: View {
         let displayRpe = logged?.actualRpe ?? target.rpe
         return VStack(spacing: 3) {
             Text("\(formatWeight(displayWeight)) × \(displayReps)")
-                .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(isCompleted ? color : isCurrent ? .white : Color.white.opacity(0.7))
+                .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
+                .foregroundStyle(isCompleted ? color : isCurrent ? Color.fg0 : Color.fg1)
             if let rpe = displayRpe {
                 Text("@\(formatRPE(rpe))")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(isCompleted ? color.opacity(0.7) : Color.textSecondary)
+                    .font(.eyebrowSmall)
+                    .foregroundStyle(isCompleted ? color.opacity(0.7) : Color.fg2)
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isCompleted ? color.opacity(0.12) : isCurrent ? color.opacity(0.18) : Color.surface)
+                .fill(isCompleted ? color.opacity(0.12) : isCurrent ? color.opacity(0.18) : Color.ink3)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -286,13 +284,13 @@ struct PrescriptionCard: View {
         switch currentPhase {
         case .warmup:
             phaseLabel = "NEXT: WARM-UP \(phaseSetIndex + 1) OF \(prescription.warmupSets.count)"
-            phaseColor = .textSecondary
+            phaseColor = .fg1
         case .working:
             phaseLabel = "NEXT: WORKING SET \(phaseSetIndex + 1)"
-            phaseColor = .recoveryGreen
+            phaseColor = .mint
         case .backoff:
             phaseLabel = "NEXT: BACK-OFF \(phaseSetIndex + 1)"
-            phaseColor = .recoveryYellow
+            phaseColor = .amber
         }
 
         return HStack(spacing: 6) {
@@ -300,14 +298,17 @@ struct PrescriptionCard: View {
                 .font(.system(size: 11))
                 .foregroundStyle(phaseColor)
             Text(phaseLabel)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .kerning(0.5)
+                .font(.eyebrowSmall)
+                .kerning(0.8)
                 .foregroundStyle(phaseColor)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
-            Capsule().fill(phaseColor.opacity(0.1))
+            Capsule().fill(phaseColor.opacity(0.08))
+        )
+        .overlay(
+            Capsule().stroke(phaseColor.opacity(0.22), lineWidth: 1)
         )
     }
 
@@ -319,15 +320,15 @@ struct PrescriptionCard: View {
                 HStack(spacing: 8) {
                     Image(systemName: "metronome.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.accentTeal)
+                        .foregroundStyle(Color.mint)
                     Text("Tempo: \(tempo)")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.fg0)
 
                     if let desc = tempoDescription(tempo) {
                         Text(desc)
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.textSecondary)
+                            .foregroundStyle(Color.fg1)
                     }
                 }
             }
@@ -336,10 +337,10 @@ struct PrescriptionCard: View {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "lightbulb.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.accentAmber)
+                        .foregroundStyle(Color.amber)
                     Text(cue)
                         .font(.system(size: 13).italic())
-                        .foregroundStyle(Color.white.opacity(0.8))
+                        .foregroundStyle(Color.fg0.opacity(0.85))
                 }
             }
         }
@@ -347,7 +348,7 @@ struct PrescriptionCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.surface)
+                .fill(Color.ink1)
         )
     }
 
@@ -361,13 +362,14 @@ struct PrescriptionCard: View {
         HStack(spacing: 5) {
             Image(systemName: "timer")
                 .font(.system(size: 10, weight: .semibold))
-            Text("Rest \(seconds / 60):\(String(format: "%02d", seconds % 60))")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+            Text("REST \(seconds / 60):\(String(format: "%02d", seconds % 60))")
+                .font(.eyebrowSmall)
+                .kerning(1.0)
         }
-        .foregroundStyle(Color.textSecondary)
+        .foregroundStyle(Color.fg1)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(Capsule().fill(Color.surface))
+        .background(Capsule().fill(Color.ink3))
     }
 
     // MARK: - Formatting

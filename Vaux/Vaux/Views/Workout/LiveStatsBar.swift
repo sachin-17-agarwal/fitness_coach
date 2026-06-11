@@ -15,11 +15,11 @@ struct LiveStatsBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            stat(icon: "scalemass.fill", value: formatTonnage(tonnage), label: "TONNAGE", color: .accentPurple)
+            stat(icon: "scalemass.fill", value: formatTonnage(tonnage), label: "TONNAGE", color: .iris)
             divider
-            stat(icon: "number", value: "\(setCount)", label: "SETS", color: .recoveryGreen)
+            stat(icon: "number", value: "\(setCount)", label: "SETS", color: .mint)
             divider
-            stat(icon: "timer", value: formatDuration(duration), label: "TIME", color: .accentAmber)
+            stat(icon: "timer", value: formatDuration(duration), label: "TIME", color: .amber)
             divider
             heartRateStat
         }
@@ -27,11 +27,11 @@ struct LiveStatsBar: View {
         .padding(.vertical, 12)
         .background(
             Rectangle()
-                .fill(Color.surface)
+                .fill(Color.ink1)
                 .overlay(
                     Rectangle()
-                        .fill(Color.cardBorder.opacity(0.5))
-                        .frame(height: 0.5),
+                        .fill(Color.line)
+                        .frame(height: 1),
                     alignment: .bottom
                 )
         )
@@ -39,8 +39,8 @@ struct LiveStatsBar: View {
 
     private var divider: some View {
         Rectangle()
-            .fill(Color.cardBorder)
-            .frame(width: 0.5, height: 26)
+            .fill(Color.line)
+            .frame(width: 1, height: 26)
     }
 
     private func stat(icon: String, value: String, label: String, color: Color) -> some View {
@@ -50,13 +50,13 @@ struct LiveStatsBar: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(color)
                 Text(label)
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .kerning(0.8)
-                    .foregroundStyle(Color.textTertiary)
+                    .font(.eyebrowSmall)
+                    .kerning(1.0)
+                    .foregroundStyle(Color.fg2)
             }
             Text(value)
-                .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.numSM)
+                .foregroundStyle(Color.fg0)
                 .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity)
@@ -69,20 +69,20 @@ struct LiveStatsBar: View {
             HStack(spacing: 5) {
                 HeartBeatIcon(isPulsing: heartRate != nil, color: color)
                 Text("BPM")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .kerning(0.8)
-                    .foregroundStyle(Color.textTertiary)
+                    .font(.eyebrowSmall)
+                    .kerning(1.0)
+                    .foregroundStyle(Color.fg2)
             }
             Text(value)
-                .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.numSM)
+                .foregroundStyle(Color.fg0)
                 .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity)
     }
 
     private func heartRateColor(_ bpm: Int?) -> Color {
-        guard let bpm else { return Color.textTertiary }
+        guard let bpm else { return Color.fg2 }
         switch bpm {
         case ..<100: return .mint
         case ..<140: return .amber

@@ -26,9 +26,9 @@ struct RestTimer: View {
 
             VStack(spacing: 22) {
                 Text("REST")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.eyebrow)
                     .kerning(2.5)
-                    .foregroundStyle(Color.textTertiary)
+                    .foregroundStyle(Color.fg2)
 
                 TimelineView(.animation) { context in
                     let remaining = remaining(at: context.date)
@@ -70,11 +70,11 @@ struct RestTimer: View {
 
             VStack(spacing: 4) {
                 Text(timeString(remaining))
-                    .font(.system(size: 56, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white)
+                    .font(.system(size: 56, weight: .light, design: .serif).monospacedDigit())
+                    .foregroundStyle(Color.fg0)
                 Text(statusText(remaining))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .kerning(1)
+                    .font(.eyebrowSmall)
+                    .kerning(1.4)
                     .foregroundStyle(color)
             }
         }
@@ -92,12 +92,14 @@ struct RestTimer: View {
                     Image(systemName: "plus")
                     Text("+15s")
                 }
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.fg0)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Capsule().fill(Color.surface))
+                .background(Capsule().fill(Color.ink3))
+                .overlay(Capsule().stroke(Color.line2, lineWidth: 1))
             }
+            .buttonStyle(PressScaleStyle())
 
             Button {
                 Haptic.medium()
@@ -107,12 +109,13 @@ struct RestTimer: View {
                     Image(systemName: "forward.fill")
                     Text("Skip")
                 }
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.black)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.signalInk)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
-                .background(Capsule().fill(Color.recoveryGreen))
+                .background(Capsule().fill(Color.signal))
             }
+            .buttonStyle(PressScaleStyle())
         }
     }
 
@@ -129,9 +132,9 @@ struct RestTimer: View {
     }
 
     private func ringColor(_ remaining: Double) -> Color {
-        if remaining <= 10 { return .recoveryRed }
-        if remaining <= 30 { return .recoveryYellow }
-        return .recoveryGreen
+        if remaining <= 10 { return .ember }
+        if remaining <= 30 { return .amber }
+        return .mint
     }
 
     private func statusText(_ remaining: Double) -> String {

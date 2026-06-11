@@ -74,20 +74,21 @@ struct SessionCard: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Gradients.forSession(session.type))
+                    .fill(accent.opacity(0.14))
                     .frame(width: 38, height: 38)
                 Image(systemName: sessionIcon)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(accent)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.type)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.uiStrong)
+                    .foregroundStyle(Color.fg0)
                 Text(prettyDate(session.date))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.textSecondary)
+                    .font(.eyebrowSmall)
+                    .kerning(1.0)
+                    .foregroundStyle(Color.fg2)
             }
 
             Spacer()
@@ -95,19 +96,20 @@ struct SessionCard: View {
             if let tonnage = session.tonnageKg, tonnage > 0 {
                 VStack(alignment: .trailing, spacing: 1) {
                     Text(tonnage.weightString)
-                        .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white)
-                    Text("tonnage")
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.textTertiary)
+                        .font(.numSM)
+                        .foregroundStyle(Color.fg0)
+                    Text("TONNAGE")
+                        .font(.eyebrowSmall)
+                        .kerning(1.0)
+                        .foregroundStyle(Color.fg2)
                 }
             }
 
             statusBadge(session.status)
 
             Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.textSecondary)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.fg2)
                 .rotationEffect(.degrees(isExpanded ? 180 : 0))
         }
     }
@@ -137,7 +139,7 @@ struct SessionCard: View {
             ForEach(order, id: \.self) { key in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(display[key] ?? key.capitalized)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(accent)
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -155,50 +157,50 @@ struct SessionCard: View {
         let kind = entryKind(set)
         return HStack(spacing: 10) {
             Text("#\(set.setNumber)")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.textTertiary)
+                .font(.eyebrowSmall)
+                .foregroundStyle(Color.fg2)
                 .frame(width: 26, alignment: .leading)
 
             switch kind {
             case .cardio, .yoga:
                 if let minutes = set.actualReps {
                     Text("\(minutes) min")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(Color.fg0)
                 }
                 Text(kind == .yoga ? "YOGA" : "CARDIO")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .font(.eyebrowSmall)
                     .kerning(0.5)
                     .foregroundStyle(Color.forSession(kind == .yoga ? "Yoga" : "Cardio+Abs"))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.surface))
+                    .background(Capsule().fill(Color.ink3))
             case .strength:
                 if let w = set.actualWeightKg, let r = set.actualReps {
                     Text("\(w.weightString) × \(r)")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(isWarmup ? Color.textSecondary : .white)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(isWarmup ? Color.fg1 : Color.fg0)
                 }
 
                 if isWarmup {
                     Text("WARM-UP")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .font(.eyebrowSmall)
                         .kerning(0.5)
-                        .foregroundStyle(Color.textTertiary)
+                        .foregroundStyle(Color.fg2)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.surface))
+                        .background(Capsule().fill(Color.ink3))
                 }
             }
 
             Spacer()
             if let rpe = set.actualRpe {
                 Text("RPE \(rpe.oneDecimal)")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.textSecondary)
+                    .font(.eyebrowSmall)
+                    .foregroundStyle(Color.fg1)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.surface))
+                    .background(Capsule().fill(Color.ink3))
             }
         }
     }
@@ -217,16 +219,15 @@ struct SessionCard: View {
 
     private func statusBadge(_ status: String) -> some View {
         let isCompleted = status == "completed"
-        let color: Color = isCompleted ? .recoveryGreen : .recoveryYellow
-        return Text(status.capitalized)
-            .font(.system(size: 9, weight: .bold, design: .rounded))
-            .kerning(0.5)
+        let color: Color = isCompleted ? .mint : .amber
+        return Text(status.uppercased())
+            .font(.eyebrowSmall)
+            .kerning(0.8)
             .foregroundStyle(color)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(
-                Capsule().fill(color.opacity(0.15))
-            )
+            .background(Capsule().fill(color.opacity(0.10)))
+            .overlay(Capsule().stroke(color.opacity(0.22), lineWidth: 0.5))
     }
 
     private func prettyDate(_ dateString: String) -> String {
