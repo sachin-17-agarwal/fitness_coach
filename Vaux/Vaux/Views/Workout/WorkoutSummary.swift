@@ -17,21 +17,26 @@ struct WorkoutSummaryView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 18) {
                         hero
+                            .riseIn()
 
                         HStack(spacing: 10) {
                             statCard(value: summary.tonnage.weightString, label: "Tonnage", color: .iris, icon: "scalemass.fill")
                             statCard(value: "\(summary.totalSets)", label: "Sets", color: .mint, icon: "number")
                             statCard(value: formatDuration(summary.duration), label: "Duration", color: .amber, icon: "timer")
                         }
+                        .riseIn(delay: 0.08)
 
                         if summary.avgHR != nil || summary.maxHR != nil {
                             heartRateSection
+                                .riseIn(delay: 0.16)
                         }
 
                         recapSection
+                            .riseIn(delay: 0.22)
 
                         if summary.prs.contains(where: \.isPR) {
                             prsSection
+                                .riseIn(delay: 0.28)
                         }
 
                         Spacer(minLength: 20)
@@ -55,24 +60,8 @@ struct WorkoutSummaryView: View {
     // MARK: - Hero
 
     private var hero: some View {
-        VStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(Color.signal.opacity(0.25))
-                    .frame(width: 84, height: 84)
-                    .blur(radius: 26)
-                ZStack {
-                    Circle()
-                        .fill(Color.signal.opacity(0.10))
-                        .frame(width: 70, height: 70)
-                    Circle()
-                        .stroke(Color.signal.opacity(0.45), lineWidth: 1)
-                        .frame(width: 70, height: 70)
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(Color.signal)
-                }
-            }
+        VStack(spacing: 12) {
+            IconBadge(systemName: "checkmark", accent: .signal, size: 76)
 
             Text("Session complete")
                 .font(.serifMD)

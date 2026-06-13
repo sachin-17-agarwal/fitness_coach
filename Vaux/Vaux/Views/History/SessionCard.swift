@@ -47,19 +47,20 @@ struct SessionCard: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.ink2)
+                .fill(Color.ink2.opacity(0.94))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
                     LinearGradient(
-                        colors: [accent.opacity(0.35), Color.line],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        colors: [Color.white.opacity(0.08), accent.opacity(0.25), Color.line],
+                        startPoint: .top,
+                        endPoint: .bottom
                     ),
                     lineWidth: 1
                 )
         )
+        .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: 6)
         .contentShape(Rectangle())
         .onTapGesture {
             Haptic.light()

@@ -14,6 +14,7 @@ struct PRCelebration: View {
     @State private var opacity: Double = 0
     @State private var rotation: Double = -12
     @State private var badgeScale: CGFloat = 0.4
+    @State private var ripple = false
 
     var body: some View {
         ZStack {
@@ -26,6 +27,16 @@ struct PRCelebration: View {
                         .fill(Color.signal.opacity(0.25))
                         .frame(width: 160, height: 160)
                         .blur(radius: 40)
+
+                    // Sonar ripples expanding outward from the badge
+                    Circle()
+                        .stroke(Color.signal.opacity(ripple ? 0 : 0.35), lineWidth: 1)
+                        .frame(width: 130, height: 130)
+                        .scaleEffect(ripple ? 1.85 : 1.0)
+                    Circle()
+                        .stroke(Color.signal.opacity(ripple ? 0 : 0.22), lineWidth: 1)
+                        .frame(width: 130, height: 130)
+                        .scaleEffect(ripple ? 1.45 : 1.0)
 
                     ZStack {
                         Circle()
@@ -87,6 +98,9 @@ struct PRCelebration: View {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.5).delay(0.1)) {
                 badgeScale = 1.0
                 rotation = 0
+            }
+            withAnimation(.easeOut(duration: 1.5).delay(0.25).repeatForever(autoreverses: false)) {
+                ripple = true
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
                 withAnimation(.easeOut(duration: 0.35)) {

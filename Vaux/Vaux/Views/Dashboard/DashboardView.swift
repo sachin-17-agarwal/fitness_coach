@@ -64,6 +64,7 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                     .padding(.top, 4)
+                    .riseIn()
 
                 RecoveryRing(
                     score: viewModel.recoveryScore,
@@ -76,12 +77,15 @@ struct DashboardView: View {
                     rhrDelta: rhrDeltaInt,
                     recentScores: recentRecoveryScores
                 )
+                .riseIn(delay: 0.06)
 
                 SessionTypeCard(mesocycle: viewModel.mesocycle) {
                     navigateToWorkout = true
                 }
+                .riseIn(delay: 0.12)
 
                 metricsGrid
+                    .riseIn(delay: 0.18)
 
                 if let err = syncError {
                     Text(err)

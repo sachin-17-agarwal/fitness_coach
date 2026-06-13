@@ -162,15 +162,14 @@ struct HistoryView: View {
     }
 
     private var emptyTraining: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "figure.strengthtraining.traditional")
-                .font(.system(size: 28, weight: .light))
-                .foregroundStyle(Color.fg2)
+        VStack(spacing: 14) {
+            IconBadge(systemName: "figure.strengthtraining.traditional", accent: .signal, size: 64)
             Text("No sessions yet")
                 .font(.serifSM)
                 .foregroundStyle(Color.fg0)
-            Text("Start your first workout in the Train tab\nto see history here")
-                .font(.uiSmall)
+            Text("START YOUR FIRST WORKOUT IN THE TRAIN TAB")
+                .font(.eyebrowSmall)
+                .kerning(1.2)
                 .foregroundStyle(Color.fg2)
                 .multilineTextAlignment(.center)
         }
@@ -203,15 +202,14 @@ struct HistoryView: View {
             }
 
             if viewModel.recoveryHistory.isEmpty && !viewModel.isLoading {
-                VStack(spacing: 10) {
-                    Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(Color.fg2)
+                VStack(spacing: 14) {
+                    IconBadge(systemName: "waveform.path.ecg", accent: .mint, size: 64)
                     Text("No recovery data")
                         .font(.serifSM)
                         .foregroundStyle(Color.fg0)
-                    Text("Sync Apple Health or log a weight to get started")
-                        .font(.uiSmall)
+                    Text("SYNC APPLE HEALTH OR LOG A WEIGHT TO START")
+                        .font(.eyebrowSmall)
+                        .kerning(1.2)
                         .foregroundStyle(Color.fg2)
                         .multilineTextAlignment(.center)
                 }
@@ -287,36 +285,84 @@ struct WorkoutHeatmap: View {
     private static let dayLabels = ["M", "", "W", "", "F", "", "S"]
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .trailing, spacing: Self.spacing) {
-                ForEach(0..<7, id: \.self) { dayIdx in
-                    Text(Self.dayLabels[dayIdx])
-                        .font(.eyebrowSmall)
-                        .foregroundStyle(Color.fg2)
-                        .frame(height: Self.cellHeight)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .trailing, spacing: Self.spacing) {
+                    ForEach(0..<7, id: \.self) { dayIdx in
+                        Text(Self.dayLabels[dayIdx])
+                            .font(.eyebrowSmall)
+                            .foregroundStyle(Color.fg2)
+                            .frame(height: Self.cellHeight)
+                    }
                 }
-            }
-            .frame(width: 16)
+                .frame(width: 16)
 
-            GeometryReader { geo in
-                let cellWidth = (geo.size.width - CGFloat(Self.weeks - 1) * Self.spacing) / CGFloat(Self.weeks)
+                GeometryReader { geo in
+                    let cellWidth = (geo.size.width - CGFloat(Self.weeks - 1) * Self.spacing) / CGFloat(Self.weeks)
 
-                HStack(alignment: .top, spacing: Self.spacing) {
-                    ForEach(0..<Self.weeks, id: \.self) { weekIdx in
-                        VStack(spacing: Self.spacing) {
-                            ForEach(0..<7, id: \.self) { dayIdx in
-                                let cellIdx = weekIdx * 7 + dayIdx
-                                let cell = cells[cellIdx]
-                                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                    .fill(cellColor(cell.intensity))
-                                    .frame(width: cellWidth, height: Self.cellHeight)
+                    HStack(alignment: .top, spacing: Self.spacing) {
+                        ForEach(0..<Self.weeks, id: \.self) { weekIdx in
+                            VStack(spacing: Self.spacing) {
+                                ForEach(0..<7, id: \.self) { dayIdx in
+                                    let cellIdx = weekIdx * 7 + dayIdx
+                                    let cell = cells[cellIdx]
+                                    let isToday = Calendar.current.isDateInToday(cell.date)
+                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                        .fill(cellColor(cell.intensity))
+                                        .frame(width: cellWidth, height: Self.cellHeight)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                                .stroke(
+                                                    isToday ? Color.signal : Color.clear,
+                                                    lineWidth: 1
+                                                )
+                                        )
+                                }
                             }
                         }
                     }
                 }
             }
+            .frame(height: 7 * Self.cellHeight + 6 * Self.spacing)
+
+            legend
         }
-        .frame(height: 7 * Self.cellHeight + 6 * Self.spacing)
+    }
+
+    private var legend: some View {
+        HStack(spacing: 4) {
+            Text("LESS")
+                .font(.eyebrowSmall)
+                .kerning(1.0)
+                .foregroundStyle(Color.fg3)
+            legendSwatch(Color.ink3)
+            legendSwatch(Color.signal.opacity(0.25))
+            legendSwatch(Color.signal.opacity(0.55))
+            legendSwatch(Color.signal)
+            Text("MORE")
+                .font(.eyebrowSmall)
+                .kerning(1.0)
+                .foregroundStyle(Color.fg3)
+
+            Spacer()
+
+            legendSwatch(Color.ink3, stroke: Color.signal)
+            Text("TODAY")
+                .font(.eyebrowSmall)
+                .kerning(1.0)
+                .foregroundStyle(Color.fg3)
+        }
+        .padding(.leading, 16)
+    }
+
+    private func legendSwatch(_ fill: Color, stroke: Color = .clear) -> some View {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(fill)
+            .frame(width: 9, height: 9)
+            .overlay(
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .stroke(stroke, lineWidth: 1)
+            )
     }
 
     private func cellColor(_ intensity: Double) -> Color {

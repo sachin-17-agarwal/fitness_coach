@@ -86,15 +86,20 @@ struct MorningBriefingView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
                 greeting(b)
+                    .riseIn()
                 BriefingRecoveryHero(briefing: b)
+                    .riseIn(delay: 0.06)
                 BriefingPlanCard(briefing: b) {
                     Haptic.medium()
                     viewModel.markShown()
                     dismiss()
                     onStartWorkout?(b.mesocycle.sessionType)
                 }
+                .riseIn(delay: 0.12)
                 BriefingNoteCard(note: b.coachNote)
+                    .riseIn(delay: 0.18)
                 actionRow(b)
+                    .riseIn(delay: 0.24)
                 Spacer(minLength: 24)
             }
             .padding(.horizontal, 20)

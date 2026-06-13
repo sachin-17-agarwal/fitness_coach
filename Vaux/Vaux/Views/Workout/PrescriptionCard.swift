@@ -10,6 +10,9 @@ struct PrescriptionCard: View {
     var currentPhase: SetPhase = .working
     var phaseSetIndex: Int = 0
 
+    /// Drives the soft glow pulse on the chip for the set that's up next.
+    @State private var pulse = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             exerciseHeader
@@ -64,19 +67,25 @@ struct PrescriptionCard: View {
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.ink2)
+                .fill(Color.ink2.opacity(0.94))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(
                     LinearGradient(
-                        colors: [Color.signal.opacity(0.3), Color.line],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        colors: [Color.white.opacity(0.10), Color.signal.opacity(0.25), Color.line],
+                        startPoint: .top,
+                        endPoint: .bottom
                     ),
                     lineWidth: 1
                 )
         )
+        .shadow(color: .black.opacity(0.45), radius: 18, x: 0, y: 10)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
     }
 
     // MARK: - Exercise header
@@ -209,6 +218,10 @@ struct PrescriptionCard: View {
                     isCompleted ? color.opacity(0.3) : isCurrent ? color.opacity(0.6) : Color.clear,
                     lineWidth: isCurrent ? 1.5 : 0.5
                 )
+        )
+        .shadow(
+            color: isCurrent ? color.opacity(pulse ? 0.45 : 0.10) : .clear,
+            radius: isCurrent ? (pulse ? 9 : 3) : 0
         )
         .overlay(alignment: .topTrailing) {
             if isCompleted {

@@ -169,22 +169,8 @@ struct WorkoutModeView: View {
         return VStack(spacing: 0) {
             Spacer()
 
-            ZStack {
-                Circle()
-                    .stroke(accent.opacity(0.10), lineWidth: 1)
-                    .frame(width: 156, height: 156)
-                Circle()
-                    .stroke(accent.opacity(0.22), lineWidth: 1)
-                    .frame(width: 120, height: 120)
-                Circle()
-                    .fill(accent.opacity(0.08))
-                    .frame(width: 120, height: 120)
-                Image(systemName: iconForType(type))
-                    .font(.system(size: 42, weight: .medium))
-                    .foregroundStyle(accent)
-                    .shadow(color: accent.opacity(0.6), radius: 12)
-            }
-            .padding(.bottom, 28)
+            IconBadge(systemName: iconForType(type), accent: accent, size: 120)
+                .padding(.bottom, 28)
 
             VStack(spacing: 10) {
                 Eyebrow(text: "Session brief")

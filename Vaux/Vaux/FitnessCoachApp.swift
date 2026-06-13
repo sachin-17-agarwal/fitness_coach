@@ -94,12 +94,17 @@ struct FitnessCoachApp: App {
     // MARK: - Appearance
 
     private func configureNavBarAppearance() {
+        // Glass chrome: dark blur + ink tint with a hairline shadow, so
+        // pushed screens match the floating tab bar instead of showing a
+        // flat opaque strip over the dot-grid background.
         let navBarAppearance = UINavigationBarAppearance()
         navBarAppearance.configureWithTransparentBackground()
-        navBarAppearance.backgroundColor = UIColor(Color.ink0)
+        navBarAppearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        navBarAppearance.backgroundColor = UIColor(Color.ink0).withAlphaComponent(0.72)
+        navBarAppearance.shadowColor = UIColor(Color.line)
         navBarAppearance.titleTextAttributes = [
             .foregroundColor: UIColor(Color.fg0),
-            .font: UIFont.systemFont(ofSize: 17, weight: .semibold)
+            .font: UIFont.systemFont(ofSize: 16, weight: .semibold)
         ]
         navBarAppearance.largeTitleTextAttributes = [
             .foregroundColor: UIColor(Color.fg0),
