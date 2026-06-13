@@ -64,6 +64,16 @@ struct RestTimer: View {
     private func ringView(remaining: Double) -> some View {
         let color = ringColor(remaining)
         return ZStack {
+            // Watch-dial tick marks — majors every 5 ticks
+            ForEach(0..<60, id: \.self) { i in
+                let isMajor = i % 5 == 0
+                Rectangle()
+                    .fill(Color.white.opacity(isMajor ? 0.22 : 0.08))
+                    .frame(width: 1.5, height: isMajor ? 9 : 5)
+                    .offset(y: -88)
+                    .rotationEffect(.degrees(Double(i) * 6))
+            }
+
             Circle()
                 .stroke(color.opacity(0.18), lineWidth: 10)
 

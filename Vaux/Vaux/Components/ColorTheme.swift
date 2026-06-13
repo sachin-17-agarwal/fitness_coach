@@ -427,6 +427,65 @@ struct PressScaleStyle: ButtonStyle {
     }
 }
 
+// MARK: - Entrance motion
+//
+// Soft rise-and-fade used to stagger sections into place on first
+// appearance. Views stay mounted across tab switches, so this fires once
+// per launch rather than on every visit.
+
+struct RiseIn: ViewModifier {
+    var delay: Double = 0
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : 14)
+            .onAppear {
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.85).delay(delay)) {
+                    shown = true
+                }
+            }
+    }
+}
+
+extension View {
+    func riseIn(delay: Double = 0) -> some View {
+        modifier(RiseIn(delay: delay))
+    }
+}
+
+// MARK: - Glow-ring icon badge
+//
+// Concentric hairline rings around a glowing symbol — the shared visual
+// for start screens, empty states, and completion heroes. `size` is the
+// inner ring diameter; the outer ring extends 30% beyond it.
+
+struct IconBadge: View {
+    let systemName: String
+    var accent: Color = .signal
+    var size: CGFloat = 120
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(accent.opacity(0.10), lineWidth: 1)
+                .frame(width: size * 1.3, height: size * 1.3)
+            Circle()
+                .stroke(accent.opacity(0.22), lineWidth: 1)
+                .frame(width: size, height: size)
+            Circle()
+                .fill(accent.opacity(0.07))
+                .frame(width: size, height: size)
+            Image(systemName: systemName)
+                .font(.system(size: size * 0.34, weight: .medium))
+                .foregroundStyle(accent)
+                .shadow(color: accent.opacity(0.6), radius: 12)
+        }
+        .frame(width: size * 1.3, height: size * 1.3)
+    }
+}
+
 // MARK: - Small UI building blocks
 
 /// Small rounded pill label. Used for trend chips, status badges, streak tags.

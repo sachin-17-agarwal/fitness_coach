@@ -43,15 +43,18 @@ struct ProgressionChart: View {
             if chartPoints.count >= 2 {
                 chart
             } else if !availableExercises.isEmpty {
-                Text("Not enough data for \(selectedExercise)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.textTertiary)
+                Text("NOT ENOUGH DATA FOR \(selectedExercise.uppercased())")
+                    .font(.eyebrowSmall)
+                    .kerning(1.2)
+                    .foregroundStyle(Color.fg3)
+                    .multilineTextAlignment(.center)
                     .frame(height: 160)
                     .frame(maxWidth: .infinity)
             } else {
-                Text("No exercise data yet")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.textTertiary)
+                Text("NO EXERCISE DATA YET")
+                    .font(.eyebrowSmall)
+                    .kerning(1.2)
+                    .foregroundStyle(Color.fg3)
                     .frame(height: 160)
                     .frame(maxWidth: .infinity)
             }
@@ -111,13 +114,33 @@ struct ProgressionChart: View {
             .foregroundStyle(Color.signal)
             .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round))
             .interpolationMethod(.catmullRom)
+            .shadow(color: Color.signal.opacity(0.45), radius: 4, y: 2)
 
             PointMark(
                 x: .value("Date", point.date),
                 y: .value("Weight", point.value)
             )
             .foregroundStyle(Color.signal)
-            .symbolSize(40)
+            .symbolSize(point.id == chartPoints.last?.id ? 70 : 36)
+
+            if point.id == chartPoints.last?.id {
+                PointMark(
+                    x: .value("Date", point.date),
+                    y: .value("Weight", point.value)
+                )
+                .foregroundStyle(.white)
+                .symbolSize(22)
+                .annotation(position: .top, spacing: 6) {
+                    Text("\(Int(point.value))")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(Color.ink0)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule().fill(Color.signal.opacity(0.9))
+                        )
+                }
+            }
 
             AreaMark(
                 x: .value("Date", point.date),
@@ -125,7 +148,7 @@ struct ProgressionChart: View {
             )
             .foregroundStyle(
                 LinearGradient(
-                    colors: [Color.signal.opacity(0.18), Color.signal.opacity(0)],
+                    colors: [Color.signal.opacity(0.16), Color.signal.opacity(0)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -136,17 +159,17 @@ struct ProgressionChart: View {
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
                 AxisValueLabel()
-                    .foregroundStyle(Color.fg2)
-                    .font(.system(size: 10))
+                    .foregroundStyle(Color.fg3)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
                 AxisGridLine()
-                    .foregroundStyle(Color.line)
+                    .foregroundStyle(Color.line.opacity(0.7))
             }
         }
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                 AxisValueLabel(format: .dateTime.day().month(.abbreviated))
-                    .foregroundStyle(Color.fg2)
-                    .font(.system(size: 10))
+                    .foregroundStyle(Color.fg3)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
             }
         }
         .frame(height: 170)

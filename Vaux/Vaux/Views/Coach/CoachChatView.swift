@@ -159,19 +159,31 @@ struct CoachChatView: View {
                         viewModel.inputText = prompt
                         Task { await viewModel.sendMessage() }
                     } label: {
-                        Text(prompt)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.fg1)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule()
-                                    .fill(Color.ink3)
-                            )
-                            .overlay(
-                                Capsule()
-                                    .stroke(Color.line2, lineWidth: 1)
-                            )
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Color.signal)
+                            Text(prompt)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.fg1)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(Color.ink2.opacity(0.94))
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.08), Color.line2],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
                     }
                     .buttonStyle(.plain)
                 }
