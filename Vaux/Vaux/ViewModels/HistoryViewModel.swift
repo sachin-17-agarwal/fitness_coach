@@ -16,6 +16,7 @@ final class HistoryViewModel {
     var sessionSets: [UUID: [WorkoutSet]] = [:]
 
     let weeklyVolume = WeeklyVolumeViewModel()
+    let muscleStrength = MuscleStrengthViewModel()
 
     private let workoutService = WorkoutService()
     private let recoveryService = RecoveryService()
@@ -34,9 +35,10 @@ final class HistoryViewModel {
             errorMessage = error.localizedDescription
         }
 
-        // Volume rolls up its own errors so a failure here doesn't block
-        // the Training/Recovery tabs from rendering.
+        // Volume and Strength roll up their own errors so a failure in
+        // either doesn't block the Training/Recovery tabs from rendering.
         await weeklyVolume.load()
+        await muscleStrength.load()
 
         isLoading = false
     }
