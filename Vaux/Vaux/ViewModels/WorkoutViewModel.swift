@@ -334,10 +334,12 @@ final class WorkoutViewModel {
                 return (t.weight, t.reps, nil)
             case .working:
                 guard loggedPhaseSetIndex < rx.workingSets.count else { return nil }
-                return rx.workingSets[loggedPhaseSetIndex]
+                let t = rx.workingSets[loggedPhaseSetIndex]
+                return (t.weight, t.reps, t.rpe)
             case .backoff:
                 guard loggedPhaseSetIndex < rx.backoffSets.count else { return nil }
-                return rx.backoffSets[loggedPhaseSetIndex]
+                let t = rx.backoffSets[loggedPhaseSetIndex]
+                return (t.weight, t.reps, t.rpe)
             }
         }()
 
@@ -783,8 +785,8 @@ final class WorkoutViewModel {
             let rx = ExercisePrescription(
                 exerciseName: PrescriptionParser.normalizeExerciseName(serverRx.exercise),
                 warmupSets: (serverRx.warmup ?? []).map { ($0.weight, $0.reps) },
-                workingSets: (serverRx.working ?? []).map { ($0.weight, $0.reps, $0.rpe) },
-                backoffSets: (serverRx.backoff ?? []).map { ($0.weight, $0.reps, $0.rpe) },
+                workingSets: (serverRx.working ?? []).map { ($0.weight, $0.reps, $0.repsHigh, $0.rpe) },
+                backoffSets: (serverRx.backoff ?? []).map { ($0.weight, $0.reps, $0.repsHigh, $0.rpe) },
                 formCue: serverRx.form,
                 tempo: serverRx.tempo,
                 restSeconds: Self.parseRestString(serverRx.rest)
@@ -1083,10 +1085,12 @@ final class WorkoutViewModel {
                 return (t.weight, t.reps, nil)
             case .working:
                 guard phaseSetIndex < rx.workingSets.count else { return nil }
-                return rx.workingSets[phaseSetIndex]
+                let t = rx.workingSets[phaseSetIndex]
+                return (t.weight, t.reps, t.rpe)
             case .backoff:
                 guard phaseSetIndex < rx.backoffSets.count else { return nil }
-                return rx.backoffSets[phaseSetIndex]
+                let t = rx.backoffSets[phaseSetIndex]
+                return (t.weight, t.reps, t.rpe)
             }
         }()
         guard let t = target else { return "" }
@@ -1116,10 +1120,12 @@ final class WorkoutViewModel {
                 return (t.weight, t.reps, nil)
             case .working:
                 guard phaseSetIndex < rx.workingSets.count else { return nil }
-                return rx.workingSets[phaseSetIndex]
+                let t = rx.workingSets[phaseSetIndex]
+                return (t.weight, t.reps, t.rpe)
             case .backoff:
                 guard phaseSetIndex < rx.backoffSets.count else { return nil }
-                return rx.backoffSets[phaseSetIndex]
+                let t = rx.backoffSets[phaseSetIndex]
+                return (t.weight, t.reps, t.rpe)
             }
         }()
         guard let t = target else { return "" }
