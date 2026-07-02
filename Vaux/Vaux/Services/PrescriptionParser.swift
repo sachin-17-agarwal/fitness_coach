@@ -167,7 +167,10 @@ final class PrescriptionParser {
             if working.isEmpty, !loose.isEmpty {
                 working = [loose.removeFirst()]
             }
-            if backoff.isEmpty, let next = loose.first {
+            // Straight-set prescriptions (abs) enumerate 2+ sets on the
+            // `Working Set:` line and legitimately have no back-off — don't
+            // promote stray narrative numbers into a phantom back-off chip.
+            if backoff.isEmpty, working.count <= 1, let next = loose.first {
                 backoff = [next]
             }
         }

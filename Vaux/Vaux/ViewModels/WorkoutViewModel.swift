@@ -208,13 +208,13 @@ final class WorkoutViewModel {
         // rather than a full-session plan.
         let prompt: String
         if session.type == "Cardio+Abs" {
-            prompt = "I've finished cardio for my \(session.type) session. Prescribe the first abs exercise using the strict format: *Exercise Name* on its own line, then Warm-up:, Working Set: (with Tempo and Rest), Back-off:, and Form: lines. The iOS card needs this exact format to render."
+            prompt = "I've finished cardio for my \(session.type) session. Prescribe the first abs exercise using the strict straight-set format: *Exercise Name* on its own line, then a Working Set: line with EVERY set enumerated comma-separated (e.g. 25kg x12, 25kg x12, 25kg x12) plus Tempo and Rest, then a Form: line. Abs are straight sets — no Back-off line. The iOS card needs this exact format to render."
         } else {
             // Explicit demand for the full phase list — the iOS card uses
             // Warm-up / Working Set / Back-off as the structure for its
             // chips, and Claude has a habit of dropping already-completed
             // phases on resume, which then erases them from the UI.
-            prompt = "Resuming my \(session.type) session. The [LIVE WORKOUT — IN PROGRESS] block in your context shows exactly what I've logged. Resend today's full plan and re-prescribe the current exercise in the strict format with ALL phases present — Warm-up, Working Set, and Back-off lines — even if some of those sets are already done. I need the full block so my card can show the complete progress, not just the unfinished phases."
+            prompt = "Resuming my \(session.type) session. The [LIVE WORKOUT — IN PROGRESS] block in your context shows exactly what I've logged. Resend today's full plan and re-prescribe the current exercise in the strict format with ALL originally prescribed phases present — Warm-up, Working Set, and Back-off lines (straight-set ab exercises have no Back-off; re-list every enumerated set on the Working Set line instead) — even if some of those sets are already done. I need the full block so my card can show the complete progress, not just the unfinished phases."
         }
         do {
             let response = try await chatService.sendMessage(prompt)

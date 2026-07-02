@@ -404,7 +404,10 @@ def _parse_block(name: str, block: str) -> dict | None:
         if loose:
             if not working:
                 working = [loose.pop(0)]
-            if not backoff and loose:
+            # Straight-set prescriptions (abs) enumerate 2+ sets on the
+            # `Working Set:` line and legitimately have no back-off — don't
+            # promote stray narrative numbers into a phantom back-off.
+            if not backoff and loose and len(working) <= 1:
                 backoff = [loose[0]]
 
     if warmup:
