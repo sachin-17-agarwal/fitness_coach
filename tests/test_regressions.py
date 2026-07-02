@@ -506,6 +506,40 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(rx["working"], [{"weight": 160.0, "reps": 8, "rpe": 8.0}])
         self.assertNotIn("backoff", rx)
 
+    def test_prescription_parser_straight_sets_parse_as_multiple_working_sets(self):
+        """Ab work is prescribed as straight sets: every set enumerated on the
+        `Working Set:` line, no back-off. Each comma-separated entry must
+        surface as its own working set so the card renders one chip per set."""
+        from webhook import _parse_prescription
+        text = (
+            "*Cable Crunch*\n"
+            "Working Set: 25kg x12, 25kg x12, 25kg x12, 25kg x12 RPE8 | Tempo: 2-1-2 | Rest: 90s\n"
+            "Form: Flex the spine, pull with abs not arms\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["exercise"], "Cable Crunch")
+        self.assertEqual(len(rx["working"]), 4)
+        self.assertEqual(rx["working"][0], {"weight": 25.0, "reps": 12, "rpe": 8.0})
+        self.assertNotIn("backoff", rx)
+        self.assertEqual(rx["rest"], "90s")
+
+    def test_prescription_parser_straight_sets_get_no_phantom_backoff(self):
+        """A straight-set prescription (2+ enumerated working sets, no
+        `Back-off:` line) must not have loose narrative set mentions promoted
+        into a phantom back-off — abs genuinely have no back-off."""
+        from webhook import _parse_prescription
+        text = (
+            "*Hanging Leg Raises*\n"
+            "Working Set: BW x12, BW x12, BW x12 RPE8 | Rest: 90s\n"
+            "Form: Straight legs, no swinging\n"
+            "After this we finish with 3 sets: 20kg x15 on oblique crunches.\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(len(rx["working"]), 3)
+        self.assertNotIn("backoff", rx)
+
     def test_prescription_parser_handles_bodyweight_swap(self):
         """Swapping to pull-ups / dips uses `BW xN` instead of a kg weight.
         The parser must recognise the bodyweight token (resolving to 0kg) so

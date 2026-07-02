@@ -171,7 +171,7 @@ struct PrescriptionCard: View {
                     .foregroundStyle(color)
             }
 
-            HStack(spacing: 6) {
+            ChipFlow(spacing: 6) {
                 ForEach(Array(sets.enumerated()), id: \.offset) { _, target in
                     setChip(target: target, color: color)
                 }
@@ -299,7 +299,7 @@ struct PrescriptionCard: View {
             phaseLabel = "NEXT: WARM-UP \(phaseSetIndex + 1) OF \(prescription.warmupSets.count)"
             phaseColor = .fg1
         case .working:
-            phaseLabel = "NEXT: WORKING SET \(phaseSetIndex + 1)"
+            phaseLabel = "NEXT: WORKING SET \(phaseSetIndex + 1) OF \(prescription.workingSets.count)"
             phaseColor = .mint
         case .backoff:
             phaseLabel = "NEXT: BACK-OFF \(phaseSetIndex + 1)"
@@ -396,5 +396,64 @@ struct PrescriptionCard: View {
 
     private func formatRPE(_ r: Double) -> String {
         r.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(r))" : String(format: "%.1f", r)
+    }
+}
+
+/// Lays out set chips left-to-right and wraps onto additional rows when a
+/// section prescribes more sets than fit the card width — straight-set ab
+/// work runs 3-4 working sets, which overflows a fixed HStack on smaller
+/// screens.
+private struct ChipFlow: Layout {
+    var spacing: CGFloat = 6
+
+    private struct Row {
+        var sizes: [CGSize] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = computeRows(maxWidth: proposal.width ?? .infinity, subviews: subviews)
+        let width = proposal.width ?? rows.map(\.width).max() ?? 0
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var index = 0
+        var y = bounds.minY
+        for row in computeRows(maxWidth: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for size in row.sizes {
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+                index += 1
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private func computeRows(maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var current = Row()
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let widthIfAdded = current.sizes.isEmpty
+                ? size.width
+                : current.width + spacing + size.width
+            if !current.sizes.isEmpty, widthIfAdded > maxWidth {
+                rows.append(current)
+                current = Row()
+                current.width = size.width
+            } else {
+                current.width = widthIfAdded
+            }
+            current.sizes.append(size)
+            current.height = max(current.height, size.height)
+        }
+        if !current.sizes.isEmpty {
+            rows.append(current)
+        }
+        return rows
     }
 }
