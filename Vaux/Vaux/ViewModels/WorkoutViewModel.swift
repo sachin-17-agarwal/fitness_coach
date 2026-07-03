@@ -794,6 +794,20 @@ final class WorkoutViewModel {
             prescriptions = clientParsed
         }
 
+        // Same-exercise updates: carry forward any phase the coach dropped.
+        // Mid-exercise Claude often re-sends only the phase it's prescribing
+        // next ("Back-off: BW x8" after a working set). Accepting that block
+        // wholesale wiped the working set off the card, and the completion
+        // math ("first N non-warmups are working sets") then counted the
+        // logged working set as the back-off — showing it checked off and
+        // prefilling a phantom next set. Phases already on screen are ground
+        // truth; only non-empty incoming phases may replace them.
+        if let current = currentPrescription,
+           let first = prescriptions.first,
+           first.exerciseName == current.exerciseName {
+            prescriptions[0] = mergingDroppedPhases(into: first, from: current)
+        }
+
         if !prescriptions.isEmpty {
             let newFirstName = prescriptions.first?.exerciseName
             let wantsDifferentExercise = newFirstName != oldExercise
@@ -880,6 +894,25 @@ final class WorkoutViewModel {
         } else {
             coachNote = nil
         }
+    }
+
+    /// Fills phases missing from a same-exercise re-prescription with the
+    /// phases currently on screen. The coach is instructed to reply mid-set
+    /// with either plain narrative or a FULL block, but it sometimes sends a
+    /// partial block containing only the next phase — and a partial block
+    /// must never erase sets (or their checkmarks) from the card.
+    private func mergingDroppedPhases(
+        into incoming: ExercisePrescription,
+        from current: ExercisePrescription
+    ) -> ExercisePrescription {
+        var merged = incoming
+        if merged.warmupSets.isEmpty { merged.warmupSets = current.warmupSets }
+        if merged.workingSets.isEmpty { merged.workingSets = current.workingSets }
+        if merged.backoffSets.isEmpty { merged.backoffSets = current.backoffSets }
+        if merged.formCue == nil { merged.formCue = current.formCue }
+        if merged.tempo == nil { merged.tempo = current.tempo }
+        if merged.restSeconds == nil { merged.restSeconds = current.restSeconds }
+        return merged
     }
 
     /// Looks for a mention of any upcoming exercise in the coach's narrative

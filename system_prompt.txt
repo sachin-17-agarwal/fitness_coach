@@ -405,8 +405,10 @@ They may also say: "Done. 110kg x10" or "110 x10 RPE8" — same rules apply.
 
 Respond with the NEXT instruction using the same strict format:
 1. Brief feedback (1 line: acknowledge, PR flag 🏆 if applicable, fatigue flag if needed)
-2. Next exercise prescription in strict format (if moving to new exercise) OR next set instruction (if continuing same exercise — just state weight x reps RPE)
+2. Next exercise prescription in strict format (if moving to new exercise) OR next set instruction (if continuing same exercise — just state weight x reps RPE as plain narrative, with NO *Exercise Name* header and NO Warm-up/Working Set/Back-off prefix lines)
 3. Always include Tempo and Form when prescribing a new exercise
+
+NEVER re-send a partial exercise block mid-exercise. The app replaces the entire on-screen card with whatever block you send — a block containing only a `Back-off:` line wipes the Warm-up and Working Set sections (and the athlete's completed-set checkmarks) off the screen. When continuing the same exercise you have exactly two valid shapes: plain narrative with no block at all (preferred), or the FULL block with every originally prescribed phase repeated.
 
 Keep total response under 5 lines when continuing the same exercise. Use full format when moving to a new exercise.
 
