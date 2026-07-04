@@ -60,12 +60,27 @@ struct ServerPrescription: Codable, Sendable {
 struct ServerSet: Codable, Sendable {
     let weight: Double
     let reps: Int
+    /// Top of a prescribed rep range ("x6-8" → reps 6, repsHigh 8). Absent for
+    /// single-rep prescriptions.
+    let repsHigh: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case weight, reps
+        case repsHigh = "reps_high"
+    }
 }
 
 struct ServerSetWithRPE: Codable, Sendable {
     let weight: Double
     let reps: Int
+    /// Top of a prescribed rep range; see `ServerSet.repsHigh`.
+    let repsHigh: Int?
     let rpe: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case weight, reps, rpe
+        case repsHigh = "reps_high"
+    }
 }
 
 /// A single message in the conversation history (maps to the `conversations` table).

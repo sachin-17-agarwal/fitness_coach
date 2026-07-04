@@ -563,6 +563,42 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(rx["working"], [{"weight": 0.0, "reps": 6, "rpe": 8.0}])
         self.assertEqual(rx["backoff"], [{"weight": 0.0, "reps": 10, "rpe": 7.0}])
 
+    def test_prescription_parser_keeps_rep_range_high_bound(self):
+        """A working/back-off rep range ("85kg x6-8") must keep the low bound in
+        `reps` (drives prefill/logging) and surface the top in `reps_high` so the
+        card can render the full range instead of collapsing to 6 — the bug where
+        the card showed 6 while the coach's prose said "aim for 7-8"."""
+        from webhook import _parse_prescription
+        text = (
+            "*Lat Pulldown*\n"
+            "Warm-up: 50kg x10, 70kg x5\n"
+            "Working Set: 85kg x6-8 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Back-off: 65kg x10-12 RPE7\n"
+            "Form: Drive elbows down\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["working"], [{"weight": 85.0, "reps": 6, "reps_high": 8, "rpe": 8.0}])
+        self.assertEqual(rx["backoff"], [{"weight": 65.0, "reps": 10, "reps_high": 12, "rpe": 7.0}])
+        # Warm-up chips stay single-rep — no range bound added there.
+        self.assertEqual(rx["warmup"], [
+            {"weight": 50.0, "reps": 10},
+            {"weight": 70.0, "reps": 5},
+        ])
+
+    def test_prescription_parser_single_rep_has_no_high_bound(self):
+        """A single-rep prescription must NOT gain a reps_high key (deload weeks,
+        fixed targets) so downstream code can treat its absence as 'no range'."""
+        from webhook import _parse_prescription
+        text = (
+            "*Lat Pulldown*\n"
+            "Working Set: 85kg x6 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["working"], [{"weight": 85.0, "reps": 6, "rpe": 8.0}])
+        self.assertNotIn("reps_high", rx["working"][0])
+
     def test_prescription_parser_preserves_strict_format(self):
         """Sanity: the strict format still parses identically after loosening."""
         from webhook import _parse_prescription

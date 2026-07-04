@@ -20,14 +20,19 @@ struct ExercisePrescription: Identifiable, Sendable {
     var id = UUID()
     var exerciseName: String
     var warmupSets: [(weight: Double, reps: Int)]
-    var workingSets: [(weight: Double, reps: Int, rpe: Double?)]
-    var backoffSets: [(weight: Double, reps: Int, rpe: Double?)]
+    // `reps` holds the low bound of a prescribed range and drives prefill /
+    // logging; `repsHigh` is the top of the range (nil for single-rep sets)
+    // and is used only for display so the card can render "6-8" instead of
+    // collapsing the coach's range to its bottom number.
+    var workingSets: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)]
+    var backoffSets: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)]
     var formCue: String?
     var tempo: String?
     var restSeconds: Int?
 
     var targetWeightKg: Double? { workingSets.first?.weight }
     var targetReps: Int? { workingSets.first?.reps }
+    var targetRepsHigh: Int? { workingSets.first?.repsHigh }
     var targetRpe: Double? { workingSets.first?.rpe }
 }
 
@@ -119,8 +124,8 @@ final class PrescriptionParser {
         }
 
         var warmup: [(weight: Double, reps: Int)] = []
-        var working: [(weight: Double, reps: Int, rpe: Double?)] = []
-        var backoff: [(weight: Double, reps: Int, rpe: Double?)] = []
+        var working: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)] = []
+        var backoff: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)] = []
         var formCue: String?
         var tempo: String?
         var restSeconds: Int?
@@ -196,24 +201,29 @@ final class PrescriptionParser {
     /// Extracts sets from loose phrasings like "3 sets: 90kg x12 RPE7" or
     /// "3x 90kg x 12 RPE7". Used as a fallback when the strict Working Set /
     /// Back-off prefixes are missing.
-    private static func parseLooseSets(_ block: String) -> [(weight: Double, reps: Int, rpe: Double?)] {
-        let pattern = #"(?:(?:^|\s))(?:\d+\s*(?:sets?|x)\s*:?\s*)(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)(?:\s*(?:RPE|@)\s*(\d+(?:\.\d+)?))?"#
+    private static func parseLooseSets(_ block: String) -> [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)] {
+        let pattern = #"(?:(?:^|\s))(?:\d+\s*(?:sets?|x)\s*:?\s*)(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)(?:\s*[-–—]\s*(\d+))?(?:\s*(?:RPE|@)\s*(\d+(?:\.\d+)?))?"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
             return []
         }
         let ns = block as NSString
         let matches = regex.matches(in: block, range: NSRange(location: 0, length: ns.length))
-        var out: [(weight: Double, reps: Int, rpe: Double?)] = []
+        var out: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)] = []
         for match in matches where match.numberOfRanges >= 3 {
             guard
                 let weight = Double(ns.substring(with: match.range(at: 1))),
                 let reps = Int(ns.substring(with: match.range(at: 2)))
             else { continue }
-            var rpe: Double?
-            if match.numberOfRanges > 3, match.range(at: 3).location != NSNotFound {
-                rpe = Double(ns.substring(with: match.range(at: 3)))
+            var repsHigh: Int?
+            if match.numberOfRanges > 3, match.range(at: 3).location != NSNotFound,
+               let high = Int(ns.substring(with: match.range(at: 3))), high > reps {
+                repsHigh = high
             }
-            out.append((weight, reps, rpe))
+            var rpe: Double?
+            if match.numberOfRanges > 4, match.range(at: 4).location != NSNotFound {
+                rpe = Double(ns.substring(with: match.range(at: 4)))
+            }
+            out.append((weight, reps, repsHigh, rpe))
         }
         return out
     }
@@ -277,8 +287,10 @@ final class PrescriptionParser {
         let segments = text.components(separatedBy: ",")
         return segments.compactMap { segment in
             let cleaned = segment.trimmingCharacters(in: .whitespaces)
-            guard let (weight, reps) = parseWeightReps(cleaned) else { return nil }
-            return (weight, reps)
+            guard let parsed = parseWeightReps(cleaned) else { return nil }
+            // Warm-up chips always show a single rep target, so the top of any
+            // range is intentionally dropped here.
+            return (parsed.weight, parsed.reps)
         }
     }
 
@@ -287,7 +299,7 @@ final class PrescriptionParser {
     /// Handles pipe-separated metadata.  Returns (sets, optional rest, optional tempo).
     private static func parseWorkingSets(
         _ text: String
-    ) -> (sets: [(weight: Double, reps: Int, rpe: Double?)], rest: Int?, tempo: String?) {
+    ) -> (sets: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)], rest: Int?, tempo: String?) {
         let parts = text.components(separatedBy: "|")
             .map { $0.trimmingCharacters(in: .whitespaces) }
 
@@ -309,11 +321,11 @@ final class PrescriptionParser {
         guard let setsPart = parts.first else { return ([], rest, tempo) }
 
         let segments = setsPart.components(separatedBy: ",")
-        let sets: [(weight: Double, reps: Int, rpe: Double?)] = segments.compactMap { segment in
+        let sets: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)] = segments.compactMap { segment in
             let cleaned = segment.trimmingCharacters(in: .whitespaces)
-            guard let (weight, reps) = parseWeightReps(cleaned) else { return nil }
+            guard let parsed = parseWeightReps(cleaned) else { return nil }
             let rpe = parseRPE(cleaned)
-            return (weight, reps, rpe)
+            return (parsed.weight, parsed.reps, parsed.repsHigh, rpe)
         }
 
         return (sets, rest, tempo)
@@ -323,8 +335,8 @@ final class PrescriptionParser {
     /// "125kgx8", "125 kg x 8". Also accepts bodyweight phrasings ("BW x8",
     /// "Bodyweight x6") so swaps to pull-ups / dips render a real card
     /// instead of getting silently dropped — bodyweight resolves to 0kg.
-    private static func parseWeightReps(_ text: String) -> (weight: Double, reps: Int)? {
-        let pattern = #"(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)"#
+    private static func parseWeightReps(_ text: String) -> (weight: Double, reps: Int, repsHigh: Int?)? {
+        let pattern = #"(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)(?:\s*[-–—]\s*(\d+))?"#
         guard let regex = try? NSRegularExpression(
                   pattern: pattern,
                   options: .caseInsensitive
@@ -336,14 +348,22 @@ final class PrescriptionParser {
               match.numberOfRanges > 2 else {
             return nil
         }
-        let weightStr = (text as NSString).substring(with: match.range(at: 1))
-        let repsStr = (text as NSString).substring(with: match.range(at: 2))
+        let ns = text as NSString
+        let weightStr = ns.substring(with: match.range(at: 1))
+        let repsStr = ns.substring(with: match.range(at: 2))
         let weight: Double = {
             if let n = Double(weightStr) { return n }
             return 0  // BW / bodyweight → 0kg target
         }()
         guard let reps = Int(repsStr) else { return nil }
-        return (weight, reps)
+        // Capture the top of a "6-8" style range when present and larger than
+        // the low bound — the card renders the range; reps stays the low bound.
+        var repsHigh: Int?
+        if match.numberOfRanges > 3, match.range(at: 3).location != NSNotFound,
+           let high = Int(ns.substring(with: match.range(at: 3))), high > reps {
+            repsHigh = high
+        }
+        return (weight, reps, repsHigh)
     }
 
     /// Extracts RPE from a string like "RPE8", "RPE 8.5", "@8".

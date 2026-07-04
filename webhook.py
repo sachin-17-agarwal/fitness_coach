@@ -342,9 +342,11 @@ _BACKOFF_PREFIXES = ("back-off:", "backoff:", "back off:", "back-off set:",
                      "light set:", "light:")
 
 # Matches loose phrasings like "3 sets: 90kg x12 RPE7" or "3x 90kg x 12 RPE7".
+# The optional `(\d+)-(\d+)` rep range mirrors the strict parser so a loose
+# "3 sets: 90kg x6-8" keeps the low bound in reps and the top in reps_high.
 _LOOSE_SET_PATTERN = re.compile(
     r'(?:^|\s)(?:\d+\s*(?:sets?|x)\s*:?\s*)'
-    r'(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)'
+    r'(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)(?:\s*[-–—]\s*(\d+))?'
     r'(?:\s*(?:rpe|@)\s*(\d+(?:\.\d+)?))?',
     re.IGNORECASE,
 )
@@ -444,7 +446,14 @@ def _parse_loose_sets(block: str) -> list:
         entry = {"weight": weight, "reps": reps}
         if match.group(3):
             try:
-                entry["rpe"] = float(match.group(3))
+                reps_high = int(match.group(3))
+                if reps_high > reps:
+                    entry["reps_high"] = reps_high
+            except ValueError:
+                pass
+        if match.group(4):
+            try:
+                entry["rpe"] = float(match.group(4))
             except ValueError:
                 pass
         seen.append(entry)
@@ -469,9 +478,16 @@ def _parse_set_list(text: str) -> list:
 
 
 def _parse_set_list_with_rpe(text: str) -> list:
-    """Parse '120kg x6-8 RPE8-9' (or 'BW x6 RPE8') into structured sets."""
+    """Parse '120kg x6-8 RPE8-9' (or 'BW x6 RPE8') into structured sets.
+
+    Rep ranges ("x6-8") keep the low bound in `reps` (so prefill/logging and
+    the actual-vs-target comparison stay on a single number) and surface the
+    top of the range in `reps_high`. The card renders the full range, which
+    stops it from contradicting the coach's prose target (e.g. card shows
+    "6" while the coach says "aim for 7-8")."""
     pattern = re.compile(
-        r'(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)',
+        r'(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)'
+        r'(?:\s*[-–—]\s*(\d+))?',
         re.IGNORECASE,
     )
     rpe_pattern = re.compile(r'(?:RPE\s*|@)(\d+(?:\.\d+)?)', re.IGNORECASE)
@@ -480,6 +496,10 @@ def _parse_set_list_with_rpe(text: str) -> list:
         raw_weight = m.group(1)
         weight = 0.0 if not raw_weight[0].isdigit() else float(raw_weight)
         entry = {"weight": weight, "reps": int(m.group(2))}
+        if m.group(3):
+            reps_high = int(m.group(3))
+            if reps_high > entry["reps"]:
+                entry["reps_high"] = reps_high
         rpe_match = rpe_pattern.search(text[m.end():m.end() + 30])
         if not rpe_match:
             rpe_match = rpe_pattern.search(text)

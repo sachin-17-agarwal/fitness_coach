@@ -23,7 +23,7 @@ struct PrescriptionCard: View {
                     color: .fg1,
                     icon: "flame",
                     sets: prescription.warmupSets.enumerated().map { i, s in
-                        SetTarget(weight: s.weight, reps: s.reps, rpe: nil, kind: .warmup, index: i)
+                        SetTarget(weight: s.weight, reps: s.reps, repsHigh: nil, rpe: nil, kind: .warmup, index: i)
                     }
                 )
             }
@@ -34,7 +34,7 @@ struct PrescriptionCard: View {
                     color: .mint,
                     icon: "bolt.fill",
                     sets: prescription.workingSets.enumerated().map { i, s in
-                        SetTarget(weight: s.weight, reps: s.reps, rpe: s.rpe, kind: .working, index: i)
+                        SetTarget(weight: s.weight, reps: s.reps, repsHigh: s.repsHigh, rpe: s.rpe, kind: .working, index: i)
                     }
                 )
             }
@@ -45,7 +45,7 @@ struct PrescriptionCard: View {
                     color: .amber,
                     icon: "arrow.down.right",
                     sets: prescription.backoffSets.enumerated().map { i, s in
-                        SetTarget(weight: s.weight, reps: s.reps, rpe: s.rpe, kind: .backoff, index: i)
+                        SetTarget(weight: s.weight, reps: s.reps, repsHigh: s.repsHigh, rpe: s.rpe, kind: .backoff, index: i)
                     }
                 )
             }
@@ -120,14 +120,18 @@ struct PrescriptionCard: View {
             Spacer(minLength: 0)
 
             if let w = prescription.targetWeightKg, let r = prescription.targetReps {
-                targetBadge(weight: w, reps: r, rpe: prescription.targetRpe)
+                targetBadge(weight: w, reps: r, repsHigh: prescription.targetRepsHigh, rpe: prescription.targetRpe)
             }
         }
     }
 
-    private func targetBadge(weight: Double, reps: Int, rpe: Double?) -> some View {
-        VStack(spacing: 2) {
-            Text("\(formatWeight(weight)) × \(reps)")
+    private func targetBadge(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?) -> some View {
+        let repsText: String = {
+            if let high = repsHigh, high > reps { return "\(reps)-\(high)" }
+            return "\(reps)"
+        }()
+        return VStack(spacing: 2) {
+            Text("\(formatWeight(weight)) × \(repsText)")
                 .font(.numSM)
                 .foregroundStyle(Color.fg0)
             if let rpe {
@@ -153,6 +157,9 @@ struct PrescriptionCard: View {
     private struct SetTarget {
         let weight: Double
         let reps: Int
+        /// Top of a prescribed rep range ("6-8" → reps 6, repsHigh 8), used to
+        /// render the range on the chip. nil for single-rep targets.
+        let repsHigh: Int?
         let rpe: Double?
         let kind: Kind
         let index: Int
@@ -196,8 +203,16 @@ struct PrescriptionCard: View {
         let displayWeight = logged?.actualWeightKg ?? target.weight
         let displayReps = logged?.actualReps ?? target.reps
         let displayRpe = logged?.actualRpe ?? target.rpe
+        // Show the prescribed range ("6-8") until the set is logged; once it's
+        // completed, show the single rep count the athlete actually hit.
+        let repsText: String = {
+            if !isCompleted, let high = target.repsHigh, high > target.reps {
+                return "\(target.reps)-\(high)"
+            }
+            return "\(displayReps)"
+        }()
         return VStack(spacing: 3) {
-            Text("\(formatWeight(displayWeight)) × \(displayReps)")
+            Text("\(formatWeight(displayWeight)) × \(repsText)")
                 .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
                 .foregroundStyle(isCompleted ? color : isCurrent ? Color.fg0 : Color.fg1)
             if let rpe = displayRpe {

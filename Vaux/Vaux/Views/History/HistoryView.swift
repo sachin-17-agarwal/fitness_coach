@@ -12,6 +12,7 @@ struct HistoryView: View {
 
     enum Tab: String, CaseIterable {
         case training = "Training"
+        case strength = "Strength"
         case volume = "Volume"
         case recovery = "Recovery"
     }
@@ -38,6 +39,7 @@ struct HistoryView: View {
                         VStack(spacing: 16) {
                             switch selectedTab {
                             case .training: trainingContent
+                            case .strength: strengthContent
                             case .volume: volumeContent
                             case .recovery: recoveryContent
                             }
@@ -175,6 +177,12 @@ struct HistoryView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 36)
+    }
+
+    // MARK: - Strength
+
+    private var strengthContent: some View {
+        MuscleStrengthView(viewModel: viewModel.muscleStrength)
     }
 
     // MARK: - Volume
