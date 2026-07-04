@@ -44,9 +44,17 @@ final class ExerciseCatalog {
             // exercise" in chat or the Exercise Library screen), so
             // without the built-ins every standard movement showed up
             // as "uncategorized" in the Volume tab.
+            // Placeholder groups ("add exercise" defaults to "Unknown")
+            // must not shadow a built-in mapping: an exercises-table row
+            // named "machine calf press" with group Unknown would exact-
+            // match before the built-in "calf press" → Calves ever ran,
+            // and every set of it would drop out of the volume/strength
+            // buckets.
+            let placeholders: Set<String> = ["unknown", "other", "uncategorized", "n/a", "none", "tbd"]
             var map = Self.builtinGroups
             for row in rows {
-                guard let group = row.muscleGroup, !group.isEmpty else { continue }
+                guard let group = row.muscleGroup, !group.isEmpty,
+                      !placeholders.contains(group.lowercased()) else { continue }
                 map[row.name.lowercased()] = group
                 for alias in row.aliases ?? [] {
                     map[alias.lowercased()] = group
@@ -238,12 +246,19 @@ final class ExerciseCatalog {
         "abductor": "Legs",
         "adductor": "Legs",
 
-        // Calves
+        // Calves — include the bare "calf"/"calves" catch-alls: "calf" is
+        // NOT a substring of "calves", so plural-named variants ("Calves
+        // Press", "Standing Calves Raise") matched nothing and their sets
+        // silently vanished from the volume/strength buckets.
+        "calf": "Calves",
+        "calves": "Calves",
         "calf raise": "Calves",
         "calf raises": "Calves",
         "calf press": "Calves",
         "seated calf": "Calves",
         "standing calf": "Calves",
+        "donkey calf": "Calves",
+        "toe press": "Calves",
 
         // Abs
         "plank": "Abs",
