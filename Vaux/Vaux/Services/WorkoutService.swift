@@ -324,10 +324,16 @@ final class WorkoutService: Sendable {
     func fetchSets(since start: Date) async throws -> [WorkoutSet] {
         let f = Self.dateFormatter
         let startStr = f.string(from: start)
+        // Newest-first with an explicit limit: PostgREST silently caps
+        // un-limited responses (default 1000 rows), and with ascending
+        // order that cap would drop the NEWEST sets once the window
+        // outgrows it — making recently trained muscles look neglected.
+        // Callers bucket by date and don't depend on response order.
         return try await client.fetch(
             "workout_sets",
             query: ["date": "gte.\(startStr)"],
-            order: "date.asc"
+            order: "date.desc",
+            limit: 10000
         )
     }
 
