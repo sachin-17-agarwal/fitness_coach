@@ -796,6 +796,20 @@ final class WorkoutViewModel {
             prescriptions = clientParsed
         }
 
+        // Same-exercise updates: carry forward any phase the coach dropped.
+        // Mid-exercise Claude often re-sends only the phase it's prescribing
+        // next ("Back-off: BW x8" after a working set). Accepting that block
+        // wholesale wiped the working set off the card, and the completion
+        // math ("first N non-warmups are working sets") then counted the
+        // logged working set as the back-off — showing it checked off and
+        // prefilling a phantom next set. Phases already on screen are ground
+        // truth; only non-empty incoming phases may replace them.
+        if let current = currentPrescription,
+           let first = prescriptions.first,
+           first.exerciseName == current.exerciseName {
+            prescriptions[0] = mergingDroppedPhases(into: first, from: current)
+        }
+
         if !prescriptions.isEmpty {
             let newFirstName = prescriptions.first?.exerciseName
             let wantsDifferentExercise = newFirstName != oldExercise
@@ -882,6 +896,60 @@ final class WorkoutViewModel {
         } else {
             coachNote = nil
         }
+    }
+
+    /// Reconciles a same-exercise re-prescription against the one on screen.
+    /// The coach is instructed to reply mid-set with either plain narrative
+    /// or a FULL block, but it sometimes sends a partial block carrying only
+    /// what's left — a lone "Back-off:" line after a working set, or a
+    /// "Warm-up:" line listing just the remaining warm-up ("62.5kg x6" after
+    /// warm-up 1 of 2). Accepting that wholesale erased planned sets and
+    /// their checkmarks from the card and made the phase tracker skip ahead
+    /// (the next warm-up would have logged as a working set). A partial
+    /// block must never shrink the plan; it may only update upcoming targets.
+    private func mergingDroppedPhases(
+        into incoming: ExercisePrescription,
+        from current: ExercisePrescription
+    ) -> ExercisePrescription {
+        let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
+        let nonWarmupsDone = exerciseSetsForCurrentExercise.count - warmupsDone
+        let workingDone = min(nonWarmupsDone, current.workingSets.count)
+        let backoffDone = max(0, nonWarmupsDone - current.workingSets.count)
+
+        var merged = incoming
+        merged.warmupSets = reconciledPhase(
+            incoming: incoming.warmupSets, current: current.warmupSets, done: warmupsDone
+        )
+        merged.workingSets = reconciledPhase(
+            incoming: incoming.workingSets, current: current.workingSets, done: workingDone
+        )
+        merged.backoffSets = reconciledPhase(
+            incoming: incoming.backoffSets, current: current.backoffSets, done: backoffDone
+        )
+        if merged.formCue == nil { merged.formCue = current.formCue }
+        if merged.tempo == nil { merged.tempo = current.tempo }
+        if merged.restSeconds == nil { merged.restSeconds = current.restSeconds }
+        return merged
+    }
+
+    /// Merges one phase of a same-exercise re-prescription. A re-list with
+    /// at least as many sets as planned is trusted verbatim. Anything
+    /// shorter is a partial block naming only the remaining sets: keep the
+    /// planned sets and overlay the incoming targets onto the next unlogged
+    /// slots, so "make warm-up 2 62.5kg" updates the target without
+    /// shrinking the phase.
+    private func reconciledPhase<T>(incoming: [T], current: [T], done: Int) -> [T] {
+        guard incoming.count < current.count else { return incoming }
+        var merged = current
+        for (i, set) in incoming.enumerated() {
+            let slot = done + i
+            if slot < merged.count {
+                merged[slot] = set
+            } else {
+                merged.append(set)
+            }
+        }
+        return merged
     }
 
     /// Looks for a mention of any upcoming exercise in the coach's narrative
