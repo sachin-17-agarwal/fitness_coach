@@ -46,6 +46,16 @@ final class WorkoutViewModel {
     var coachNote: String?
     var isCoachThinking = false
 
+    // True from the moment a Log tap is accepted until the set is persisted
+    // and the phase tracker has advanced. Guards logSet against reentry and
+    // disables the Log button: the phase only advances AFTER the network
+    // insert, so a second tap during that window (impatient re-tap on slow
+    // gym data, or a touch double-fire) snapshotted the SAME phase and
+    // logged a duplicate set — consuming the next prescribed set's slot and
+    // skipping the athlete ahead ("warm-up 2 logged twice, warm-up 3 marked
+    // done, straight to working set").
+    var isLoggingSet = false
+
     // Set input state
     var inputWeight: Double = 0
     var inputReps: Int = 8
@@ -280,6 +290,7 @@ final class WorkoutViewModel {
     }
 
     func logSet() async {
+        guard !isLoggingSet else { return }
         guard let session = currentSession, let sessionId = session.id else {
             errorMessage = "Session not saved — tap End and Begin session again to retry."
             return
@@ -313,6 +324,8 @@ final class WorkoutViewModel {
         let loggedWeight = inputWeight
         let loggedReps = inputReps
         let loggedRPE = inputRPE
+
+        isLoggingSet = true
 
         if !isWarmup {
             setCount += 1
@@ -365,6 +378,7 @@ final class WorkoutViewModel {
             if !isWarmup { setCount -= 1 } else { warmupCount -= 1 }
             exerciseSetIndex -= 1
             errorMessage = "Failed to log set: \(error.localizedDescription)"
+            isLoggingSet = false
             return
         }
 
@@ -395,6 +409,11 @@ final class WorkoutViewModel {
         // Rest timer — shorter for warm-ups
         let rest = isWarmup ? 60 : (currentPrescription?.restSeconds ?? 120)
         startRestTimer(seconds: rest)
+
+        // Set persisted and phase advanced — re-enable the Log button here
+        // rather than after the coach round-trip, so the athlete can log
+        // the next set while the coach is still composing feedback.
+        isLoggingSet = false
 
         // AI feedback
         isCoachThinking = true

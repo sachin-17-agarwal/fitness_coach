@@ -308,7 +308,7 @@ struct WorkoutModeView: View {
                                 Haptic.medium()
                                 Task { await viewModel.logSet() }
                             },
-                            isLoading: false,
+                            isLoading: viewModel.isLoggingSet,
                             phase: viewModel.currentPhase
                         )
                     }
