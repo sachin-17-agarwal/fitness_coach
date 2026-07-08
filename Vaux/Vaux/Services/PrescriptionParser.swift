@@ -29,6 +29,11 @@ struct ExercisePrescription: Identifiable, Sendable {
     var formCue: String?
     var tempo: String?
     var restSeconds: Int?
+    /// True when the coach marked the block with a `Revised:` line — an
+    /// explicit signal that the new structure (fewer/more sets, dropped
+    /// phases) is deliberate and must be applied verbatim instead of being
+    /// reconciled against the prescription already on screen.
+    var isRevision: Bool = false
 
     var targetWeightKg: Double? { workingSets.first?.weight }
     var targetReps: Int? { workingSets.first?.reps }
@@ -129,6 +134,7 @@ final class PrescriptionParser {
         var formCue: String?
         var tempo: String?
         var restSeconds: Int?
+        var isRevision = false
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -154,6 +160,8 @@ final class PrescriptionParser {
             } else if lower.hasPrefix("rest:") {
                 let content = extractAfterColon(trimmed)
                 restSeconds = parseRestSeconds(content)
+            } else if lower.hasPrefix("revised:") || lower.hasPrefix("revision:") {
+                isRevision = true
             }
         }
 
@@ -187,7 +195,8 @@ final class PrescriptionParser {
             backoffSets: backoff,
             formCue: formCue,
             tempo: tempo,
-            restSeconds: restSeconds
+            restSeconds: restSeconds,
+            isRevision: isRevision
         )
     }
 
@@ -465,6 +474,7 @@ final class PrescriptionParser {
         let structuredPrefixes = warmupPrefixes + workingPrefixes + backoffPrefixes + [
             "form:", "form cue:", "cue:",
             "rest:", "tempo:",
+            "revised:", "revision:",
         ]
         let lines = text.components(separatedBy: "\n")
         var narrative: [String] = []

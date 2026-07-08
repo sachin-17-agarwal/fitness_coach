@@ -506,6 +506,36 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(rx["working"], [{"weight": 160.0, "reps": 8, "rpe": 8.0}])
         self.assertNotIn("backoff", rx)
 
+    def test_prescription_parser_marks_revised_blocks(self):
+        """A `Revised:` line flags the block as a deliberate structure change
+        so the iOS app applies it verbatim instead of reconciling it against
+        the on-screen card. Normal blocks must NOT carry the flag — it is
+        what authorizes shrinking the athlete's plan."""
+        from webhook import _parse_prescription
+        revised_text = (
+            "*Pull-Ups*\n"
+            "Warm-up: BW x5\n"
+            "Working Set: 10kg x6 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Back-off: BW x10 RPE7\n"
+            "Form: Squeeze lats at top\n"
+            "Revised: warm-up cut to 1 set\n"
+        )
+        rx = _parse_prescription(revised_text)
+        self.assertIsNotNone(rx)
+        self.assertTrue(rx.get("revised"))
+        self.assertEqual(len(rx["warmup"]), 1)
+
+        normal_text = (
+            "*Pull-Ups*\n"
+            "Warm-up: BW x5, BW x5\n"
+            "Working Set: 10kg x6 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Back-off: BW x10 RPE7\n"
+            "Form: Squeeze lats at top\n"
+        )
+        rx = _parse_prescription(normal_text)
+        self.assertIsNotNone(rx)
+        self.assertNotIn("revised", rx)
+
     def test_prescription_parser_straight_sets_parse_as_multiple_working_sets(self):
         """Ab work is prescribed as straight sets: every set enumerated on the
         `Working Set:` line, no back-off. Each comma-separated entry must

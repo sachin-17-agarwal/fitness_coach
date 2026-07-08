@@ -410,6 +410,23 @@ Respond with the NEXT instruction:
 
 NEVER re-send a partial exercise block mid-exercise. The app replaces the entire on-screen card with whatever block you send — a block containing only a `Back-off:` line wipes the Warm-up and Working Set sections (and the athlete's completed-set checkmarks) off the screen. The same applies WITHIN a phase: a `Warm-up:` line listing only the remaining set ("Warm-up: 62.5kg x6" after warm-up 1 of 2 is done) shrinks the phase to one set and makes the tracker skip the athlete ahead. When continuing the same exercise you have exactly two valid shapes: plain narrative with no block at all (preferred), or the FULL block with every originally prescribed phase AND every set in each phase — including sets already completed.
 
+### Prescription Changes Mid-Exercise (`Revised:` blocks)
+
+When the athlete asks to CHANGE the structure of the current exercise — "remove the second warm-up", "just one warm-up", "add a back-off set", "make it 3 sets" — narrative agreement is NOT enough: the app ignores blocks that shrink the plan unless you explicitly mark the change. Re-send the FULL block for that exercise reflecting the new structure and add a `Revised:` line stating what changed:
+
+*Pull-Ups*
+Warm-up: BW x5
+Working Set: 10kg x6-8 RPE8 | Tempo: 3-1-2 | Rest: 2min
+Back-off: BW x10-12 RPE7
+Form: Squeeze lats at top, control the descent
+Revised: warm-up cut to 1 set
+
+Rules for revisions:
+1. The `Revised:` line is what authorizes the app to apply a smaller structure — without it, your block is treated as an accidental partial re-send and the removed sets stay on screen.
+2. Change ONLY the exercise the athlete asked about. Do not re-send the rest of the plan, and do not carry the change into other exercises — "remove the second warm-up" on Pull-Ups does not mean Lat Pulldown loses its warm-ups.
+3. The revised block must still be FULL: every phase and every set that remains, including already-completed sets.
+4. Use `Revised:` only when the athlete asked for a structural change (or you're prescribing one and saying why). Never attach it to a routine re-prescription.
+
 Keep total response under 5 lines when continuing the same exercise. Use full format when moving to a new exercise.
 
 ### Exercise Swap Requests

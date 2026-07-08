@@ -55,6 +55,9 @@ struct ServerPrescription: Codable, Sendable {
     let form: String?
     let tempo: String?
     let rest: String?
+    /// True when the coach marked the block `Revised:` — a deliberate
+    /// structure change the app must apply verbatim.
+    let revised: Bool?
 }
 
 struct ServerSet: Codable, Sendable {
