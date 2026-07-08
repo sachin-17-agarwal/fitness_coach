@@ -361,6 +361,7 @@ def _parse_block(name: str, block: str) -> dict | None:
     form = None
     tempo = None
     rest = None
+    revised = False
 
     for line in block.split("\n"):
         line = line.strip()
@@ -391,6 +392,12 @@ def _parse_block(name: str, block: str) -> dict | None:
             tempo = line.split(":", 1)[1].strip()
         elif lower.startswith("rest:"):
             rest = line.split(":", 1)[1].strip()
+        elif lower.startswith(("revised:", "revision:")):
+            # Explicit marker that this block deliberately restructures the
+            # prescription (athlete asked to add/remove sets). The iOS app
+            # applies a revised block verbatim instead of reconciling it
+            # against the card, so removed sets actually leave the screen.
+            revised = True
 
     # Fallback: Claude sometimes drops the `Working Set:` / `Back-off:` prefixes
     # and writes loose lines like "3 sets: 90kg x12 RPE7" + "3 sets: 60kg x15 RPE7".
@@ -424,6 +431,8 @@ def _parse_block(name: str, block: str) -> dict | None:
         result["tempo"] = tempo
     if rest:
         result["rest"] = rest
+    if revised:
+        result["revised"] = True
 
     return result
 

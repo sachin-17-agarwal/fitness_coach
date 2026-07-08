@@ -820,7 +820,8 @@ final class WorkoutViewModel {
                 backoffSets: (serverRx.backoff ?? []).map { ($0.weight, $0.reps, $0.repsHigh, $0.rpe) },
                 formCue: serverRx.form,
                 tempo: serverRx.tempo,
-                restSeconds: Self.parseRestString(serverRx.rest)
+                restSeconds: Self.parseRestString(serverRx.rest),
+                isRevision: serverRx.revised ?? false
             )
             prescriptions = [rx] + clientParsed.dropFirst()
         } else {
@@ -835,9 +836,14 @@ final class WorkoutViewModel {
         // logged working set as the back-off — showing it checked off and
         // prefilling a phantom next set. Phases already on screen are ground
         // truth; only non-empty incoming phases may replace them.
+        // A `Revised:` block is exempt: the coach explicitly marked the new
+        // structure as deliberate (e.g. the athlete asked to drop a warm-up),
+        // so applying it verbatim is the whole point — reconciling it would
+        // put the removed sets straight back on the card.
         if let current = currentPrescription,
            let first = prescriptions.first,
-           first.exerciseName == current.exerciseName {
+           first.exerciseName == current.exerciseName,
+           !first.isRevision {
             prescriptions[0] = mergingDroppedPhases(into: first, from: current)
         }
 
