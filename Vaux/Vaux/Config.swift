@@ -45,4 +45,9 @@ struct Config {
 
     /// Number of days in one mesocycle rotation.
     static var cycleLength: Int { cycle.count }
+
+    /// Weeks in one mesocycle: baseline → volume → peak → deload, then the
+    /// next cycle restarts at week 1. Must match the server's wrap in
+    /// memory.py's advance_mesocycle.
+    static let mesocycleWeeks = 4
 }

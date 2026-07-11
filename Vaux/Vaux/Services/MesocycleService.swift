@@ -41,6 +41,13 @@ final class MesocycleService: Sendable {
             }
         }
 
+        // Self-heal values written before `advance()` wrapped the week: a
+        // stored "week 6" is week 2 of the following mesocycle, and the
+        // programme (and the coach prompt's "Week N of 4") only has 4 weeks.
+        if week > Config.mesocycleWeeks {
+            week = ((week - 1) % Config.mesocycleWeeks) + 1
+        }
+
         return MesocycleState(day: day, week: week)
     }
 
@@ -62,6 +69,11 @@ final class MesocycleService: Sendable {
     // MARK: - Advance
 
     /// Advances to the next day (and week when a full rotation completes).
+    /// The week wraps back to 1 after the deload week — the programme is a
+    /// repeating 4-week mesocycle, not an ever-growing counter. This must
+    /// mirror memory.py's advance_mesocycle, which writes the same keys when
+    /// a session is ended via chat; the unwrapped `week += 1` here is how
+    /// the athlete ended up being coached for "Week 5 of 4" and "Week 6".
     /// Returns the updated state.
     @discardableResult
     func advance() async throws -> MesocycleState {
@@ -69,7 +81,7 @@ final class MesocycleService: Sendable {
 
         if state.day >= Config.cycleLength {
             state.day = 1
-            state.week += 1
+            state.week = (state.week % Config.mesocycleWeeks) + 1
         } else {
             state.day += 1
         }

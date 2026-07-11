@@ -758,6 +758,21 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
 
 
+    def test_load_memory_normalizes_overflowed_mesocycle_week(self):
+        """The old iOS advance() incremented mesocycle_week without wrapping,
+        leaving values like 5/6 in the DB — the coach was being told
+        "Week 6 of 4". load_memory must fold them back into the 4-week
+        cycle (6 → week 2 of the following mesocycle)."""
+        import memory as memory_module
+        store = {"memory": [
+            {"key": "mesocycle_week", "value": "6"},
+            {"key": "mesocycle_day", "value": "3"},
+        ]}
+        with patch.object(memory_module, "get_supabase", return_value=FakeSupabase(store)):
+            loaded = memory_module.load_memory()
+        self.assertEqual(loaded["mesocycle_week"], 2)
+        self.assertEqual(loaded["mesocycle_day"], 3)
+
     def test_webhook_skips_duplicate_telegram_update_id(self):
         # Telegram retries can deliver the same update twice; the dedup table
         # must short-circuit the second delivery before handle_incoming_message

@@ -28,6 +28,15 @@ def load_memory() -> dict:
                 except (TypeError, ValueError):
                     memory[key] = 1
 
+        # Self-heal weeks written by the old iOS advance(), which bumped the
+        # counter without wrapping: the programme is a repeating 4-week
+        # mesocycle, so a stored "6" is week 2 of the following cycle. The
+        # coach prompt says "Week N of 4" — without this it was coaching
+        # "Week 6 of 4".
+        week = memory.get("mesocycle_week")
+        if isinstance(week, int) and week > 4:
+            memory["mesocycle_week"] = ((week - 1) % 4) + 1
+
         print(
             f"Memory loaded. Mesocycle: Week {memory.get('mesocycle_week', 1)}, "
             f"Day {memory.get('mesocycle_day', 1)}"

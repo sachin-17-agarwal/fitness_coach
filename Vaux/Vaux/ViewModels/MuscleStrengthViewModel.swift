@@ -7,10 +7,12 @@
 // asked for: stalled strength, under-trained volume, neglected muscles,
 // and push/pull (opposing-group) imbalance.
 //
-// Strength is measured as the best Epley estimated 1RM across a muscle's
-// exercises in a given week — the same formula the PR check uses — so the
-// trend reflects load progression rather than just tonnage (which the
-// Volume tab already covers).
+// The chart plots the best Epley estimated 1RM across a muscle's exercises
+// per week — the same formula the PR check uses. The TREND, however, is
+// computed per movement (recent 4-week best vs the prior 4 weeks of the
+// same exercise, median across the group's movements) so that exercise
+// rotation, deloads on one lift, or a different machine at another gym
+// can't masquerade as a strength change.
 
 import Foundation
 import Observation
@@ -70,9 +72,12 @@ final class MuscleStrengthViewModel {
     private static let windowDays = 84
     private static let recentWeeks = 4
 
-    // Flag thresholds.
+    // Flag thresholds. One rep at 10-12 reps moves an Epley e1RM by ~3%,
+    // and machine stacks differ across the gyms the athlete rotates
+    // through, so anything inside ±5% is measurement noise, not a trend —
+    // the old -2% cutoff flagged "strength dropping" on a single missed rep.
     private static let stalledThresholdPct = 1.0   // < +1% over the window
-    private static let droppingThresholdPct = -2.0 // < -2% reads as a decline
+    private static let droppingThresholdPct = -5.0 // beyond single-rep noise
     private static let neglectedDays = 10
     private static let imbalanceRatio = 0.6        // <60% of partner's sets
 
@@ -113,7 +118,13 @@ final class MuscleStrengthViewModel {
         let dayFormatter = Self.dateFormatter
 
         // group → weekIndex (0 == most recent week) → best e1RM that week.
+        // Drives the chart series and the headline number.
         var bestByGroupWeek: [String: [Int: Double]] = [:]
+        // group → exercise → weekIndex → best e1RM. Trends compare each
+        // movement to ITSELF — pooling a group's exercises meant a switch
+        // from heavy face pulls to light reverse flys read as a strength
+        // collapse ("Rear Delts -48%") when it was just exercise selection.
+        var bestByGroupExerciseWeek: [String: [String: [Int: Double]]] = [:]
         var lastTrained: [String: Date] = [:]
         var setsThisWeek: [String: Int] = [:]
         var setsInWindow: [String: Int] = [:]
@@ -142,6 +153,13 @@ final class MuscleStrengthViewModel {
             var byWeek = bestByGroupWeek[group] ?? [:]
             byWeek[weekIndex] = max(byWeek[weekIndex] ?? 0, e1rm)
             bestByGroupWeek[group] = byWeek
+
+            let exercise = PrescriptionParser.normalizeExerciseName(set.exercise)
+            var byExercise = bestByGroupExerciseWeek[group] ?? [:]
+            var exerciseWeeks = byExercise[exercise] ?? [:]
+            exerciseWeeks[weekIndex] = max(exerciseWeeks[weekIndex] ?? 0, e1rm)
+            byExercise[exercise] = exerciseWeeks
+            bestByGroupExerciseWeek[group] = byExercise
         }
 
         var summaries: [MuscleStrength] = []
@@ -158,13 +176,23 @@ final class MuscleStrengthViewModel {
             }
 
             let recentBest = Self.best(in: byWeek) { $0 < Self.recentWeeks }
-            let baselineBest = Self.best(in: byWeek) { $0 >= Self.recentWeeks }
-            let trendPct: Double?
-            if recentBest > 0, baselineBest > 0 {
-                trendPct = (recentBest - baselineBest) / baselineBest * 100
-            } else {
-                trendPct = nil
+
+            // Trend: per-exercise, equal-width windows (recent 4 weeks vs
+            // the PRIOR 4 weeks), median across the group's movements.
+            // The old group-level "recent 4 vs weeks 5-12" comparison was
+            // biased negative — the max of 8 weeks is almost always higher
+            // than the max of 4 — and blind to exercise switches. Exercises
+            // without data in BOTH windows sit out rather than polluting
+            // the trend.
+            let exerciseTrends: [Double] = (bestByGroupExerciseWeek[group] ?? [:]).values.compactMap { weeks in
+                let recent = Self.best(in: weeks) { $0 < Self.recentWeeks }
+                let prior = Self.best(in: weeks) {
+                    $0 >= Self.recentWeeks && $0 < Self.recentWeeks * 2
+                }
+                guard recent > 0, prior > 0 else { return nil }
+                return (recent - prior) / prior * 100
             }
+            let trendPct = Self.median(of: exerciseTrends)
 
             let days = lastTrained[group].map {
                 max(0, calendar.dateComponents([.day], from: $0, to: today).day ?? 0)
@@ -214,7 +242,7 @@ final class MuscleStrengthViewModel {
                 let setsWk = s?.setsThisWeek ?? 0
                 let target = targetRange(for: group)
                 if setsWk < target.lowerBound {
-                    add(group, "Low volume — \(setsWk)/\(target.lowerBound)+ sets")
+                    add(group, "Low volume — \(setsWk) of \(target.lowerBound)+ sets")
                 }
             }
 
@@ -257,6 +285,19 @@ final class MuscleStrengthViewModel {
         byWeek.reduce(0.0) { acc, entry in
             predicate(entry.key) ? max(acc, entry.value) : acc
         }
+    }
+
+    /// Median, used to combine per-exercise trends into one group trend —
+    /// robust to a single outlier movement (a deload week on one lift, a
+    /// different machine at another gym) dominating the readout.
+    private static func median(of values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let mid = sorted.count / 2
+        if sorted.count % 2 == 0 {
+            return (sorted[mid - 1] + sorted[mid]) / 2
+        }
+        return sorted[mid]
     }
 
     /// Weekly set ranges tuned for the once-per-week Pull/Push/Legs split —
