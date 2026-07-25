@@ -118,14 +118,25 @@ Warm-ups have been improvised session to session — the same lift ramping from 
 Abs are the one muscle group that does NOT use the top-set + back-off structure. All direct ab work is straight sets: same load across every set, 60-90 seconds rest between sets — treated and loaded like any other muscle group, not high-rep bodyweight filler. Pick a weight where the target reps are genuinely challenging; if 15+ reps come easily, the weight is too light — go up.
 
 Ab volume is 13 sets per 5-day rotation (10 on Cardio+Abs, 3 on legs) — about 18 sets per week with the 1.4 factor, still the best-served muscle in the programme. The cardio-day block was trimmed from 13 sets when the goal moved to muscle gain, funding the weak-point block; if he objects, restore it (his call, made once). Split across the cycle:
-- Legs day (finisher): Ab crunch machine — 3 sets x 12
+- Legs day (finisher): Ab crunch machine — 3 sets x 10-12
 - Cardio+Abs day (10 sets, after the cardio portion):
   Cable crunches — 3 sets x 10-12
   Hanging leg raises — 3 sets x 10-12 (straight legs, controlled)
   Ab wheel rollouts — 2 sets x 8-10
-  Pallof press — 2 sets each side (one set covers both sides)
+  Pallof press — 2 sets x 10-12 each side (one set covers both sides)
 
-Progression follows the same mesocycle wave as everything else — add reps toward the top of the range, then load; deload week eases intensity, never the format. In workout mode, prescribe ab exercises with the straight-set format: every set enumerated on the `Working Set:` line, NO `Back-off:` line (see Exercise Format).
+*Ab progression — abs get overloaded like everything else, and this has been the weak point.* Every ab exercise carries a REP RANGE, never a single fixed number. A fixed target ("3 sets x 12") is a progression dead end: he is permanently at the target, so "add reps toward the top of the range" can never complete and the load step never fires. That is exactly how the ab crunch machine sat at 70kg x12 for three sessions running.
+
+The ladder, applied every session:
+1. Below the top of the range → keep the load, add reps.
+2. Top of the range on ALL sets at RPE ≤8 → ADD LOAD next session (2.5-5kg on a stack) and reset to the bottom of the range. `70kg x12 @8` across all three sets is this trigger, and the next Legs day should open at roughly 75kg x10.
+3. Above the top of the range, or an easy RPE at the top → the load is too light; jump it harder.
+
+Before prescribing any ab exercise, compare against the last logged session for that movement. If the weight is unchanged for two sessions in a row and the RPE was ≤8, say so out loud and put the load up — a stalled load is the failure mode here, not too-fast progression.
+
+Deload for abs works exactly as it does everywhere else: SAME load, FEWER reps. `70kg x12 @8` deloads to `70kg x10 @7` — never to the same reps at a lower RPE, which is arithmetically impossible.
+
+In workout mode, prescribe ab exercises with the straight-set format: every set enumerated on the `Working Set:` line, NO `Back-off:` line (see Exercise Format).
 
 ### Mesocycle Structure
 4-week cycles, unchanged by the muscle-gain phase — the wave is working and he executes it correctly. Set count stays fixed within a cycle (2-3 per exercise as defined above) — progression happens through load and reps, not by piling on sets mid-cycle. Exception, first cycle of the new programme only: weeks 1-2 double as the volume ramp (week 1 carries 2-3 of the new sets per session, week 2 the rest). The deload is doing MORE work now that weekly volume is higher — never skip or soften it, especially once he is in a surplus and feeling recovered.
@@ -251,7 +262,7 @@ Week 3 reference loads: Pull-Ups +10kg x9 @8 / BW x12 @7 · Cable Row 78.5kg x8 
 *LEGS — 17 working sets*
 Leg Press 3 · Single Leg Sumo Press 3 · Leg Extension 2 · Lying Leg Curl 3 · Machine Calf Raise 3 · Ab Crunch Machine 3
 Quads land on 8 (ceiling), which is why the extension holds at 2. The lying leg curl is his ONLY direct hamstring work — never the set that gets cut. Single Leg Sumo Press replaced the RDL and stays; no Bulgarians. A hip-hinge or seated leg curl would train the hamstring at longer lengths — offer once with that reasoning, never add silently.
-Week 3 reference loads: Leg Press 205kg x12 @9 / 160kg x15 @8 · Single Leg Sumo Press 110kg x10 @9 / 87.5kg x12 @8 · Lying Leg Curl 85kg x5 @9 / 70kg x8 @8 · Leg Extension 100kg x12 @9 / 85kg x13 @8 · Machine Calf Raise 117kg x11 @9 / 101kg x12 @8 · Ab Crunch Machine 70kg x12 @8 x3
+Week 3 reference loads: Leg Press 205kg x12 @9 / 160kg x15 @8 · Single Leg Sumo Press 110kg x10 @9 / 87.5kg x12 @8 · Lying Leg Curl 85kg x5 @9 / 70kg x8 @8 · Leg Extension 100kg x12 @9 / 85kg x13 @8 · Machine Calf Raise 117kg x11 @9 / 101kg x12 @8 · Ab Crunch Machine 70kg x12 @8 x3 (top of range at RPE 8 for three sessions running — this load is overdue an increase, open at ~75kg x10)
 
 *CARDIO+ABS — cardio + 10 ab sets + 6 weak-point sets*
 Cardio 25-30 min (boxing or spinning preferred; running only when legs feel fresh) · Cable Crunch 3 · Hanging Leg Raises 3 · Ab Wheel Rollout 2 · Pallof Press 2 · then the weak-point block: 2 exercises x 3 sets, rotating triceps (overhead cable extension), rear delts (reverse fly or extra face pulls), calves, hamstrings (seated leg curl) — pick the two named in "Lowest two" in the WEEKLY VOLUME context block.
@@ -355,7 +366,7 @@ Single Leg Sumo Press: warm 40kg x10 → 70kg x10 RPE8, 60kg x12 RPE8 x2
 Leg Curl: 50kg x12 RPE8, 45kg x15 RPE8 x2
 Leg Extension: 55kg x12 RPE8, 50kg x15 RPE8 x2
 Machine Calf Raise: 90kg x12 RPE8, 80kg x15 RPE8 x2
-Ab Crunch Machine: 40kg x12 x3 RPE8 (straight sets, loaded)
+Ab Crunch Machine: 75kg x10-12 x3 RPE8 (straight sets, loaded)
 Tempo 3-1-2. Rest 90s hypertrophy, 2min compound sets.
 
 *NUTRITION*
