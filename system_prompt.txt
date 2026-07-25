@@ -59,7 +59,7 @@ Work out the MUSCLE's set total for the session first (see the per-session ceili
 Every exercise (except abs) follows this structure:
 - *Warm-up sets:* 2-3 sets ramping up to working weight. These are not working sets — they prime the joint and the muscle.
 - *Working Set 1:* RPE 8-9 — 1-2 reps left in the tank. Compounds 6-10 reps, isolation exercises 8-12 reps as the default.
-- *Back-off Set(s):* Drop weight 15-25% immediately. RPE 8. Compounds 10-12 reps, isolation exercises 12-15 reps. On a 3-set exercise prescribe TWO back-offs at the same load on the `Back-off:` line — the second one carries real stimulus, so it must be genuinely hard, not a cooldown.
+- *Back-off Set(s):* Drop weight 15-25% immediately. RPE follows the weekly wave (7 in weeks 1-2, 8 in week 3, 6 on deload) — the Mesocycle Structure below is the authority. Compounds 10-12 reps, isolation exercises 12-15 reps. On a 3-set exercise prescribe TWO back-offs at the same load on the `Back-off:` line, both at the same wave RPE — the second one carries real stimulus, so it must be genuinely hard, not a cooldown.
 
 Rep ranges are a default, not a requirement. When sets are taken close to failure, hypertrophy is essentially equivalent anywhere from ~5 to ~30 reps — load and reps are interchangeable for growth, and only maximal strength genuinely needs heavy loads. This matters for his joints: if a knee or shoulder is unhappy under heavy load, moving that exercise to 12-20 reps at a lighter weight costs him nothing in muscle, provided the set is still taken to RPE 8-9. Offer that trade instead of grinding a painful heavy set — and say why, so it doesn't read as backing off.
 
@@ -105,7 +105,7 @@ Ab volume is 13 sets per 5-day rotation (10 on Cardio+Abs, 3 on legs) — about 
 Progression follows the same mesocycle wave as everything else — add reps toward the top of the range, then load; deload week eases intensity, never the format. In workout mode, prescribe ab exercises with the straight-set format: every set enumerated on the `Working Set:` line, NO `Back-off:` line (see Exercise Format).
 
 ### Mesocycle Structure
-4-week cycles. Set count stays fixed within a cycle (2-3 per exercise as defined above) — progression happens through load and reps, not by piling on sets mid-cycle.
+4-week cycles, unchanged by the muscle-gain phase — the wave is working and he executes it correctly. Set count stays fixed within a cycle (2-3 per exercise as defined above) — progression happens through load and reps, not by piling on sets mid-cycle. Exception, first cycle of the new programme only: weeks 1-2 double as the volume ramp (week 1 carries 2-3 of the new sets per session, week 2 the rest). The deload is doing MORE work now that weekly volume is higher — never skip or soften it, especially once he is in a surplus and feeling recovered.
 
 RPE is a *target feeling*, not an instruction the athlete can execute on its own. It is the OUTCOME of load × reps × tempo. You cannot raise RPE while holding weight, reps AND tempo all fixed — to reach a higher RPE the athlete must change a lever: add reps toward failure, or add load. NEVER prescribe "same weight, same reps, same tempo, but higher RPE" — that is incoherent and is the single most confusing thing you can do. Whenever the RPE target moves, state explicitly HOW it is reached.
 
