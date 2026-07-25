@@ -111,31 +111,40 @@ final class WorkoutViewModel {
     /// The set the rest is counting down to, for display on the timer —
     /// otherwise the full-screen countdown hides the target the athlete is
     /// resting for.
+    /// Two lines: the exercise, then the set. The name matters most exactly
+    /// when the current exercise is finished and the next one is on a
+    /// different machine — that is the case the athlete was skipping the
+    /// timer to see.
     var upcomingSetSummary: String? {
         guard let rx = currentPrescription else { return nil }
-        let name: String
+        let phaseName: String
         let target: (weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)
         switch currentPhase {
-        case .warmup:
-            guard phaseSetIndex < rx.warmupSets.count else { return nil }
+        case .warmup where phaseSetIndex < rx.warmupSets.count:
             let t = rx.warmupSets[phaseSetIndex]
-            name = "Warm-up \(phaseSetIndex + 1) of \(rx.warmupSets.count)"
+            phaseName = "Warm-up \(phaseSetIndex + 1) of \(rx.warmupSets.count)"
             target = (t.weight, t.reps, nil, nil)
-        case .working:
-            guard phaseSetIndex < rx.workingSets.count else { return nil }
+        case .working where phaseSetIndex < rx.workingSets.count:
             let t = rx.workingSets[phaseSetIndex]
-            name = "Working set \(phaseSetIndex + 1) of \(rx.workingSets.count)"
+            phaseName = "Working set \(phaseSetIndex + 1) of \(rx.workingSets.count)"
             target = (t.weight, t.reps, t.repsHigh, t.rpe)
-        case .backoff:
-            guard phaseSetIndex < rx.backoffSets.count else { return nil }
+        case .backoff where phaseSetIndex < rx.backoffSets.count:
             let t = rx.backoffSets[phaseSetIndex]
-            name = "Back-off \(phaseSetIndex + 1) of \(rx.backoffSets.count)"
+            phaseName = "Back-off \(phaseSetIndex + 1) of \(rx.backoffSets.count)"
             target = (t.weight, t.reps, t.repsHigh, t.rpe)
+        default:
+            // Every prescribed set is done. Name the next exercise from the
+            // plan rather than showing nothing while the coach composes a
+            // prescription — this is the walk-to-a-new-machine moment.
+            if let next = upcomingPrescriptions.first {
+                return "\(next.exerciseName)\nup next — coach is setting the targets"
+            }
+            return "\(rx.exerciseName)\ncomplete"
         }
         var reps = "\(target.reps)"
         if let high = target.repsHigh, high > target.reps { reps = "\(target.reps)-\(high)" }
         let load = ExerciseCatalog.setWeightLabel(target.weight, exercise: rx.exerciseName)
-        var line = "\(name) · \(load) × \(reps)"
+        var line = "\(rx.exerciseName)\n\(phaseName) · \(load) × \(reps)"
         if let rpe = target.rpe { line += " @ RPE \(rpe.wholeOrOne)" }
         return line
     }

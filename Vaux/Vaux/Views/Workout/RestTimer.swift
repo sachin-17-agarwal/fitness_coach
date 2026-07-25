@@ -50,15 +50,25 @@ struct RestTimer: View {
                 .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: pulse)
 
                 if let nextSet {
+                    // First line is the exercise, second the set detail —
+                    // the exercise reads larger because on a machine change
+                    // it is the thing being walked to.
+                    let parts = nextSet.split(separator: "\n", maxSplits: 1).map(String.init)
                     VStack(spacing: 4) {
                         Text("UP NEXT")
                             .font(.eyebrowSmall)
                             .kerning(1.6)
                             .foregroundStyle(Color.fg2)
-                        Text(nextSet)
-                            .font(.system(size: 15, weight: .medium, design: .monospaced).monospacedDigit())
+                        Text(parts.first ?? nextSet)
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(Color.fg0)
                             .multilineTextAlignment(.center)
+                        if parts.count > 1 {
+                            Text(parts[1])
+                                .font(.system(size: 14, weight: .medium, design: .monospaced).monospacedDigit())
+                                .foregroundStyle(Color.fg1)
+                                .multilineTextAlignment(.center)
+                        }
                     }
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
