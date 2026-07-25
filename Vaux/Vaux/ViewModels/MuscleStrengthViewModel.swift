@@ -311,7 +311,9 @@ final class MuscleStrengthViewModel {
         case "back", "chest": return 10...16
         case "shoulders": return 8...12
         case "biceps", "triceps": return 8...12
-        case "rear delts": return 6...10
+        // See WeeklyVolumeView.targetRange — rear delt work done by rows is
+        // counted in the Back bucket, so this band sits lower deliberately.
+        case "rear delts": return 4...8
         case "calves": return 6...10
         case "abs", "core": return 10...16
         default: return 8...12

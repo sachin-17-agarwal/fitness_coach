@@ -485,7 +485,10 @@ struct WeeklyVolumeView: View {
         case "back", "chest": return 10...16
         case "shoulders": return 8...12
         case "biceps", "triceps": return 8...12
-        case "rear delts": return 6...10
+        // Lower than the other bands on purpose: the four rows on pull day
+        // train rear delts heavily, but that work is counted in the Back
+        // bucket, so the tracked number understates the real stimulus.
+        case "rear delts": return 4...8
         case "calves": return 6...10
         case "abs", "core": return 10...16
         default: return 8...12
