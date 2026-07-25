@@ -17,6 +17,12 @@ struct RestTimer: View {
     @Binding var endDate: Date?
     @Binding var isActive: Bool
     let onSkip: () -> Void
+    /// Extending has to go through the view model so the ring's total grows
+    /// with the deadline; mutating `endDate` alone left the ring pinned full.
+    var onExtend: (Int) -> Void = { _ in }
+    /// The set this rest leads into, shown so the countdown doesn't hide
+    /// the target it is counting down to.
+    var nextSet: String?
 
     @State private var pulse: Bool = false
 
@@ -42,6 +48,39 @@ struct RestTimer: View {
                 .frame(width: 220, height: 220)
                 .scaleEffect(pulse ? 1.02 : 1.0)
                 .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: pulse)
+
+                if let nextSet {
+                    // First line is the exercise, second the set detail —
+                    // the exercise reads larger because on a machine change
+                    // it is the thing being walked to.
+                    let parts = nextSet.split(separator: "\n", maxSplits: 1).map(String.init)
+                    VStack(spacing: 4) {
+                        Text("UP NEXT")
+                            .font(.eyebrowSmall)
+                            .kerning(1.6)
+                            .foregroundStyle(Color.fg2)
+                        Text(parts.first ?? nextSet)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Color.fg0)
+                            .multilineTextAlignment(.center)
+                        if parts.count > 1 {
+                            Text(parts[1])
+                                .font(.system(size: 14, weight: .medium, design: .monospaced).monospacedDigit())
+                                .foregroundStyle(Color.fg1)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.ink2.opacity(0.9))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.line2, lineWidth: 1)
+                    )
+                }
 
                 controls
             }
@@ -101,7 +140,7 @@ struct RestTimer: View {
         HStack(spacing: 10) {
             Button {
                 Haptic.light()
-                endDate = (endDate ?? Date()).addingTimeInterval(15)
+                onExtend(15)
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")

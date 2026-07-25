@@ -10,6 +10,10 @@ struct SetLogInput: View {
     let onLog: () -> Void
     let isLoading: Bool
     var phase: SetPhase = .working
+    /// True for pull-ups, dips, hanging leg raises and friends, where the
+    /// field holds weight ADDED to bodyweight. Without this the stepper
+    /// reads a perfectly good bodyweight set as "0", which looks broken.
+    var isBodyweight: Bool = false
 
     @FocusState private var weightFieldFocused: Bool
 
@@ -139,7 +143,7 @@ struct SetLogInput: View {
     /// editable" cue) and shifts to the phase accent at 2pt on focus.
     private func weightStepper(minus: @escaping () -> Void, plus: @escaping () -> Void) -> some View {
         VStack(spacing: 6) {
-            Text("WEIGHT")
+            Text(isBodyweight ? "ADDED KG" : "WEIGHT")
                 .font(.eyebrowSmall)
                 .kerning(1.0)
                 .foregroundStyle(Color.fg2)

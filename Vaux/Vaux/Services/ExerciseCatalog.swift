@@ -96,6 +96,47 @@ final class ExerciseCatalog {
         return bestMatch?.group
     }
 
+    // MARK: - Bodyweight movements
+
+    /// Movements loaded by the athlete's own bodyweight. A logged weight of 0
+    /// on these is a complete set, not missing data — and a positive weight is
+    /// load ADDED to bodyweight (a +10kg pull-up), never the total.
+    ///
+    /// Deliberately narrow: misclassifying a stack exercise here would render
+    /// a plain 70kg set as "BW+70kg".
+    private static let bodyweightMovements: [String] = [
+        "pull-up", "pullup", "pull up",
+        "chin-up", "chinup", "chin up",
+        "muscle-up", "muscle up",
+        "dip",
+        "push-up", "pushup", "push up",
+        "inverted row",
+        "hanging leg raise", "hanging knee raise",
+        "leg raise", "knee raise",
+        "ab wheel", "rollout",
+        "plank", "hollow hold",
+        "nordic curl",
+    ]
+
+    /// True when `exercise` is loaded by bodyweight rather than by a stack.
+    static func isBodyweight(_ exercise: String) -> Bool {
+        let key = PrescriptionParser.normalizeExerciseName(exercise).lowercased()
+        return bodyweightMovements.contains { key.contains($0) }
+    }
+
+    /// How a single set's load should read on screen and in coach messages.
+    ///
+    /// Bodyweight parses and persists as 0, so a plain "\(weight)kg" renders a
+    /// hard set of dips as "0kg × 13" — which reads as a logging failure. And
+    /// the 10kg on a weighted pull-up is added load, not the total, so showing
+    /// "10kg × 6" understates the set. Tonnage and 1RM displays keep using
+    /// `weightString`; this is only for per-set load.
+    static func setWeightLabel(_ weight: Double, exercise: String) -> String {
+        if weight <= 0 { return "BW" }
+        if isBodyweight(exercise) { return "BW+\(weight.wholeOrOne)kg" }
+        return weight.weightString
+    }
+
     // MARK: - Built-in defaults
 
     /// Standard movements → muscle group, used as the floor under the

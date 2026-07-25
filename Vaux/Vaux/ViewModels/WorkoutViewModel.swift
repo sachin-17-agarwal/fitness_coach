@@ -42,6 +42,32 @@ final class WorkoutViewModel {
     var sessionDuration: TimeInterval = 0
     var startTime: Date?
 
+    /// Mesocycle week (1-4) for the session in progress. Surfaced on the
+    /// workout screen because the week is what sets today's RPE target —
+    /// it was previously only visible in Settings, which is how the week
+    /// counter drifted to "6 of 4" unnoticed for an entire cycle.
+    var mesocycleWeek: Int?
+
+    /// Week name and RPE targets, mirroring the coach's mesocycle protocol.
+    var mesocyclePhaseLabel: String? {
+        switch mesocycleWeek {
+        case 1: return "BASELINE"
+        case 2: return "VOLUME"
+        case 3: return "PEAK"
+        case 4: return "DELOAD"
+        default: return nil
+        }
+    }
+
+    var mesocycleRPETarget: String? {
+        switch mesocycleWeek {
+        case 1, 2: return "RPE 8 · back-off 7"
+        case 3: return "RPE 9 · back-off 8"
+        case 4: return "RPE 7 · back-off 6"
+        default: return nil
+        }
+    }
+
     // Coach feedback
     var coachNote: String?
     var isCoachThinking = false
@@ -75,6 +101,53 @@ final class WorkoutViewModel {
     // (two timers decrementing one value caused an irregular, glitchy tick).
     var restEndDate: Date?
     var isResting = false
+    /// The duration this rest was actually started with. The ring draws
+    /// `remaining / total`, so passing the prescription's rest here while
+    /// the timer ran on a different number (60s after a warm-up) made the
+    /// ring open half-full. Owned alongside the deadline so the two cannot
+    /// disagree, and extended in step by `extendRest`.
+    var restTotalSeconds: Int = 120
+
+    /// The set the rest is counting down to, for display on the timer —
+    /// otherwise the full-screen countdown hides the target the athlete is
+    /// resting for.
+    /// Two lines: the exercise, then the set. The name matters most exactly
+    /// when the current exercise is finished and the next one is on a
+    /// different machine — that is the case the athlete was skipping the
+    /// timer to see.
+    var upcomingSetSummary: String? {
+        guard let rx = currentPrescription else { return nil }
+        let phaseName: String
+        let target: (weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)
+        switch currentPhase {
+        case .warmup where phaseSetIndex < rx.warmupSets.count:
+            let t = rx.warmupSets[phaseSetIndex]
+            phaseName = "Warm-up \(phaseSetIndex + 1) of \(rx.warmupSets.count)"
+            target = (t.weight, t.reps, nil, nil)
+        case .working where phaseSetIndex < rx.workingSets.count:
+            let t = rx.workingSets[phaseSetIndex]
+            phaseName = "Working set \(phaseSetIndex + 1) of \(rx.workingSets.count)"
+            target = (t.weight, t.reps, t.repsHigh, t.rpe)
+        case .backoff where phaseSetIndex < rx.backoffSets.count:
+            let t = rx.backoffSets[phaseSetIndex]
+            phaseName = "Back-off \(phaseSetIndex + 1) of \(rx.backoffSets.count)"
+            target = (t.weight, t.reps, t.repsHigh, t.rpe)
+        default:
+            // Every prescribed set is done. Name the next exercise from the
+            // plan rather than showing nothing while the coach composes a
+            // prescription — this is the walk-to-a-new-machine moment.
+            if let next = upcomingPrescriptions.first {
+                return "\(next.exerciseName)\nup next — coach is setting the targets"
+            }
+            return "\(rx.exerciseName)\ncomplete"
+        }
+        var reps = "\(target.reps)"
+        if let high = target.repsHigh, high > target.reps { reps = "\(target.reps)-\(high)" }
+        let load = ExerciseCatalog.setWeightLabel(target.weight, exercise: rx.exerciseName)
+        var line = "\(rx.exerciseName)\n\(phaseName) · \(load) × \(reps)"
+        if let rpe = target.rpe { line += " @ RPE \(rpe.wholeOrOne)" }
+        return line
+    }
 
     // PR
     var latestPR: PRResult?
@@ -110,6 +183,7 @@ final class WorkoutViewModel {
         errorMessage = nil
         startDurationTimer()
         heartRateMonitor.start(from: startTime ?? Date())
+        await loadMesocycleWeek()
 
         var issues: [String] = []
 
@@ -188,6 +262,7 @@ final class WorkoutViewModel {
         }
         startDurationTimer()
         heartRateMonitor.start(from: startTime ?? Date())
+        await loadMesocycleWeek()
 
         // Hydrate tonnage / set counters from sets already persisted in this
         // session so the live stats bar reflects what's already logged.
@@ -406,9 +481,14 @@ final class WorkoutViewModel {
         // Advance to next target in the prescription
         advancePhase()
 
-        // Rest timer — shorter for warm-ups
-        let rest = isWarmup ? 60 : (currentPrescription?.restSeconds ?? 120)
-        startRestTimer(seconds: rest)
+        // Rest timer. Short rests belong BETWEEN ramp sets only — the last
+        // warm-up takes the full prescribed rest so the top set is fresh,
+        // which is what the warm-up protocol asks for. `advancePhase()` has
+        // already run, so `currentPhase` is the set being rested FOR: still
+        // .warmup means more ramps to come.
+        let prescribedRest = currentPrescription?.restSeconds ?? 120
+        let restingBetweenRamps = isWarmup && currentPhase == .warmup
+        startRestTimer(seconds: restingBetweenRamps ? 60 : prescribedRest)
 
         // Set persisted and phase advanced — re-enable the Log button here
         // rather than after the coach round-trip, so the athlete can log
@@ -441,7 +521,7 @@ final class WorkoutViewModel {
         } else {
             phaseProgress = label
         }
-        let actual = "\(loggedWeight.weightString) × \(loggedReps)" + (isWarmup ? "" : " @ RPE \(loggedRPE.oneDecimal)")
+        let actual = "\(ExerciseCatalog.setWeightLabel(loggedWeight, exercise: exercise)) × \(loggedReps)" + (isWarmup ? "" : " @ RPE \(loggedRPE.oneDecimal)")
         let targetSuffix = formatTargetSuffix(
             phase: loggedPhase,
             phaseSetIndex: loggedPhaseSetIndex,
@@ -695,9 +775,24 @@ final class WorkoutViewModel {
         return parts.joined(separator: " ")
     }
 
+    /// Best-effort: the week is context, never a blocker, so a failed read
+    /// just leaves the chip hidden rather than surfacing an error.
+    private func loadMesocycleWeek() async {
+        mesocycleWeek = (try? await mesocycleService.loadState())?.week
+    }
+
     func startRestTimer(seconds: Int) {
+        restTotalSeconds = max(1, seconds)
         restEndDate = Date().addingTimeInterval(Double(seconds))
         isResting = true
+    }
+
+    /// Extends the running rest. The total grows with the deadline so the
+    /// ring reflects the added time instead of sitting pinned at full.
+    func extendRest(by seconds: Int) {
+        guard seconds > 0 else { return }
+        restEndDate = (restEndDate ?? Date()).addingTimeInterval(Double(seconds))
+        restTotalSeconds += seconds
     }
 
     func skipRest() {
@@ -1199,7 +1294,8 @@ final class WorkoutViewModel {
             }
         }()
         guard let t = target else { return "" }
-        var s = " (target \(t.weight.weightString) × \(t.reps)"
+        let name = currentPrescription?.exerciseName ?? ""
+        var s = " (target \(ExerciseCatalog.setWeightLabel(t.weight, exercise: name)) × \(t.reps)"
         if let rpe = t.rpe {
             s += " @ RPE \(rpe.oneDecimal)"
         }
@@ -1234,7 +1330,8 @@ final class WorkoutViewModel {
             }
         }()
         guard let t = target else { return "" }
-        var s = " (target was \(t.weight.weightString) × \(t.reps)"
+        let name = currentPrescription?.exerciseName ?? ""
+        var s = " (target was \(ExerciseCatalog.setWeightLabel(t.weight, exercise: name)) × \(t.reps)"
         if !isWarmup, let rpe = t.rpe {
             s += " @ RPE \(rpe.oneDecimal)"
         }

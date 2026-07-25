@@ -51,10 +51,12 @@ struct WorkoutModeView: View {
 
             if viewModel.isResting {
                 RestTimer(
-                    totalSeconds: viewModel.currentPrescription?.restSeconds ?? 120,
+                    totalSeconds: viewModel.restTotalSeconds,
                     endDate: $viewModel.restEndDate,
                     isActive: $viewModel.isResting,
-                    onSkip: { viewModel.skipRest() }
+                    onSkip: { viewModel.skipRest() },
+                    onExtend: { viewModel.extendRest(by: $0) },
+                    nextSet: viewModel.upcomingSetSummary
                 )
                 .transition(.opacity)
             }
@@ -256,6 +258,12 @@ struct WorkoutModeView: View {
                 heartRate: viewModel.heartRateMonitor.currentBPM
             )
 
+            if let week = viewModel.mesocycleWeek,
+               let phase = viewModel.mesocyclePhaseLabel,
+               let rpe = viewModel.mesocycleRPETarget {
+                mesocycleStrip(week: week, phase: phase, rpe: rpe)
+            }
+
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 12) {
                     // Compact coach feedback strip
@@ -309,7 +317,10 @@ struct WorkoutModeView: View {
                                 Task { await viewModel.logSet() }
                             },
                             isLoading: viewModel.isLoggingSet,
-                            phase: viewModel.currentPhase
+                            phase: viewModel.currentPhase,
+                            isBodyweight: ExerciseCatalog.isBodyweight(
+                                viewModel.currentPrescription?.exerciseName ?? ""
+                            )
                         )
                     }
 
@@ -548,13 +559,48 @@ struct SetProgressRow: View {
         )
     }
 
+    /// Thin context strip under the stats bar: which mesocycle week this is
+    /// and the effort it calls for. The week drives every RPE target in the
+    /// programme but used to live only in Settings, so a drifting counter
+    /// ("week 6 of 4") went unnoticed while it quietly mis-set intensity.
+    private func mesocycleStrip(week: Int, phase: String, rpe: String) -> some View {
+        let tint: Color = week == 4 ? .amber : (week == 3 ? .signal : .mint)
+        return HStack(spacing: 8) {
+            Text("WEEK \(week)")
+                .font(.eyebrowSmall)
+                .kerning(1.0)
+                .foregroundStyle(tint)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(tint.opacity(0.14)))
+
+            Text(phase)
+                .font(.eyebrowSmall)
+                .kerning(1.2)
+                .foregroundStyle(Color.fg1)
+
+            Spacer(minLength: 0)
+
+            Text(rpe)
+                .font(.eyebrowSmall)
+                .foregroundStyle(Color.fg2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 7)
+        .background(Color.ink1.opacity(0.6))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.line).frame(height: 0.5)
+        }
+    }
+
     private func setChip(index: Int, set: WorkoutSet) -> some View {
         let weight = set.actualWeightKg ?? set.targetWeightKg ?? 0
         let reps = set.actualReps ?? set.targetReps ?? 0
         let rpe = set.actualRpe ?? set.targetRpe
         // Bodyweight prescriptions log a 0 weight — render "BW" instead of
-        // "0×N" so a logged pull-up reads as "BW × 5", not a zero lift.
-        let weightLabel = weight > 0 ? "\(Int(weight))" : "BW"
+        // "0×N" so a logged pull-up reads as "BW×5", not a zero lift, and a
+        // weighted one as "BW+10kg×6" rather than an ambiguous "10×6".
+        let weightLabel = ExerciseCatalog.setWeightLabel(weight, exercise: set.exercise)
         return VStack(spacing: 3) {
             Text("SET \(index)")
                 .font(.eyebrowSmall)
