@@ -65,11 +65,11 @@ Rep ranges are a default, not a requirement. When sets are taken close to failur
 
 Effort matters, but volume matters more. Taking sets closer to failure gives a small hypertrophy edge; adding a set is generally worth more than squeezing the last rep out of an existing one. So the priority order when something has to give is: keep the sets, then keep the proximity to failure. Never push him to 0 reps-in-reserve on compounds — the fatigue cost outruns the benefit.
 
-*Effort calibration — check this actively.* His logged RPEs split by session in a way that is almost certainly a prescription artefact, not real effort: Legs and the ab block run at RPE 9 top / 8 back-off, while Push and Pull run at exactly RPE 7 top / 6 back-off on every single exercise. Upper-body days are being trained two full RPE points easier than leg day.
+*Effort calibration.* The mesocycle is being executed correctly — this is worth knowing before reading anything into a low RPE. His week 4 deload holds the week 3 LOAD and cuts reps (Machine Chest Press 133kg x8 @ RPE8 in week 3 becomes 133kg x6 @ RPE7 in deload; Cable Row 78.5kg x8 becomes 78.5kg x6), which is exactly what the deload protocol specifies. Never mistake deload numbers for under-training: check which week he is in before judging effort.
 
-Two things follow. First, RPE 7 top sets leave ~3 reps in the tank and an RPE 6 back-off is barely past a warm-up — that is deload effort applied during normal weeks, and under-loading is the most likely way a muscle-gain phase quietly produces no muscle. Push and pull working sets need to be at RPE 8-9 with back-offs at 8, matching what leg day already does.
+One genuine gap remains. In week 3 — peak intensity, where the protocol calls for RPE 9 top sets and RPE 8 back-offs — Legs delivered 9/8, but Push and Pull ran 8/7 across every exercise. Upper body is peaking a full point below its own programme. RPE 8 is still productive, so do not manufacture alarm, but on peak weeks push and pull should reach 9/8 the same way legs does, and the lever is load or reps, never "try harder at the same numbers".
 
-Second, be sceptical of the RPE numbers themselves. The app pre-fills the RPE slider with the PRESCRIBED value, so a set logged without touching the slider records the target as though it were reported effort. Uniform, identical RPEs across every exercise in a session are the signature of that. When RPEs look prefilled, ask him what the set actually felt like rather than treating the number as autoregulation data.
+Be somewhat sceptical of the RPE figures themselves. The app pre-fills the RPE slider with the PRESCRIBED value, so a set logged without moving the slider records the target as though it were reported effort — and the RPEs do come in perfectly uniform across every exercise in a session, which is the signature of that. It may simply be accurate reporting; but when a number looks prefilled, ask what the set actually felt like rather than feeding it back into progression as autoregulation data.
 
 The science: the heavy set recruits maximum motor units via neural drive; the back-offs accumulate mechanical tension and metabolic stress on those already-recruited fibres. Volume is the primary driver of hypertrophy, which is exactly why the set count goes up now and did not during the cut — in a deficit the extra set costs recovery it can't repay, at maintenance and above it grows tissue.
 
@@ -205,9 +205,11 @@ The reason for this block is VOLUME, not frequency. Arms, delts and calves finis
 
 The default shape of each session, with working-set counts. Exercise choice can vary within the lists above (equipment, gym, boredom, a cranky joint) — the SET COUNTS are what keep weekly volume on target, so preserve those even when swapping movements. Order matters: hardest compound first while he's fresh.
 
-*PUSH* — 20 working sets. This is his real session, in his order:
+*PUSH* — 20 working sets. His real session (he opens with either the chest press or the shoulder press; either is fine):
 Machine Chest Press 3 · Machine Shoulder Press 3 · Dips 3 · Cable Chest Fly 2 · Cable Lateral Raise 3 · Face Pulls 3 · Tricep Pushdown 3
 (chest 8, shoulders 6, rear delts 3, triceps 3 direct plus dips)
+
+Week 3 reference loads (peak week, for progression anchoring): Machine Chest Press 133kg x8 @8 / 109kg x11 @7 · Machine Shoulder Press 65kg x10 @8 / 55kg x12 @7 · Dips BW x13 @8 / BW x12 @7 · Cable Chest Fly 17.5kg x11 @8 / 15kg x13 @7 · Cable Lateral Raise 12.5kg x8 @8 / 10kg x12 @7 · Face Pulls 35kg x13 @8 / 27.5kg x15 @7 · Tricep Pushdown 35kg x10 @8 / 30kg x11 @7
 
 Push-day notes:
 - These seven exercises are what he actually trains — taken from his log, not assembled from a list. Do not add or remove movements here. Face pulls live on PUSH day, not pull day.
@@ -219,11 +221,15 @@ Push-day notes:
 Pull-Ups 2 · Cable Row 2 · Lat Pulldown 2 · T-Bar Row 2 · Machine Bicep Curl 3 · Hammer Curl 3
 (back 8, biceps 6)
 
+Week 3 reference loads (peak week, for progression anchoring): Pull-Ups +10kg x9 @8 / BW x12 @7 · Cable Row 78.5kg x8 @8 / 62.5kg x13 @7 · Lat Pulldown 90kg x8 @8 / 70kg x12 @7 · T-Bar Row 52.5kg x8 @8 / 42.5kg x12 @7 · Machine Bicep Curl 55kg x7 @8 / 45kg x9 @7 · Hammer Curl 18kg x6 @8 / 14kg x10 @7
+
 Pull-day notes: back stays at 2 sets per movement deliberately. Four back exercises at 2 sets is already 8 per session — at the per-session ceiling — and ~11 per week, inside the target band. Back does NOT need more volume; adding a third set to each row would push the session past the point where the sets still count. Biceps were the shortfall (4 sets, ~6/week), so both curls go to 3. There are no face pulls on this day — they are on push.
 
 *LEGS* — 17 working sets including abs. His real session:
 Leg Press 3 · Single Leg Sumo Press 3 · Lying Leg Curl 3 · Leg Extension 2 · Machine Calf Raise 3 · Ab Crunch Machine 3
 (quads 8, hamstrings 3, calves 3, abs 3)
+
+Week 3 reference loads (peak week, for progression anchoring): Leg Press 205kg x12 @9 / 160kg x15 @8 · Single Leg Sumo Press 110kg x10 @9 / 87.5kg x12 @8 · Lying Leg Curl 85kg x5 @9 / 70kg x8 @8 · Leg Extension 100kg x12 @9 / 85kg x13 @8 · Machine Calf Raise 117kg x11 @9 / 101kg x12 @8 · Ab Crunch Machine 70kg x12 @8 x3
 
 Leg-day notes: Single Leg Sumo Press replaced the Romanian deadlift and stays; Bulgarian split squats are not part of this session — do not reintroduce either unless he asks. Quad work (leg press, sumo press, extension) totals 8, at the per-session ceiling, which is why the leg extension holds at 2 while the two presses take 3. Because both presses are quad/glute-dominant, the lying leg curl is his ONLY direct hamstring work — it goes to 3 and must never be the set that gets cut. A hip-hinge would cover the hamstring at long muscle lengths; offer it with that reasoning, never add it silently.
 
