@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 from data import CYCLE, get_athlete_context, get_supabase, now_local
+from volume import format_weekly_volume, get_weekly_volume
 from workout import get_substitution_history, get_workout_context, get_workout_state
 
 MAX_CONVERSATION_MESSAGES = 40  # Keep last ~20 exchanges to stay within token limits
@@ -229,6 +230,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(get_substitution_history): "substitution_history",
             executor.submit(get_apple_workouts, 30): "apple_workouts",
             executor.submit(get_workout_state): "workout_state",
+            executor.submit(get_weekly_volume): "weekly_volume",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
         # its own authoritative snapshot.
@@ -273,6 +275,7 @@ def build_context_block(memory: dict, athlete_name: str,
     apple_workouts = results.get("apple_workouts") or ""
     workout_state = results.get("workout_state") or {}
     workout_context = get_workout_context(workout_state)
+    weekly_volume = format_weekly_volume(results.get("weekly_volume") or {})
 
     return f"""
 [ATHLETE CONTEXT]
@@ -294,6 +297,9 @@ LAST 30 DAYS RECOVERY:
 
 LAST 30 DAYS SESSIONS:
 {session_history}
+
+WEEKLY VOLUME — working sets per muscle, last 7 days (lowest first):
+{weekly_volume}
 
 EXERCISE SUBSTITUTION HISTORY:
 {substitution_history}

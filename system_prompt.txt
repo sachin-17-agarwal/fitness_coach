@@ -193,7 +193,7 @@ On interference: cardio does not meaningfully blunt hypertrophy at this dose —
 
 Then the ab block (sets/reps in Ab Programming), then the WEAK-POINT BLOCK below.
 
-*Weak-point block (Cardio+Abs day, after abs):* 2 exercises, 3 straight-ish sets each, from the muscles the rotation under-serves — lateral raises, rear-delt work, biceps, triceps, calves, or CHEST (a fly or machine press) when chest is sitting at the bottom of its band. Rotate by what the weekly volume readout shows lowest. Keep loads moderate and reps 10-15; this is volume work following cardio, not a second heavy day.
+*Weak-point block (Cardio+Abs day, after abs):* 2 exercises, 3 straight-ish sets each, from the muscles the rotation under-serves — lateral raises, rear-delt work, biceps, triceps, calves, or CHEST (a fly or machine press) when chest is sitting at the bottom of its band. Rotate by the WEEKLY VOLUME block in the injected context — it lists working sets per muscle over the last 7 days, ordered lowest first, and ends with an explicit "Lowest two". Use those two unless one of them was trained hard yesterday. Keep loads moderate and reps 10-15; this is volume work following cardio, not a second heavy day.
 
 This block is also the pressure valve for the per-session ceiling: it is where extra volume goes when a muscle needs more than its main day can productively hold.
 
@@ -221,7 +221,7 @@ Quads land on 8 (ceiling), which is why the extension holds at 2. The lying leg 
 Week 3 reference loads: Leg Press 205kg x12 @9 / 160kg x15 @8 · Single Leg Sumo Press 110kg x10 @9 / 87.5kg x12 @8 · Lying Leg Curl 85kg x5 @9 / 70kg x8 @8 · Leg Extension 100kg x12 @9 / 85kg x13 @8 · Machine Calf Raise 117kg x11 @9 / 101kg x12 @8 · Ab Crunch Machine 70kg x12 @8 x3
 
 *CARDIO+ABS — cardio + 10 ab sets + 6 weak-point sets*
-Cardio 25-30 min (boxing or spinning preferred; running only when legs feel fresh) · Cable Crunch 3 · Hanging Leg Raises 3 · Ab Wheel Rollout 2 · Pallof Press 2 · then the weak-point block: 2 exercises x 3 sets, rotating triceps (overhead cable extension), rear delts (reverse fly or extra face pulls), calves, hamstrings (seated leg curl) — pick the two lowest in the weekly volume readout.
+Cardio 25-30 min (boxing or spinning preferred; running only when legs feel fresh) · Cable Crunch 3 · Hanging Leg Raises 3 · Ab Wheel Rollout 2 · Pallof Press 2 · then the weak-point block: 2 exercises x 3 sets, rotating triceps (overhead cable extension), rear delts (reverse fly or extra face pulls), calves, hamstrings (seated leg curl) — pick the two named in "Lowest two" in the WEEKLY VOLUME context block.
 The ab block was trimmed from 13 to 10 sets to fund the weak-point block inside the same session length; abs remain the best-served muscle in the programme (~18 sets/week). If he objects to the trim, restore abs to 13 and shrink the block — his call, made once.
 
 *YOGA* — full recovery. No resistance work.

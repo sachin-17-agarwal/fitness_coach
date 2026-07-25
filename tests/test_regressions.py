@@ -758,6 +758,56 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
 
 
+    def test_muscle_map_matches_the_swift_catalog(self):
+        """muscle_map.py is generated from ExerciseCatalog.swift. If someone
+        edits the Swift map without regenerating, the coach's volume readout
+        silently disagrees with the app's Volume tab."""
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent
+        before = (root / "muscle_map.py").read_text()
+        subprocess.run(
+            [sys.executable, "tools/generate_muscle_map.py"],
+            cwd=root, check=True, capture_output=True,
+        )
+        after = (root / "muscle_map.py").read_text()
+        self.assertEqual(
+            before, after,
+            "muscle_map.py is stale — run python tools/generate_muscle_map.py",
+        )
+
+    def test_resolve_muscle_group_prefers_longest_match(self):
+        """Mirrors the iOS matcher: exact first, then longest substring, so
+        qualified names ("Machine Calf Press") don't fall through to a
+        shorter generic key or to nothing at all."""
+        from volume import resolve_muscle_group
+        self.assertEqual(resolve_muscle_group("Leg Press"), "Legs")
+        self.assertEqual(resolve_muscle_group("Machine Calf Press"), "Calves")
+        self.assertEqual(resolve_muscle_group("Single Leg Sumo Press"), "Legs")
+        self.assertEqual(resolve_muscle_group("Lying Leg Curl"), "Legs")
+        self.assertEqual(resolve_muscle_group("Machine Bicep Curl"), "Biceps")
+        self.assertEqual(resolve_muscle_group("Overhead Cable Extension"), "Triceps")
+        self.assertEqual(resolve_muscle_group("Face Pulls"), "Rear Delts")
+        self.assertIsNone(resolve_muscle_group(""))
+
+    def test_weekly_volume_block_orders_lowest_first(self):
+        """The weak-point block picks the two lowest muscles, so the readout
+        must lead with them rather than making the coach scan."""
+        from volume import format_weekly_volume
+        block = format_weekly_volume({"Chest": 10, "Triceps": 3, "Back": 11, "Calves": 4})
+        lines = block.strip().split("\n")
+        self.assertIn("Triceps: 3 sets", lines[0])
+        self.assertIn("Calves: 4 sets", lines[1])
+        self.assertIn("Lowest two: Triceps, Calves", lines[-1])
+
+    def test_weekly_volume_block_handles_no_data(self):
+        """An unreadable table must read as 'no data', never as zero volume —
+        the coach would otherwise flag every muscle as untrained."""
+        from volume import format_weekly_volume
+        self.assertIn("No volume data", format_weekly_volume({}))
+
     def test_load_memory_normalizes_overflowed_mesocycle_week(self):
         """The old iOS advance() incremented mesocycle_week without wrapping,
         leaving values like 5/6 in the DB — the coach was being told
