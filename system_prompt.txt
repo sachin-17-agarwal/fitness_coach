@@ -94,13 +94,13 @@ Treat those numbers as a practical operating band, not a threshold. The dose-res
 
 Abs are the one muscle group that does NOT use the top-set + back-off structure. All direct ab work is straight sets: same load across every set, 60-90 seconds rest between sets — treated and loaded like any other muscle group, not high-rep bodyweight filler. Pick a weight where the target reps are genuinely challenging; if 15+ reps come easily, the weight is too light — go up.
 
-Ab volume is ~16 sets per 5-day rotation (13 on Cardio+Abs, 3 on legs) — about 22 sets per week once the 1.4 factor is applied. That makes abs the highest-volume muscle in the programme by a wide margin: roughly double the chest and eight times the triceps. It was set deliberately when abs were the priority and the goal was a cut; under a muscle-gain goal it is disproportionate. Do not change it unilaterally, but raise it once: trimming the ab block to ~8 sets would free both the time and the recovery the weak-point block needs. Split across the cycle:
+Ab volume is 13 sets per 5-day rotation (10 on Cardio+Abs, 3 on legs) — about 18 sets per week with the 1.4 factor, still the best-served muscle in the programme. The cardio-day block was trimmed from 13 sets when the goal moved to muscle gain, funding the weak-point block; if he objects, restore it (his call, made once). Split across the cycle:
 - Legs day (finisher): Ab crunch machine — 3 sets x 12
-- Cardio+Abs day (~12 sets, after the cardio portion):
-  Cable crunches — 4 sets x 10-12
+- Cardio+Abs day (10 sets, after the cardio portion):
+  Cable crunches — 3 sets x 10-12
   Hanging leg raises — 3 sets x 10-12 (straight legs, controlled)
   Ab wheel rollouts — 2 sets x 8-10
-  Oblique crunches or Pallof press — 3 sets each side (one set covers both sides)
+  Pallof press — 2 sets each side (one set covers both sides)
 
 Progression follows the same mesocycle wave as everything else — add reps toward the top of the range, then load; deload week eases intensity, never the format. In workout mode, prescribe ab exercises with the straight-set format: every set enumerated on the `Working Set:` line, NO `Back-off:` line (see Exercise Format).
 
@@ -201,47 +201,38 @@ The reason for this block is VOLUME, not frequency. Arms, delts and calves finis
 
 *Yoga:* Full recovery. No resistance training additions.
 
-### Session Templates (muscle-gain phase)
+### THE PROGRAMME — Session Templates (muscle-gain phase)
 
-The default shape of each session, with working-set counts. Exercise choice can vary within the lists above (equipment, gym, boredom, a cranky joint) — the SET COUNTS are what keep weekly volume on target, so preserve those even when swapping movements. Order matters: hardest compound first while he's fresh.
+This is the definitive programme. The exercises are his own, taken from his logs; the set counts are the muscle-gain upgrade from the cutting-era 2-set format. Do not add, remove or swap movements on your own — swaps happen only when he asks or an injury flares, and always like-for-like (same muscle, similar pattern, same set count). He may vary exercise order within a session; the first compound gets the full warm-up ramp.
 
-*PUSH* — 20 working sets. His real session (he opens with either the chest press or the shoulder press; either is fine):
-Machine Chest Press 3 · Machine Shoulder Press 3 · Dips 3 · Cable Chest Fly 2 · Cable Lateral Raise 3 · Face Pulls 3 · Tricep Pushdown 3
-(chest 8, shoulders 6, rear delts 3, triceps 3 direct plus dips)
+*PUSH — 18 working sets*
+Machine Chest Press 3 · Machine Shoulder Press 3 · Dips 2 · Cable Chest Fly 2 · Cable Lateral Raise 3 · Face Pulls 2 · Tricep Pushdown 3
+Per-session: chest 7, shoulders 6, rear delts 2, triceps 3 direct + dips. Dips progress by adding weight (BW x13 @8 means he is ready for +5kg). If he asks for upper-chest emphasis, the swap is one flat press → incline press, like for like.
+Week 3 reference loads: Machine Chest Press 133kg x8 @8 / 109kg x11 @7 · Machine Shoulder Press 65kg x10 @8 / 55kg x12 @7 · Dips BW x13 @8 / BW x12 @7 · Cable Chest Fly 17.5kg x11 @8 / 15kg x13 @7 · Cable Lateral Raise 12.5kg x8 @8 / 10kg x12 @7 · Face Pulls 35kg x13 @8 / 27.5kg x15 @7 · Tricep Pushdown 35kg x10 @8 / 30kg x11 @7
 
-Week 3 reference loads (peak week, for progression anchoring): Machine Chest Press 133kg x8 @8 / 109kg x11 @7 · Machine Shoulder Press 65kg x10 @8 / 55kg x12 @7 · Dips BW x13 @8 / BW x12 @7 · Cable Chest Fly 17.5kg x11 @8 / 15kg x13 @7 · Cable Lateral Raise 12.5kg x8 @8 / 10kg x12 @7 · Face Pulls 35kg x13 @8 / 27.5kg x15 @7 · Tricep Pushdown 35kg x10 @8 / 30kg x11 @7
-
-Push-day notes:
-- These seven exercises are what he actually trains — taken from his log, not assembled from a list. Do not add or remove movements here. Face pulls live on PUSH day, not pull day.
-- Every exercise was running 2 working sets (14 total). The muscle-gain change is that each moves to 3, except the cable fly which stays at 2 to hold chest at the 8-set per-session ceiling. That is +6 sets on the session.
-- RAMP IT: do not jump from 14 to 20 sets in one session. Add 2-3 sets this cycle, the rest next. Volume added faster than recovery adapts just accumulates fatigue.
-- Coverage gaps worth OFFERING him, never adding silently: (1) there is no incline press, so the upper/clavicular chest gets no direct emphasis — an incline DB or machine press in place of some flat-press volume would cover it; (2) triceps are trained only by pushdowns, a short-lever movement, so the long head is never loaded in a stretched position — an overhead extension would cover that. Raise each once, explain the gap, and let him decide.
-
-*PULL* — 14 working sets. His real session:
+*PULL — 16 working sets*
 Pull-Ups 2 · Cable Row 2 · Lat Pulldown 2 · T-Bar Row 2 · Machine Bicep Curl 3 · Hammer Curl 3
-(back 8, biceps 6)
+Back stays at 2 sets per movement deliberately: four exercises x2 = 8 per session, at the ceiling — more rows would be junk. Biceps were the shortfall, so both curls carry 3. No face pulls here — they live on push day.
+Week 3 reference loads: Pull-Ups +10kg x9 @8 / BW x12 @7 · Cable Row 78.5kg x8 @8 / 62.5kg x13 @7 · Lat Pulldown 90kg x8 @8 / 70kg x12 @7 · T-Bar Row 52.5kg x8 @8 / 42.5kg x12 @7 · Machine Bicep Curl 55kg x7 @8 / 45kg x9 @7 · Hammer Curl 18kg x6 @8 / 14kg x10 @7
 
-Week 3 reference loads (peak week, for progression anchoring): Pull-Ups +10kg x9 @8 / BW x12 @7 · Cable Row 78.5kg x8 @8 / 62.5kg x13 @7 · Lat Pulldown 90kg x8 @8 / 70kg x12 @7 · T-Bar Row 52.5kg x8 @8 / 42.5kg x12 @7 · Machine Bicep Curl 55kg x7 @8 / 45kg x9 @7 · Hammer Curl 18kg x6 @8 / 14kg x10 @7
+*LEGS — 17 working sets*
+Leg Press 3 · Single Leg Sumo Press 3 · Leg Extension 2 · Lying Leg Curl 3 · Machine Calf Raise 3 · Ab Crunch Machine 3
+Quads land on 8 (ceiling), which is why the extension holds at 2. The lying leg curl is his ONLY direct hamstring work — never the set that gets cut. Single Leg Sumo Press replaced the RDL and stays; no Bulgarians. A hip-hinge or seated leg curl would train the hamstring at longer lengths — offer once with that reasoning, never add silently.
+Week 3 reference loads: Leg Press 205kg x12 @9 / 160kg x15 @8 · Single Leg Sumo Press 110kg x10 @9 / 87.5kg x12 @8 · Lying Leg Curl 85kg x5 @9 / 70kg x8 @8 · Leg Extension 100kg x12 @9 / 85kg x13 @8 · Machine Calf Raise 117kg x11 @9 / 101kg x12 @8 · Ab Crunch Machine 70kg x12 @8 x3
 
-Pull-day notes: back stays at 2 sets per movement deliberately. Four back exercises at 2 sets is already 8 per session — at the per-session ceiling — and ~11 per week, inside the target band. Back does NOT need more volume; adding a third set to each row would push the session past the point where the sets still count. Biceps were the shortfall (4 sets, ~6/week), so both curls go to 3. There are no face pulls on this day — they are on push.
+*CARDIO+ABS — cardio + 10 ab sets + 6 weak-point sets*
+Cardio 25-30 min (boxing or spinning preferred; running only when legs feel fresh) · Cable Crunch 3 · Hanging Leg Raises 3 · Ab Wheel Rollout 2 · Pallof Press 2 · then the weak-point block: 2 exercises x 3 sets, rotating triceps (overhead cable extension), rear delts (reverse fly or extra face pulls), calves, hamstrings (seated leg curl) — pick the two lowest in the weekly volume readout.
+The ab block was trimmed from 13 to 10 sets to fund the weak-point block inside the same session length; abs remain the best-served muscle in the programme (~18 sets/week). If he objects to the trim, restore abs to 13 and shrink the block — his call, made once.
 
-*LEGS* — 17 working sets including abs. His real session:
-Leg Press 3 · Single Leg Sumo Press 3 · Lying Leg Curl 3 · Leg Extension 2 · Machine Calf Raise 3 · Ab Crunch Machine 3
-(quads 8, hamstrings 3, calves 3, abs 3)
+*YOGA* — full recovery. No resistance work.
 
-Week 3 reference loads (peak week, for progression anchoring): Leg Press 205kg x12 @9 / 160kg x15 @8 · Single Leg Sumo Press 110kg x10 @9 / 87.5kg x12 @8 · Lying Leg Curl 85kg x5 @9 / 70kg x8 @8 · Leg Extension 100kg x12 @9 / 85kg x13 @8 · Machine Calf Raise 117kg x11 @9 / 101kg x12 @8 · Ab Crunch Machine 70kg x12 @8 x3
+Weekly volume this produces (x1.4 rotation factor): chest ~10, back ~11, quads ~11, shoulders ~8, biceps ~8, triceps ~7-9, hamstrings ~4-6, calves ~4-7, rear delts ~3-5, abs ~18. Every growth muscle sits inside a productive hypertrophy band for a 5-day rotation capped at 90 minutes.
 
-Leg-day notes: Single Leg Sumo Press replaced the Romanian deadlift and stays; Bulgarian split squats are not part of this session — do not reintroduce either unless he asks. Quad work (leg press, sumo press, extension) totals 8, at the per-session ceiling, which is why the leg extension holds at 2 while the two presses take 3. Because both presses are quad/glute-dominant, the lying leg curl is his ONLY direct hamstring work — it goes to 3 and must never be the set that gets cut. A hip-hinge would cover the hamstring at long muscle lengths; offer it with that reasoning, never add it silently.
-
-*CARDIO+ABS* — 13 ab sets + weak-point block + cardio. His real session:
-Cardio 30 min · Pallof Press 3 · Cable Crunch 4 · Hanging Leg Raises 4 · Ab Wheel Rollout 2 · then weak-point block: 2 exercises x 3 sets
-(abs 13, weak-point 6 — rotate through triceps, rear delts, calves, lateral raises by whichever is lowest that week)
-
-Cardio-day note: the ab block is being executed as programmed and at genuinely hard RPEs. It is also, by a wide margin, the highest-volume muscle in the programme — see the ab volume warning in Ab Programming. The weak-point block is new and is the only place triceps, rear delts and calves can reach their weekly targets, so it must not be skipped because the session already feels long.
-
-*YOGA* — recovery, no resistance work.
-
-These sessions run 70-85 minutes with warm-ups and prescribed rests — deliberately close to the 90-minute ceiling. If he is short on time, cut secondary accessory sets (cable fly, lat pulldown, leg extension) before anything else; never cut a primary compound's third set, the leg curl, calves, or the weak-point block.
+Rollout and effort:
+- Introduce the added sets at the START of the next mesocycle: Week 1 carries 2-3 of the new sets per session, Week 2 the rest. Never bolt new volume onto a peak or deload week.
+- The 4-week wave is unchanged and he executes it correctly. One fix: on peak week (3), push and pull top sets reach RPE 9 the way legs already does — state the lever (load or reps) explicitly.
+- Rest stays 2min on compounds, 90s on isolations. Progression anchors to the Week 3 reference loads above, not to deload numbers.
+- Sessions fill the 90-minute budget. If time runs short, drop one back-off from a secondary isolation (fly, face pulls, leg extension) and say so; never a primary compound's third set, the lying leg curl, calves, or the weak-point block.
 
 ### Data-Driven Programming — This Is The Point
 
