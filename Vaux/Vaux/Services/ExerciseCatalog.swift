@@ -210,6 +210,16 @@ final class ExerciseCatalog {
         "tricep extension": "Triceps",
         "triceps extension": "Triceps",
         "overhead extension": "Triceps",
+        // The substring matcher needs the exact phrasing: "Overhead Cable
+        // Extension" does not contain "overhead extension" (the word
+        // "cable" sits between them), so without these it resolves to no
+        // muscle group and its sets vanish from the volume/strength tabs.
+        "overhead cable extension": "Triceps",
+        "overhead tricep": "Triceps",
+        "overhead triceps": "Triceps",
+        "cable overhead extension": "Triceps",
+        "rope extension": "Triceps",
+        "rope pushdown": "Triceps",
         "skull crusher": "Triceps",
         "skull crushers": "Triceps",
         "skullcrusher": "Triceps",
@@ -221,6 +231,19 @@ final class ExerciseCatalog {
         // Legs (quads, hamstrings, glutes share one volume bucket)
         "squat": "Legs",
         "leg press": "Legs",
+        // "Single Leg Sumo Press" does NOT contain the substring "leg
+        // press", so it matched nothing and every set of it was dropped
+        // from the volume and strength buckets — the same silent-drop
+        // failure as the calf work. Cover the stance/unilateral naming
+        // variants explicitly.
+        "sumo press": "Legs",
+        "sumo leg press": "Legs",
+        "single leg press": "Legs",
+        "single-leg press": "Legs",
+        "unilateral leg press": "Legs",
+        "horizontal leg press": "Legs",
+        "vertical leg press": "Legs",
+        "45 degree leg press": "Legs",
         "leg extension": "Legs",
         "leg curl": "Legs",
         "leg curls": "Legs",

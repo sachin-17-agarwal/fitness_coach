@@ -300,18 +300,23 @@ final class MuscleStrengthViewModel {
         return sorted[mid]
     }
 
-    /// Weekly set ranges tuned for the once-per-week Pull/Push/Legs split —
-    /// mirrors the targets used by the Volume tab so the two tabs agree on
-    /// what "enough" looks like.
+    /// Weekly set ranges for the muscle-gain phase — mirrors the targets
+    /// used by the Volume tab so the two tabs agree on what "enough" looks
+    /// like. Raised from the cut-era maintenance doses when the goal became
+    /// hypertrophy; keep in sync with WeeklyVolumeView.targetRange and the
+    /// coach's system prompt.
     private static func targetRange(for group: String) -> ClosedRange<Int> {
         switch group.lowercased() {
-        case "legs", "quads", "hamstrings", "glutes": return 8...14
-        case "back", "chest": return 6...12
-        case "shoulders": return 4...8
-        case "biceps", "triceps": return 3...6
-        case "rear delts": return 2...5
-        case "abs", "core": return 3...8
-        default: return 4...10
+        case "legs", "quads", "hamstrings", "glutes": return 10...16
+        case "back", "chest": return 10...16
+        case "shoulders": return 8...12
+        case "biceps", "triceps": return 8...12
+        // See WeeklyVolumeView.targetRange — rear delt work done by rows is
+        // counted in the Back bucket, so this band sits lower deliberately.
+        case "rear delts": return 4...8
+        case "calves": return 6...10
+        case "abs", "core": return 10...16
+        default: return 8...12
         }
     }
 

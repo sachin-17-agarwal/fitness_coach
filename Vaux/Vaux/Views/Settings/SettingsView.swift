@@ -194,7 +194,10 @@ struct SettingsView: View {
     private var mesocycleCard: some View {
         settingsCard(title: "Mesocycle") {
             row(label: "Week", value: "\(mesocycleWeek)") {
-                Stepper("", value: $mesocycleWeek, in: 1...6)
+                // 1...4 — the programme is a repeating 4-week mesocycle.
+                // This was 1...6, which let the week-counter overflow bug
+                // ("Week 6 of 4") be entered and saved by hand too.
+                Stepper("", value: $mesocycleWeek, in: 1...Config.mesocycleWeeks)
                     .labelsHidden()
             }
 

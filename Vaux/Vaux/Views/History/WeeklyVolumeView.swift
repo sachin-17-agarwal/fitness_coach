@@ -471,19 +471,27 @@ struct WeeklyVolumeView: View {
         }
     }
 
-    /// Weekly set ranges tuned for the Pull/Push/Legs/Cardio+Abs/Yoga
-    /// rotation where each muscle is trained once per week. Hypertrophy
-    /// guidelines that assume 2–3 weekly sessions per muscle don't apply
-    /// here, so these targets describe a productive single-session dose.
+    /// Weekly set ranges for the muscle-gain phase (recomp → lean bulk).
+    /// The previous ranges described a cut-era maintenance dose — enough to
+    /// retain muscle on one session per week — and marked 6 chest sets as
+    /// "on target", which is misleading when the goal is growth. These are
+    /// hypertrophy ranges: the programme now runs 3 working sets on the
+    /// under-dosed muscles plus a weak-point block on Cardio+Abs day to
+    /// reach them. Keep in sync with the weekly targets in the coach's
+    /// system prompt (Training Philosophy).
     private func targetRange(for group: String) -> ClosedRange<Int> {
         switch group.lowercased() {
-        case "legs", "quads", "hamstrings", "glutes": return 8...14
-        case "back", "chest": return 6...12
-        case "shoulders": return 4...8
-        case "biceps", "triceps": return 3...6
-        case "rear delts": return 2...5
-        case "abs", "core": return 3...8
-        default: return 4...10
+        case "legs", "quads", "hamstrings", "glutes": return 10...16
+        case "back", "chest": return 10...16
+        case "shoulders": return 8...12
+        case "biceps", "triceps": return 8...12
+        // Lower than the other bands on purpose: the four rows on pull day
+        // train rear delts heavily, but that work is counted in the Back
+        // bucket, so the tracked number understates the real stimulus.
+        case "rear delts": return 4...8
+        case "calves": return 6...10
+        case "abs", "core": return 10...16
+        default: return 8...12
         }
     }
 
