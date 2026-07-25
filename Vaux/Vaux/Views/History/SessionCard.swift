@@ -140,16 +140,19 @@ struct SessionCard: View {
         // athlete cares about read as if two sets were missing.
         var numbered: [String: [(label: String, set: WorkoutSet)]] = [:]
         for key in order {
+            var rows: [(label: String, set: WorkoutSet)] = []
             var warmups = 0
             var working = 0
-            numbered[key] = (buckets[key] ?? []).map { s in
+            for s in buckets[key] ?? [] {
                 if s.isWarmup == true {
                     warmups += 1
-                    return ("W\(warmups)", s)
+                    rows.append((label: "W\(warmups)", set: s))
+                } else {
+                    working += 1
+                    rows.append((label: "\(working)", set: s))
                 }
-                working += 1
-                return ("\(working)", s)
             }
+            numbered[key] = rows
         }
 
         return VStack(alignment: .leading, spacing: 12) {
