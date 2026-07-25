@@ -4,12 +4,36 @@
 import Foundation
 import Observation
 
+/// One training day's worth of session rows, keyed by "date|type".
+struct SessionDay: Identifiable {
+    let id: String
+    let sessions: [WorkoutSession]
+}
+
 @Observable
 final class HistoryViewModel {
     var sessions: [WorkoutSession] = []
     var recoveryHistory: [Recovery] = []
     var isLoading = true
     var errorMessage: String?
+
+    /// Sessions collapsed to one entry per training day, preserving the
+    /// order `sessions` arrived in (newest first). A Cardio+Abs day produces
+    /// two rows — cardio finished, then abs started fresh — which is one
+    /// day's training and should read as one entry, and should count once.
+    var sessionsByDay: [SessionDay] {
+        var order: [String] = []
+        var groups: [String: [WorkoutSession]] = [:]
+        for session in sessions {
+            let key = "\(session.date)|\(session.type)"
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(session)
+        }
+        return order.compactMap { key in
+            guard let rows = groups[key] else { return nil }
+            return SessionDay(id: key, sessions: rows)
+        }
+    }
 
     /// Working sets across the whole 30-day window shown by this screen.
     ///

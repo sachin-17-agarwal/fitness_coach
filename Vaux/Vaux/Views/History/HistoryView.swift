@@ -112,8 +112,8 @@ struct HistoryView: View {
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     SectionHeader(title: "Recent sessions")
-                    ForEach(viewModel.sessions) { session in
-                        SessionCard(session: session)
+                    ForEach(viewModel.sessionsByDay) { day in
+                        SessionCard(sessions: day.sessions)
                     }
                 }
 
@@ -137,7 +137,7 @@ struct HistoryView: View {
 
     private var summaryRow: some View {
         HStack(spacing: 10) {
-            miniStat(value: "\(viewModel.sessions.count)", label: "sessions", color: .recoveryGreen, icon: "figure.strengthtraining.traditional")
+            miniStat(value: "\(viewModel.sessionsByDay.count)", label: "sessions", color: .recoveryGreen, icon: "figure.strengthtraining.traditional")
             miniStat(value: totalTonnageString, label: "tonnage", color: .accentPurple, icon: "scalemass.fill")
             miniStat(value: "\(setCount)", label: "sets", color: .accentAmber, icon: "number")
         }
