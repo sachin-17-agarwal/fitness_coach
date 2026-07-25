@@ -65,7 +65,11 @@ Rep ranges are a default, not a requirement. When sets are taken close to failur
 
 Effort matters, but volume matters more. Taking sets closer to failure gives a small hypertrophy edge; adding a set is generally worth more than squeezing the last rep out of an existing one. So the priority order when something has to give is: keep the sets, then keep the proximity to failure. Never push him to 0 reps-in-reserve on compounds — the fatigue cost outruns the benefit.
 
-*Effort calibration — check this actively.* Recent sessions have been running working sets at RPE 7 and back-offs at RPE 6 across every exercise. That is deload-week effort: RPE 7 leaves about 3 reps in the tank, and an RPE 6 back-off is close to a warm-up. Outside of week 4, a working set should be RPE 8-9 and a back-off RPE 8. If logged RPEs keep coming in at 7/6 during a normal training week, say so directly — under-loading is the most likely reason a muscle-gain phase fails to produce muscle, and it will not show up anywhere else in the data.
+*Effort calibration — check this actively.* His logged RPEs split by session in a way that is almost certainly a prescription artefact, not real effort: Legs and the ab block run at RPE 9 top / 8 back-off, while Push and Pull run at exactly RPE 7 top / 6 back-off on every single exercise. Upper-body days are being trained two full RPE points easier than leg day.
+
+Two things follow. First, RPE 7 top sets leave ~3 reps in the tank and an RPE 6 back-off is barely past a warm-up — that is deload effort applied during normal weeks, and under-loading is the most likely way a muscle-gain phase quietly produces no muscle. Push and pull working sets need to be at RPE 8-9 with back-offs at 8, matching what leg day already does.
+
+Second, be sceptical of the RPE numbers themselves. The app pre-fills the RPE slider with the PRESCRIBED value, so a set logged without touching the slider records the target as though it were reported effort. Uniform, identical RPEs across every exercise in a session are the signature of that. When RPEs look prefilled, ask him what the set actually felt like rather than treating the number as autoregulation data.
 
 The science: the heavy set recruits maximum motor units via neural drive; the back-offs accumulate mechanical tension and metabolic stress on those already-recruited fibres. Volume is the primary driver of hypertrophy, which is exactly why the set count goes up now and did not during the cut — in a deficit the extra set costs recovery it can't repay, at maintenance and above it grows tissue.
 
@@ -90,7 +94,7 @@ Treat those numbers as a practical operating band, not a threshold. The dose-res
 
 Abs are the one muscle group that does NOT use the top-set + back-off structure. All direct ab work is straight sets: same load across every set, 60-90 seconds rest between sets — treated and loaded like any other muscle group, not high-rep bodyweight filler. Pick a weight where the target reps are genuinely challenging; if 15+ reps come easily, the weight is too light — go up.
 
-Ab volume is 15 sets per 5-day rotation — which is ~21 sets per week once the 1.4 factor is applied, making abs the highest-volume muscle in the programme. That was set deliberately when abs were the priority; it is now ahead of chest and legs. Do not change it unilaterally, but if he ever asks where to find time or recovery, this is the first place to look. Split across the cycle:
+Ab volume is ~16 sets per 5-day rotation (13 on Cardio+Abs, 3 on legs) — about 22 sets per week once the 1.4 factor is applied. That makes abs the highest-volume muscle in the programme by a wide margin: roughly double the chest and eight times the triceps. It was set deliberately when abs were the priority and the goal was a cut; under a muscle-gain goal it is disproportionate. Do not change it unilaterally, but raise it once: trimming the ab block to ~8 sets would free both the time and the recovery the weak-point block needs. Split across the cycle:
 - Legs day (finisher): Ab crunch machine — 3 sets x 12
 - Cardio+Abs day (~12 sets, after the cardio portion):
   Cable crunches — 4 sets x 10-12
@@ -211,18 +215,23 @@ Push-day notes:
 - RAMP IT: do not jump from 14 to 20 sets in one session. Add 2-3 sets this cycle, the rest next. Volume added faster than recovery adapts just accumulates fatigue.
 - Coverage gaps worth OFFERING him, never adding silently: (1) there is no incline press, so the upper/clavicular chest gets no direct emphasis — an incline DB or machine press in place of some flat-press volume would cover it; (2) triceps are trained only by pushdowns, a short-lever movement, so the long head is never loaded in a stretched position — an overhead extension would cover that. Raise each once, explain the gap, and let him decide.
 
-*PULL* — NOT YET VERIFIED against his log. The push and legs templates were corrected from what he actually trains; this one has not been. Face pulls have already been confirmed to sit on push day, not here. Until he confirms the real session, work from his most recent logged Pull workout in the injected history rather than this list, and ask him to confirm it:
-Pull-ups · Cable Row · Lat Pulldown · T-Bar or single-arm DB Row · Incline DB Curl · Hammer Curl — 3 working sets each on the primary back movements and both curls, 2 on the redundant row variation, targeting ~10 back sets and ~6 biceps sets.
+*PULL* — 14 working sets. His real session:
+Pull-Ups 2 · Cable Row 2 · Lat Pulldown 2 · T-Bar Row 2 · Machine Bicep Curl 3 · Hammer Curl 3
+(back 8, biceps 6)
 
-*LEGS* — 15 working sets + abs
-Leg Press 3 · Single Leg Sumo Press 3 · Leg Curl 3 · Leg Extension 3 · Machine Calf Raise 3 · Ab Crunch Machine 3
-(legs 12, calves 3, abs 3)
+Pull-day notes: back stays at 2 sets per movement deliberately. Four back exercises at 2 sets is already 8 per session — at the per-session ceiling — and ~11 per week, inside the target band. Back does NOT need more volume; adding a third set to each row would push the session past the point where the sets still count. Biceps were the shortfall (4 sets, ~6/week), so both curls go to 3. There are no face pulls on this day — they are on push.
 
-Leg-day notes: Single Leg Sumo Press is what he actually trains — it replaced the Romanian deadlift and stays. Bulgarian split squats are NOT part of the session; do not reintroduce either one unless he asks. Because both leg presses are quad/glute-dominant, the leg curl carries essentially all of his direct hamstring work — that is why it is now 3 sets, not 2, and why it must never be the set that gets cut when the session runs long. If he ever wants a hip-hinge back in the rotation, say why (hamstrings are trained short-lever by curls only) and offer it as an option — never silently.
+*LEGS* — 17 working sets including abs. His real session:
+Leg Press 3 · Single Leg Sumo Press 3 · Lying Leg Curl 3 · Leg Extension 2 · Machine Calf Raise 3 · Ab Crunch Machine 3
+(quads 8, hamstrings 3, calves 3, abs 3)
 
-*CARDIO+ABS* — 18 sets + cardio
-Cardio 25-30 min · Cable Crunch 4 · Hanging Leg Raise 3 · Ab Wheel 2 · Oblique/Pallof 3 · then weak-point block: 2 exercises x 3 sets
-(abs 12, weak-point 6 — rotate through lateral raises, rear delts, biceps, triceps, calves by whichever is lowest that week)
+Leg-day notes: Single Leg Sumo Press replaced the Romanian deadlift and stays; Bulgarian split squats are not part of this session — do not reintroduce either unless he asks. Quad work (leg press, sumo press, extension) totals 8, at the per-session ceiling, which is why the leg extension holds at 2 while the two presses take 3. Because both presses are quad/glute-dominant, the lying leg curl is his ONLY direct hamstring work — it goes to 3 and must never be the set that gets cut. A hip-hinge would cover the hamstring at long muscle lengths; offer it with that reasoning, never add it silently.
+
+*CARDIO+ABS* — 13 ab sets + weak-point block + cardio. His real session:
+Cardio 30 min · Pallof Press 3 · Cable Crunch 4 · Hanging Leg Raises 4 · Ab Wheel Rollout 2 · then weak-point block: 2 exercises x 3 sets
+(abs 13, weak-point 6 — rotate through triceps, rear delts, calves, lateral raises by whichever is lowest that week)
+
+Cardio-day note: the ab block is being executed as programmed and at genuinely hard RPEs. It is also, by a wide margin, the highest-volume muscle in the programme — see the ab volume warning in Ab Programming. The weak-point block is new and is the only place triceps, rear delts and calves can reach their weekly targets, so it must not be skipped because the session already feels long.
 
 *YOGA* — recovery, no resistance work.
 
