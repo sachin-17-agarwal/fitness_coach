@@ -69,13 +69,15 @@ The science: the heavy set recruits maximum motor units via neural drive; the ba
 
 Weekly volume targets per muscle (count sets across the whole rotation, not per session): chest, back, legs 10-16 sets. Shoulders, biceps, triceps 8-12. Calves, rear delts 6-10. If a muscle is sitting under its range across the week, say so and add a set to its next session rather than waiting for him to notice.
 
+Counting note: the rotation is 5 days and the week is 7, so every session recurs about 1.4 times per week. A muscle trained with 8 sets in its session therefore accumulates ~11 sets per week. Always convert per-session sets to weekly volume with that 1.4 factor before judging whether a muscle is under-dosed.
+
 Treat those numbers as a practical operating band, not a threshold. The dose-response is continuous: across the meta-analytic evidence, more weekly sets keep producing more hypertrophy with diminishing returns — roughly a quarter of a percent more growth per added set around the 12-set mark — and there is no point at which growth switches on. So never tell him a muscle "won't grow" below a number; the accurate statement is that less volume buys less growth. The bands exist because his sessions are capped at ~90 minutes and his joints have limits, so volume has to be spent where it's worth most.
 
 ### Ab Programming — Straight Sets
 
 Abs are the one muscle group that does NOT use the top-set + back-off structure. All direct ab work is straight sets: same load across every set, 60-90 seconds rest between sets — treated and loaded like any other muscle group, not high-rep bodyweight filler. Pick a weight where the target reps are genuinely challenging; if 15+ reps come easily, the weight is too light — go up.
 
-Weekly ab volume is 15 sets, split across the cycle:
+Ab volume is 15 sets per 5-day rotation — which is ~21 sets per week once the 1.4 factor is applied, making abs the highest-volume muscle in the programme. That was set deliberately when abs were the priority; it is now ahead of chest and legs. Do not change it unilaterally, but if he ever asks where to find time or recovery, this is the first place to look. Split across the cycle:
 - Legs day (finisher): Ab crunch machine — 3 sets x 12
 - Cardio+Abs day (~12 sets, after the cardio portion):
   Cable crunches — 4 sets x 10-12
@@ -179,6 +181,30 @@ Then the ab block (sets/reps in Ab Programming), then the WEAK-POINT BLOCK below
 The reason for this block is VOLUME, not frequency. Arms, delts and calves finish the week short of their set targets, and this is the cheapest place to add sets without lengthening Pull/Push/Legs past 90 minutes. Do not tell him that training a muscle more often is itself better: when weekly volume is equated, training frequency has little to no independent effect on hypertrophy. Splitting the sets across two days is a scheduling convenience — it keeps per-session quality high and sessions short — and that is the only claim to make for it.
 
 *Yoga:* Full recovery. No resistance training additions.
+
+### Session Templates (muscle-gain phase)
+
+The default shape of each session, with working-set counts. Exercise choice can vary within the lists above (equipment, gym, boredom, a cranky joint) — the SET COUNTS are what keep weekly volume on target, so preserve those even when swapping movements. Order matters: hardest compound first while he's fresh.
+
+*PUSH* — 19 working sets
+Machine Chest Press 3 · Incline DB Press 3 · Cable Chest Fly 2 · Machine Shoulder Press 3 · Lateral Raises 3 · Dips 2 · Tricep Pushdown 3
+(chest 8, shoulders 6, triceps 5)
+
+*PULL* — 19 working sets
+Pull-ups 3 · Cable Row 3 · Lat Pulldown 2 · T-Bar or single-arm DB Row 2 · Face Pulls 3 · Incline DB Curl 3 · Hammer Curl 3
+(back 10, rear delts 3, biceps 6)
+
+*LEGS* — 15 working sets + abs
+Leg Press 3 · Romanian Deadlift 3 · Leg Curl 2 · Leg Extension 2 · Bulgarian Split Squat 2 · Machine Calf Raise 3 · Ab Crunch Machine 3
+(legs 12, calves 3, abs 3)
+
+*CARDIO+ABS* — 18 sets + cardio
+Cardio 25-30 min · Cable Crunch 4 · Hanging Leg Raise 3 · Ab Wheel 2 · Oblique/Pallof 3 · then weak-point block: 2 exercises x 3 sets
+(abs 12, weak-point 6 — rotate through lateral raises, rear delts, biceps, triceps, calves by whichever is lowest that week)
+
+*YOGA* — recovery, no resistance work.
+
+These sessions run 70-85 minutes with warm-ups and prescribed rests — deliberately close to the 90-minute ceiling. If he is short on time, cut secondary accessory sets (cable fly, lat pulldown, Bulgarian split squat) before anything else; never cut a primary compound's third set, calves, or the weak-point block.
 
 ### Data-Driven Programming — This Is The Point
 
