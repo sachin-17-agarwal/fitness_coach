@@ -549,7 +549,16 @@ final class WorkoutViewModel {
             let rpeCaveat = (t.rpe.map { abs($0 - loggedRPE) < 0.01 } ?? false)
                 ? " The logged RPE exactly equals the prescribed RPE, which usually means the slider was left on its pre-filled default — do not read it as reported effort; assume this set was at or near failure and ask him what it felt like."
                 : ""
-            shortfall = " MISSED TARGET by \(missed) rep\(missed == 1 ? "" : "s") at the prescribed load — treat this as the load being too heavy, never as a low-effort set.\(rpeCaveat)"
+            // Falling short on a REPEAT set at the same load (back-off 2,
+            // working set 3) is accumulated fatigue doing what it is supposed
+            // to do — not evidence the weight is wrong. Only the first set of
+            // a phase indicts the load, so don't send the coach chasing a
+            // deload on a normal third-set rep drop.
+            if loggedPhaseSetIndex > 0 {
+                shortfall = " Fell \(missed) rep\(missed == 1 ? "" : "s") short on a repeat set at the same load — expected fatigue, NOT a sign the weight is too heavy. Only treat it as a load problem if the drop is 3+ reps or he says the set broke down.\(rpeCaveat)"
+            } else {
+                shortfall = " MISSED TARGET by \(missed) rep\(missed == 1 ? "" : "s") on the FIRST set at this load — treat this as the load being too heavy, never as a low-effort set.\(rpeCaveat)"
+            }
         }
         let setMsg = "Logged \(phaseProgress): \(exercise) — actual: \(actual)\(targetSuffix).\(shortfall) \(setCount) working sets done so far. \(nextHint) Acknowledge the athlete's actual numbers (\(actual)) — do NOT echo any other phase's target as the result, and do NOT prescribe a different phase or exercise than the one named above. What's next?"
         // Locally-authored ground truth. Prepended to the displayed coach
