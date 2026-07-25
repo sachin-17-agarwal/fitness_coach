@@ -101,6 +101,44 @@ final class WorkoutViewModel {
     // (two timers decrementing one value caused an irregular, glitchy tick).
     var restEndDate: Date?
     var isResting = false
+    /// The duration this rest was actually started with. The ring draws
+    /// `remaining / total`, so passing the prescription's rest here while
+    /// the timer ran on a different number (60s after a warm-up) made the
+    /// ring open half-full. Owned alongside the deadline so the two cannot
+    /// disagree, and extended in step by `extendRest`.
+    var restTotalSeconds: Int = 120
+
+    /// The set the rest is counting down to, for display on the timer —
+    /// otherwise the full-screen countdown hides the target the athlete is
+    /// resting for.
+    var upcomingSetSummary: String? {
+        guard let rx = currentPrescription else { return nil }
+        let name: String
+        let target: (weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)
+        switch currentPhase {
+        case .warmup:
+            guard phaseSetIndex < rx.warmupSets.count else { return nil }
+            let t = rx.warmupSets[phaseSetIndex]
+            name = "Warm-up \(phaseSetIndex + 1) of \(rx.warmupSets.count)"
+            target = (t.weight, t.reps, nil, nil)
+        case .working:
+            guard phaseSetIndex < rx.workingSets.count else { return nil }
+            let t = rx.workingSets[phaseSetIndex]
+            name = "Working set \(phaseSetIndex + 1) of \(rx.workingSets.count)"
+            target = (t.weight, t.reps, t.repsHigh, t.rpe)
+        case .backoff:
+            guard phaseSetIndex < rx.backoffSets.count else { return nil }
+            let t = rx.backoffSets[phaseSetIndex]
+            name = "Back-off \(phaseSetIndex + 1) of \(rx.backoffSets.count)"
+            target = (t.weight, t.reps, t.repsHigh, t.rpe)
+        }
+        var reps = "\(target.reps)"
+        if let high = target.repsHigh, high > target.reps { reps = "\(target.reps)-\(high)" }
+        let load = ExerciseCatalog.setWeightLabel(target.weight, exercise: rx.exerciseName)
+        var line = "\(name) · \(load) × \(reps)"
+        if let rpe = target.rpe { line += " @ RPE \(rpe.wholeOrOne)" }
+        return line
+    }
 
     // PR
     var latestPR: PRResult?
@@ -434,9 +472,14 @@ final class WorkoutViewModel {
         // Advance to next target in the prescription
         advancePhase()
 
-        // Rest timer — shorter for warm-ups
-        let rest = isWarmup ? 60 : (currentPrescription?.restSeconds ?? 120)
-        startRestTimer(seconds: rest)
+        // Rest timer. Short rests belong BETWEEN ramp sets only — the last
+        // warm-up takes the full prescribed rest so the top set is fresh,
+        // which is what the warm-up protocol asks for. `advancePhase()` has
+        // already run, so `currentPhase` is the set being rested FOR: still
+        // .warmup means more ramps to come.
+        let prescribedRest = currentPrescription?.restSeconds ?? 120
+        let restingBetweenRamps = isWarmup && currentPhase == .warmup
+        startRestTimer(seconds: restingBetweenRamps ? 60 : prescribedRest)
 
         // Set persisted and phase advanced — re-enable the Log button here
         // rather than after the coach round-trip, so the athlete can log
@@ -730,8 +773,17 @@ final class WorkoutViewModel {
     }
 
     func startRestTimer(seconds: Int) {
+        restTotalSeconds = max(1, seconds)
         restEndDate = Date().addingTimeInterval(Double(seconds))
         isResting = true
+    }
+
+    /// Extends the running rest. The total grows with the deadline so the
+    /// ring reflects the added time instead of sitting pinned at full.
+    func extendRest(by seconds: Int) {
+        guard seconds > 0 else { return }
+        restEndDate = (restEndDate ?? Date()).addingTimeInterval(Double(seconds))
+        restTotalSeconds += seconds
     }
 
     func skipRest() {
