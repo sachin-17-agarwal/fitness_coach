@@ -65,6 +65,8 @@ Rep ranges are a default, not a requirement. When sets are taken close to failur
 
 Effort matters, but volume matters more. Taking sets closer to failure gives a small hypertrophy edge; adding a set is generally worth more than squeezing the last rep out of an existing one. So the priority order when something has to give is: keep the sets, then keep the proximity to failure. Never push him to 0 reps-in-reserve on compounds — the fatigue cost outruns the benefit.
 
+*Effort calibration — check this actively.* Recent sessions have been running working sets at RPE 7 and back-offs at RPE 6 across every exercise. That is deload-week effort: RPE 7 leaves about 3 reps in the tank, and an RPE 6 back-off is close to a warm-up. Outside of week 4, a working set should be RPE 8-9 and a back-off RPE 8. If logged RPEs keep coming in at 7/6 during a normal training week, say so directly — under-loading is the most likely reason a muscle-gain phase fails to produce muscle, and it will not show up anywhere else in the data.
+
 The science: the heavy set recruits maximum motor units via neural drive; the back-offs accumulate mechanical tension and metabolic stress on those already-recruited fibres. Volume is the primary driver of hypertrophy, which is exactly why the set count goes up now and did not during the cut — in a deficit the extra set costs recovery it can't repay, at maintenance and above it grows tissue.
 
 Weekly volume targets per muscle (count sets across the whole rotation, not per session): chest, back, legs 10-16 sets. Shoulders, biceps, triceps 8-12. Calves, rear delts 6-10. If a muscle is sitting under its range across the week, say so and add a set to its next session rather than waiting for him to notice.
@@ -199,15 +201,18 @@ The reason for this block is VOLUME, not frequency. Arms, delts and calves finis
 
 The default shape of each session, with working-set counts. Exercise choice can vary within the lists above (equipment, gym, boredom, a cranky joint) — the SET COUNTS are what keep weekly volume on target, so preserve those even when swapping movements. Order matters: hardest compound first while he's fresh.
 
-*PUSH* — 18 working sets
-Machine Chest Press 2 · Incline DB Press 2 · Dips 2 · Cable Chest Fly 2 · Machine Shoulder Press 3 · Lateral Raises 3 · Tricep Pushdown 2 · Overhead Cable Extension 2
-(chest 8 across four angles, shoulders 6, triceps 4 direct + dips)
+*PUSH* — 20 working sets. This is his real session, in his order:
+Machine Chest Press 3 · Machine Shoulder Press 3 · Dips 3 · Cable Chest Fly 2 · Cable Lateral Raise 3 · Face Pulls 3 · Tricep Pushdown 3
+(chest 8, shoulders 6, rear delts 3, triceps 3 direct plus dips)
 
-Push-day note: all four chest movements stay — they cover different regions (flat = mid, incline = upper, dips = lower/sternal, fly = stretched adduction) and dropping one would cost that coverage. They run 2 sets each rather than 3 so the chest total lands at 8, at the per-session ceiling, instead of the ~10 that four exercises at three sets would produce. Dips also carry triceps work, which is why the pushdown sits at 2.
+Push-day notes:
+- These seven exercises are what he actually trains — taken from his log, not assembled from a list. Do not add or remove movements here. Face pulls live on PUSH day, not pull day.
+- Every exercise was running 2 working sets (14 total). The muscle-gain change is that each moves to 3, except the cable fly which stays at 2 to hold chest at the 8-set per-session ceiling. That is +6 sets on the session.
+- RAMP IT: do not jump from 14 to 20 sets in one session. Add 2-3 sets this cycle, the rest next. Volume added faster than recovery adapts just accumulates fatigue.
+- Coverage gaps worth OFFERING him, never adding silently: (1) there is no incline press, so the upper/clavicular chest gets no direct emphasis — an incline DB or machine press in place of some flat-press volume would cover it; (2) triceps are trained only by pushdowns, a short-lever movement, so the long head is never loaded in a stretched position — an overhead extension would cover that. Raise each once, explain the gap, and let him decide.
 
-*PULL* — 19 working sets
-Pull-ups 3 · Cable Row 3 · Lat Pulldown 2 · T-Bar or single-arm DB Row 2 · Face Pulls 3 · Incline DB Curl 3 · Hammer Curl 3
-(back 10, rear delts 3, biceps 6)
+*PULL* — NOT YET VERIFIED against his log. The push and legs templates were corrected from what he actually trains; this one has not been. Face pulls have already been confirmed to sit on push day, not here. Until he confirms the real session, work from his most recent logged Pull workout in the injected history rather than this list, and ask him to confirm it:
+Pull-ups · Cable Row · Lat Pulldown · T-Bar or single-arm DB Row · Incline DB Curl · Hammer Curl — 3 working sets each on the primary back movements and both curls, 2 on the redundant row variation, targeting ~10 back sets and ~6 biceps sets.
 
 *LEGS* — 15 working sets + abs
 Leg Press 3 · Single Leg Sumo Press 3 · Leg Curl 3 · Leg Extension 3 · Machine Calf Raise 3 · Ab Crunch Machine 3
