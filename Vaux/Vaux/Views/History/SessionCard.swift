@@ -134,6 +134,24 @@ struct SessionCard: View {
             buckets[key]?.append(set)
         }
 
+        // Number warm-ups and working sets in separate sequences. The stored
+        // set_number is a single running count per exercise, so three warm-ups
+        // pushed the actual working sets to "#4" and "#5" — the numbers the
+        // athlete cares about read as if two sets were missing.
+        var numbered: [String: [(label: String, set: WorkoutSet)]] = [:]
+        for key in order {
+            var warmups = 0
+            var working = 0
+            numbered[key] = (buckets[key] ?? []).map { s in
+                if s.isWarmup == true {
+                    warmups += 1
+                    return ("W\(warmups)", s)
+                }
+                working += 1
+                return ("\(working)", s)
+            }
+        }
+
         return VStack(alignment: .leading, spacing: 12) {
             Divider().background(Color.cardBorder)
 
@@ -144,8 +162,8 @@ struct SessionCard: View {
                         .foregroundStyle(accent)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array((buckets[key] ?? []).enumerated()), id: \.offset) { _, s in
-                            setRow(s)
+                        ForEach(Array((numbered[key] ?? []).enumerated()), id: \.offset) { _, entry in
+                            setRow(entry.set, label: entry.label)
                         }
                     }
                 }
@@ -153,13 +171,13 @@ struct SessionCard: View {
         }
     }
 
-    private func setRow(_ set: WorkoutSet) -> some View {
+    private func setRow(_ set: WorkoutSet, label: String) -> some View {
         let isWarmup = set.isWarmup == true
         let kind = entryKind(set)
         return HStack(spacing: 10) {
-            Text("#\(set.setNumber)")
+            Text(label)
                 .font(.eyebrowSmall)
-                .foregroundStyle(Color.fg2)
+                .foregroundStyle(isWarmup ? Color.fg2.opacity(0.7) : Color.fg2)
                 .frame(width: 26, alignment: .leading)
 
             switch kind {

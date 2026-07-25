@@ -42,6 +42,32 @@ final class WorkoutViewModel {
     var sessionDuration: TimeInterval = 0
     var startTime: Date?
 
+    /// Mesocycle week (1-4) for the session in progress. Surfaced on the
+    /// workout screen because the week is what sets today's RPE target —
+    /// it was previously only visible in Settings, which is how the week
+    /// counter drifted to "6 of 4" unnoticed for an entire cycle.
+    var mesocycleWeek: Int?
+
+    /// Week name and RPE targets, mirroring the coach's mesocycle protocol.
+    var mesocyclePhaseLabel: String? {
+        switch mesocycleWeek {
+        case 1: return "BASELINE"
+        case 2: return "VOLUME"
+        case 3: return "PEAK"
+        case 4: return "DELOAD"
+        default: return nil
+        }
+    }
+
+    var mesocycleRPETarget: String? {
+        switch mesocycleWeek {
+        case 1, 2: return "RPE 8 · back-off 7"
+        case 3: return "RPE 9 · back-off 8"
+        case 4: return "RPE 7 · back-off 6"
+        default: return nil
+        }
+    }
+
     // Coach feedback
     var coachNote: String?
     var isCoachThinking = false
@@ -110,6 +136,7 @@ final class WorkoutViewModel {
         errorMessage = nil
         startDurationTimer()
         heartRateMonitor.start(from: startTime ?? Date())
+        await loadMesocycleWeek()
 
         var issues: [String] = []
 
@@ -188,6 +215,7 @@ final class WorkoutViewModel {
         }
         startDurationTimer()
         heartRateMonitor.start(from: startTime ?? Date())
+        await loadMesocycleWeek()
 
         // Hydrate tonnage / set counters from sets already persisted in this
         // session so the live stats bar reflects what's already logged.
@@ -693,6 +721,12 @@ final class WorkoutViewModel {
         }
         parts.append("Give me a 2–3 sentence recap: what went well and one thing to adjust next time. No questions, no formatting.")
         return parts.joined(separator: " ")
+    }
+
+    /// Best-effort: the week is context, never a blocker, so a failed read
+    /// just leaves the chip hidden rather than surfacing an error.
+    private func loadMesocycleWeek() async {
+        mesocycleWeek = (try? await mesocycleService.loadState())?.week
     }
 
     func startRestTimer(seconds: Int) {
