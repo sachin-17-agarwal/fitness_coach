@@ -221,6 +221,19 @@ final class ExerciseCatalog {
         // Legs (quads, hamstrings, glutes share one volume bucket)
         "squat": "Legs",
         "leg press": "Legs",
+        // "Single Leg Sumo Press" does NOT contain the substring "leg
+        // press", so it matched nothing and every set of it was dropped
+        // from the volume and strength buckets — the same silent-drop
+        // failure as the calf work. Cover the stance/unilateral naming
+        // variants explicitly.
+        "sumo press": "Legs",
+        "sumo leg press": "Legs",
+        "single leg press": "Legs",
+        "single-leg press": "Legs",
+        "unilateral leg press": "Legs",
+        "horizontal leg press": "Legs",
+        "vertical leg press": "Legs",
+        "45 degree leg press": "Legs",
         "leg extension": "Legs",
         "leg curl": "Legs",
         "leg curls": "Legs",
