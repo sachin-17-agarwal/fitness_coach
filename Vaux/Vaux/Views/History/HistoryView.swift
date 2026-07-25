@@ -112,8 +112,8 @@ struct HistoryView: View {
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     SectionHeader(title: "Recent sessions")
-                    ForEach(viewModel.sessions) { session in
-                        SessionCard(session: session)
+                    ForEach(viewModel.sessionsByDay) { day in
+                        SessionCard(sessions: day.sessions)
                     }
                 }
 
@@ -137,7 +137,7 @@ struct HistoryView: View {
 
     private var summaryRow: some View {
         HStack(spacing: 10) {
-            miniStat(value: "\(viewModel.sessions.count)", label: "sessions", color: .recoveryGreen, icon: "figure.strengthtraining.traditional")
+            miniStat(value: "\(viewModel.sessionsByDay.count)", label: "sessions", color: .recoveryGreen, icon: "figure.strengthtraining.traditional")
             miniStat(value: totalTonnageString, label: "tonnage", color: .accentPurple, icon: "scalemass.fill")
             miniStat(value: "\(setCount)", label: "sets", color: .accentAmber, icon: "number")
         }
@@ -249,9 +249,7 @@ struct HistoryView: View {
         return "\(Int(total)) kg"
     }
 
-    private var setCount: Int {
-        viewModel.sessionSets.values.reduce(0) { $0 + $1.count }
-    }
+    private var setCount: Int { viewModel.totalSetsInWindow }
 }
 
 // MARK: - Heatmap
@@ -270,11 +268,20 @@ struct WorkoutHeatmap: View {
             map[s.date] = s
         }
 
-        let today = Calendar.current.startOfDay(for: Date())
-        let startOfWeek = Calendar.current.date(byAdding: .day, value: -(Self.weeks * 7 - 1), to: today) ?? today
+        // Align the grid to real weekdays. Starting it exactly 55 days back
+        // made the last cell always land in the bottom row, so "today" was
+        // pinned to the row labelled S regardless of the actual day — off by
+        // one on a Saturday, off by four on a Wednesday — and the M/W/F/S
+        // labels described nothing. Anchor to the Monday of the current week
+        // instead, so row index IS the weekday (Mon = 0 ... Sun = 6).
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let weekdayIndex = (cal.component(.weekday, from: today) + 5) % 7  // Calendar: 1=Sun
+        let mondayThisWeek = cal.date(byAdding: .day, value: -weekdayIndex, to: today) ?? today
+        let gridStart = cal.date(byAdding: .day, value: -(Self.weeks - 1) * 7, to: mondayThisWeek) ?? today
 
         return (0..<Self.weeks * 7).map { offset in
-            let date = Calendar.current.date(byAdding: .day, value: offset, to: startOfWeek) ?? today
+            let date = cal.date(byAdding: .day, value: offset, to: gridStart) ?? today
             let key = f.string(from: date)
             let intensity: Double
             if let s = sessionByDate[key] {

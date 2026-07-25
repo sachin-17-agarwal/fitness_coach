@@ -6,11 +6,32 @@
 import SwiftUI
 
 struct SessionCard: View {
-    let session: WorkoutSession
+    /// Every session row for one date and type. Usually one, but a
+    /// Cardio+Abs day is logged as two — the cardio is finished before the
+    /// ab work is started, so `startOrResumeWorkout` finds no in-progress
+    /// session to rejoin and opens a second row. They are one training day
+    /// and are shown as one card, with the sets and tonnage combined.
+    let sessions: [WorkoutSession]
+
+    init(sessions: [WorkoutSession]) { self.sessions = sessions }
+    init(session: WorkoutSession) { self.sessions = [session] }
+
     @State private var sets: [WorkoutSet] = []
     @State private var isExpanded = false
 
     private let workoutService = WorkoutService()
+
+    /// Representative row for the day's date, type and icon.
+    private var session: WorkoutSession { sessions[0] }
+
+    private var combinedTonnage: Double {
+        sessions.reduce(0) { $0 + ($1.tonnageKg ?? 0) }
+    }
+
+    /// A day counts as still in progress while any of its rows is.
+    private var combinedStatus: String {
+        sessions.first { $0.status != "completed" }?.status ?? "completed"
+    }
 
     private var accent: Color { Color.forSession(session.type) }
 
@@ -94,9 +115,9 @@ struct SessionCard: View {
 
             Spacer()
 
-            if let tonnage = session.tonnageKg, tonnage > 0 {
+            if combinedTonnage > 0 {
                 VStack(alignment: .trailing, spacing: 1) {
-                    Text(tonnage.weightString)
+                    Text(combinedTonnage.weightString)
                         .font(.numSM)
                         .foregroundStyle(Color.fg0)
                     Text("TONNAGE")
@@ -106,7 +127,7 @@ struct SessionCard: View {
                 }
             }
 
-            statusBadge(session.status)
+            statusBadge(combinedStatus)
 
             Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .semibold))
@@ -261,8 +282,14 @@ struct SessionCard: View {
         return out.string(from: date)
     }
 
+    /// Loads every row's sets and concatenates them in session order, so a
+    /// Cardio+Abs card lists the cardio entry followed by the ab work rather
+    /// than splitting them across two cards.
     private func loadSets() async {
-        guard let id = session.id else { return }
-        sets = (try? await workoutService.fetchSets(sessionId: id)) ?? []
+        var combined: [WorkoutSet] = []
+        for id in sessions.compactMap(\.id) {
+            combined += (try? await workoutService.fetchSets(sessionId: id)) ?? []
+        }
+        sets = combined
     }
 }
