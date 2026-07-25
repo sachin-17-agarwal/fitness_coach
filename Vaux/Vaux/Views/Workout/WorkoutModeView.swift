@@ -482,6 +482,40 @@ struct WorkoutModeView: View {
         default: return "Full body"
         }
     }
+
+    /// Thin context strip under the stats bar: which mesocycle week this is
+    /// and the effort it calls for. The week drives every RPE target in the
+    /// programme but used to live only in Settings, so a drifting counter
+    /// ("week 6 of 4") went unnoticed while it quietly mis-set intensity.
+    private func mesocycleStrip(week: Int, phase: String, rpe: String) -> some View {
+        let tint: Color = week == 4 ? .amber : (week == 3 ? .signal : .mint)
+        return HStack(spacing: 8) {
+            Text("WEEK \(week)")
+                .font(.eyebrowSmall)
+                .kerning(1.0)
+                .foregroundStyle(tint)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(tint.opacity(0.14)))
+
+            Text(phase)
+                .font(.eyebrowSmall)
+                .kerning(1.2)
+                .foregroundStyle(Color.fg1)
+
+            Spacer(minLength: 0)
+
+            Text(rpe)
+                .font(.eyebrowSmall)
+                .foregroundStyle(Color.fg2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 7)
+        .background(Color.ink1.opacity(0.6))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.line).frame(height: 0.5)
+        }
+    }
 }
 
 // MARK: - Coach note strip
@@ -557,40 +591,6 @@ struct SetProgressRow: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.cardBorder, lineWidth: 0.5)
         )
-    }
-
-    /// Thin context strip under the stats bar: which mesocycle week this is
-    /// and the effort it calls for. The week drives every RPE target in the
-    /// programme but used to live only in Settings, so a drifting counter
-    /// ("week 6 of 4") went unnoticed while it quietly mis-set intensity.
-    private func mesocycleStrip(week: Int, phase: String, rpe: String) -> some View {
-        let tint: Color = week == 4 ? .amber : (week == 3 ? .signal : .mint)
-        return HStack(spacing: 8) {
-            Text("WEEK \(week)")
-                .font(.eyebrowSmall)
-                .kerning(1.0)
-                .foregroundStyle(tint)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(tint.opacity(0.14)))
-
-            Text(phase)
-                .font(.eyebrowSmall)
-                .kerning(1.2)
-                .foregroundStyle(Color.fg1)
-
-            Spacer(minLength: 0)
-
-            Text(rpe)
-                .font(.eyebrowSmall)
-                .foregroundStyle(Color.fg2)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 7)
-        .background(Color.ink1.opacity(0.6))
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.line).frame(height: 0.5)
-        }
     }
 
     private func setChip(index: Int, set: WorkoutSet) -> some View {
