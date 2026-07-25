@@ -309,10 +309,16 @@ final class WorkoutService: Sendable {
 
     /// Fetches all sets for a given session, ordered by set number.
     func fetchSets(sessionId: UUID) async throws -> [WorkoutSet] {
+        // Chronological, NOT by set_number: set numbers restart at 1 for each
+        // exercise, so sorting by them interleaves the whole session and the
+        // history card ends up listing exercises in an arbitrary order (abs
+        // appearing before leg press on a leg day whose finisher they are).
+        // Callers either group by exercise, sum, or check emptiness, so none
+        // depend on set_number ordering.
         try await client.fetch(
             "workout_sets",
             query: ["workout_session_id": "eq.\(sessionId.uuidString)"],
-            order: "set_number.asc"
+            order: "logged_at.asc"
         )
     }
 

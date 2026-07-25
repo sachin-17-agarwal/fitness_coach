@@ -178,7 +178,7 @@ struct SessionCard: View {
                     .background(Capsule().fill(Color.ink3))
             case .strength:
                 if let w = set.actualWeightKg, let r = set.actualReps {
-                    Text("\(w.weightString) × \(r)")
+                    Text("\(ExerciseCatalog.setWeightLabel(w, exercise: set.exercise)) × \(r)")
                         .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
                         .foregroundStyle(isWarmup ? Color.fg1 : Color.fg0)
                 }

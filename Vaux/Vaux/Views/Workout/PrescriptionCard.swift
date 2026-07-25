@@ -404,9 +404,9 @@ struct PrescriptionCard: View {
 
     private func formatWeight(_ w: Double) -> String {
         // Bodyweight prescriptions parse to weight 0 (Pull-ups, dips, etc.) —
-        // render "BW" so the card doesn't claim the athlete is lifting 0kg.
-        if w <= 0 { return "BW" }
-        return w.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(w))kg" : String(format: "%.1fkg", w)
+        // render "BW", and a positive load on those movements as "BW+10kg"
+        // since it is weight ADDED, not the total.
+        ExerciseCatalog.setWeightLabel(w, exercise: prescription.exerciseName)
     }
 
     private func formatRPE(_ r: Double) -> String {

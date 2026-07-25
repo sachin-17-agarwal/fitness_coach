@@ -309,7 +309,10 @@ struct WorkoutModeView: View {
                                 Task { await viewModel.logSet() }
                             },
                             isLoading: viewModel.isLoggingSet,
-                            phase: viewModel.currentPhase
+                            phase: viewModel.currentPhase,
+                            isBodyweight: ExerciseCatalog.isBodyweight(
+                                viewModel.currentPrescription?.exerciseName ?? ""
+                            )
                         )
                     }
 
@@ -553,8 +556,9 @@ struct SetProgressRow: View {
         let reps = set.actualReps ?? set.targetReps ?? 0
         let rpe = set.actualRpe ?? set.targetRpe
         // Bodyweight prescriptions log a 0 weight — render "BW" instead of
-        // "0×N" so a logged pull-up reads as "BW × 5", not a zero lift.
-        let weightLabel = weight > 0 ? "\(Int(weight))" : "BW"
+        // "0×N" so a logged pull-up reads as "BW×5", not a zero lift, and a
+        // weighted one as "BW+10kg×6" rather than an ambiguous "10×6".
+        let weightLabel = ExerciseCatalog.setWeightLabel(weight, exercise: set.exercise)
         return VStack(spacing: 3) {
             Text("SET \(index)")
                 .font(.eyebrowSmall)

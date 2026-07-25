@@ -441,7 +441,7 @@ final class WorkoutViewModel {
         } else {
             phaseProgress = label
         }
-        let actual = "\(loggedWeight.weightString) × \(loggedReps)" + (isWarmup ? "" : " @ RPE \(loggedRPE.oneDecimal)")
+        let actual = "\(ExerciseCatalog.setWeightLabel(loggedWeight, exercise: exercise)) × \(loggedReps)" + (isWarmup ? "" : " @ RPE \(loggedRPE.oneDecimal)")
         let targetSuffix = formatTargetSuffix(
             phase: loggedPhase,
             phaseSetIndex: loggedPhaseSetIndex,
@@ -1199,7 +1199,8 @@ final class WorkoutViewModel {
             }
         }()
         guard let t = target else { return "" }
-        var s = " (target \(t.weight.weightString) × \(t.reps)"
+        let name = currentPrescription?.exerciseName ?? ""
+        var s = " (target \(ExerciseCatalog.setWeightLabel(t.weight, exercise: name)) × \(t.reps)"
         if let rpe = t.rpe {
             s += " @ RPE \(rpe.oneDecimal)"
         }
@@ -1234,7 +1235,8 @@ final class WorkoutViewModel {
             }
         }()
         guard let t = target else { return "" }
-        var s = " (target was \(t.weight.weightString) × \(t.reps)"
+        let name = currentPrescription?.exerciseName ?? ""
+        var s = " (target was \(ExerciseCatalog.setWeightLabel(t.weight, exercise: name)) × \(t.reps)"
         if !isWarmup, let rpe = t.rpe {
             s += " @ RPE \(rpe.oneDecimal)"
         }
