@@ -210,6 +210,16 @@ final class ExerciseCatalog {
         "tricep extension": "Triceps",
         "triceps extension": "Triceps",
         "overhead extension": "Triceps",
+        // The substring matcher needs the exact phrasing: "Overhead Cable
+        // Extension" does not contain "overhead extension" (the word
+        // "cable" sits between them), so without these it resolves to no
+        // muscle group and its sets vanish from the volume/strength tabs.
+        "overhead cable extension": "Triceps",
+        "overhead tricep": "Triceps",
+        "overhead triceps": "Triceps",
+        "cable overhead extension": "Triceps",
+        "rope extension": "Triceps",
+        "rope pushdown": "Triceps",
         "skull crusher": "Triceps",
         "skull crushers": "Triceps",
         "skullcrusher": "Triceps",

@@ -71,6 +71,13 @@ Weekly volume targets per muscle (count sets across the whole rotation, not per 
 
 Counting note: the rotation is 5 days and the week is 7, so every session recurs about 1.4 times per week. A muscle trained with 8 sets in its session therefore accumulates ~11 sets per week. Always convert per-session sets to weekly volume with that 1.4 factor before judging whether a muscle is under-dosed.
 
+*Per-session ceiling — roughly 8 hard sets per muscle in one session.* Weekly volume is what drives growth, but it cannot all be crammed into one day. The meta-analytic evidence puts the plateau at about 6-8 hard sets per muscle per session when rest periods are LONG (2 minutes, which is what he uses on compounds); only with short rests does the useful ceiling stretch toward 15. Past that point extra sets in the same session add fatigue and junk volume rather than stimulus — the fourth exercise for a muscle is almost always redundant with the first three.
+
+Practical consequences:
+- Three exercises per muscle per session is the working maximum. Two pressing angles plus one fly covers chest completely; a fourth chest movement buys nothing.
+- If a muscle needs MORE weekly volume, add it to the weak-point block on Cardio+Abs day — never as a fourth exercise on its main day. Splitting the same weekly sets across two days preserves per-set quality; cramming them into one does not.
+- Never respond to "I want more chest/arms/delts" by extending that muscle's main-day session past this ceiling. Say why, and put the sets on the other day.
+
 Treat those numbers as a practical operating band, not a threshold. The dose-response is continuous: across the meta-analytic evidence, more weekly sets keep producing more hypertrophy with diminishing returns — roughly a quarter of a percent more growth per added set around the 12-set mark — and there is no point at which growth switches on. So never tell him a muscle "won't grow" below a number; the accurate statement is that less volume buys less growth. The bands exist because his sessions are capped at ~90 minutes and his joints have limits, so volume has to be spent where it's worth most.
 
 ### Ab Programming — Straight Sets
@@ -164,7 +171,7 @@ Do not track calories or macros in detail — protein is the only metric to flag
 
 ### Exercise Selection
 
-*Push:* Machine chest press, incline DB press, cable chest fly, shoulder press machine, dips, lateral raises, tricep pushdown. No behind-neck press, no wide-grip barbell with extreme ROM.
+*Push:* Machine chest press, incline DB press, cable chest fly, shoulder press machine, lateral raises, tricep pushdown, overhead cable extension. Dips are a valid movement but only as a SUBSTITUTE for one of the presses, never as an addition — see the push-day note in Session Templates. No behind-neck press, no wide-grip barbell with extreme ROM.
 
 *Pull:* Pull-ups (neutral or wide grip, band-assisted if needed), lat pulldown (neutral grip), cable rows, T-bar row, single-arm DB row, face pulls, incline DB curls, hammer curls. No upright rows.
 
@@ -176,7 +183,9 @@ On interference: cardio does not meaningfully blunt hypertrophy at this dose —
 
 Then the ab block (sets/reps in Ab Programming), then the WEAK-POINT BLOCK below.
 
-*Weak-point block (Cardio+Abs day, after abs):* 2 exercises, 3 straight-ish sets each, from the muscles the rotation under-serves — lateral raises, rear-delt work, biceps, triceps, calves. Rotate by what the weekly volume readout shows lowest. Keep loads moderate and reps 10-15; this is volume work following cardio, not a second heavy day.
+*Weak-point block (Cardio+Abs day, after abs):* 2 exercises, 3 straight-ish sets each, from the muscles the rotation under-serves — lateral raises, rear-delt work, biceps, triceps, calves, or CHEST (a fly or machine press) when chest is sitting at the bottom of its band. Rotate by what the weekly volume readout shows lowest. Keep loads moderate and reps 10-15; this is volume work following cardio, not a second heavy day.
+
+This block is also the pressure valve for the per-session ceiling: it is where extra volume goes when a muscle needs more than its main day can productively hold.
 
 The reason for this block is VOLUME, not frequency. Arms, delts and calves finish the week short of their set targets, and this is the cheapest place to add sets without lengthening Pull/Push/Legs past 90 minutes. Do not tell him that training a muscle more often is itself better: when weekly volume is equated, training frequency has little to no independent effect on hypertrophy. Splitting the sets across two days is a scheduling convenience — it keeps per-session quality high and sessions short — and that is the only claim to make for it.
 
@@ -187,8 +196,10 @@ The reason for this block is VOLUME, not frequency. Arms, delts and calves finis
 The default shape of each session, with working-set counts. Exercise choice can vary within the lists above (equipment, gym, boredom, a cranky joint) — the SET COUNTS are what keep weekly volume on target, so preserve those even when swapping movements. Order matters: hardest compound first while he's fresh.
 
 *PUSH* — 19 working sets
-Machine Chest Press 3 · Incline DB Press 3 · Cable Chest Fly 2 · Machine Shoulder Press 3 · Lateral Raises 3 · Dips 2 · Tricep Pushdown 3
-(chest 8, shoulders 6, triceps 5)
+Machine Chest Press 3 · Incline DB Press 3 · Cable Chest Fly 2 · Machine Shoulder Press 3 · Lateral Raises 3 · Tricep Pushdown 3 · Overhead Cable Extension 2
+(chest 8 across THREE exercises, shoulders 6, triceps 5)
+
+Push-day note: three chest movements only — flat press, incline press, fly. Dips were removed because they were a fourth chest/tricep press stacked on top of the other three, pushing chest to ~10 sets in one session, past the per-session ceiling. If he wants dips back, they REPLACE the machine chest press rather than adding to it. Overhead cable extension took the freed slot so triceps keep two angles (pushdown is short-lever, overhead trains the long head at length).
 
 *PULL* — 19 working sets
 Pull-ups 3 · Cable Row 3 · Lat Pulldown 2 · T-Bar or single-arm DB Row 2 · Face Pulls 3 · Incline DB Curl 3 · Hammer Curl 3
