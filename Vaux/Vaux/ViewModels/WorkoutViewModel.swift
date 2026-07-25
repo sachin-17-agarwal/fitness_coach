@@ -536,7 +536,22 @@ final class WorkoutViewModel {
         // target as if it were the performed set. Claude was previously echoing
         // back the back-off prescription as the working-set result, and the
         // working set's target as a warm-up's actual.
-        let setMsg = "Logged \(phaseProgress): \(exercise) — actual: \(actual)\(targetSuffix). \(setCount) working sets done so far. \(nextHint) Acknowledge the athlete's actual numbers (\(actual)) — do NOT echo any other phase's target as the result, and do NOT prescribe a different phase or exercise than the one named above. What's next?"
+        // A set that fell short of its prescribed reps at the prescribed load
+        // is the most important signal in the log — the weight was too heavy.
+        // Spell it out rather than leaving the coach to diff two numbers, and
+        // flag the RPE as untrustworthy: the slider pre-fills with the TARGET
+        // RPE, so a missed set logged without touching it reports reps left in
+        // the tank on a set that was actually a grind, and the coach would
+        // progress the load off the back of it.
+        var shortfall = ""
+        if let t = target, loggedReps < t.reps, loggedWeight >= t.weight {
+            let missed = t.reps - loggedReps
+            let rpeCaveat = (t.rpe.map { abs($0 - loggedRPE) < 0.01 } ?? false)
+                ? " The logged RPE exactly equals the prescribed RPE, which usually means the slider was left on its pre-filled default — do not read it as reported effort; assume this set was at or near failure and ask him what it felt like."
+                : ""
+            shortfall = " MISSED TARGET by \(missed) rep\(missed == 1 ? "" : "s") at the prescribed load — treat this as the load being too heavy, never as a low-effort set.\(rpeCaveat)"
+        }
+        let setMsg = "Logged \(phaseProgress): \(exercise) — actual: \(actual)\(targetSuffix).\(shortfall) \(setCount) working sets done so far. \(nextHint) Acknowledge the athlete's actual numbers (\(actual)) — do NOT echo any other phase's target as the result, and do NOT prescribe a different phase or exercise than the one named above. What's next?"
         // Locally-authored ground truth. Prepended to the displayed coach
         // note after `applyAIResponse` so the athlete always sees the
         // correct phase + numbers even when Claude misquotes them. This
