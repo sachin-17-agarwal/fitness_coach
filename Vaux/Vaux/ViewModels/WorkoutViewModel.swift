@@ -137,7 +137,9 @@ final class WorkoutViewModel {
             // plan rather than showing nothing while the coach composes a
             // prescription — this is the walk-to-a-new-machine moment.
             if let next = upcomingPrescriptions.first {
-                return "\(next.exerciseName)\nup next — coach is setting the targets"
+                // No " · " here on purpose: the timer renders a detail line
+                // without that separator as prose rather than as a load.
+                return "\(next.exerciseName)\ncoach is setting the targets"
             }
             return "\(rx.exerciseName)\ncomplete"
         }
@@ -197,7 +199,18 @@ final class WorkoutViewModel {
         // call failed, we still want the user to see today's exercises instead
         // of a blank screen.
         do {
-            let prompt = "Starting my \(type) session. List today's full exercise plan first (every exercise with sets/reps/weight/RPE in the strict format), then prescribe the first exercise in detail so I can warm up."
+            // Cardio+Abs needs its own opener. The generic one asks for "the
+            // first exercise", which on this day is the cardio — a portion
+            // that deliberately has no strict format — so the coach narrates
+            // the plan, promises the real prescription "when you get back",
+            // and the reply contains nothing the parser can read. The card
+            // then shows "No plan yet" and the athlete has to ask again.
+            let prompt: String
+            if type == "Cardio+Abs" {
+                prompt = "Starting my \(type) session. Give me the cardio instruction as plain narrative (duration and modality — it needs no prescription block), then in the SAME reply prescribe the first AB exercise in the strict straight-set format: *Exercise Name* on its own line, a Working Set: line with every set enumerated comma-separated plus Tempo and Rest, and a Form: line. No Back-off line — abs are straight sets. Do not defer the ab prescription until after the cardio; my card cannot render without it and I will be starting the abs from this same screen."
+            } else {
+                prompt = "Starting my \(type) session. List today's full exercise plan first (every exercise with sets/reps/weight/RPE in the strict format), then prescribe the first exercise in detail so I can warm up."
+            }
             let response = try await chatService.sendMessage(prompt)
             applyAIResponse(response)
         } catch {
