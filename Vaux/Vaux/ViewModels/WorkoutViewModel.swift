@@ -137,7 +137,9 @@ final class WorkoutViewModel {
             // plan rather than showing nothing while the coach composes a
             // prescription — this is the walk-to-a-new-machine moment.
             if let next = upcomingPrescriptions.first {
-                return "\(next.exerciseName)\nup next — coach is setting the targets"
+                // No " · " here on purpose: the timer renders a detail line
+                // without that separator as prose rather than as a load.
+                return "\(next.exerciseName)\ncoach is setting the targets"
             }
             return "\(rx.exerciseName)\ncomplete"
         }

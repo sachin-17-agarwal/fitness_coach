@@ -56,7 +56,9 @@ struct WorkoutModeView: View {
                     isActive: $viewModel.isResting,
                     onSkip: { viewModel.skipRest() },
                     onExtend: { viewModel.extendRest(by: $0) },
-                    nextSet: viewModel.upcomingSetSummary
+                    nextSet: viewModel.upcomingSetSummary,
+                    coachNote: viewModel.coachNote,
+                    isCoachThinking: viewModel.isCoachThinking
                 )
                 .transition(.opacity)
             }

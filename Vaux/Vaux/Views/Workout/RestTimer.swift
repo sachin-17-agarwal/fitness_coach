@@ -23,6 +23,11 @@ struct RestTimer: View {
     /// The set this rest leads into, shown so the countdown doesn't hide
     /// the target it is counting down to.
     var nextSet: String?
+    /// The coach's latest feedback. Rest is the only point in a session
+    /// with time to actually read it, and it was previously hidden behind
+    /// the full-screen timer.
+    var coachNote: String?
+    var isCoachThinking: Bool = false
 
     @State private var pulse: Bool = false
 
@@ -49,40 +54,11 @@ struct RestTimer: View {
                 .scaleEffect(pulse ? 1.02 : 1.0)
                 .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: pulse)
 
-                if let nextSet {
-                    // First line is the exercise, second the set detail —
-                    // the exercise reads larger because on a machine change
-                    // it is the thing being walked to.
-                    let parts = nextSet.split(separator: "\n", maxSplits: 1).map(String.init)
-                    VStack(spacing: 4) {
-                        Text("UP NEXT")
-                            .font(.eyebrowSmall)
-                            .kerning(1.6)
-                            .foregroundStyle(Color.fg2)
-                        Text(parts.first ?? nextSet)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Color.fg0)
-                            .multilineTextAlignment(.center)
-                        if parts.count > 1 {
-                            Text(parts[1])
-                                .font(.system(size: 14, weight: .medium, design: .monospaced).monospacedDigit())
-                                .foregroundStyle(Color.fg1)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.ink2.opacity(0.9))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.line2, lineWidth: 1)
-                    )
-                }
+                if let nextSet { upNext(nextSet) }
 
                 controls
+
+                coachNotePanel
             }
         }
         .onAppear { pulse = true }
@@ -131,6 +107,91 @@ struct RestTimer: View {
                     .kerning(1.4)
                     .foregroundStyle(color)
             }
+        }
+    }
+
+    // MARK: - Up next
+
+    /// Borderless on purpose. The previous version was a full-width bordered
+    /// box that carried the same visual weight as the ring and fought it for
+    /// attention; here the type hierarchy does the work — a quiet eyebrow for
+    /// position, the exercise in the app's serif, and the numbers he actually
+    /// acts on rendered large in mono.
+    private func upNext(_ text: String) -> some View {
+        let parts = text.split(separator: "\n", maxSplits: 1).map(String.init)
+        let exercise = parts.first ?? text
+        // "Working set 2 of 3 · BW × 10 @ RPE 7" -> position, then the load.
+        let detail = parts.count > 1 ? parts[1] : ""
+        let split = detail.components(separatedBy: " · ")
+        let position = split.count > 1 ? split[0] : ""
+        let load = split.count > 1 ? split.dropFirst().joined(separator: " · ") : detail
+
+        return VStack(spacing: 6) {
+            Text(position.isEmpty ? "UP NEXT" : "UP NEXT · \(position.uppercased())")
+                .font(.eyebrowSmall)
+                .kerning(1.6)
+                .foregroundStyle(Color.fg2)
+
+            Text(exercise)
+                .font(.serifSM)
+                .foregroundStyle(Color.fg0)
+                .multilineTextAlignment(.center)
+
+            if !load.isEmpty {
+                // A load line always arrives as "position · numbers". Without
+                // the separator the detail is prose (the handoff message while
+                // the coach writes the next block), which must not be rendered
+                // in the big mono treatment reserved for weights.
+                let isLoad = split.count > 1
+                Text(load)
+                    .font(isLoad ? .numMD : .system(size: 13))
+                    .foregroundStyle(isLoad ? Color.mint : Color.fg2)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: - Coach note
+
+    /// Rest is the only stretch of a session with time to read. Capped and
+    /// scrollable so a long note can't push the controls off screen.
+    @ViewBuilder
+    private var coachNotePanel: some View {
+        if isCoachThinking {
+            HStack(spacing: 8) {
+                ProgressView().tint(Color.fg2).scaleEffect(0.7)
+                Text("Coach is writing…")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.fg2)
+            }
+            .padding(.top, 2)
+        } else if let coachNote, !coachNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("COACH")
+                    .font(.eyebrowSmall)
+                    .kerning(1.6)
+                    .foregroundStyle(Color.fg2)
+
+                ScrollView(showsIndicators: false) {
+                    Text(coachNote)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.fg0.opacity(0.92))
+                        .lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 150)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.ink2.opacity(0.75))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.line, lineWidth: 1)
+            )
+            .padding(.horizontal, 22)
         }
     }
 
