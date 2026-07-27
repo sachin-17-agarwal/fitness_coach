@@ -100,6 +100,29 @@ def load_system_prompt() -> str:
     return _SYSTEM_PROMPT_CACHE
 
 
+def _log_cache_usage(response) -> None:
+    """Record what the prompt cache actually did on this call.
+
+    `input_tokens` is only the uncached remainder, so it reads misleadingly
+    small on its own — the true prompt size is the sum of all three counters.
+    Logging them together is the only way to tell a genuine cache hit from a
+    silent invalidation, which otherwise looks identical from the outside.
+    """
+    try:
+        usage = response.usage
+        read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        written = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        fresh = getattr(usage, "input_tokens", 0) or 0
+        total = read + written + fresh
+        pct = (read / total * 100) if total else 0.0
+        log.info(
+            "prompt cache: read=%d write=%d uncached=%d total=%d (%.0f%% from cache)",
+            read, written, fresh, total, pct,
+        )
+    except Exception:  # never let telemetry break a coaching reply
+        log.debug("Could not read cache usage", exc_info=True)
+
+
 def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     recovery_override: dict | None = None) -> str:
     system_prompt = load_system_prompt()
@@ -119,16 +142,27 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
 
     # Split system into two blocks so the static prompt is cached across calls
     # but the per-request context (recovery, sessions, workout state) stays live.
+    #
+    # The breakpoint uses the 1-hour TTL rather than the 5-minute default.
+    # Traffic here is bursty: a morning briefing, then a 60-90 minute session
+    # where messages arrive a set at a time. Rest periods keep most turns
+    # inside 5 minutes, but every longer gap — walking to the next machine,
+    # a heavy single, a stretch of not talking to the coach — expired the
+    # entry and re-wrote the whole ~17k-token prompt. A 1h write costs 2x
+    # instead of 1.25x and needs three reads to break even, which a session
+    # of twenty-plus turns clears easily.
     response = get_anthropic_client().messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1000,
         system=[
             {"type": "text", "text": system_prompt,
-             "cache_control": {"type": "ephemeral"}},
+             "cache_control": {"type": "ephemeral", "ttl": "1h"}},
             {"type": "text", "text": context_block},
         ],
         messages=messages_to_send,
     )
+
+    _log_cache_usage(response)
 
     if not response.content:
         assistant_message = "Sorry, I couldn't generate a response. Please try again."
