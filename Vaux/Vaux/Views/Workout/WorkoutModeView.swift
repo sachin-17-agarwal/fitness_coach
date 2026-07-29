@@ -58,7 +58,9 @@ struct WorkoutModeView: View {
                     onExtend: { viewModel.extendRest(by: $0) },
                     nextSet: viewModel.upcomingSetSummary,
                     coachNote: viewModel.coachNote,
-                    isCoachThinking: viewModel.isCoachThinking
+                    isCoachThinking: viewModel.isCoachThinking,
+                    chatText: $viewModel.inlineChatText,
+                    onSend: { Task { await viewModel.sendInlineMessage() } }
                 )
                 .transition(.opacity)
             }
