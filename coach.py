@@ -153,7 +153,14 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # of twenty-plus turns clears easily.
     response = get_anthropic_client().messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1000,
+        # A recap plus a full Warm-up/Working Set/Back-off/Form block runs
+        # close to 1000 tokens, and ab days — which enumerate every straight
+        # set inline — routinely exceed it. Truncating mid-block leaves the
+        # parser a partial prescription that still looks well-formed, so the
+        # card renders half a plan with nothing reporting an error. Output is
+        # billed per token generated, not per token allowed, so a higher
+        # ceiling costs nothing until a reply actually needs it.
+        max_tokens=2000,
         system=[
             {"type": "text", "text": system_prompt,
              "cache_control": {"type": "ephemeral", "ttl": "1h"}},
@@ -168,6 +175,17 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         assistant_message = "Sorry, I couldn't generate a response. Please try again."
     else:
         assistant_message = response.content[0].text
+
+    # A reply cut off at the token ceiling is the one failure the parsers
+    # cannot see: a prescription truncated mid-block still matches the
+    # `Warm-up:` / `Working Set:` prefixes it managed to emit, so the card
+    # renders a partial plan and the athlete is left asking for it again.
+    # Nothing here can un-truncate it, but it must not pass silently.
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        log.warning(
+            "Coach reply hit max_tokens — prescription may be truncated (%d chars)",
+            len(assistant_message),
+        )
     conversation_history.append({"role": "assistant", "content": assistant_message})
     save_conversation_message("assistant", assistant_message)
 
