@@ -597,6 +597,13 @@ final class WorkoutViewModel {
             }
         } catch {
             print("Coach feedback failed: \(error)")
+            // Leaving `coachNote` untouched here left the PREVIOUS set's note
+            // on screen with nothing marking it as stale — so a failed
+            // round-trip read as a reply to the set just logged, describing a
+            // different exercise and phase entirely. The fact line is authored
+            // locally and is always correct for the set that was just logged,
+            // so fall back to it rather than to whatever was there before.
+            coachNote = "\(factPrefix)\n\nCouldn't reach the coach for feedback on this set — it's logged. Ask again if you need the next target."
         }
         isCoachThinking = false
     }
