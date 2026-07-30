@@ -988,9 +988,16 @@ final class WorkoutViewModel {
                 0, totalTonnage - (set.actualWeightKg ?? 0) * Double(set.actualReps ?? 0)
             )
         }
-        exerciseSetIndex = max(0, exerciseSetIndex - 1)
+        // Re-derive from the largest surviving set_number rather than
+        // decrementing. Deleting set 2 of 5 and stepping the counter back to 4
+        // would make the next insert reuse set_number 5 — and `logSet` treats
+        // a colliding (session, exercise, set_number, is_warmup) as an already
+        // -logged set and returns the existing row, so the new set would
+        // vanish without an error.
+        exerciseSetIndex = exerciseSetsForCurrentExercise
+            .map(\.setNumber).max() ?? 0
         // The removed set may have been the one that completed a phase, so
-        // re-derive rather than decrementing the tracker by hand.
+        // re-derive rather than adjusting the tracker by hand.
         syncPhaseToPrescription()
         prefillFromCurrentTarget()
 
