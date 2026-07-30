@@ -288,6 +288,33 @@ final class WorkoutService: Sendable {
         return logged
     }
 
+    /// Correct a set that was logged wrong. Only the three values the athlete
+    /// can actually mis-enter are editable — the target columns stay as
+    /// prescribed, because the point of keeping them is to record what was
+    /// asked for, not to retro-fit it to what happened.
+    func updateSet(
+        id: UUID,
+        weight: Double,
+        reps: Int,
+        rpe: Double?
+    ) async throws -> WorkoutSet {
+        var body: [String: Any] = [
+            "actual_weight_kg": weight,
+            "actual_reps": reps,
+        ]
+        // NSNull rather than omission: leaving the key out would keep a stale
+        // RPE on a set being corrected to a warm-up, which carries none.
+        body["actual_rpe"] = rpe ?? NSNull()
+
+        return try await client.updateAndDecode(
+            "workout_sets", body: body, match: ["id": id.uuidString]
+        )
+    }
+
+    func deleteSet(id: UUID) async throws {
+        _ = try await client.delete("workout_sets", match: ["id": id.uuidString])
+    }
+
     private func fetchExistingSet(
         sessionId: UUID,
         exercise: String,

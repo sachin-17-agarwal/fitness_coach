@@ -13,6 +13,8 @@ struct WorkoutModeView: View {
     /// before the resume kicks in — that flash made it look like the
     /// workout had been thrown away when it was still on disk.
     @State private var didCheckResume = false
+    /// The logged set currently open for correction, if any.
+    @State private var editingSet: WorkoutSet?
 
     /// Session type passed explicitly (e.g. from the Dashboard CTA). When left
     /// empty — the Train tab mounts this view with no argument — the view
@@ -104,6 +106,17 @@ struct WorkoutModeView: View {
                     resolvedSessionType = state.todayType
                 }
             }
+        }
+        .sheet(item: $editingSet) { set in
+            EditSetSheet(
+                set: set,
+                onSave: { weight, reps, rpe in
+                    Task { await viewModel.editLoggedSet(set, weight: weight, reps: reps, rpe: rpe) }
+                },
+                onDelete: {
+                    Task { await viewModel.deleteLoggedSet(set) }
+                }
+            )
         }
         .navigationTitle(viewModel.isActive ? viewModel.sessionType : (effectiveSessionType.isEmpty ? "Workout" : effectiveSessionType))
         .navigationBarTitleDisplayMode(.inline)
@@ -291,12 +304,22 @@ struct WorkoutModeView: View {
                             exerciseSetIndex: viewModel.exerciseSetIndex,
                             loggedSets: viewModel.exerciseSetsForCurrentExercise,
                             currentPhase: viewModel.currentPhase,
-                            phaseSetIndex: viewModel.phaseSetIndex
+                            phaseSetIndex: viewModel.phaseSetIndex,
+                            onEditSet: { editingSet = $0 }
                         )
                         .transition(.asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
                             removal: .move(edge: .leading).combined(with: .opacity)
                         ))
+
+                        // Shown only once every prescribed set is logged. The
+                        // automatic advance depends on the coach naming the
+                        // next exercise in a matchable way, or on the plan
+                        // holding a further entry; when neither holds, this is
+                        // the way off a finished card.
+                        if viewModel.isCurrentExerciseComplete() {
+                            nextExerciseButton
+                        }
 
                         if viewModel.upcomingPrescriptions.count > 0 {
                             UpcomingExercisesCard(names: viewModel.upcomingPrescriptions.map(\.exerciseName))
@@ -519,6 +542,30 @@ struct WorkoutModeView: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Color.line).frame(height: 0.5)
         }
+    }
+
+    /// Escape hatch off a finished exercise. Names the next exercise when the
+    /// plan knows it, so the tap is a confirmation rather than a leap.
+    private var nextExerciseButton: some View {
+        Button {
+            Haptic.medium()
+            Task { await viewModel.advanceToNextExercise() }
+        } label: {
+            HStack(spacing: 8) {
+                Text(viewModel.upcomingPrescriptions.first.map { "Next: \($0.exerciseName)" }
+                     ?? "Ask coach for the next exercise")
+                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12, weight: .bold))
+            }
+            .foregroundStyle(Color.signalInk)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Capsule().fill(Color.signal))
+        }
+        .buttonStyle(PressScaleStyle())
+        .disabled(viewModel.isCoachThinking)
+        .padding(.horizontal, 16)
     }
 }
 

@@ -930,7 +930,139 @@ final class WorkoutViewModel {
     /// before the current one is finished — a recurring failure mode
     /// where Claude jumped from a working set straight to the next
     /// exercise, silently dropping the back-off from the session.
-    private func isCurrentExerciseComplete() -> Bool {
+    /// Correct a set that went in wrong. Every derived total the session
+    /// screen shows — tonnage, the three set arrays — is recomputed here
+    /// rather than re-fetched, so the correction lands immediately and the
+    /// coach is told about it in the same breath.
+    func editLoggedSet(_ set: WorkoutSet, weight: Double, reps: Int, rpe: Double?) async {
+        guard let id = set.id else { return }
+        let wasWarmup = set.isWarmup == true
+        let oldWeight = set.actualWeightKg ?? 0
+        let oldReps = set.actualReps ?? 0
+
+        do {
+            let updated = try await workoutService.updateSet(
+                id: id, weight: weight, reps: reps, rpe: wasWarmup ? nil : rpe
+            )
+            replaceLoggedSet(id: id, with: updated)
+            // Tonnage counts working sets only, so adjust by the delta rather
+            // than rebuilding it from scratch.
+            if !wasWarmup {
+                totalTonnage += (weight * Double(reps)) - (oldWeight * Double(oldReps))
+            }
+        } catch {
+            errorMessage = "Couldn't update the set: \(error.localizedDescription)"
+            return
+        }
+
+        let label = ExerciseCatalog.setWeightLabel(weight, exercise: set.exercise)
+        let rpeText = wasWarmup ? "" : " @ RPE \(rpe?.oneDecimal ?? "—")"
+        await notifyCoachOfCorrection(
+            "Correction — set \(set.setNumber) of \(set.exercise) was logged wrong. "
+            + "It was actually \(label) × \(reps)\(rpeText). "
+            + "The log is now fixed; use these numbers, not the earlier ones. "
+            + "Do not re-prescribe anything unless this changes what comes next."
+        )
+    }
+
+    /// Remove a set logged by mistake — a double-tap, or one recorded against
+    /// the wrong exercise.
+    func deleteLoggedSet(_ set: WorkoutSet) async {
+        guard let id = set.id else { return }
+        let wasWarmup = set.isWarmup == true
+
+        do {
+            try await workoutService.deleteSet(id: id)
+        } catch {
+            errorMessage = "Couldn't delete the set: \(error.localizedDescription)"
+            return
+        }
+
+        loggedSets.removeAll { $0.id == id }
+        exerciseSetsForCurrentExercise.removeAll { $0.id == id }
+        if wasWarmup {
+            warmupCount = max(0, warmupCount - 1)
+        } else {
+            setCount = max(0, setCount - 1)
+            totalTonnage = max(
+                0, totalTonnage - (set.actualWeightKg ?? 0) * Double(set.actualReps ?? 0)
+            )
+        }
+        exerciseSetIndex = max(0, exerciseSetIndex - 1)
+        // The removed set may have been the one that completed a phase, so
+        // re-derive rather than decrementing the tracker by hand.
+        syncPhaseToPrescription()
+        prefillFromCurrentTarget()
+
+        await notifyCoachOfCorrection(
+            "Correction — set \(set.setNumber) of \(set.exercise) was deleted; "
+            + "it was logged by mistake and never performed. "
+            + "Do not count it. Do not re-prescribe anything unless this changes what comes next."
+        )
+    }
+
+    private func replaceLoggedSet(id: UUID, with updated: WorkoutSet) {
+        if let i = loggedSets.firstIndex(where: { $0.id == id }) {
+            loggedSets[i] = updated
+        }
+        if let j = exerciseSetsForCurrentExercise.firstIndex(where: { $0.id == id }) {
+            exerciseSetsForCurrentExercise[j] = updated
+        }
+    }
+
+    /// Tells the coach about a correction without letting the reply restructure
+    /// the session. `allowExerciseChange: false` matters here: a correction is
+    /// not a set log, and the coach reacting to one must not skip a phase that
+    /// is still owed.
+    private func notifyCoachOfCorrection(_ message: String) async {
+        isCoachThinking = true
+        do {
+            let response = try await chatService.sendMessage(message)
+            applyAIResponse(response, allowExerciseChange: false)
+        } catch {
+            print("Coach correction notice failed: \(error)")
+        }
+        isCoachThinking = false
+    }
+
+    /// Manual escape for an exercise the app can't move past on its own —
+    /// every set logged, but the coach's handoff named nothing the transition
+    /// detector recognised and the plan had no further entry to fall through
+    /// to. Advances locally when the plan can supply the next exercise;
+    /// otherwise asks the coach for it outright rather than leaving the
+    /// athlete stuck on a finished card mid-session.
+    func advanceToNextExercise() async {
+        if let next = upcomingPrescriptions.first {
+            currentPrescription = next
+            allPrescriptions = rearrangedPrescriptions(startingAt: next)
+            // Mirror the per-exercise hydration applyAIResponse does on an
+            // exercise change, so the chips and phase tracker start from
+            // whatever is already logged against the new exercise.
+            let matching = loggedSets.filter {
+                PrescriptionParser.normalizeExerciseName($0.exercise) == next.exerciseName
+            }
+            exerciseSetsForCurrentExercise = matching
+            exerciseSetIndex = matching.count
+            syncPhaseToPrescription()
+            prefillFromCurrentTarget()
+            return
+        }
+
+        guard let done = currentPrescription?.exerciseName else { return }
+        isCoachThinking = true
+        do {
+            let response = try await chatService.sendMessage(
+                "\(done) is done — every prescribed set is logged. "
+                + "Prescribe the next exercise in full."
+            )
+            applyAIResponse(response)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isCoachThinking = false
+    }
+
+    func isCurrentExerciseComplete() -> Bool {
         guard let rx = currentPrescription else { return true }
         let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
         let nonWarmupsDone = exerciseSetsForCurrentExercise.count - warmupsDone
@@ -1025,6 +1157,18 @@ final class WorkoutViewModel {
             // the UI doesn't stay stuck on the previous card. Suppressed
             // mid-exercise after a logSet so the back-off can't be skipped
             // by a stray "moving on to chest" line in the narrative.
+            currentPrescription = next
+            allPrescriptions = rearrangedPrescriptions(startingAt: next)
+        } else if isCurrentExerciseComplete(), let next = upcomingPrescriptions.first {
+            // Every prescribed set is logged, the coach sent no new block, and
+            // nothing in the prose matched a known exercise name. Previously
+            // that combination left the card pinned to the finished exercise
+            // with no way forward — the coach saying "moving to Single Leg
+            // Sumo Press exactly as prescribed above" names an exercise the
+            // transition detector only recognises if it is already in
+            // `allPrescriptions`. Falling through to the plan's next entry
+            // makes the advance depend on the plan rather than on the coach
+            // happening to phrase the handoff in a matchable way.
             currentPrescription = next
             allPrescriptions = rearrangedPrescriptions(startingAt: next)
         }

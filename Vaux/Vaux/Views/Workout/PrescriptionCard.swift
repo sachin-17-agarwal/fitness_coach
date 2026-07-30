@@ -9,6 +9,9 @@ struct PrescriptionCard: View {
     var loggedSets: [WorkoutSet] = []
     var currentPhase: SetPhase = .working
     var phaseSetIndex: Int = 0
+    /// Tapping a checked-off chip opens it for correction. Defaults to a no-op
+    /// so previews and any other caller keep working untouched.
+    var onEditSet: (WorkoutSet) -> Void = { _ in }
 
     /// Drives the soft glow pulse on the chip for the set that's up next.
     @State private var pulse = false
@@ -245,6 +248,18 @@ struct PrescriptionCard: View {
                     .foregroundStyle(color)
                     .offset(x: 3, y: -3)
             }
+        }
+        // Only completed chips are tappable — there is nothing to correct on a
+        // set that hasn't happened, and making pending chips respond would
+        // invite taps that look like a way to log out of order.
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onTapGesture {
+            // A set with no id came from somewhere other than a successful
+            // insert and can't be addressed in the database — opening an
+            // editor whose Save could only no-op would be worse than nothing.
+            guard let logged, logged.id != nil else { return }
+            Haptic.light()
+            onEditSet(logged)
         }
     }
 
