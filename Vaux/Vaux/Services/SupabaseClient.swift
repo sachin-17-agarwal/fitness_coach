@@ -187,6 +187,32 @@ final class SupabaseClient: Sendable {
         return data
     }
 
+    /// Update rows and decode the returned representation. Mirrors
+    /// `insertAndDecode` so callers that need the updated row back don't have
+    /// to reach for the private decoder or re-fetch what PostgREST just
+    /// returned.
+    func updateAndDecode<T: Decodable>(
+        _ table: String,
+        body: [String: Any],
+        match: [String: String]
+    ) async throws -> T {
+        let data = try await update(table, body: body, match: match)
+        do {
+            let rows = try decoder.decode([T].self, from: data)
+            guard let first = rows.first else {
+                throw SupabaseError.decodingError(
+                    NSError(domain: "SupabaseClient", code: 0,
+                            userInfo: [NSLocalizedDescriptionKey: "Update matched no rows"])
+                )
+            }
+            return first
+        } catch let error as SupabaseError {
+            throw error
+        } catch {
+            throw SupabaseError.decodingError(error)
+        }
+    }
+
     /// Delete rows matching the given filters.
     @discardableResult
     func delete(_ table: String, match: [String: String]) async throws -> Data {
