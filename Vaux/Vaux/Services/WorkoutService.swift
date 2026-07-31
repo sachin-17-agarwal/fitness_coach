@@ -315,6 +315,27 @@ final class WorkoutService: Sendable {
         _ = try await client.delete("workout_sets", match: ["id": id.uuidString])
     }
 
+    /// Recompute and persist a session's tonnage from its sets.
+    ///
+    /// `tonnage_kg` is denormalised onto the session row when the session
+    /// ends, so correcting or removing a set afterwards leaves it stale — the
+    /// history card would keep showing a total that no longer matches the sets
+    /// listed underneath it. Mirrors `endSession`'s arithmetic exactly,
+    /// warm-ups included, so the stored number keeps meaning the same thing.
+    @discardableResult
+    func recalculateTonnage(sessionId: UUID) async throws -> Double {
+        let sets = try await fetchSets(sessionId: sessionId)
+        let tonnage = sets.reduce(0.0) { total, set in
+            total + ((set.actualWeightKg ?? 0) * Double(set.actualReps ?? 0))
+        }
+        try await client.update(
+            "workout_sessions",
+            body: ["tonnage_kg": tonnage],
+            match: ["id": sessionId.uuidString]
+        )
+        return tonnage
+    }
+
     private func fetchExistingSet(
         sessionId: UUID,
         exercise: String,

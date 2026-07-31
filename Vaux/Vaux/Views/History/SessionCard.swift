@@ -13,11 +13,28 @@ struct SessionCard: View {
     /// and are shown as one card, with the sets and tonnage combined.
     let sessions: [WorkoutSession]
 
-    init(sessions: [WorkoutSession]) { self.sessions = sessions }
-    init(session: WorkoutSession) { self.sessions = [session] }
+    init(sessions: [WorkoutSession], onSetsChanged: @escaping () -> Void = {}) {
+        self.sessions = sessions
+        self.onSetsChanged = onSetsChanged
+    }
+
+    init(session: WorkoutSession, onSetsChanged: @escaping () -> Void = {}) {
+        self.sessions = [session]
+        self.onSetsChanged = onSetsChanged
+    }
+
+    /// Called after a set is corrected or removed so the surrounding screen
+    /// can refresh totals it derived from the old numbers.
+    var onSetsChanged: () -> Void = {}
 
     @State private var sets: [WorkoutSet] = []
+    @State private var hasLoadedSets = false
     @State private var isExpanded = false
+    /// The set currently open for correction, if any.
+    @State private var editingSet: WorkoutSet?
+    /// Set once an edit lands, so the header stops showing the stale
+    /// denormalised total while the parent list is still holding old rows.
+    @State private var recalculatedTonnage: Double?
 
     private let workoutService = WorkoutService()
 
@@ -25,7 +42,8 @@ struct SessionCard: View {
     private var session: WorkoutSession { sessions[0] }
 
     private var combinedTonnage: Double {
-        sessions.reduce(0) { $0 + ($1.tonnageKg ?? 0) }
+        if let recalculatedTonnage { return recalculatedTonnage }
+        return sessions.reduce(0) { $0 + ($1.tonnageKg ?? 0) }
     }
 
     /// A day counts as still in progress while any of its rows is.
@@ -51,7 +69,17 @@ struct SessionCard: View {
             header
 
             if isExpanded {
-                if sets.isEmpty {
+                if !sets.isEmpty {
+                    setsList
+                } else if hasLoadedSets {
+                    // Distinct from the loading state: deleting the last set
+                    // used to leave the spinner up forever, because empty and
+                    // not-yet-fetched looked identical from here.
+                    Text("No sets logged for this session.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.textTertiary)
+                        .padding(.top, 4)
+                } else {
                     HStack {
                         ProgressView().tint(Color.textSecondary).scaleEffect(0.8)
                         Text("Loading sets…")
@@ -59,8 +87,6 @@ struct SessionCard: View {
                             .foregroundStyle(Color.textTertiary)
                     }
                     .padding(.top, 4)
-                } else {
-                    setsList
                 }
             }
         }
@@ -89,6 +115,17 @@ struct SessionCard: View {
             if isExpanded && sets.isEmpty {
                 Task { await loadSets() }
             }
+        }
+        .sheet(item: $editingSet) { target in
+            EditSetSheet(
+                set: target,
+                onSave: { weight, reps, rpe in
+                    Task { await applyEdit(target, weight: weight, reps: reps, rpe: rpe) }
+                },
+                onDelete: {
+                    Task { await applyDelete(target) }
+                }
+            )
         }
     }
 
@@ -187,7 +224,21 @@ struct SessionCard: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array((numbered[key] ?? []).enumerated()), id: \.offset) { _, entry in
-                            setRow(entry.set, label: entry.label)
+                            // A Button rather than a tap gesture: the whole
+                            // card already carries an `onTapGesture` for
+                            // expand/collapse, and a button reliably takes the
+                            // tap ahead of it instead of racing it.
+                            if isEditable(entry.set) {
+                                Button {
+                                    Haptic.light()
+                                    editingSet = entry.set
+                                } label: {
+                                    setRow(entry.set, label: entry.label)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                setRow(entry.set, label: entry.label)
+                            }
                         }
                     }
                 }
@@ -248,6 +299,44 @@ struct SessionCard: View {
         }
     }
 
+    /// Only strength sets are editable. `EditSetSheet` steps weight, reps and
+    /// RPE, none of which describe a cardio or yoga entry — those store minutes
+    /// in `actual_reps` and would be nonsense to edit through it. A set with no
+    /// id can't be addressed in the database either.
+    private func isEditable(_ set: WorkoutSet) -> Bool {
+        set.id != nil && entryKind(set) == .strength
+    }
+
+    private func applyEdit(_ set: WorkoutSet, weight: Double, reps: Int, rpe: Double?) async {
+        guard let id = set.id else { return }
+        _ = try? await workoutService.updateSet(
+            id: id, weight: weight, reps: reps, rpe: set.isWarmup == true ? nil : rpe
+        )
+        await refreshAfterChange()
+    }
+
+    private func applyDelete(_ set: WorkoutSet) async {
+        guard let id = set.id else { return }
+        try? await workoutService.deleteSet(id: id)
+        await refreshAfterChange()
+    }
+
+    /// Re-reads the sets, then repairs the denormalised session tonnage so the
+    /// header total matches the rows listed under it. The coach needs no
+    /// notification here — its context block re-reads the last 30 days from
+    /// the database on every message, so a corrected row is picked up on its
+    /// own the next time they speak.
+    private func refreshAfterChange() async {
+        await loadSets()
+        for id in sessions.compactMap(\.id) {
+            _ = try? await workoutService.recalculateTonnage(sessionId: id)
+        }
+        recalculatedTonnage = sets.reduce(0.0) { total, set in
+            total + ((set.actualWeightKg ?? 0) * Double(set.actualReps ?? 0))
+        }
+        onSetsChanged()
+    }
+
     private enum EntryKind { case strength, cardio, yoga }
 
     /// Cardio/yoga entries are tagged via the `notes` column on write
@@ -291,5 +380,6 @@ struct SessionCard: View {
             combined += (try? await workoutService.fetchSets(sessionId: id)) ?? []
         }
         sets = combined
+        hasLoadedSets = true
     }
 }
