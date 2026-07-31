@@ -95,7 +95,7 @@ struct CardioYogaLogView: View {
             .padding(.vertical, 14)
         }
         .task {
-            await loadOrCreateSession()
+            await loadTodaysSession()
             await loadHealthWorkouts()
         }
     }
@@ -233,7 +233,12 @@ struct CardioYogaLogView: View {
                 )
             }
             .buttonStyle(.plain)
-            .disabled(alreadyImported || isLogging || todaysSession == nil)
+            // Gated on the initial fetch, not on a session existing: the
+            // session is now created lazily by `ensureSession()` on first
+            // log, so requiring one up front would disable this forever.
+            // Waiting for the fetch still matters — tapping mid-load could
+            // create a second session before the existing one arrives.
+            .disabled(alreadyImported || isLogging || isLoadingSession)
         }
     }
 
@@ -339,7 +344,7 @@ struct CardioYogaLogView: View {
                 )
             }
             .buttonStyle(PressScaleStyle())
-            .disabled(isLogging || todaysSession == nil)
+            .disabled(isLogging || isLoadingSession)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .darkCard(padding: 14, cornerRadius: 16)
@@ -489,7 +494,7 @@ struct CardioYogaLogView: View {
     /// Finds today's in-progress session for this type (if any) and re-uses it
     /// so multiple entries don't fragment into separate session rows. Creates
     /// a fresh session when nothing exists yet.
-    private func loadOrCreateSession() async {
+    private func loadTodaysSession() async {
         isLoadingSession = true
         defer { isLoadingSession = false }
 
@@ -511,11 +516,29 @@ struct CardioYogaLogView: View {
                     let sets = (try? await workoutService.fetchSets(sessionId: id)) ?? []
                     loggedEntries = sets.filter { ($0.notes ?? "").contains(entryTag) }
                 }
-            } else {
-                todaysSession = try await workoutService.startSession(type: sessionType)
             }
+            // Deliberately does NOT create one. `startSession` writes an
+            // `in_progress` row AND repoints the workout-state memory keys at
+            // it, so merely opening this screen used to mint a session that
+            // nothing ever closed — and, on a day whose type had rolled over,
+            // could hijack the state belonging to a session still in progress.
+            // Creation is deferred to `ensureSession()`, on the first entry.
         } catch {
             errorMessage = "Couldn't open today's session: \(error.localizedDescription)"
+        }
+    }
+
+    /// Returns today's session, creating it on first use. Called from the
+    /// logging paths so a session only exists once there's something in it.
+    private func ensureSession() async -> WorkoutSession? {
+        if let todaysSession { return todaysSession }
+        do {
+            let created = try await workoutService.startSession(type: sessionType)
+            todaysSession = created
+            return created
+        } catch {
+            errorMessage = "Couldn't open today's session: \(error.localizedDescription)"
+            return nil
         }
     }
 
@@ -541,10 +564,7 @@ struct CardioYogaLogView: View {
     // MARK: - Logging
 
     private func submitManualEntry() async {
-        guard let session = todaysSession, let id = session.id else {
-            errorMessage = "Session not ready yet — try again in a moment."
-            return
-        }
+        guard let session = await ensureSession(), let id = session.id else { return }
         isLogging = true
         defer { isLogging = false }
 
@@ -558,16 +578,14 @@ struct CardioYogaLogView: View {
             )
             loggedEntries.append(entry)
             notes = ""
+            await closeSessionIfNothingFollows(id)
         } catch {
             errorMessage = "Couldn't save entry: \(error.localizedDescription)"
         }
     }
 
     private func importWorkout(_ workout: HKWorkout, displayName: String, minutes: Int) async {
-        guard let session = todaysSession, let id = session.id else {
-            errorMessage = "Session not ready yet — try again in a moment."
-            return
-        }
+        guard let session = await ensureSession(), let id = session.id else { return }
         isLogging = true
         defer { isLogging = false }
 
@@ -583,9 +601,19 @@ struct CardioYogaLogView: View {
                 notes: note
             )
             loggedEntries.append(entry)
+            await closeSessionIfNothingFollows(id)
         } catch {
             errorMessage = "Import failed: \(error.localizedDescription)"
         }
+    }
+
+    /// A Yoga day is over once it's logged — there is no resistance work to
+    /// follow, and nothing else ever marks the row complete, so it sat in
+    /// history as `in_progress` indefinitely. Cardio+Abs is left open on
+    /// purpose: the ab work comes next and logs into the same day.
+    private func closeSessionIfNothingFollows(_ id: UUID) async {
+        guard sessionType == "Yoga" else { return }
+        try? await workoutService.completeSession(id: id)
     }
 
     private func logEntry(
