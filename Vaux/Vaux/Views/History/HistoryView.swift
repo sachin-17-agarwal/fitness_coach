@@ -113,7 +113,12 @@ struct HistoryView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     SectionHeader(title: "Recent sessions")
                     ForEach(viewModel.sessionsByDay) { day in
-                        SessionCard(sessions: day.sessions)
+                        SessionCard(
+                            sessions: day.sessions,
+                            // A corrected set changes the window's set count
+                            // and tonnage, both derived at load time.
+                            onSetsChanged: { Task { await viewModel.load() } }
+                        )
                     }
                 }
 
