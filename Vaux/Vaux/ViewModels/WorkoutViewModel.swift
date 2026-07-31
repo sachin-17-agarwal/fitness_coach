@@ -246,6 +246,31 @@ final class WorkoutViewModel {
         await resume(session: existing)
     }
 
+    /// Resume variant for Cardio+Abs, where a blanket resume would be wrong.
+    ///
+    /// That day starts on the cardio log and only moves into workout mode for
+    /// the ab block, so `WorkoutModeView` excluded it from the resume check
+    /// entirely — which meant leaving mid-ab-work and coming back dropped the
+    /// athlete on the cardio screen with the open session untouched, no way
+    /// back to the sets already logged. Rejoin only once the ab work has
+    /// actually started: a set in the open session that isn't a cardio entry.
+    func resumeIfStrengthWorkStarted(type: String) async {
+        guard !isActive, !showSummary, !type.isEmpty else { return }
+        guard let existing = await fetchInProgressSession(type: type),
+              let id = existing.id,
+              let sets = try? await workoutService.fetchSets(sessionId: id)
+        else { return }
+
+        // Same predicate `resume(session:)` uses to separate the strength
+        // portion from the cardio entries sharing the session.
+        let hasStrengthWork = sets.contains { set in
+            let note = (set.notes ?? "").lowercased()
+            return !note.hasPrefix("cardio") && !note.hasPrefix("yoga")
+        }
+        guard hasStrengthWork else { return }
+        await resume(session: existing)
+    }
+
     private func fetchInProgressSession(type: String) async -> WorkoutSession? {
         let today = Self.todayString()
         let sessions: [WorkoutSession]? = try? await SupabaseClient.shared.fetch(

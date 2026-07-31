@@ -91,6 +91,12 @@ struct WorkoutModeView: View {
             // screen, which would otherwise mint a brand-new session on tap.
             if !isNonStrengthDay {
                 await viewModel.resumeIfInProgress(type: effectiveSessionType)
+            } else if effectiveSessionType == "Cardio+Abs" {
+                // Cardio+Abs was excluded from the resume check altogether,
+                // so leaving mid-ab-work landed back on the cardio screen with
+                // the open session stranded. Rejoin only once ab sets exist —
+                // before that, the cardio log is still the right screen.
+                await viewModel.resumeIfStrengthWorkStarted(type: effectiveSessionType)
             }
             didCheckResume = true
         }

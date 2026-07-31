@@ -315,6 +315,29 @@ final class WorkoutService: Sendable {
         _ = try await client.delete("workout_sets", match: ["id": id.uuidString])
     }
 
+    /// Close a session without the end-of-workout machinery.
+    ///
+    /// `endSession` also runs PR detection and resets the workout-state memory
+    /// keys, neither of which suits a cardio or yoga entry — those log zero
+    /// weight against a duration, so putting them through PR detection is
+    /// meaningless. This just marks the row done so it stops sitting in
+    /// history as `in_progress` forever waiting for a finish that never comes.
+    func completeSession(id: UUID) async throws {
+        let sets = try await fetchSets(sessionId: id)
+        let tonnage = sets.reduce(0.0) { total, set in
+            total + ((set.actualWeightKg ?? 0) * Double(set.actualReps ?? 0))
+        }
+        try await client.update(
+            "workout_sessions",
+            body: [
+                "status": "completed",
+                "end_time": ISO8601DateFormatter().string(from: Date()),
+                "tonnage_kg": tonnage,
+            ],
+            match: ["id": id.uuidString]
+        )
+    }
+
     /// Recompute and persist a session's tonnage from its sets.
     ///
     /// `tonnage_kg` is denormalised onto the session row when the session
