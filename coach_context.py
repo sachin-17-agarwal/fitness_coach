@@ -8,7 +8,10 @@ it into the [ATHLETE CONTEXT] block injected into Claude's system prompt.
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
-from data import CYCLE, get_athlete_context, get_supabase, now_local
+from data import (
+    get_athlete_context, get_supabase, next_session_type_for, now_local,
+    session_type_for,
+)
 from volume import format_weekly_volume, get_weekly_volume
 from workout import get_substitution_history, get_workout_context, get_workout_state
 
@@ -220,8 +223,8 @@ def build_context_block(memory: dict, athlete_name: str,
     today = now_local().strftime("%A %d %B %Y")
     mesocycle_week = memory.get("mesocycle_week", 1)
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
-    today_session = CYCLE[(mesocycle_day - 1) % len(CYCLE)]
-    next_session = CYCLE[mesocycle_day % len(CYCLE)]
+    today_session = session_type_for(mesocycle_day)
+    next_session = next_session_type_for(mesocycle_day)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
@@ -281,7 +284,7 @@ def build_context_block(memory: dict, athlete_name: str,
 [ATHLETE CONTEXT]
 Athlete: {athlete_name} | Current weight: {athlete_current_weight_kg}kg | Goal weight: {athlete_goal_weight_kg}kg
 Date: {today}
-Mesocycle: Week {mesocycle_week} of 4 | Cycle day {mesocycle_day}/5
+Mesocycle: Week {mesocycle_week} of 4 | Rotation day {mesocycle_day}/4 (Pull→Push→Legs→Cardio+Abs, rolling; Sunday is yoga and does not advance it)
 TODAY'S SESSION TYPE: {today_session}
 NEXT SESSION: {next_session}
 

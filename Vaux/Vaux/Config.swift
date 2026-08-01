@@ -34,17 +34,32 @@ struct Config {
 
     // MARK: - Mesocycle
 
-    /// The five-day rotation used in the mesocycle programme.
+    /// The resistance rotation. It rolls continuously — Cardio+Abs is followed
+    /// straight back into Pull — and is NOT interrupted by yoga.
+    /// Must match `CYCLE` in data.py.
     static let cycle: [String] = [
         "Pull",
         "Push",
         "Legs",
         "Cardio+Abs",
-        "Yoga",
     ]
 
     /// Number of days in one mesocycle rotation.
     static var cycleLength: Int { cycle.count }
+
+    /// Yoga is active recovery pinned to Sunday, not a rotation position. It
+    /// used to be the fifth entry in `cycle`, which made it fire every fifth
+    /// day and drift through the week; the athlete trains daily and takes yoga
+    /// on Sunday whatever the rotation is showing. Sunday therefore OVERRIDES
+    /// the session type without consuming a slot — a Saturday Pull is followed
+    /// by a Monday Push, with the yoga day passing over the top.
+    /// Mirrors `YOGA_WEEKDAY` / `is_yoga_day` in data.py.
+    static let yogaSessionType = "Yoga"
+
+    /// `Calendar` numbers weekdays from 1 = Sunday.
+    static func isYogaDay(_ date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        calendar.component(.weekday, from: date) == 1
+    }
 
     /// Weeks in one mesocycle: baseline → volume → peak → deload, then the
     /// next cycle restarts at week 1. Must match the server's wrap in

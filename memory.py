@@ -7,7 +7,10 @@ import logging
 import os
 from datetime import datetime
 
-from data import CYCLE, get_supabase, now_local, today_local_str
+from data import (
+    CYCLE, get_supabase, is_yoga_day, next_session_type_for, now_local,
+    session_type_for, today_local_str,
+)
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +39,13 @@ def load_memory() -> dict:
         week = memory.get("mesocycle_week")
         if isinstance(week, int) and week > 4:
             memory["mesocycle_week"] = ((week - 1) % 4) + 1
+
+        # Same for the day. The rotation used to be five long with Yoga as
+        # position 5; a value left over from then satisfies the end-of-cycle
+        # test on the very next advance and bumps the week a rotation early.
+        day = memory.get("mesocycle_day")
+        if isinstance(day, int) and not 1 <= day <= len(CYCLE):
+            memory["mesocycle_day"] = ((day - 1) % len(CYCLE)) + 1
 
         print(
             f"Memory loaded. Mesocycle: Week {memory.get('mesocycle_week', 1)}, "
@@ -157,14 +167,12 @@ def save_recovery_data(data: dict):
 
 def get_current_session_type(memory: dict) -> str:
     """Return today's session type based on cycle position."""
-    day = int(memory.get("mesocycle_day", 1)) - 1
-    return CYCLE[day % len(CYCLE)]
+    return session_type_for(int(memory.get("mesocycle_day", 1)))
 
 
 def get_next_session_type(memory: dict) -> str:
     """Return tomorrow's session type."""
-    day = int(memory.get("mesocycle_day", 1))
-    return CYCLE[day % len(CYCLE)]
+    return next_session_type_for(int(memory.get("mesocycle_day", 1)))
 
 
 def advance_mesocycle(memory: dict):
@@ -179,6 +187,18 @@ def advance_mesocycle(memory: dict):
         memory["mesocycle_day"] = int(fresh_memory.get("mesocycle_day", 1))
         memory["mesocycle_week"] = int(fresh_memory.get("mesocycle_week", 1))
         print(f"Mesocycle already advanced today ({today}); skipping")
+        return
+
+    # Yoga doesn't consume a rotation slot. Advancing on a Sunday would push
+    # the resistance rotation forward for a session that never happened, so a
+    # Saturday Pull would be followed by a Monday Legs with Push silently
+    # skipped. Sunday passes over the top and leaves the position alone.
+    if is_yoga_day():
+        print(f"Yoga day ({today}); rotation stays on day {fresh_memory.get('mesocycle_day', 1)}")
+        fresh_memory["last_advanced_date"] = today
+        save_memory(fresh_memory)
+        memory["mesocycle_day"] = int(fresh_memory.get("mesocycle_day", 1))
+        memory["mesocycle_week"] = int(fresh_memory.get("mesocycle_week", 1))
         return
 
     current_day = int(fresh_memory.get("mesocycle_day", 1))

@@ -5,7 +5,7 @@ heuristics shared by the chat handler.
 
 import re
 
-from data import CYCLE
+from data import session_type_for
 from exercises import find_exercise
 
 
@@ -212,7 +212,10 @@ PPL_END_PHRASES = [
 ]
 CARDIO_YOGA_END_PHRASE = "workout wrapped"
 BRIEF_COMPLETION_ACKS = {"done", "finished", "complete", "completed", "wrapped", "wrapped up"}
-CARDIO_YOGA_DAYS = [4, 5]
+# Cycle days that aren't a top-set/back-off strength session. Yoga used to be
+# day 5 here; it is no longer a rotation position at all — it's pinned to
+# Sunday and overrides whatever the rotation is showing (see data.CYCLE).
+CARDIO_YOGA_DAYS = [4]
 SESSION_TYPE_ALIASES = {
     "Pull": ["pull", "pull day"],
     "Push": ["push", "push day"],
@@ -223,7 +226,8 @@ SESSION_TYPE_ALIASES = {
 
 
 def get_session_type_for_day(mesocycle_day: int) -> str:
-    return CYCLE[(mesocycle_day - 1) % len(CYCLE)]
+    # Delegates so the Sunday yoga override lives in exactly one place.
+    return session_type_for(mesocycle_day)
 
 
 def _has_set_data_in_text(text: str) -> bool:
