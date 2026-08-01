@@ -12,7 +12,11 @@
 import SwiftUI
 
 struct EditSetSheet: View {
-    let set: WorkoutSet
+    /// Named `loggedSet`, not `set`: `set` is a contextual keyword for a
+    /// property setter, so a computed property whose body *begins* with it
+    /// parses as an accessor and fails with "Expected '{' to start setter
+    /// definition". The initialiser label stays `set:` for call sites.
+    let loggedSet: WorkoutSet
     let onSave: (Double, Int, Double?) -> Void
     let onDelete: () -> Void
 
@@ -23,14 +27,14 @@ struct EditSetSheet: View {
     @State private var rpe: Double
     @State private var confirmingDelete = false
 
-    private var isWarmup: Bool { set.isWarmup == true }
+    private var isWarmup: Bool { loggedSet.isWarmup == true }
 
     init(
         set: WorkoutSet,
         onSave: @escaping (Double, Int, Double?) -> Void,
         onDelete: @escaping () -> Void
     ) {
-        self.set = set
+        self.loggedSet = set
         self.onSave = onSave
         self.onDelete = onDelete
         _weight = State(initialValue: set.actualWeightKg ?? 0)
@@ -98,10 +102,10 @@ struct EditSetSheet: View {
 
     private var header: some View {
         VStack(spacing: 4) {
-            Text(set.exercise)
+            Text(loggedSet.exercise)
                 .font(.serifSM)
                 .foregroundStyle(Color.fg0)
-            Text(isWarmup ? "WARM-UP · SET \(set.setNumber)" : "SET \(set.setNumber)")
+            Text(isWarmup ? "WARM-UP · SET \(loggedSet.setNumber)" : "SET \(loggedSet.setNumber)")
                 .font(.eyebrowSmall)
                 .kerning(1.6)
                 .foregroundStyle(Color.fg2)
