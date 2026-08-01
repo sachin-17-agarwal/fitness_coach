@@ -155,6 +155,16 @@ final class ExerciseCatalog {
         "bench press": "Chest",
         "incline press": "Chest",
         "incline bench": "Chest",
+        // The matcher works on substrings, so "incline press" does not catch
+        // "Incline Machine Press" — the qualifier sits between the two words.
+        // Without these the sets resolve to no muscle group at all and drop
+        // silently out of weekly volume, the same way "Single Leg Sumo Press"
+        // once did.
+        "incline machine press": "Chest",
+        "incline dumbbell press": "Chest",
+        "incline db press": "Chest",
+        "incline barbell press": "Chest",
+        "incline chest press": "Chest",
         "decline press": "Chest",
         "chest press": "Chest",
         "chest fly": "Chest",

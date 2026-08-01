@@ -323,7 +323,39 @@ class RegressionTests(unittest.TestCase):
         end_session_mock.assert_called_once_with("abc")
         advance_mock.assert_called_once_with(memory)
 
+    def test_yoga_overrides_sunday_without_advancing_the_rotation(self):
+        """Sunday shows Yoga but must not consume a rotation slot.
+
+        The failure this guards against is silent: if Sunday advanced the
+        cycle, a Saturday Pull would be followed by a Monday Legs with Push
+        skipped entirely, and nothing in the app would report it.
+        """
+        saturday = datetime(2026, 8, 1, 10, 0)
+        sunday = datetime(2026, 8, 2, 10, 0)
+        monday = datetime(2026, 8, 3, 10, 0)
+
+        # mesocycle_day 2 == Push, the session Sunday must not eat.
+        self.assertEqual(data.session_type_for(2, saturday), "Push")
+        self.assertEqual(data.session_type_for(2, sunday), "Yoga")
+        self.assertEqual(data.session_type_for(2, monday), "Push")
+
+        # Tomorrow-facing view: Saturday looks ahead to yoga; Sunday looks
+        # ahead to the position it passed over rather than the one after it.
+        self.assertEqual(data.next_session_type_for(2, saturday), "Yoga")
+        self.assertEqual(data.next_session_type_for(2, sunday), "Push")
+
+    def test_rotation_rolls_from_last_position_back_to_first(self):
+        """Cardio+Abs (day 4) is followed by Pull (day 1), not by Yoga."""
+        monday = datetime(2026, 8, 3, 10, 0)
+        self.assertEqual(data.session_type_for(4, monday), "Cardio+Abs")
+        self.assertEqual(data.next_session_type_for(4, monday), "Pull")
+        self.assertEqual(len(data.CYCLE), 4)
+        self.assertNotIn("Yoga", data.CYCLE)
+
     def test_set_log_implicitly_starts_workout(self):
+        # Pinned to a Monday. `get_session_type_for_day` consults the real
+        # clock now that yoga is a Sunday override, so without freezing the
+        # date this asserts "Push" six days a week and "Yoga" on the seventh.
         memory = {"mesocycle_day": 2, "mesocycle_week": 1}
         state_sequence = [
             # Stale-session guard checks state first — inactive means skip
@@ -333,7 +365,8 @@ class RegressionTests(unittest.TestCase):
             # After start_session succeeds — now active
             {"workout_mode": "active", "current_session_id": "new-session", "current_set_number": "0"},
         ]
-        with patch("coach.load_today_conversation", return_value=[]), \
+        with patch("data.now_local", return_value=datetime(2026, 8, 3, 10, 0)), \
+             patch("coach.load_today_conversation", return_value=[]), \
              patch("coach.chat_with_coach", return_value="Logged"), \
              patch("coach.get_workout_state", side_effect=state_sequence), \
              patch("coach.start_session", return_value="new-session") as start_mock, \
