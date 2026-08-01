@@ -31,7 +31,47 @@ def get_supabase():
     return _supabase_client
 
 
-CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs", "Yoga"]
+# The resistance rotation. It rolls continuously — Cardio+Abs is followed
+# straight back into Pull — and is NOT interrupted by yoga.
+CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs"]
+
+# Yoga is active recovery pinned to Sunday, not a rotation position. It used
+# to be the fifth entry in CYCLE, which made it fire every fifth day and drift
+# through the week; the athlete trains daily and takes yoga on Sunday whatever
+# the rotation happens to be showing. Sunday therefore OVERRIDES the session
+# type without consuming a rotation slot: a Saturday Pull is followed by a
+# Monday Push, with the yoga day passing over the top.
+YOGA_WEEKDAY = 6  # Monday=0 … Sunday=6, matching datetime.weekday()
+YOGA_SESSION_TYPE = "Yoga"
+
+
+def is_yoga_day(when=None) -> bool:
+    """True when the given (or current) local date falls on the yoga day."""
+    return (when or now_local()).weekday() == YOGA_WEEKDAY
+
+
+def session_type_for(mesocycle_day: int, when=None) -> str:
+    """Today's session type: the rotation, with Sunday overriding it."""
+    if is_yoga_day(when):
+        return YOGA_SESSION_TYPE
+    return CYCLE[(mesocycle_day - 1) % len(CYCLE)]
+
+
+def next_session_type_for(mesocycle_day: int, when=None) -> str:
+    """Tomorrow's session type.
+
+    Three cases, and the middle one is the reason this isn't a one-liner:
+    tomorrow is the yoga day; today IS the yoga day, so the rotation position
+    that Sunday passed over is what comes next; or the ordinary case of
+    stepping one along the rotation.
+    """
+    today = when or now_local()
+    tomorrow = today + timedelta(days=1)
+    if is_yoga_day(tomorrow):
+        return YOGA_SESSION_TYPE
+    if is_yoga_day(today):
+        return CYCLE[(mesocycle_day - 1) % len(CYCLE)]
+    return CYCLE[mesocycle_day % len(CYCLE)]
 
 
 def get_app_timezone() -> ZoneInfo:

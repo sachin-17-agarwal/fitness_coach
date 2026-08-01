@@ -2,8 +2,9 @@
 // FitnessCoach
 //
 // Manages mesocycle state stored in the Supabase `memory` key-value table.
-// The cycle rotates through Config.cycle (Pull, Push, Legs, Cardio+Abs, Yoga)
-// and tracks the current week within the mesocycle.
+// The rotation runs through Config.cycle (Pull, Push, Legs, Cardio+Abs) and
+// rolls continuously; Sunday is yoga and overrides it without advancing it.
+// Also tracks the current week within the mesocycle.
 
 import Foundation
 
@@ -48,6 +49,14 @@ final class MesocycleService: Sendable {
             week = ((week - 1) % Config.mesocycleWeeks) + 1
         }
 
+        // Same for the day. The rotation used to be five long with Yoga as
+        // position 5; a value left over from then would satisfy
+        // `day >= cycleLength` on the very next advance and bump the week a
+        // rotation early.
+        if day > Config.cycleLength || day < 1 {
+            day = ((day - 1) % Config.cycleLength + Config.cycleLength) % Config.cycleLength + 1
+        }
+
         return MesocycleState(day: day, week: week)
     }
 
@@ -77,17 +86,24 @@ final class MesocycleService: Sendable {
     /// Returns the updated state.
     @discardableResult
     func advance() async throws -> MesocycleState {
-        var state = try await loadState()
+        let state = try await loadState()
 
-        if state.day >= Config.cycleLength {
-            state.day = 1
-            state.week = (state.week % Config.mesocycleWeeks) + 1
+        // Yoga doesn't consume a rotation slot. Advancing on a Sunday would
+        // push the resistance rotation forward for a session that never
+        // happened, so a Saturday Pull would be followed by a Monday Legs with
+        // Push silently skipped. Mirrors `advance_mesocycle` in memory.py.
+        guard !Config.isYogaDay() else { return state }
+
+        var next = state
+        if next.day >= Config.cycleLength {
+            next.day = 1
+            next.week = (next.week % Config.mesocycleWeeks) + 1
         } else {
-            state.day += 1
+            next.day += 1
         }
 
-        try await saveState(state)
-        return state
+        try await saveState(next)
+        return next
     }
 
     // MARK: - Helpers
