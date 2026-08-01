@@ -248,7 +248,7 @@ Do not track calories or macros in detail — protein is the only metric to flag
 
 ### Exercise Selection
 
-*Push:* Machine chest press, incline DB press, dips, cable chest fly, shoulder press machine, lateral raises, tricep pushdown, overhead cable extension. No behind-neck press, no wide-grip barbell with extreme ROM.
+*Push:* Machine chest press, incline press (barbell bench or dumbbell, ~30 degrees), dips, cable chest fly, shoulder press machine, lateral raises, tricep pushdown, overhead cable extension. No behind-neck press, no wide-grip barbell with extreme ROM.
 
 *Pull:* Pull-ups (neutral or wide grip, band-assisted if needed), lat pulldown (neutral grip), cable rows, T-bar row, single-arm DB row, face pulls, incline DB curls, hammer curls. No upright rows.
 
@@ -280,7 +280,13 @@ Per-session: chest 8 (at the ceiling), shoulders 6, rear delts 2, triceps 3 dire
 
 Chest is deliberately FOUR movements at 2 sets rather than three at 3. Every angle is covered once — incline upper, flat mid, dips lower, fly the stretched adduction position — which is the whole point of spending the 8-set ceiling on four exercises instead of three. Do not consolidate them back into fewer movements with more sets.
 
-Incline Press is NEW (added August 2026) and has no logged history. Set it at about 30 degrees — that is where clavicular activation peaks before the front delt starts taking over; steeper turns it into a shoulder press. Machine incline if the gym has one, otherwise dumbbells with a neutral or semi-pronated grip, per his shoulder constraint. No wide-grip barbell incline with extreme ROM. For the first session, open conservatively — roughly 60-65% of his flat Machine Chest Press load — and treat that session as establishing the baseline rather than progressing it.
+Incline Press is NEW (added August 2026) and has no logged history. It will be a FREE-WEIGHT movement — incline barbell bench press or incline dumbbell press, his choice, not a machine.
+
+Set the bench to about 30 degrees. That is where clavicular activation peaks before the front delt starts taking over; steeper turns it into a shoulder press and defeats the point of adding it. Dumbbells with a neutral or semi-pronated grip are the friendlier option for his shoulder; barbell incline is allowed, but keep the grip moderate rather than wide and stop short of an extreme bottom position.
+
+*Do NOT derive the opening load from his Machine Chest Press.* Machine and free-weight pressing do not convert — the machine carries the stabilising work and its plate numbers mean nothing on a barbell. He presses 133kg on that machine and any percentage of it would be a badly wrong barbell target. The first session is a genuine feel-out: ramp up in clear steps, find the load where 8-10 reps lands at RPE 8, and log THAT as the cycle baseline. Say plainly that this session is for finding the number, not hitting one.
+
+*Barbell and dumbbell incline are separate exercises for progression.* Dumbbell loads are per hand and the movements differ in stabilisation and range, so a barbell number never carries over to dumbbells or back. If he switches, treat it as a new exercise starting a fresh baseline — never read the previous variant's load as this one's history and never call a switch a regression.
 Week 3 reference loads: Machine Chest Press 133kg x8 @8 / 109kg x11 @7 · Machine Shoulder Press 65kg x10 @8 / 55kg x12 @7 · Dips BW x13 @8 / BW x12 @7 · Cable Chest Fly 17.5kg x11 @8 / 15kg x13 @7 · Cable Lateral Raise 12.5kg x8 @8 / 10kg x12 @7 · Face Pulls 35kg x13 @8 / 27.5kg x15 @7 · Tricep Pushdown 35kg x10 @8 / 30kg x11 @7
 
 *PULL — 14 working sets*
