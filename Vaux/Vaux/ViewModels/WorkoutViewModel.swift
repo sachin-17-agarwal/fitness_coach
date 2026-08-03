@@ -866,6 +866,22 @@ final class WorkoutViewModel {
     var lastSessionSetsLoaded = false
     private var lastSessionSetsExercise: String?
 
+    /// Best estimated 1RM per past session for the current exercise, oldest
+    /// first — the strength sparkline on the rest screen.
+    var strengthHistory: [E1RMPoint] = []
+
+    /// Best e1RM among today's working sets on the current exercise, so the
+    /// sparkline can show the point being created right now.
+    var todayE1RM: Double? {
+        exerciseSetsForCurrentExercise
+            .filter { $0.isWarmup != true }
+            .compactMap { set -> Double? in
+                guard let w = set.actualWeightKg, let r = set.actualReps, w > 0, r > 0 else { return nil }
+                return WorkoutService.epley1RM(weight: w, reps: r)
+            }
+            .max()
+    }
+
     /// Fetched once per exercise, on the first rest inside it, rather than on
     /// every rest — the previous session's numbers don't change mid-workout.
     private func loadLastSessionSetsIfNeeded() {
@@ -874,6 +890,7 @@ final class WorkoutViewModel {
         lastSessionSetsExercise = exercise
         lastSessionSets = []
         lastSessionSetsLoaded = false
+        strengthHistory = []
         // `before:` excludes today, otherwise the most recent session
         // containing this exercise is the one currently in progress and the
         // card would show the athlete the sets they logged minutes ago.
@@ -887,6 +904,34 @@ final class WorkoutViewModel {
             lastSessionSets = sets
             lastSessionSetsLoaded = true
         }
+
+        Task {
+            let history = (try? await workoutService.getExerciseHistory(
+                exercise: exercise, days: 180
+            )) ?? []
+            guard lastSessionSetsExercise == exercise else { return }
+            strengthHistory = Self.bestE1RMPerSession(history, excluding: today)
+        }
+    }
+
+    /// Collapses a flat set list into one point per training day — the best
+    /// estimated 1RM that day. Warm-ups are excluded: they are deliberately
+    /// sub-maximal, so a heavy ramp single would otherwise register as a
+    /// strength peak. Today is excluded because the live value is derived
+    /// separately from `todayE1RM` and would otherwise appear twice.
+    static func bestE1RMPerSession(_ sets: [WorkoutSet], excluding today: String) -> [E1RMPoint] {
+        var bestByDate: [String: Double] = [:]
+        for set in sets where set.isWarmup != true {
+            guard let date = set.date, date != today,
+                  let weight = set.actualWeightKg, let reps = set.actualReps,
+                  weight > 0, reps > 0 else { continue }
+            let e1rm = WorkoutService.epley1RM(weight: weight, reps: reps)
+            bestByDate[date] = max(bestByDate[date] ?? 0, e1rm)
+        }
+        return bestByDate
+            .sorted { $0.key < $1.key }
+            .suffix(12)
+            .map { E1RMPoint(date: $0.key, value: $0.value) }
     }
 
     /// Extends the running rest. The total grows with the deadline so the
