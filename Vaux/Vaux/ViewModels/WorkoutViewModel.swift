@@ -854,6 +854,39 @@ final class WorkoutViewModel {
         restTotalSeconds = max(1, seconds)
         restEndDate = Date().addingTimeInterval(Double(seconds))
         isResting = true
+        loadLastSessionSetsIfNeeded()
+    }
+
+    // MARK: - Rest-screen stats
+
+    /// Previous session's sets for the current exercise, shown on the rest
+    /// screen's "last time" card. `loaded` distinguishes an empty result that
+    /// means "first time doing this exercise" from a fetch still in flight.
+    var lastSessionSets: [WorkoutSet] = []
+    var lastSessionSetsLoaded = false
+    private var lastSessionSetsExercise: String?
+
+    /// Fetched once per exercise, on the first rest inside it, rather than on
+    /// every rest — the previous session's numbers don't change mid-workout.
+    private func loadLastSessionSetsIfNeeded() {
+        guard let exercise = currentPrescription?.exerciseName, !exercise.isEmpty else { return }
+        guard exercise != lastSessionSetsExercise else { return }
+        lastSessionSetsExercise = exercise
+        lastSessionSets = []
+        lastSessionSetsLoaded = false
+        // `before:` excludes today, otherwise the most recent session
+        // containing this exercise is the one currently in progress and the
+        // card would show the athlete the sets they logged minutes ago.
+        let today = Self.todayString()
+        Task {
+            let sets = (try? await workoutService.getLastSessionSets(
+                exercise: exercise, before: today
+            )) ?? []
+            // A slow fetch must not land on the next exercise's card.
+            guard lastSessionSetsExercise == exercise else { return }
+            lastSessionSets = sets
+            lastSessionSetsLoaded = true
+        }
     }
 
     /// Extends the running rest. The total grows with the deadline so the
