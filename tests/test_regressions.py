@@ -769,6 +769,58 @@ class RegressionTests(unittest.TestCase):
         start_mock.assert_not_called()
         log_set_mock.assert_not_called()
 
+    def test_free_form_ios_chat_never_logs_a_set(self):
+        """A chat message from the in-workout composer must not become a set.
+
+        The iOS app writes every set to Supabase itself, then sends a message.
+        `is_ios_structured_log` catches its "Logged working …" lines, but
+        free-form chat looks like ordinary text — so any number-shaped phrase
+        the athlete typed got parsed and logged. That is how a Push session
+        acquired a "Leg press 60kg x 1" row.
+        """
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        chat = "the leg press bay is free, should I do 60 x 1 to test the knee?"
+        with patch("data.now_local", return_value=datetime(2026, 8, 3, 10, 0)), \
+             patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Stick to push today"), \
+             patch("coach.get_workout_state", return_value={
+                 "workout_mode": "active",
+                 "current_session_id": "abc",
+                 "current_set_number": "3",
+                 "current_exercise_name": "Machine Chest Press",
+             }), \
+             patch("coach.start_session") as start_mock, \
+             patch("coach.log_set") as log_set_mock, \
+             patch("coach.set_workout_state"), \
+             patch("coach.send_telegram_message"), \
+             patch("coach.resolve_exercise_name", return_value="Leg press"):
+            handle_incoming_message(chat, memory, allow_set_logging=False)
+
+        log_set_mock.assert_not_called()
+        start_mock.assert_not_called()
+
+    def test_telegram_still_logs_sets_from_plain_text(self):
+        """The gate must not disarm Telegram, where typing the set IS the log."""
+        memory = {"mesocycle_day": 2, "mesocycle_week": 1}
+        with patch("data.now_local", return_value=datetime(2026, 8, 3, 10, 0)), \
+             patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="Logged"), \
+             patch("coach.get_workout_state", return_value={
+                 "workout_mode": "active",
+                 "current_session_id": "abc",
+                 "current_set_number": "0",
+                 "current_exercise_name": "Machine Chest Press",
+             }), \
+             patch("coach.log_set", return_value={"is_pr": False}) as log_set_mock, \
+             patch("coach.set_workout_state"), \
+             patch("coach.send_telegram_message"), \
+             patch("coach.resolve_exercise_name", return_value="Machine Chest Press"):
+            handle_incoming_message("133 x 8 @8", memory)
+
+        log_set_mock.assert_called_once()
+        self.assertEqual(log_set_mock.call_args.kwargs["actual_weight"], 133)
+        self.assertEqual(log_set_mock.call_args.kwargs["actual_reps"], 8)
+
     def test_save_memory_passes_on_conflict_key(self):
         # The upsert must supply on_conflict="key" so we update existing rows
         # rather than inserting duplicates. Uses a single batched upsert.
