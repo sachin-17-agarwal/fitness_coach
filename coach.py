@@ -237,8 +237,18 @@ def send_morning_briefing(memory: dict):
 
 def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool = True,
                             out_prs: list | None = None,
-                            recovery_override: dict | None = None) -> str:
+                            recovery_override: dict | None = None,
+                            allow_set_logging: bool = True) -> str:
     """Process a user message, log any sets, and return the coach reply.
+
+    `allow_set_logging` MUST be False for callers whose client persists its own
+    sets — which is every iOS caller. The app writes each set straight to
+    Supabase and then sends a chat message; if the backend also parses that
+    conversation for weight x reps patterns, any number-shaped phrase the
+    athlete types becomes a phantom set. `is_ios_structured_log` catches the
+    app's own "Logged working 1 of 1: ..." messages, but free-form chat from
+    the in-workout composer looks like ordinary text, so it was unguarded: a
+    Push session picked up a "Leg press 60kg x 1" row this way.
 
     If `out_prs` is provided, every set that beats the historical e1RM by >1%
     is appended as a dict so callers (the iOS /api/chat endpoint) can surface
@@ -314,7 +324,9 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     workout_active = state.get("workout_mode") == "active"
     set_data = None
 
-    ios_log = is_ios_structured_log(incoming_text)
+    # Either the app's own structured log line, or a caller that logs its
+    # own sets. Both mean: do not parse this message for set data.
+    ios_log = is_ios_structured_log(incoming_text) or not allow_set_logging
 
     if not workout_active and not ios_log:
         parsed_preview = parse_set_from_message(incoming_text)

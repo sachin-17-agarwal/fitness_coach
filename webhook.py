@@ -227,8 +227,12 @@ def api_briefing():
         style = str(memory.get("briefing_style", "detailed")).strip().lower()
         prompt = build_briefing_prompt(style)
         prs: list = []
+        # Same reasoning as /api/chat: an iOS caller persists its own sets, and
+        # the briefing prompt is generated text that must never be mined for
+        # weight x reps patterns.
         response = handle_incoming_message(prompt, memory, send_reply=False, out_prs=prs,
-                                           recovery_override=recovery_override)
+                                           recovery_override=recovery_override,
+                                           allow_set_logging=False)
     except Exception as e:
         traceback.print_exc()
         return jsonify({
@@ -276,8 +280,12 @@ def api_chat():
     try:
         memory = load_memory()
         prs: list = []
+        # allow_set_logging=False: the iOS app persists every set to Supabase
+        # itself before sending this message. Letting the backend parse it too
+        # double-logs structured entries and invents sets out of ordinary chat.
         response = handle_incoming_message(text, memory, send_reply=False, out_prs=prs,
-                                           recovery_override=recovery_override)
+                                           recovery_override=recovery_override,
+                                           allow_set_logging=False)
     except Exception as e:
         # Log full traceback to Railway/Flask logs for debugging, but return
         # a clean JSON error so the iOS app surfaces something useful instead
