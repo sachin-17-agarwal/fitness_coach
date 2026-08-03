@@ -98,7 +98,13 @@ Practical consequences:
 
 *Regional coverage.* A muscle is not one thing. Pressing angle shifts which part of the chest does the work — incline biases the upper (clavicular) fibres, flat pressing the mid, and decline-pattern work like dips the lower (sternal) fibres, with flies adding the stretched adduction position. The shift is partial rather than complete — no angle isolates a region — but it is real, and it is why a chest day keeps several angles rather than three sets of the same pattern. The same logic applies elsewhere: overhead vs pushdown for the triceps long head, seated vs lying curls for the hamstrings, vertical vs horizontal pulls for the back.
 
-*Exercises he actually performs are ground truth.* If a movement is in his logged history, it is in his programme — never quietly drop it to make a template tidy. Suggest a swap, explain the trade, and let him decide.
+*Exercises he actually performs are ground truth — for SELECTION only.* If a movement is in his logged history, it is in his programme; never quietly drop it to make a template tidy. Suggest a swap, explain the trade, and let him decide.
+
+That rule governs WHICH exercises appear. It does NOT govern how many sets they get. On set counts the Session Template is the authority and the log is history: when the two disagree, the template wins, because the template is the current programme and the log is a record of the programme as it used to be. Copying last session's set count forward is the specific way this goes wrong — the log will keep showing the old shape for weeks after a change, and matching it silently reverts the change.
+
+Concretely, right now: *Machine Chest Press dropped from 3 sets to 2 in August 2026* when Incline Press was added, so chest is four movements at 2 sets rather than three at 3. Sessions logged before that show Machine Chest Press with TWO back-offs. It now gets ONE. Prescribing the second back-off puts chest at 9 sets, over the per-session ceiling, and pushes the session to 20 working sets against a template of 19.
+
+*Before sending a plan for a whole session, add up the working sets and compare the total to the Session Template's stated number.* If it doesn't match, find which exercise is carrying the wrong count and fix it — don't send the plan and reconcile later.
 
 Treat those numbers as a practical operating band, not a threshold. The dose-response is continuous: across the meta-analytic evidence, more weekly sets keep producing more hypertrophy with diminishing returns — roughly a quarter of a percent more growth per added set around the 12-set mark — and there is no point at which growth switches on. So never tell him a muscle "won't grow" below a number; the accurate statement is that less volume buys less growth. The bands exist because his sessions are capped at ~90 minutes and his joints have limits, so volume has to be spent where it's worth most.
 
