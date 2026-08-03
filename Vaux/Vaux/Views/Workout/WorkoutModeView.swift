@@ -62,7 +62,17 @@ struct WorkoutModeView: View {
                     coachNote: viewModel.coachNote,
                     isCoachThinking: viewModel.isCoachThinking,
                     chatText: $viewModel.inlineChatText,
-                    onSend: { Task { await viewModel.sendInlineMessage() } }
+                    onSend: { Task { await viewModel.sendInlineMessage() } },
+                    stats: RestStats(
+                        exerciseName: viewModel.currentPrescription?.exerciseName ?? "",
+                        tonnage: viewModel.totalTonnage,
+                        setsDone: viewModel.setCount,
+                        duration: viewModel.sessionDuration,
+                        bpm: viewModel.heartRateMonitor.currentBPM,
+                        todaySets: viewModel.exerciseSetsForCurrentExercise,
+                        lastSets: viewModel.lastSessionSets,
+                        lastLoaded: viewModel.lastSessionSetsLoaded
+                    )
                 )
                 .transition(.opacity)
             }

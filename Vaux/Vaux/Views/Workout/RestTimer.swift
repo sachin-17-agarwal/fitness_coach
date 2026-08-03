@@ -12,6 +12,24 @@
 
 import SwiftUI
 
+/// Snapshot of the numbers worth glancing at mid-rest, assembled by
+/// WorkoutModeView from the view model. A struct rather than the view model
+/// itself so RestTimer stays a dumb view with explicit inputs.
+struct RestStats {
+    var exerciseName: String
+    var tonnage: Double
+    var setsDone: Int
+    var duration: TimeInterval
+    var bpm: Int?
+    /// Sets logged against the current exercise this session.
+    var todaySets: [WorkoutSet]
+    /// The previous session's sets for the same exercise.
+    var lastSets: [WorkoutSet]
+    /// Distinguishes "no history" (first time doing this exercise — worth
+    /// saying) from "still fetching" (worth a spinner, not a claim).
+    var lastLoaded: Bool
+}
+
 struct RestTimer: View {
     let totalSeconds: Int
     @Binding var endDate: Date?
@@ -34,6 +52,9 @@ struct RestTimer: View {
     /// right above the composer.
     var chatText: Binding<String> = .constant("")
     var onSend: () -> Void = {}
+    /// Rest is dead time; these cards fill it with the numbers that inform
+    /// the next set — last session's performance on this exercise above all.
+    var stats: RestStats? = nil
 
     @State private var pulse: Bool = false
     @State private var showChat: Bool = false
@@ -81,6 +102,8 @@ struct RestTimer: View {
                         if let nextSet, !chatFocused { upNext(nextSet) }
 
                         if !chatFocused { controls }
+
+                        if let stats, !chatFocused { statStrip(stats) }
 
                         coachNotePanel
 
@@ -243,6 +266,190 @@ struct RestTimer: View {
             )
             .padding(.horizontal, 22)
         }
+    }
+
+    // MARK: - Stat cards
+
+    /// Sideways-scrolling cards, one insight each, snapping a card at a time.
+    /// The 0.78 width leaves a peek of the next card so the scrollability is
+    /// visible without a page-dot row.
+    private func statStrip(_ stats: RestStats) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                if !stats.exerciseName.isEmpty {
+                    lastTimeCard(stats)
+                    todayCard(stats)
+                }
+                sessionCard(stats)
+            }
+            .scrollTargetLayout()
+        }
+        .contentMargins(.horizontal, 22, for: .scrollContent)
+        .scrollTargetBehavior(.viewAligned)
+    }
+
+    private func statCard<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.eyebrowSmall)
+                .kerning(1.4)
+                .foregroundStyle(Color.fg2)
+                .lineLimit(1)
+                .allowsTightening(true)
+
+            content()
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(height: 148, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.ink2.opacity(0.75))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.line, lineWidth: 1)
+        )
+        .containerRelativeFrame(.horizontal) { length, _ in length * 0.78 }
+    }
+
+    /// What this exercise looked like last session — the number the athlete
+    /// is actually trying to beat, previously only available by leaving the
+    /// timer and digging through History mid-rest.
+    private func lastTimeCard(_ stats: RestStats) -> some View {
+        statCard("LAST TIME · \(stats.exerciseName.uppercased())") {
+            let rows = workingOnly(stats.lastSets)
+            if !stats.lastLoaded {
+                HStack(spacing: 8) {
+                    ProgressView().tint(Color.fg2).scaleEffect(0.7)
+                    Text("Checking history…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.fg2)
+                }
+            } else if rows.isEmpty {
+                Text("First session — today sets the baseline.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.fg1)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                setRows(rows, exercise: stats.exerciseName)
+                if let delta = deltaLine(stats) {
+                    Text(delta)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.mint)
+                        .lineLimit(1)
+                        .allowsTightening(true)
+                }
+            }
+        }
+    }
+
+    private func todayCard(_ stats: RestStats) -> some View {
+        let rows = workingOnly(stats.todaySets)
+        return statCard("TODAY · \(stats.exerciseName.uppercased())") {
+            if rows.isEmpty {
+                Text("Working sets land here as you log them.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.fg1)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                setRows(rows, exercise: stats.exerciseName)
+            }
+        }
+    }
+
+    /// The live-stats bar exists at the top of the workout screen, but this
+    /// overlay covers it — so during rest, the session totals were invisible.
+    private func sessionCard(_ stats: RestStats) -> some View {
+        statCard("SESSION") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    sessionCell(value: formatTonnage(stats.tonnage), label: "TONNAGE")
+                    sessionCell(value: "\(stats.setsDone)", label: "SETS")
+                }
+                HStack(spacing: 8) {
+                    sessionCell(value: formatDuration(stats.duration), label: "TIME")
+                    sessionCell(value: stats.bpm.map { "\($0)" } ?? "—", label: "BPM")
+                }
+            }
+        }
+    }
+
+    private func sessionCell(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.numMD)
+                .foregroundStyle(Color.fg0)
+                .monospacedDigit()
+            Text(label)
+                .font(.eyebrowSmall)
+                .kerning(1.0)
+                .foregroundStyle(Color.fg2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func workingOnly(_ rows: [WorkoutSet]) -> [WorkoutSet] {
+        rows.filter { $0.isWarmup != true }
+    }
+
+    private func setRows(_ rows: [WorkoutSet], exercise: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(rows.prefix(4)) { row in
+                HStack(spacing: 6) {
+                    Text("\(ExerciseCatalog.setWeightLabel(row.actualWeightKg ?? 0, exercise: exercise)) × \(row.actualReps ?? 0)")
+                        .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(Color.fg0)
+                    if let rpe = row.actualRpe {
+                        Text("@\(rpe.wholeOrOne)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.fg2)
+                    }
+                }
+            }
+            if rows.count > 4 {
+                Text("+\(rows.count - 4) more")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.fg2)
+            }
+        }
+    }
+
+    /// Positive-or-silent by design: on a deload the top set is BELOW last
+    /// time on purpose, and a red "−17kg" mid-rest would read as a scolding
+    /// for correct execution. The rows themselves carry the comparison.
+    private func deltaLine(_ stats: RestStats) -> String? {
+        let today = workingOnly(stats.todaySets)
+        let last = workingOnly(stats.lastSets)
+        guard
+            let t = today.max(by: { ($0.actualWeightKg ?? 0) < ($1.actualWeightKg ?? 0) }),
+            let l = last.max(by: { ($0.actualWeightKg ?? 0) < ($1.actualWeightKg ?? 0) })
+        else { return nil }
+        let tw = t.actualWeightKg ?? 0
+        let lw = l.actualWeightKg ?? 0
+        if tw > lw {
+            return "Top set +\((tw - lw).wholeOrOne)kg vs last time"
+        }
+        if tw == lw, let tr = t.actualReps, let lr = l.actualReps {
+            if tr > lr {
+                return "+\(tr - lr) rep\(tr - lr == 1 ? "" : "s") at \(ExerciseCatalog.setWeightLabel(tw, exercise: stats.exerciseName))"
+            }
+            if tr == lr { return "Matched last time's top set" }
+        }
+        return nil
+    }
+
+    private func formatTonnage(_ value: Double) -> String {
+        value >= 1000 ? String(format: "%.1ft", value / 1000) : "\(Int(value))kg"
+    }
+
+    private func formatDuration(_ value: TimeInterval) -> String {
+        String(format: "%d:%02d", Int(value) / 60, Int(value) % 60)
     }
 
     // MARK: - Composer

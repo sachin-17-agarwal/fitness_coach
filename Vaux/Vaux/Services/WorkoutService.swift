@@ -622,11 +622,17 @@ final class WorkoutService: Sendable {
 
     /// Returns the sets from the most recent completed session that included
     /// the given exercise.  Useful for auto-suggesting weights and reps.
-    func getLastSessionSets(exercise: String) async throws -> [WorkoutSet] {
+    /// Pass `before` (yyyy-MM-dd, exclusive) to get the previous session's
+    /// sets rather than the most recent — mid-workout, "most recent" is the
+    /// session currently in progress, which makes a "last time" comparison
+    /// show the athlete the sets they logged minutes ago.
+    func getLastSessionSets(exercise: String, before date: String? = nil) async throws -> [WorkoutSet] {
         // Find the most recent set for this exercise to determine its session ID.
+        var query = ["exercise": "eq.\(exercise)"]
+        if let date { query["date"] = "lt.\(date)" }
         let recentSets: [WorkoutSet] = try await client.fetch(
             "workout_sets",
-            query: ["exercise": "eq.\(exercise)"],
+            query: query,
             order: "date.desc,set_number.asc",
             limit: 1
         )
