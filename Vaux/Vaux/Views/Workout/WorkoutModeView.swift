@@ -68,10 +68,12 @@ struct WorkoutModeView: View {
                         tonnage: viewModel.totalTonnage,
                         setsDone: viewModel.setCount,
                         duration: viewModel.sessionDuration,
-                        bpm: viewModel.heartRateMonitor.currentBPM,
+                        heartRate: viewModel.heartRateMonitor,
                         todaySets: viewModel.exerciseSetsForCurrentExercise,
                         lastSets: viewModel.lastSessionSets,
-                        lastLoaded: viewModel.lastSessionSetsLoaded
+                        lastLoaded: viewModel.lastSessionSetsLoaded,
+                        strengthHistory: viewModel.strengthHistory,
+                        todayE1RM: viewModel.todayE1RM
                     )
                 )
                 .transition(.opacity)

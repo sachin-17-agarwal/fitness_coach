@@ -11,6 +11,16 @@
 // sleeps until the deadline.
 
 import SwiftUI
+import Charts
+
+/// One session's best estimated 1RM for an exercise — a point on the
+/// strength sparkline. Identified by date so re-renders don't re-diff
+/// the whole chart.
+struct E1RMPoint: Identifiable {
+    var date: String
+    var value: Double
+    var id: String { date }
+}
 
 /// Snapshot of the numbers worth glancing at mid-rest, assembled by
 /// WorkoutModeView from the view model. A struct rather than the view model
@@ -20,7 +30,11 @@ struct RestStats {
     var tonnage: Double
     var setsDone: Int
     var duration: TimeInterval
-    var bpm: Int?
+    /// The monitor itself rather than a captured Int, for two reasons: it is
+    /// @Observable so the session card's BPM stays live, and the recovery
+    /// card's sampling task holds the class reference across view re-renders
+    /// — a copied value would freeze at whatever it was when the task began.
+    var heartRate: HeartRateMonitor?
     /// Sets logged against the current exercise this session.
     var todaySets: [WorkoutSet]
     /// The previous session's sets for the same exercise.
@@ -28,6 +42,11 @@ struct RestStats {
     /// Distinguishes "no history" (first time doing this exercise — worth
     /// saying) from "still fetching" (worth a spinner, not a claim).
     var lastLoaded: Bool
+    /// Best e1RM per past session for this exercise, oldest first.
+    var strengthHistory: [E1RMPoint]
+    /// Best e1RM among today's working sets, appended to the sparkline as
+    /// its live final point.
+    var todayE1RM: Double?
 }
 
 struct RestTimer: View {
@@ -59,6 +78,10 @@ struct RestTimer: View {
     @State private var pulse: Bool = false
     @State private var showChat: Bool = false
     @FocusState private var chatFocused: Bool
+    /// Rolling BPM trace for this rest, sampled once a second. Local to the
+    /// timer and discarded when it closes — it describes one recovery
+    /// window, not the session, so nothing outside needs it.
+    @State private var hrSamples: [Int] = []
 
     /// The ring gives up most of its size while composing — with the keyboard
     /// up there isn't room for both, and the thing being looked at is the
@@ -126,6 +149,23 @@ struct RestTimer: View {
             // sat there over the countdown. Resigning app-wide clears whatever
             // is actually focused, regardless of which view owns it.
             dismissKeyboard()
+        }
+        // Keyed on nothing so it runs once for the lifetime of this rest and
+        // dies with it. `HeartRateMonitor` publishes whatever HealthKit last
+        // delivered rather than a stream we can await, so a 1s poll is the
+        // only way to build a trace — cheap, and it stops when the view goes.
+        .task {
+            while !Task.isCancelled {
+                if let bpm = stats?.heartRate?.currentBPM {
+                    // Skip duplicate consecutive readings: HealthKit often
+                    // repeats the same sample for several seconds, and a flat
+                    // run of identical points draws a plateau that didn't
+                    // happen.
+                    if hrSamples.last != bpm { hrSamples.append(bpm) }
+                    if hrSamples.count > 90 { hrSamples.removeFirst(hrSamples.count - 90) }
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
         }
         .task(id: endDate) {
             guard let endDate else { return }
@@ -278,8 +318,10 @@ struct RestTimer: View {
             HStack(spacing: 10) {
                 if !stats.exerciseName.isEmpty {
                     lastTimeCard(stats)
+                    strengthCard(stats)
                     todayCard(stats)
                 }
+                recoveryCard(stats)
                 sessionCard(stats)
             }
             .scrollTargetLayout()
@@ -363,6 +405,203 @@ struct RestTimer: View {
         }
     }
 
+    // MARK: - Strength sparkline
+
+    /// Estimated 1RM per session for the current lift, with today appended
+    /// live as the final point. Change-over-time, one series — so a line, no
+    /// legend (the title names it), and only the endpoint labelled rather
+    /// than a number on every point.
+    private func strengthCard(_ stats: RestStats) -> some View {
+        let points = sparklinePoints(stats)
+        return statCard("STRENGTH · \(stats.exerciseName.uppercased())") {
+            if points.count < 2 {
+                Text("Two sessions needed before a trend means anything.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.fg1)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(Int(points.last?.value ?? 0))kg")
+                            .font(.numMD)
+                            .foregroundStyle(Color.fg0)
+                            .monospacedDigit()
+                        Text("est. 1RM")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.fg2)
+                    }
+
+                    sparkline(points)
+                        .frame(height: 52)
+
+                    if let trend = trendLine(points) {
+                        Text(trend)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.mint)
+                            .lineLimit(1)
+                            .allowsTightening(true)
+                    }
+                }
+            }
+        }
+    }
+
+    /// History plus today's best, so the athlete watches the point they are
+    /// currently creating land on the curve.
+    private func sparklinePoints(_ stats: RestStats) -> [E1RMPoint] {
+        var points = stats.strengthHistory
+        if let today = stats.todayE1RM, today > 0 {
+            points.append(E1RMPoint(date: "today", value: today))
+        }
+        return points
+    }
+
+    private func sparkline(_ points: [E1RMPoint]) -> some View {
+        // Indexed rather than date-scaled: sessions are what matter here, and
+        // an unevenly spaced x-axis would make a missed week read as a slump.
+        let indexed = Array(points.enumerated())
+        let values = points.map(\.value)
+        let lo = (values.min() ?? 0)
+        let hi = (values.max() ?? 1)
+        // Pad the domain so a flat series doesn't collapse to a zero-height
+        // band and a rising one doesn't touch the card edges.
+        let pad = max((hi - lo) * 0.18, 1.5)
+
+        return Chart {
+            ForEach(indexed, id: \.offset) { i, point in
+                AreaMark(
+                    x: .value("Session", i),
+                    y: .value("e1RM", point.value)
+                )
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.signal.opacity(0.28), Color.signal.opacity(0.02)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .interpolationMethod(.catmullRom)
+
+                LineMark(
+                    x: .value("Session", i),
+                    y: .value("e1RM", point.value)
+                )
+                .foregroundStyle(Color.signal)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+                .interpolationMethod(.catmullRom)
+            }
+
+            // Endpoint only — a marker on every session would clutter a
+            // 52pt-tall plot, and the last point is the one being acted on.
+            if let last = indexed.last {
+                PointMark(
+                    x: .value("Session", last.offset),
+                    y: .value("e1RM", last.element.value)
+                )
+                .foregroundStyle(Color.signal)
+                .symbolSize(60)
+
+                PointMark(
+                    x: .value("Session", last.offset),
+                    y: .value("e1RM", last.element.value)
+                )
+                .foregroundStyle(Color.ink0)
+                .symbolSize(18)
+            }
+        }
+        .chartYScale(domain: (lo - pad)...(hi + pad))
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartLegend(.hidden)
+    }
+
+    private func trendLine(_ points: [E1RMPoint]) -> String? {
+        guard let first = points.first?.value, let last = points.last?.value,
+              first > 0, points.count >= 2 else { return nil }
+        let delta = last - first
+        guard abs(delta) >= 0.5 else { return "Holding steady across \(points.count) sessions" }
+        let pct = delta / first * 100
+        let arrow = delta > 0 ? "↑" : "↓"
+        return "\(arrow) \(abs(delta).wholeOrOne)kg (\(abs(pct).wholeOrOne)%) over \(points.count) sessions"
+    }
+
+    // MARK: - Recovery
+
+    /// Heart rate falling in real time is the one number that is genuinely
+    /// *happening* during rest — everything else on this screen is static.
+    /// Samples once a second into a rolling trace for the length of the rest.
+    private func recoveryCard(_ stats: RestStats) -> some View {
+        statCard("RECOVERY") {
+            if let monitor = stats.heartRate, let bpm = monitor.currentBPM {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(bpm)")
+                            .font(.numMD)
+                            .foregroundStyle(Color.fg0)
+                            .monospacedDigit()
+                        Text("BPM")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.fg2)
+                        Spacer(minLength: 0)
+                        if let drop = hrDrop, drop > 0 {
+                            Text("−\(drop) since peak")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.mint)
+                        }
+                    }
+
+                    hrTrace
+                        .frame(height: 46)
+
+                    Text(monitor.zoneLabel(for: bpm))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.fg2)
+                }
+            } else {
+                Text("No heart-rate signal — needs the Watch on and streaming.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.fg1)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var hrTrace: some View {
+        if hrSamples.count < 2 {
+            // A single sample is a dot, not a trend; say nothing rather than
+            // draw a line implying a trajectory that hasn't been measured.
+            Text("Tracking…")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.fg2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            let lo = Double(hrSamples.min() ?? 0)
+            let hi = Double(hrSamples.max() ?? 1)
+            let pad = max((hi - lo) * 0.2, 2)
+            Chart {
+                ForEach(Array(hrSamples.enumerated()), id: \.offset) { i, bpm in
+                    LineMark(
+                        x: .value("Second", i),
+                        y: .value("BPM", bpm)
+                    )
+                    .foregroundStyle(Color.ember)
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .interpolationMethod(.catmullRom)
+                }
+            }
+            .chartYScale(domain: (lo - pad)...(hi + pad))
+            .chartXAxis(.hidden)
+            .chartYAxis(.hidden)
+            .chartLegend(.hidden)
+        }
+    }
+
+    private var hrDrop: Int? {
+        guard let peak = hrSamples.max(), let now = hrSamples.last else { return nil }
+        return peak - now
+    }
+
     /// The live-stats bar exists at the top of the workout screen, but this
     /// overlay covers it — so during rest, the session totals were invisible.
     private func sessionCard(_ stats: RestStats) -> some View {
@@ -374,7 +613,7 @@ struct RestTimer: View {
                 }
                 HStack(spacing: 8) {
                     sessionCell(value: formatDuration(stats.duration), label: "TIME")
-                    sessionCell(value: stats.bpm.map { "\($0)" } ?? "—", label: "BPM")
+                    sessionCell(value: stats.heartRate?.currentBPM.map { "\($0)" } ?? "—", label: "BPM")
                 }
             }
         }
