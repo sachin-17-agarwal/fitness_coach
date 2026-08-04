@@ -608,21 +608,37 @@ final class WorkoutViewModel {
         // is what the iOS itself just logged.
         let factPrefix = "Logged \(phaseProgress): \(actual)."
 
-        // Warm-up ramps don't need the coach, and asking costs real money.
-        // Every round-trip carries the whole ~17k-token system prompt plus a
-        // ~4k context block, and a session logs roughly 28 sets — eight of
-        // them ramps. Nothing in the reply is load-bearing here: the ramp
-        // loads are already on the card, the next phase comes from the local
-        // tracker, and the set is persisted to Supabase either way, so the
-        // context block picks it up on the next real request. Progression
-        // never reads a warm-up. Skipping these is ~30% of the session's API
-        // spend for no loss of information the athlete can see.
+        // A ramp set that went exactly as prescribed tells the coach nothing
+        // it can act on, and asking costs real money: every round-trip ships
+        // the whole ~17k-token system prompt plus the context block, and a
+        // session logs roughly 28 sets, eight of them ramps. The loads are
+        // already on the card, the next phase comes from the local tracker,
+        // and `get_workout_context` renders every warm-up to the coach on the
+        // next real call anyway ("set 1 warm-up: actual 69kg × 10"), so
+        // nothing is lost from its picture of the session.
         //
-        // The LAST ramp is the exception: it hands off to the working set,
-        // which is a real coaching moment (and the point where a re-prescribed
-        // load would arrive), so that one still asks.
+        // A ramp that DEVIATED is the opposite — it is the earliest warning
+        // that the working weight is wrong, and it has to be raised before the
+        // top set rather than after it. Three cases still ask:
+        //
+        //   1. Reps fell short of the prescribed ramp.
+        //   2. The load differs from what was prescribed — he judged it heavy
+        //      (or light) and adjusted, which is a decision worth reacting to.
+        //   3. No target exists, so the set was improvised and unverifiable.
+        //
+        // The last ramp always asks regardless: it hands off to the working
+        // set, which is where a revised load would arrive.
+        //
+        // Note there is no RPE signal to test — `logSet` persists `rpe: nil`
+        // for warm-ups by design, so effort on a ramp is not recorded at all.
+        // Deviation in load or reps is the only evidence available.
+        let rampWentToPlan: Bool = {
+            guard let t = target else { return false }
+            guard loggedReps >= t.reps else { return false }
+            return abs(loggedWeight - t.weight) < 0.01
+        }()
         let isMidRamp = isWarmup && currentPhase == .warmup
-        if isMidRamp {
+        if isMidRamp && rampWentToPlan {
             coachNote = factPrefix
             isCoachThinking = false
             return
