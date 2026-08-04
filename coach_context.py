@@ -178,6 +178,28 @@ def get_recovery_history(days: int = 30) -> str:
         return f"Could not load recovery data: {e}"
 
 
+def _split_history_at_today(history: str, today_iso: str) -> tuple[str, str]:
+    """Divide the rendered 30-day log into before-today and today.
+
+    `get_full_session_history` emits one blank-line-separated block per
+    session, each starting "YYYY-MM-DD — Type". Everything except today's
+    blocks is fixed for the whole day, which is what lets the bulk of the
+    context sit behind a cache breakpoint while today's sets — the only part
+    that changes as the athlete logs — stays live after it.
+    """
+    if not history or not history.strip():
+        return "No sessions found.", "Nothing logged yet today."
+    past, today = [], []
+    for block in history.split("\n\n"):
+        if not block.strip():
+            continue
+        (today if block.strip().startswith(today_iso) else past).append(block)
+    return (
+        "\n\n".join(past) if past else "No earlier sessions in the window.",
+        "\n\n".join(today) if today else "Nothing logged yet today.",
+    )
+
+
 def _recovery_from_override(payload: dict) -> dict:
     """Shape a client-supplied recovery snapshot into today's recovery dict.
 
@@ -221,6 +243,7 @@ def build_context_block(memory: dict, athlete_name: str,
                         athlete_goal_weight_kg: int,
                         log, recovery_override: dict | None = None) -> str:
     today = now_local().strftime("%A %d %B %Y")
+    today_iso = now_local().strftime("%Y-%m-%d")
     mesocycle_week = memory.get("mesocycle_week", 1)
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
     today_session = session_type_for(mesocycle_day)
@@ -273,6 +296,9 @@ def build_context_block(memory: dict, athlete_name: str,
         score_line = ""
 
     session_history = results.get("session_history") or "No sessions found."
+    # The 30-day log is stable all day EXCEPT for today's rows, which change
+    # with every logged set. Separating them is what makes the bulk cacheable.
+    past_sessions, today_sessions = _split_history_at_today(session_history, today_iso)
     recovery_history = results.get("recovery_history") or "No recovery data."
     substitution_history = results.get("substitution_history") or ""
     apple_workouts = results.get("apple_workouts") or ""
@@ -280,10 +306,34 @@ def build_context_block(memory: dict, athlete_name: str,
     workout_context = get_workout_context(workout_state)
     weekly_volume = format_weekly_volume(results.get("weekly_volume") or {})
 
-    return f"""
+    # Split by volatility, not by topic. Everything that only changes once a
+    # day goes in the first block so a cache breakpoint can sit between them;
+    # everything that moves as sets are logged goes in the second. During a
+    # workout the second block is the ONLY part that differs between requests,
+    # so the first (~4k tokens) stops being re-billed on every logged set.
+    #
+    # The two are concatenated in `system`, so the coach reads one continuous
+    # context exactly as before — the split is invisible to it.
+    stable = f"""
 [ATHLETE CONTEXT]
 Athlete: {athlete_name} | Current weight: {athlete_current_weight_kg}kg | Goal weight: {athlete_goal_weight_kg}kg
-Date: {today}
+Known limitations: Slight knee and shoulder issues — see coaching profile.
+
+LAST 30 DAYS RECOVERY:
+{recovery_history}
+
+SESSIONS BEFORE TODAY (last 30 days):
+{past_sessions}
+
+EXERCISE SUBSTITUTION HISTORY:
+{substitution_history}
+
+APPLE WATCH WORKOUTS (last 30 days):
+{apple_workouts}
+"""
+
+    live = f"""
+TODAY — {today}
 Mesocycle: Week {mesocycle_week} of 4 | Rotation day {mesocycle_day}/4 (Pull→Push→Legs→Cardio+Abs, rolling; Sunday is yoga and does not advance it)
 TODAY'S SESSION TYPE: {today_session}
 NEXT SESSION: {next_session}
@@ -295,25 +345,15 @@ Resting HR: {data.get('resting_hr', 'N/A')} bpm (7-day avg: {data.get('resting_h
 Avg HR: {data.get('heart_rate', 'N/A')} bpm | Respiratory rate: {data.get('respiratory_rate', 'N/A')} | Steps: {data.get('steps', 'N/A')} | Active energy: {data.get('active_energy_kcal', 'N/A')} kcal | Exercise minutes: {data.get('exercise_minutes', 'N/A')}
 Body weight: {data.get('weight_kg', 'N/A')}kg | Body fat: {data.get('body_fat_pct', 'N/A')}% | VO2 max: {data.get('vo2_max', 'N/A')}
 
-LAST 30 DAYS RECOVERY:
-{recovery_history}
-
-LAST 30 DAYS SESSIONS:
-{session_history}
+TODAY'S SESSIONS SO FAR:
+{today_sessions}
 
 WEEKLY VOLUME — working sets per muscle, last 7 days (lowest first):
 {weekly_volume}
-
-EXERCISE SUBSTITUTION HISTORY:
-{substitution_history}
-
-APPLE WATCH WORKOUTS (last 30 days):
-{apple_workouts}
-
-Known limitations: Slight knee and shoulder issues — see coaching profile.
 {workout_context}
 [END CONTEXT]
 """
+    return stable, live
 
 
 def truncate_history(history: list) -> list:
