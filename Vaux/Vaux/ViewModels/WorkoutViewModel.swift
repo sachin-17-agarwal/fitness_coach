@@ -607,6 +607,27 @@ final class WorkoutViewModel {
         // result, etc.), and the only thing the iOS can reliably trust
         // is what the iOS itself just logged.
         let factPrefix = "Logged \(phaseProgress): \(actual)."
+
+        // Warm-up ramps don't need the coach, and asking costs real money.
+        // Every round-trip carries the whole ~17k-token system prompt plus a
+        // ~4k context block, and a session logs roughly 28 sets — eight of
+        // them ramps. Nothing in the reply is load-bearing here: the ramp
+        // loads are already on the card, the next phase comes from the local
+        // tracker, and the set is persisted to Supabase either way, so the
+        // context block picks it up on the next real request. Progression
+        // never reads a warm-up. Skipping these is ~30% of the session's API
+        // spend for no loss of information the athlete can see.
+        //
+        // The LAST ramp is the exception: it hands off to the working set,
+        // which is a real coaching moment (and the point where a re-prescribed
+        // load would arrive), so that one still asks.
+        let isMidRamp = isWarmup && currentPhase == .warmup
+        if isMidRamp {
+            coachNote = factPrefix
+            isCoachThinking = false
+            return
+        }
+
         // The next-phase decision belongs to the iOS phase tracker, not the
         // coach — pass `allowExerciseChange: false` so a stray "moving to
         // chest" in the response can't skip the back-off that's still owed.

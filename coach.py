@@ -126,7 +126,7 @@ def _log_cache_usage(response) -> None:
 def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     recovery_override: dict | None = None) -> str:
     system_prompt = load_system_prompt()
-    context_block = build_context_block(
+    stable_context, live_context = build_context_block(
         memory,
         ATHLETE_NAME,
         ATHLETE_CURRENT_WEIGHT_KG,
@@ -161,10 +161,19 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         # billed per token generated, not per token allowed, so a higher
         # ceiling costs nothing until a reply actually needs it.
         max_tokens=2000,
+        # Three blocks, breakpoint after the second. The context used to be
+        # one lump AFTER the only breakpoint, so all ~4k tokens of it were
+        # re-billed on every request — a third of the cost of a logged set.
+        # Splitting it by volatility puts the day-stable part (30-day recovery,
+        # sessions before today, Apple workouts, substitutions) inside the
+        # cached prefix, leaving only today's sets and the live workout state
+        # outside it. Caching is a prefix match, so the stable block must
+        # physically precede the live one — that ordering is load-bearing.
         system=[
-            {"type": "text", "text": system_prompt,
+            {"type": "text", "text": system_prompt},
+            {"type": "text", "text": stable_context,
              "cache_control": {"type": "ephemeral", "ttl": "1h"}},
-            {"type": "text", "text": context_block},
+            {"type": "text", "text": live_context},
         ],
         messages=messages_to_send,
     )
