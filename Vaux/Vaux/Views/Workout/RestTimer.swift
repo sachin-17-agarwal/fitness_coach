@@ -157,12 +157,16 @@ struct RestTimer: View {
         .task {
             while !Task.isCancelled {
                 if let bpm = stats?.heartRate?.currentBPM {
-                    // Skip duplicate consecutive readings: HealthKit often
-                    // repeats the same sample for several seconds, and a flat
-                    // run of identical points draws a plateau that didn't
-                    // happen.
-                    if hrSamples.last != bpm { hrSamples.append(bpm) }
-                    if hrSamples.count > 90 { hrSamples.removeFirst(hrSamples.count - 90) }
+                    // Append every tick, including repeats. The first version
+                    // skipped duplicate consecutive readings to avoid drawing
+                    // a plateau HealthKit had merely repeated — but the Watch
+                    // delivers a new sample only every few seconds, so a
+                    // steady heart rate produced exactly ONE point and the
+                    // card sat on "Tracking…" for the whole rest. A flat trace
+                    // is the honest picture of a flat heart rate; one dot is
+                    // not a picture at all.
+                    hrSamples.append(bpm)
+                    if hrSamples.count > 180 { hrSamples.removeFirst(hrSamples.count - 180) }
                 }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
@@ -420,7 +424,10 @@ struct RestTimer: View {
                     .foregroundStyle(Color.fg1)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
+                    // Trend sits on the headline row, not under the plot. It
+                    // used to follow the chart, where the area fill rose
+                    // behind it and the text became unreadable against it.
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("\(Int(points.last?.value ?? 0))kg")
                             .font(.numMD)
@@ -431,16 +438,19 @@ struct RestTimer: View {
                             .foregroundStyle(Color.fg2)
                     }
 
-                    sparkline(points)
-                        .frame(height: 52)
-
                     if let trend = trendLine(points) {
                         Text(trend)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Color.mint)
                             .lineLimit(1)
-                            .allowsTightening(true)
+                            .minimumScaleFactor(0.8)
                     }
+
+                    sparkline(points)
+                        .frame(height: 44)
+                        // Keeps the stroke off the card's rounded edge; a line
+                        // running flush to the corner read as a rendering bug.
+                        .padding(.top, 2)
                 }
             }
         }
@@ -473,9 +483,16 @@ struct RestTimer: View {
                     x: .value("Session", i),
                     y: .value("e1RM", point.value)
                 )
+                // Mint, not signal. `signal` is #CFFF3E — at any fill opacity
+                // over the dark card it renders as a solid olive slab rather
+                // than a recessive wash, and the plot is only ~44pt tall so
+                // the gradient has almost no distance to fade over. Mint is
+                // also the ring colour on this screen, so the card reads as
+                // part of it. Opacity is halved for the same reason: the fill
+                // is context for the line, not a second mark competing with it.
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.signal.opacity(0.28), Color.signal.opacity(0.02)],
+                        colors: [Color.mint.opacity(0.16), Color.mint.opacity(0.0)],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -486,7 +503,7 @@ struct RestTimer: View {
                     x: .value("Session", i),
                     y: .value("e1RM", point.value)
                 )
-                .foregroundStyle(Color.signal)
+                .foregroundStyle(Color.mint)
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
                 .interpolationMethod(.catmullRom)
             }
@@ -498,21 +515,26 @@ struct RestTimer: View {
                     x: .value("Session", last.offset),
                     y: .value("e1RM", last.element.value)
                 )
-                .foregroundStyle(Color.signal)
-                .symbolSize(60)
+                .foregroundStyle(Color.mint)
+                .symbolSize(54)
 
                 PointMark(
                     x: .value("Session", last.offset),
                     y: .value("e1RM", last.element.value)
                 )
-                .foregroundStyle(Color.ink0)
-                .symbolSize(18)
+                .foregroundStyle(Color.ink2)
+                .symbolSize(16)
             }
         }
         .chartYScale(domain: (lo - pad)...(hi + pad))
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)
         .chartLegend(.hidden)
+        // Without an explicit inset Charts runs the plot to the frame edge,
+        // so the endpoint marker was half-clipped by the card's rounded corner.
+        .chartPlotStyle { plot in
+            plot.padding(.vertical, 6)
+        }
     }
 
     private func trendLine(_ points: [E1RMPoint]) -> String? {
