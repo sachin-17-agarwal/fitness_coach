@@ -20,6 +20,9 @@ SWIFT = ROOT / "Vaux/Vaux/Services/ExerciseCatalog.swift"
 OUT = ROOT / "muscle_map.py"
 
 ENTRY = re.compile(r'"([^"]+)"\s*:\s*"([^"]+)"')
+# `"cable row": ["Back": 1.0, "Biceps": 0.5],` — key, then its brace body.
+CONTRIB_ENTRY = re.compile(r'"([^"]+)"\s*:\s*\[([^\]]+)\]')
+CONTRIB_PAIR = re.compile(r'"([^"]+)"\s*:\s*([0-9.]+)')
 
 
 def extract_block(source: str, declaration: str) -> str:
@@ -49,8 +52,18 @@ def main() -> None:
     groups = dict(ENTRY.findall(extract_block(source, "let builtinGroups")))
     bodyweight = re.findall(r'"([^"]+)"', extract_block(source, "let bodyweightMovements"))
 
+    contributions: dict[str, dict[str, float]] = {}
+    for key, body in CONTRIB_ENTRY.findall(
+        extract_block(source, "let contributionTable")
+    ):
+        split = {m: float(w) for m, w in CONTRIB_PAIR.findall(body)}
+        if split:
+            contributions[key] = split
+
     if not groups:
         raise SystemExit("no entries parsed — did the Swift literal change shape?")
+    if not contributions:
+        raise SystemExit("no contributions parsed — did contributionTable change shape?")
 
     lines = [
         '"""Exercise name -> muscle group, for server-side volume reporting.',
@@ -71,9 +84,24 @@ def main() -> None:
         lines.append(f'    "{name}",')
     lines.append(")")
     lines.append("")
+    lines.append("# Fractional volume attribution. Prime mover 1.0, heavily-involved")
+    lines.append("# synergist 0.5, minor 0.25. Used ONLY for volume counting — strength")
+    lines.append("# trends deliberately keep single (prime-mover) attribution.")
+    lines.append("MUSCLE_CONTRIBUTIONS: dict[str, dict[str, float]] = {")
+    for name in sorted(contributions):
+        inner = ", ".join(
+            f'"{m}": {w}' for m, w in sorted(contributions[name].items())
+        )
+        lines.append(f'    "{name}": {{{inner}}},')
+    lines.append("}")
+    lines.append("")
 
     OUT.write_text("\n".join(lines))
-    print(f"wrote {OUT.name}: {len(groups)} exercises, {len(set(bodyweight))} bodyweight movements")
+    print(
+        f"wrote {OUT.name}: {len(groups)} exercises, "
+        f"{len(set(bodyweight))} bodyweight movements, "
+        f"{len(contributions)} contribution splits"
+    )
 
 
 if __name__ == "__main__":

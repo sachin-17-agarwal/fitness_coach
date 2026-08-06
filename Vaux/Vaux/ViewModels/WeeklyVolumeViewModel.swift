@@ -17,7 +17,17 @@ struct DayTonnage: Identifiable, Hashable {
 
 struct MuscleGroupVolume: Identifiable, Hashable {
     let group: String
-    let setCount: Int
+    /// Sets per week, fractionally attributed and normalised over 14 days.
+    ///
+    /// A Double, not an Int, because a set now divides across the muscles
+    /// that do the work — a row gives Back 1.0 and Biceps 0.5. And "per
+    /// week" rather than "this week": the rotation is four days rolling
+    /// through six training days, so a 7-day window never holds a whole
+    /// number of rotations and every muscle oscillated 2x depending on
+    /// where the week fell. Fourteen days holds exactly three of each
+    /// session, so halving it gives a figure that means the same thing
+    /// every day and is comparable to the target bands.
+    let setsPerWeek: Double
     let tonnage: Double
     var id: String { group }
 }
@@ -68,7 +78,7 @@ final class WeeklyVolumeViewModel {
 
         let dayFormatter = Self.dateFormatter
         var thisWeekByDay: [Date: Double] = [:]
-        var thisWeekByGroup: [String: (count: Int, tonnage: Double)] = [:]
+        var byGroupFortnight: [String: (sets: Double, tonnage: Double)] = [:]
         var unmatchedByExercise: [String: Int] = [:]
         var thisWeekTonnageTotal: Double = 0
         var thisWeekSetsTotal: Int = 0
@@ -82,29 +92,40 @@ final class WeeklyVolumeViewModel {
             let tonnage = weight * Double(reps)
             guard tonnage > 0 else { continue }
 
+            // Per-day tonnage and the week totals stay on the trailing 7 days:
+            // that chart is "what did I do this week", where a real week is
+            // the right unit and the oscillation is the point.
             if setDay >= weekStart {
                 thisWeekByDay[setDay, default: 0] += tonnage
                 thisWeekTonnageTotal += tonnage
                 thisWeekSetsTotal += 1
+            } else if setDay >= priorWeekStart {
+                priorWeekTonnage += tonnage
+            }
 
-                // Cardio/yoga entries are tagged in `notes` by CardioYogaLogView
-                // and have no useful muscle-group mapping — exclude them entirely
-                // from the strength breakdown.
-                if Self.isCardioOrYoga(set) { continue }
+            // Muscle-group volume spans the FULL fortnight, halved later.
+            // Cardio/yoga entries are tagged in `notes` by CardioYogaLogView
+            // and have no useful muscle-group mapping — exclude them entirely
+            // from the strength breakdown.
+            if Self.isCardioOrYoga(set) { continue }
 
-                if let group = ExerciseCatalog.shared.muscleGroup(for: set.exercise) {
-                    var bucket = thisWeekByGroup[group] ?? (0, 0)
-                    bucket.count += 1
-                    bucket.tonnage += tonnage
-                    thisWeekByGroup[group] = bucket
-                } else {
-                    // Strength set with no catalog match. Track by display name
-                    // so the user can see which exercises need a catalog entry.
+            let contributions = ExerciseCatalog.shared.muscleContributions(for: set.exercise)
+            if contributions.isEmpty {
+                // Strength set with no catalog match. Track by display name
+                // so the user can see which exercises need a catalog entry.
+                // Only counted for the current week so the badge matches the
+                // window the athlete is looking at.
+                if setDay >= weekStart {
                     let name = set.exercise.trimmingCharacters(in: .whitespacesAndNewlines)
                     unmatchedByExercise[name, default: 0] += 1
                 }
-            } else if setDay >= priorWeekStart {
-                priorWeekTonnage += tonnage
+                continue
+            }
+            for (muscle, share) in contributions {
+                var bucket = byGroupFortnight[muscle] ?? (0, 0)
+                bucket.sets += share
+                bucket.tonnage += tonnage * share
+                byGroupFortnight[muscle] = bucket
             }
         }
 
@@ -117,9 +138,18 @@ final class WeeklyVolumeViewModel {
         }
         tonnageByDay = days
 
-        setsByMuscleGroup = thisWeekByGroup
-            .map { MuscleGroupVolume(group: $0.key, setCount: $0.value.count, tonnage: $0.value.tonnage) }
-            .sorted { $0.setCount > $1.setCount }
+        // Halve the fortnight to get a stable per-week figure.
+        setsByMuscleGroup = byGroupFortnight
+            .map {
+                MuscleGroupVolume(
+                    group: $0.key,
+                    // One decimal: fractional attribution produces .5s and
+                    // .8s that matter (6.8 hamstrings vs 6.0 rear delts).
+                    setsPerWeek: (($0.value.sets / 2) * 10).rounded() / 10,
+                    tonnage: $0.value.tonnage / 2
+                )
+            }
+            .sorted { $0.setsPerWeek > $1.setsPerWeek }
 
         uncategorizedExercises = unmatchedByExercise
             .map { (name: $0.key, setCount: $0.value) }

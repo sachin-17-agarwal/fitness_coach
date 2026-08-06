@@ -311,8 +311,12 @@ final class MuscleStrengthViewModel {
         case "back", "chest": return 10...16
         case "shoulders": return 8...12
         case "biceps", "triceps": return 8...12
-        // See WeeklyVolumeView.targetRange — rear delt work done by rows is
-        // counted in the Back bucket, so this band sits lower deliberately.
+        // Rear delts sat lower than the other bands to compensate for the
+        // volume counter attributing all rowing work to Back. Fractional
+        // attribution now credits them properly (a row gives Rear Delts
+        // 0.5), so the undercount that justified the lower band is gone.
+        // The number is left at 4-8 pending a deliberate call — raising it
+        // is a programming decision, not a bug fix.
         case "rear delts": return 4...8
         case "calves": return 6...10
         case "abs", "core": return 10...16

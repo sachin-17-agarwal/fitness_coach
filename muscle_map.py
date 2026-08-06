@@ -46,6 +46,7 @@ MUSCLE_GROUPS: dict[str, str] = {
     "crunch": "Abs",
     "crunches": "Abs",
     "curl": "Biceps",
+    "db row": "Back",
     "dead bug": "Abs",
     "deadlift": "Back",
     "decline press": "Chest",
@@ -201,3 +202,36 @@ BODYWEIGHT_MOVEMENTS: tuple[str, ...] = (
     "pushup",
     "rollout",
 )
+
+# Fractional volume attribution. Prime mover 1.0, heavily-involved
+# synergist 0.5, minor 0.25. Used ONLY for volume counting — strength
+# trends deliberately keep single (prime-mover) attribution.
+MUSCLE_CONTRIBUTIONS: dict[str, dict[str, float]] = {
+    "barbell row": {"Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5},
+    "bench press": {"Chest": 1.0, "Shoulders": 0.5, "Triceps": 0.5},
+    "cable row": {"Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5},
+    "chest press": {"Chest": 1.0, "Shoulders": 0.5, "Triceps": 0.5},
+    "chin-up": {"Back": 1.0, "Biceps": 0.5},
+    "db row": {"Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5},
+    "decline press": {"Chest": 1.0, "Triceps": 0.5},
+    "dips": {"Chest": 1.0, "Triceps": 0.5},
+    "dumbbell row": {"Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5},
+    "hack squat": {"Hamstrings": 0.25, "Quads": 1.0},
+    "incline bench": {"Chest": 1.0, "Shoulders": 0.5, "Triceps": 0.5},
+    "incline press": {"Chest": 1.0, "Shoulders": 0.5, "Triceps": 0.5},
+    "lat pulldown": {"Back": 1.0, "Biceps": 0.5},
+    "leg curl": {"Hamstrings": 1.0},
+    "leg extension": {"Quads": 1.0},
+    "leg press": {"Hamstrings": 0.25, "Quads": 1.0},
+    "machine row": {"Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5},
+    "overhead press": {"Shoulders": 1.0, "Triceps": 0.5},
+    "pull-up": {"Back": 1.0, "Biceps": 0.5},
+    "pulldown": {"Back": 1.0, "Biceps": 0.5},
+    "pullup": {"Back": 1.0, "Biceps": 0.5},
+    "romanian deadlift": {"Back": 0.5, "Hamstrings": 1.0},
+    "seated row": {"Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5},
+    "shoulder press": {"Shoulders": 1.0, "Triceps": 0.5},
+    "squat": {"Hamstrings": 0.25, "Quads": 1.0},
+    "sumo press": {"Hamstrings": 0.25, "Quads": 1.0},
+    "t-bar row": {"Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5},
+}

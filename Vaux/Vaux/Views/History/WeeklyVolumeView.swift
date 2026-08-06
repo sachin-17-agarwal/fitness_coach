@@ -365,7 +365,7 @@ struct WeeklyVolumeView: View {
     private func muscleRow(group: MuscleGroupVolume) -> some View {
         let target = targetRange(for: group.group)
         let color = colorFor(group.group)
-        let status = volumeStatus(sets: group.setCount, target: target)
+        let status = volumeStatus(sets: group.setsPerWeek, target: target)
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -389,18 +389,18 @@ struct WeeklyVolumeView: View {
                 .padding(.vertical, 2)
                 .background(Capsule().fill(status.color.opacity(0.12)))
 
-                Text("\(group.setCount)")
+                Text(group.setsPerWeek.wholeOrOne)
                     .font(.system(size: 14, weight: .medium, design: .monospaced).monospacedDigit())
                     .foregroundStyle(Color.fg0)
-                    .frame(width: 28, alignment: .trailing)
+                    .frame(width: 34, alignment: .trailing)
             }
 
             GeometryReader { geo in
-                let maxSets = max(Double(target.upperBound) + 4, Double(group.setCount) + 2)
+                let maxSets = max(Double(target.upperBound) + 4, group.setsPerWeek + 2)
                 let totalWidth = geo.size.width
                 let targetStartX = totalWidth * CGFloat(target.lowerBound) / CGFloat(maxSets)
                 let targetEndX = totalWidth * CGFloat(target.upperBound) / CGFloat(maxSets)
-                let fillWidth = totalWidth * CGFloat(group.setCount) / CGFloat(maxSets)
+                let fillWidth = totalWidth * CGFloat(group.setsPerWeek) / CGFloat(maxSets)
 
                 ZStack(alignment: .leading) {
                     // Track
@@ -485,9 +485,12 @@ struct WeeklyVolumeView: View {
         case "back", "chest": return 10...16
         case "shoulders": return 8...12
         case "biceps", "triceps": return 8...12
-        // Lower than the other bands on purpose: the four rows on pull day
-        // train rear delts heavily, but that work is counted in the Back
-        // bucket, so the tracked number understates the real stimulus.
+        // Rear delts sat lower than the other bands to compensate for the
+        // volume counter attributing all rowing work to Back. Fractional
+        // attribution now credits them properly (a row gives Rear Delts
+        // 0.5), so the undercount that justified the lower band is gone.
+        // The number is left at 4-8 pending a deliberate call — raising it
+        // is a programming decision, not a bug fix.
         case "rear delts": return 4...8
         case "calves": return 6...10
         case "abs", "core": return 10...16
@@ -501,11 +504,11 @@ struct WeeklyVolumeView: View {
         let color: Color
     }
 
-    private func volumeStatus(sets: Int, target: ClosedRange<Int>) -> VolumeStatus {
-        if sets < target.lowerBound {
+    private func volumeStatus(sets: Double, target: ClosedRange<Int>) -> VolumeStatus {
+        if sets < Double(target.lowerBound) {
             return VolumeStatus(label: "LOW", icon: "arrow.down", color: .ember)
         }
-        if sets > target.upperBound {
+        if sets > Double(target.upperBound) {
             return VolumeStatus(label: "HIGH", icon: "arrow.up", color: .amber)
         }
         return VolumeStatus(label: "ON TARGET", icon: "checkmark", color: .mint)
