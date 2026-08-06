@@ -115,6 +115,7 @@ struct HistoryView: View {
                     ForEach(viewModel.sessionsByDay) { day in
                         SessionCard(
                             sessions: day.sessions,
+                            reloadToken: viewModel.reloadToken,
                             // A corrected set changes the window's set count
                             // and tonnage, both derived at load time.
                             onSetsChanged: { Task { await viewModel.load() } }

@@ -44,6 +44,14 @@ final class HistoryViewModel {
     /// owns its own sets when expanded, so no shared cache is needed.
     var totalSetsInWindow: Int = 0
 
+    /// Incremented after every completed load, and handed to each
+    /// `SessionCard` so it knows to drop the sets it cached on first expand.
+    /// Without it a pull-to-refresh reloaded the session rows — and therefore
+    /// the tonnage in each card's header — while the set list inside an open
+    /// card stayed frozen at whatever the workout looked like when it was
+    /// first opened.
+    private(set) var reloadToken = 0
+
     let weeklyVolume = WeeklyVolumeViewModel()
     let muscleStrength = MuscleStrengthViewModel()
 
@@ -82,6 +90,7 @@ final class HistoryViewModel {
         await weeklyVolume.load()
         await muscleStrength.load()
 
+        reloadToken += 1
         isLoading = false
     }
 

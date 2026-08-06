@@ -13,13 +13,27 @@ struct SessionCard: View {
     /// and are shown as one card, with the sets and tonnage combined.
     let sessions: [WorkoutSession]
 
-    init(sessions: [WorkoutSession], onSetsChanged: @escaping () -> Void = {}) {
+    /// Bumped by the parent screen every time it reloads.
+    ///
+    /// The card fetches its sets once, on first expand, and caches them in
+    /// `@State` keyed on the card's identity ("date|type") — which is stable
+    /// across reloads. Nothing invalidated that cache, so a card opened
+    /// part-way through a workout kept showing the snapshot it took then
+    /// while the tonnage in its own header refreshed from the session row
+    /// around it: a Pull day reading 7850kg over a list of three sets.
+    /// Watching this token is what lets a pull-to-refresh reach inside an
+    /// already-open card.
+    let reloadToken: Int
+
+    init(sessions: [WorkoutSession], reloadToken: Int = 0, onSetsChanged: @escaping () -> Void = {}) {
         self.sessions = sessions
+        self.reloadToken = reloadToken
         self.onSetsChanged = onSetsChanged
     }
 
-    init(session: WorkoutSession, onSetsChanged: @escaping () -> Void = {}) {
+    init(session: WorkoutSession, reloadToken: Int = 0, onSetsChanged: @escaping () -> Void = {}) {
         self.sessions = [session]
+        self.reloadToken = reloadToken
         self.onSetsChanged = onSetsChanged
     }
 
@@ -29,6 +43,11 @@ struct SessionCard: View {
 
     @State private var sets: [WorkoutSet] = []
     @State private var hasLoadedSets = false
+    /// Set when a fetch came back short — either it threw outright, or one of
+    /// a multi-row day's sessions failed while the others succeeded. Without
+    /// it, `try?` swallowed the error and the partial result was cached as if
+    /// it were the whole session, with no path back to a complete list.
+    @State private var loadFailed = false
     @State private var isExpanded = false
     /// The set currently open for correction, if any.
     @State private var editingSet: WorkoutSet?
@@ -71,6 +90,9 @@ struct SessionCard: View {
             if isExpanded {
                 if !sets.isEmpty {
                     setsList
+                    if loadFailed { retryNotice }
+                } else if loadFailed {
+                    retryNotice
                 } else if hasLoadedSets {
                     // Distinct from the loading state: deleting the last set
                     // used to leave the spinner up forever, because empty and
@@ -112,8 +134,24 @@ struct SessionCard: View {
         .onTapGesture {
             Haptic.light()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isExpanded.toggle() }
-            if isExpanded && sets.isEmpty {
+            if isExpanded && (sets.isEmpty || loadFailed) {
                 Task { await loadSets() }
+            }
+        }
+        .onChange(of: reloadToken) { _, _ in
+            // The freshly fetched session rows carry the authoritative
+            // tonnage, so the local override from an edit has done its job
+            // and would only keep an older number alive past the refresh.
+            recalculatedTonnage = nil
+            // An open card re-reads immediately so the rows on screen match
+            // the header above them. A closed one just drops its cache, so
+            // the next expand fetches rather than replaying an old snapshot.
+            if isExpanded {
+                Task { await loadSets() }
+            } else {
+                sets = []
+                hasLoadedSets = false
+                loadFailed = false
             }
         }
         .sheet(item: $editingSet) { target in
@@ -171,6 +209,27 @@ struct SessionCard: View {
                 .foregroundStyle(Color.fg2)
                 .rotationEffect(.degrees(isExpanded ? 180 : 0))
         }
+    }
+
+    /// A Button rather than plain text, for the same reason the set rows are:
+    /// the card's own `onTapGesture` would otherwise take the tap and simply
+    /// collapse the card, so "tap to retry" would do anything but.
+    private var retryNotice: some View {
+        Button {
+            Haptic.light()
+            Task { await loadSets() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                Text(sets.isEmpty ? "Couldn't load sets — tap to retry."
+                                  : "This list may be incomplete — tap to retry.")
+                    .font(.system(size: 12))
+            }
+            .foregroundStyle(Color.amber)
+            .padding(.top, 4)
+        }
+        .buttonStyle(.plain)
     }
 
     private var setsList: some View {
@@ -376,10 +435,25 @@ struct SessionCard: View {
     /// than splitting them across two cards.
     private func loadSets() async {
         var combined: [WorkoutSet] = []
+        var failed = false
         for id in sessions.compactMap(\.id) {
-            combined += (try? await workoutService.fetchSets(sessionId: id)) ?? []
+            if let rows = try? await workoutService.fetchSets(sessionId: id) {
+                combined += rows
+            } else {
+                failed = true
+            }
         }
+
+        // Never trade a list we already have for nothing. If every fetch
+        // failed, keep what's on screen and flag it rather than blanking a
+        // card into "No sets logged", which reads as data loss.
+        if failed && combined.isEmpty && !sets.isEmpty {
+            loadFailed = true
+            return
+        }
+
         sets = combined
         hasLoadedSets = true
+        loadFailed = failed
     }
 }
