@@ -23,6 +23,22 @@ final class HeartRateMonitor {
     /// `true` while an anchored query is active.
     private(set) var isStreaming = false
 
+    /// Every heart-rate sample this session, in arrival order.
+    ///
+    /// Built from real HealthKit deliveries rather than a timer, and kept for
+    /// the whole session rather than one rest. Both of those matter: the
+    /// Watch → iPhone bridge batches samples, so over a single 90-second rest
+    /// there is frequently no second distinct reading at all — polling
+    /// `currentBPM` once a second just re-recorded the same stale value and
+    /// drew a dead-flat line that looked like a broken chart. Across a
+    /// 30-60 minute session the same sparse feed has plenty of shape: it
+    /// climbs through working sets and falls back during rests.
+    private(set) var trace: [Int] = []
+
+    /// Caps the trace so a long session can't grow it without bound. A couple
+    /// of hundred points is far more than a sparkline can resolve anyway.
+    private let traceLimit = 240
+
     private let store = HKHealthStore()
     private var query: HKAnchoredObjectQuery?
     private var anchor: HKQueryAnchor?
@@ -107,6 +123,10 @@ final class HeartRateMonitor {
             let rounded = Int(bpm.rounded())
             if let existingMin = minBPM { minBPM = Swift.min(existingMin, rounded) } else { minBPM = rounded }
             if let existingMax = maxBPM { maxBPM = Swift.max(existingMax, rounded) } else { maxBPM = rounded }
+            trace.append(rounded)
+        }
+        if trace.count > traceLimit {
+            trace.removeFirst(trace.count - traceLimit)
         }
 
         if let latest = sorted.last {
@@ -119,6 +139,7 @@ final class HeartRateMonitor {
 
     private func reset() {
         currentBPM = nil
+        trace = []
         minBPM = nil
         maxBPM = nil
         avgBPM = nil

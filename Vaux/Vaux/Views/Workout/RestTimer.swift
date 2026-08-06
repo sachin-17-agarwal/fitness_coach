@@ -78,10 +78,6 @@ struct RestTimer: View {
     @State private var pulse: Bool = false
     @State private var showChat: Bool = false
     @FocusState private var chatFocused: Bool
-    /// Rolling BPM trace for this rest, sampled once a second. Local to the
-    /// timer and discarded when it closes — it describes one recovery
-    /// window, not the session, so nothing outside needs it.
-    @State private var hrSamples: [Int] = []
 
     /// The ring gives up most of its size while composing — with the keyboard
     /// up there isn't room for both, and the thing being looked at is the
@@ -149,27 +145,6 @@ struct RestTimer: View {
             // sat there over the countdown. Resigning app-wide clears whatever
             // is actually focused, regardless of which view owns it.
             dismissKeyboard()
-        }
-        // Keyed on nothing so it runs once for the lifetime of this rest and
-        // dies with it. `HeartRateMonitor` publishes whatever HealthKit last
-        // delivered rather than a stream we can await, so a 1s poll is the
-        // only way to build a trace — cheap, and it stops when the view goes.
-        .task {
-            while !Task.isCancelled {
-                if let bpm = stats?.heartRate?.currentBPM {
-                    // Append every tick, including repeats. The first version
-                    // skipped duplicate consecutive readings to avoid drawing
-                    // a plateau HealthKit had merely repeated — but the Watch
-                    // delivers a new sample only every few seconds, so a
-                    // steady heart rate produced exactly ONE point and the
-                    // card sat on "Tracking…" for the whole rest. A flat trace
-                    // is the honest picture of a flat heart rate; one dot is
-                    // not a picture at all.
-                    hrSamples.append(bpm)
-                    if hrSamples.count > 180 { hrSamples.removeFirst(hrSamples.count - 180) }
-                }
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
         }
         .task(id: endDate) {
             guard let endDate else { return }
@@ -553,7 +528,7 @@ struct RestTimer: View {
     /// *happening* during rest — everything else on this screen is static.
     /// Samples once a second into a rolling trace for the length of the rest.
     private func recoveryCard(_ stats: RestStats) -> some View {
-        statCard("RECOVERY") {
+        statCard("HEART RATE") {
             if let monitor = stats.heartRate, let bpm = monitor.currentBPM {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -565,19 +540,24 @@ struct RestTimer: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Color.fg2)
                         Spacer(minLength: 0)
-                        if let drop = hrDrop, drop > 0 {
-                            Text("−\(drop) since peak")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.mint)
-                        }
+                        Text(monitor.zoneLabel(for: bpm))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.fg1)
                     }
 
-                    hrTrace
-                        .frame(height: 46)
+                    hrTrace(monitor.trace)
+                        .frame(height: 40)
+                        .padding(.top, 2)
 
-                    Text(monitor.zoneLabel(for: bpm))
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.fg2)
+                    // Session range rather than "since peak". The old line
+                    // compared against a peak inside one rest, which on a
+                    // sparse feed was usually the same value as now, so it
+                    // rendered "-0" or nothing at all.
+                    if let lo = monitor.minBPM, let hi = monitor.maxBPM, hi > lo {
+                        Text("Session \(lo)–\(hi) bpm")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.fg2)
+                    }
                 }
             } else {
                 Text("No heart-rate signal — needs the Watch on and streaming.")
@@ -589,22 +569,24 @@ struct RestTimer: View {
     }
 
     @ViewBuilder
-    private var hrTrace: some View {
-        if hrSamples.count < 2 {
-            // A single sample is a dot, not a trend; say nothing rather than
-            // draw a line implying a trajectory that hasn't been measured.
-            Text("Tracking…")
+    private func hrTrace(_ samples: [Int]) -> some View {
+        if samples.count < 3 {
+            // Under three real deliveries there is no shape to show. Says so
+            // plainly instead of drawing a flat line, which read as a broken
+            // chart rather than as missing data.
+            Text("Building trace — the Watch delivers a sample every few seconds.")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.fg2)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            let lo = Double(hrSamples.min() ?? 0)
-            let hi = Double(hrSamples.max() ?? 1)
+            let lo = Double(samples.min() ?? 0)
+            let hi = Double(samples.max() ?? 1)
             let pad = max((hi - lo) * 0.2, 2)
             Chart {
-                ForEach(Array(hrSamples.enumerated()), id: \.offset) { i, bpm in
+                ForEach(Array(samples.enumerated()), id: \.offset) { i, bpm in
                     LineMark(
-                        x: .value("Second", i),
+                        x: .value("Sample", i),
                         y: .value("BPM", bpm)
                     )
                     .foregroundStyle(Color.ember)
@@ -616,12 +598,10 @@ struct RestTimer: View {
             .chartXAxis(.hidden)
             .chartYAxis(.hidden)
             .chartLegend(.hidden)
+            .chartPlotStyle { plot in
+                plot.padding(.vertical, 6)
+            }
         }
-    }
-
-    private var hrDrop: Int? {
-        guard let peak = hrSamples.max(), let now = hrSamples.last else { return nil }
-        return peak - now
     }
 
     /// The live-stats bar exists at the top of the workout screen, but this
