@@ -356,8 +356,49 @@ WEEKLY VOLUME — working sets per muscle, last 7 days (lowest first):
     return stable, live
 
 
+# Phrases that mark a message as stating a CONSTRAINT on the session — an
+# injury, a pain, a machine that is unavailable, an explicit instruction to
+# skip something. Deliberately narrow: a pinned message costs context on
+# every subsequent request, so this must not match ordinary chat.
+_CONSTRAINT_MARKERS = (
+    "injur", "hurt", "pain", "painful", "tweak", "strain", "sprain",
+    "sore shoulder", "sore knee", "sore back", "niggle", "flare",
+    "can't do", "cant do", "cannot do", "skip the", "skipping",
+    "avoid ", "no pull-ups", "no pullups", "not doing",
+    "shoulder is", "knee is", "back is", "elbow is", "wrist is",
+)
+
+# Ceiling on pinned messages so a long day of chat can't crowd out the
+# recent window it is meant to supplement.
+_MAX_PINNED = 6
+
+
+def _states_a_constraint(message: dict) -> bool:
+    if message.get("role") != "user":
+        return False
+    text = (message.get("content") or "").lower()
+    return any(marker in text for marker in _CONSTRAINT_MARKERS)
+
+
 def truncate_history(history: list) -> list:
-    """Keep the most recent messages to avoid exceeding Claude's context window."""
+    """Keep the most recent messages, plus any earlier ones stating a constraint.
+
+    Plain tail-truncation loses injuries. A Pull session logs ~22 sets, each
+    producing an athlete message and a coach reply, so it generates ~44
+    messages against a 40-message window — which means a shoulder injury
+    mentioned at the START of the session is pushed out of context about
+    four-fifths of the way through. The coach then tells him to skip
+    pull-ups, and forty messages later asks why he skipped them. That is not
+    the coach being unstable; it genuinely cannot see what it was told.
+
+    Constraint-stating messages are therefore pinned: kept in place even
+    once they fall outside the recent window, in their original position so
+    the conversation still reads chronologically.
+    """
     if len(history) <= MAX_CONVERSATION_MESSAGES:
         return history
-    return history[-MAX_CONVERSATION_MESSAGES:]
+
+    recent = history[-MAX_CONVERSATION_MESSAGES:]
+    older = history[:-MAX_CONVERSATION_MESSAGES]
+    pinned = [m for m in older if _states_a_constraint(m)][-_MAX_PINNED:]
+    return pinned + recent
