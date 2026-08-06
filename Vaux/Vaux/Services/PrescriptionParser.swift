@@ -478,10 +478,16 @@ final class PrescriptionParser {
         ]
         let lines = text.components(separatedBy: "\n")
         var narrative: [String] = []
+        // Tracks a skipped blank line so paragraph breaks survive into the
+        // note. Without this every line collapsed into one run-on sentence.
+        var pendingBreak = false
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty { continue }
+            if trimmed.isEmpty {
+                pendingBreak = !narrative.isEmpty
+                continue
+            }
 
             // Skip bold exercise headers
             if trimmed.hasPrefix("*") && trimmed.contains("*") {
@@ -495,10 +501,20 @@ final class PrescriptionParser {
             let isStructured = structuredPrefixes.contains { lower.hasPrefix($0) }
             if isStructured { continue }
 
+            if pendingBreak {
+                narrative.append("")
+                pendingBreak = false
+            }
             narrative.append(trimmed)
         }
 
-        let result = narrative.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        // Joined with newlines, not spaces. The old separator flattened every
+        // line into one sentence, so a list of upcoming exercises rendered as
+        // "Lat Pulldown ✅ Cable Row T-Bar Row Machine Bicep Curl Hammer Curl
+        // Ready for Cable Row?" — unreadable, and it looked like the coach was
+        // rambling when it had actually sent a tidy list.
+        let result = narrative.joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return result.isEmpty ? nil : result
     }
 }
