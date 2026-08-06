@@ -875,6 +875,45 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(resolve_muscle_group("Single Arm DB Row"), "Back")
         self.assertEqual(resolve_contributions("Single Arm DB Row").get("Back"), 1.0)
 
+    def test_injury_survives_conversation_truncation(self):
+        """An injury stated at the start of a session must still be visible at
+        the end of it.
+
+        A session logs ~22 sets, each producing an athlete message and a coach
+        reply — ~44 messages against a 40-message window. So a shoulder injury
+        mentioned first was pushed out of context about four-fifths of the way
+        through, and the coach that had said "skip pull-ups" would later ask
+        why they were skipped. It could not see what it had been told.
+        """
+        from coach_context import truncate_history, MAX_CONVERSATION_MESSAGES
+        history = [
+            {"role": "user", "content": "Starting pull. My shoulder is hurting, skip pull-ups"},
+            {"role": "assistant", "content": "Understood — pull-ups are out today."},
+        ]
+        for _ in range(22):
+            history.append({"role": "user", "content": "Logged working 1 of 1: 90kg x 8 @ RPE 8"})
+            history.append({"role": "assistant", "content": "Good set."})
+        self.assertGreater(len(history), MAX_CONVERSATION_MESSAGES)
+
+        kept = truncate_history(history)
+        self.assertTrue(
+            any("shoulder is hurting" in (m.get("content") or "") for m in kept),
+            "constraint dropped by truncation — the coach cannot honour what it can't see",
+        )
+        # Chronology preserved: the pinned message stays ahead of the tail.
+        self.assertIn("shoulder is hurting", kept[0]["content"])
+
+    def test_truncation_does_not_pin_ordinary_chat(self):
+        """Pinning costs context on every later request, so it must be narrow."""
+        from coach_context import truncate_history
+        history = [{"role": "user", "content": "how many sets left?"},
+                   {"role": "assistant", "content": "Two."}]
+        for _ in range(22):
+            history.append({"role": "user", "content": "Logged working"})
+            history.append({"role": "assistant", "content": "Good."})
+        kept = truncate_history(history)
+        self.assertFalse(any("how many sets left" in (m.get("content") or "") for m in kept))
+
     def test_save_memory_passes_on_conflict_key(self):
         # The upsert must supply on_conflict="key" so we update existing rows
         # rather than inserting duplicates. Uses a single batched upsert.
