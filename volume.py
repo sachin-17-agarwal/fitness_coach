@@ -13,7 +13,7 @@ import logging
 from datetime import timedelta
 
 from data import get_supabase, now_local
-from muscle_map import MUSCLE_GROUPS
+from muscle_map import MUSCLE_CONTRIBUTIONS, MUSCLE_GROUPS
 
 log = logging.getLogger(__name__)
 
@@ -46,17 +46,72 @@ def resolve_muscle_group(exercise: str) -> str | None:
     return best_group
 
 
+def resolve_contributions(exercise: str) -> dict[str, float]:
+    """Exercise name -> {muscle: fraction}, mirroring muscleContributions.
+
+    Single attribution — one exercise, one muscle — is what made the volume
+    readout wrong. Eight sets of rowing counted 8 for Back and ZERO for the
+    biceps doing half the work, so every muscle living on indirect volume
+    read as starved: rear delts showed 3 sets/week against a 4-8 band when
+    they were really at 6, and biceps showed 9 against 8-12 when they were
+    really at 15, i.e. OVER. The weak-point block picks the two lowest
+    muscles, so it was aimed at the two needing it least.
+
+    Falls back to {primary: 1.0} for anything unclassified — isolations are
+    genuinely single-muscle, so that is correct for them, not just safe.
+    """
+    key = " ".join((exercise or "").split()).lower()
+    if not key:
+        return {}
+
+    direct = MUSCLE_CONTRIBUTIONS.get(key)
+    if direct:
+        return dict(direct)
+
+    # Same longest-key-wins rule as resolve_muscle_group. Matching it exactly
+    # matters: if the two disagreed about which catalog entry a name resolves
+    # to, strength and volume would attribute the same set to different
+    # muscles.
+    best_len = 0
+    best_split = None
+    for candidate, split in MUSCLE_CONTRIBUTIONS.items():
+        if len(candidate) < _MIN_KEY_LEN or candidate not in key:
+            continue
+        if len(candidate) > best_len:
+            best_len = len(candidate)
+            best_split = split
+    if best_split:
+        return dict(best_split)
+
+    primary = resolve_muscle_group(exercise)
+    return {primary: 1.0} if primary else {}
+
+
 def _is_cardio_or_yoga(row: dict) -> bool:
     note = (row.get("notes") or "").lower()
     return note.startswith(("cardio", "yoga"))
 
 
-def get_weekly_volume(days: int = 7) -> dict[str, int]:
-    """Working sets per muscle group over the trailing `days`.
+def get_weekly_volume(days: int = 14) -> dict[str, float]:
+    """Weekly working sets per muscle, fractionally attributed.
 
-    Warm-ups and cardio/yoga entries are excluded, matching how the app's
-    Volume tab counts. Returns {} when the data can't be read — callers
-    treat that as "no readout" rather than "zero volume".
+    Two deliberate choices, both of which the old version got wrong.
+
+    FRACTIONAL: a set is divided across the muscles that do the work rather
+    than assigned wholly to one. See `resolve_contributions` for why single
+    attribution made three muscles read wrong.
+
+    FOURTEEN DAYS, HALVED: the rotation is four days rolling through six
+    training days, so a 7-day window can never contain a whole number of
+    rotations — every muscle oscillated 2x depending on whether its session
+    fell once or twice in the window. Back read 8 one day and 16 the next
+    while the target band said 10-16, so the same unchanged programme looked
+    under-dosed half the time. Over 14 days each session type occurs exactly
+    three times, so halving gives a stable per-week figure that means the
+    same thing every day and is directly comparable to the bands.
+
+    Returns {} when the data can't be read — callers treat that as "no
+    readout" rather than "zero volume".
     """
     try:
         supabase = get_supabase()
@@ -73,29 +128,28 @@ def get_weekly_volume(days: int = 7) -> dict[str, int]:
         log.exception("Weekly volume fetch failed")
         return {}
 
-    counts: dict[str, int] = {}
+    weeks = max(days / 7.0, 1.0)
+    totals: dict[str, float] = {}
     for row in result.data or []:
         if row.get("is_warmup") or _is_cardio_or_yoga(row):
             continue
-        group = resolve_muscle_group(row.get("exercise", ""))
-        if not group:
-            continue
-        counts[group] = counts.get(group, 0) + 1
-    return counts
+        for muscle, share in resolve_contributions(row.get("exercise", "")).items():
+            totals[muscle] = totals.get(muscle, 0.0) + share
+    return {m: round(v / weeks, 1) for m, v in totals.items()}
 
 
-def format_weekly_volume(counts: dict[str, int]) -> str:
+def format_weekly_volume(counts: dict[str, float]) -> str:
     """Render the volume block, lowest first.
 
     Ordered ascending on purpose: the muscle needing attention is the first
     thing read, and the weak-point block picks off the top of this list.
-    Target ranges deliberately live in the system prompt rather than here,
-    so there is one authority for them rather than two that can disagree.
+    Target ranges live in the system prompt — see VOLUME_TARGETS there; this
+    module deliberately states none so the two can't disagree.
     """
     if not counts:
-        return "  No volume data available for the last 7 days."
+        return "  No volume data available."
     ordered = sorted(counts.items(), key=lambda kv: (kv[1], kv[0]))
-    lines = [f"  {group}: {sets} sets" for group, sets in ordered]
+    lines = [f"  {group}: {sets:g} sets/week" for group, sets in ordered]
     lowest = ", ".join(g for g, _ in ordered[:2])
     lines.append(f"  Lowest two: {lowest}")
     return "\n".join(lines)

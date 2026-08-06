@@ -821,6 +821,60 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(log_set_mock.call_args.kwargs["actual_weight"], 133)
         self.assertEqual(log_set_mock.call_args.kwargs["actual_reps"], 8)
 
+    def test_fractional_attribution_credits_synergists(self):
+        """A row must credit biceps and rear delts, not just back.
+
+        Single attribution is what made the volume readout wrong: eight sets
+        of rowing counted 8 for Back and ZERO for the biceps doing half the
+        work, so rear delts read 3 sets/week against a 4-8 band when they
+        were really at 6, and biceps read 9 against 8-12 when they were
+        really at 15 — over, not under. The weak-point block picks the two
+        lowest muscles, so it was aimed at the two needing it least.
+        """
+        from volume import resolve_contributions
+        row = resolve_contributions("Cable Row")
+        self.assertEqual(row.get("Back"), 1.0)
+        self.assertEqual(row.get("Biceps"), 0.5)
+        self.assertEqual(row.get("Rear Delts"), 0.5)
+
+        press = resolve_contributions("Machine Chest Press")
+        self.assertEqual(press.get("Chest"), 1.0)
+        self.assertEqual(press.get("Triceps"), 0.5)
+
+        # Isolations stay whole — the fallback is correct for them, not
+        # merely safe.
+        self.assertEqual(resolve_contributions("Machine Bicep Curl"), {"Biceps": 1.0})
+
+    def test_dips_is_not_matched_by_a_sub_four_character_key(self):
+        """Regression: the key was "dip", and the substring matcher ignores
+        keys under four characters, so "Dips" fell through to Chest alone and
+        silently lost its triceps share. Caught by simulation, not review."""
+        from volume import resolve_contributions
+        from muscle_map import MUSCLE_CONTRIBUTIONS
+        self.assertFalse([k for k in MUSCLE_CONTRIBUTIONS if len(k) < 4])
+        self.assertEqual(resolve_contributions("Dips").get("Triceps"), 0.5)
+
+    def test_quads_and_hamstrings_are_separate_buckets(self):
+        """Hamstrings hid inside a combined Legs bucket that read 16.5/week —
+        top of band — while getting 3 direct sets. The weak-point block picks
+        the LOWEST two, so the thinnest muscle in the programme could never be
+        selected, and a seated leg curl added to fix it would have landed in
+        the same bucket and made it look better served."""
+        from volume import resolve_contributions
+        self.assertEqual(resolve_contributions("Lying Leg Curl"), {"Hamstrings": 1.0})
+        press = resolve_contributions("Leg Press")
+        self.assertEqual(press.get("Quads"), 1.0)
+        # Deliberately small: leg pressing must never make hamstrings look served.
+        self.assertEqual(press.get("Hamstrings"), 0.25)
+        self.assertNotIn("Legs", press)
+
+    def test_single_arm_db_row_resolves(self):
+        """It is in the allowed Pull list but mapped to nothing, so its sets
+        dropped out of volume AND strength entirely."""
+        from volume import resolve_muscle_group, resolve_contributions
+        self.assertEqual(resolve_muscle_group("Single Arm DB Row"), "Back")
+        self.assertEqual(resolve_contributions("Single Arm DB Row").get("Back"), 1.0)
+
     def test_save_memory_passes_on_conflict_key(self):
         # The upsert must supply on_conflict="key" so we update existing rows
         # rather than inserting duplicates. Uses a single batched upsert.

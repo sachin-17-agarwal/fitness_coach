@@ -96,6 +96,104 @@ final class ExerciseCatalog {
         return bestMatch?.group
     }
 
+    // MARK: - Fractional volume attribution
+
+    /// How a movement's sets divide across the muscles that actually do the
+    /// work — prime mover 1.0, heavily-involved synergist 0.5, minor 0.25.
+    ///
+    /// This exists alongside `muscleGroup(for:)` rather than replacing it,
+    /// because the two answer different questions and only one of them wants
+    /// fractions. Strength trends and PR checks want the PRIME MOVER — a
+    /// row's estimated 1RM belongs to Back, and splitting it across biceps
+    /// would corrupt the strength chart. Volume wants the split.
+    ///
+    /// Single attribution is why the volume readout was wrong: eight sets of
+    /// rowing counted 8 for Back and ZERO for the biceps doing half the work,
+    /// so every muscle living on indirect volume read as starved. Rear delts
+    /// showed 3 sets/week against a 4-8 band when they were really at 6;
+    /// biceps showed 9 against 8-12 when they were really at 15, i.e. over.
+    /// The weak-point block, which picks the two lowest muscles, was
+    /// therefore aimed at the two that needed it least.
+    ///
+    /// Keys follow the same longest-substring convention as `lookup`, so
+    /// "Incline Barbell Bench Press" resolves through "bench press".
+    /// Anything absent here falls back to {primary group: 1.0}, which
+    /// preserves the old behaviour for exercises nobody has classified.
+    private static let contributionTable: [String: [String: Double]] = [
+        // Horizontal and vertical pulls: the biceps are a genuine synergist
+        // and the rear delts do real work on anything rowing-pattern.
+        "cable row":      ["Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5],
+        "seated row":     ["Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5],
+        "barbell row":    ["Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5],
+        "t-bar row":      ["Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5],
+        "dumbbell row":   ["Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5],
+        "db row":         ["Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5],
+        "machine row":    ["Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5],
+        // Vertical pulls load the rear delts far less than a row.
+        "lat pulldown":   ["Back": 1.0, "Biceps": 0.5],
+        "pulldown":       ["Back": 1.0, "Biceps": 0.5],
+        "pull-up":        ["Back": 1.0, "Biceps": 0.5],
+        "pullup":         ["Back": 1.0, "Biceps": 0.5],
+        "chin-up":        ["Back": 1.0, "Biceps": 0.5],
+
+        // Pressing: triceps and front delts are both real contributors.
+        "bench press":    ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "chest press":    ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "incline press":  ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "incline bench":  ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "decline press":  ["Chest": 1.0, "Triceps": 0.5],
+        // "dips", not "dip": the substring matcher ignores keys under four
+        // characters, so a 3-char key can only ever hit on an exact match and
+        // "Dips" would fall through to Chest alone, losing the triceps share.
+        "dips":           ["Chest": 1.0, "Triceps": 0.5],
+        // Overhead pressing is a delt movement that the triceps assist.
+        "shoulder press": ["Shoulders": 1.0, "Triceps": 0.5],
+        "overhead press": ["Shoulders": 1.0, "Triceps": 0.5],
+
+        // Quad-dominant pressing gives the hamstrings a little co-contraction,
+        // nowhere near a curl. Deliberately 0.25 so it can never make the
+        // hamstrings look served by leg pressing alone.
+        "leg press":      ["Quads": 1.0, "Hamstrings": 0.25],
+        "sumo press":     ["Quads": 1.0, "Hamstrings": 0.25],
+        "hack squat":     ["Quads": 1.0, "Hamstrings": 0.25],
+        "squat":          ["Quads": 1.0, "Hamstrings": 0.25],
+        "leg extension":  ["Quads": 1.0],
+        // Hinges are the mirror image.
+        "romanian deadlift": ["Hamstrings": 1.0, "Back": 0.5],
+        "leg curl":       ["Hamstrings": 1.0],
+    ]
+
+    /// Fractional muscle contributions for a logged exercise.
+    ///
+    /// Falls back to `{primary: 1.0}` when the movement isn't in the table —
+    /// isolations are already single-muscle, so the fallback is correct for
+    /// them rather than merely safe.
+    func muscleContributions(for exercise: String) -> [String: Double] {
+        let key = PrescriptionParser.normalizeExerciseName(exercise).lowercased()
+
+        if let direct = Self.contributionTable[key] { return direct }
+
+        // Same longest-key-wins rule as `muscleGroup(for:)`. Matching that
+        // exactly matters: if the two disagree about which catalog entry a
+        // name resolves to, strength and volume would attribute the same set
+        // to different muscles.
+        var best: (length: Int, split: [String: Double])?
+        for (catalogKey, split) in Self.contributionTable where catalogKey.count >= 4 {
+            guard key.contains(catalogKey) else { continue }
+            if best == nil || catalogKey.count > best!.length {
+                best = (catalogKey.count, split)
+            }
+        }
+        if let best { return best.split }
+
+        guard let primary = muscleGroup(for: exercise) else { return [:] }
+        // "Legs" is the pre-split bucket. A movement reaching this fallback
+        // as Legs is one the table doesn't classify, and calling it Quads
+        // would be a guess — so it stays Legs and shows up in the staleness
+        // check rather than being silently mis-attributed.
+        return [primary: 1.0]
+    }
+
     // MARK: - Bodyweight movements
 
     /// Movements loaded by the athlete's own bodyweight. A logged weight of 0
@@ -191,6 +289,10 @@ final class ExerciseCatalog {
         "t-bar row": "Back",
         "t bar row": "Back",
         "dumbbell row": "Back",
+        // "Single Arm DB Row" is in the allowed Pull list but resolved to
+        // nothing, so its sets dropped out of volume and strength entirely.
+        "db row": "Back",
+        "machine row": "Back",
         "machine row": "Back",
         "chest-supported row": "Back",
         "chest supported row": "Back",
