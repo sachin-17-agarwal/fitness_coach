@@ -62,26 +62,15 @@ struct SetLogInput: View {
 
             HStack(spacing: 10) {
                 weightStepper(
-                    minus: {
-                        Haptic.soft()
-                        weight = max(0, weight - 2.5)
-                    },
-                    plus: {
-                        Haptic.soft()
-                        weight += 2.5
-                    }
+                    minus: { weight = max(0, weight - 2.5) },
+                    plus: { weight += 2.5 }
                 )
                 stepper(
                     label: "Reps",
                     value: "\(reps)",
-                    minus: {
-                        Haptic.soft()
-                        reps = max(1, reps - 1)
-                    },
-                    plus: {
-                        Haptic.soft()
-                        reps += 1
-                    }
+                    accessibilityValue: "\(reps) reps",
+                    minus: { reps = max(1, reps - 1) },
+                    plus: { reps += 1 }
                 )
             }
 
@@ -100,11 +89,11 @@ struct SetLogInput: View {
                         Image(systemName: isWarmup ? "flame" : "checkmark")
                             .font(.system(size: 13, weight: .bold))
                         Text(buttonLabel)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.scaled(16, weight: .semibold, relativeTo: .headline))
                     }
                 }
                 .foregroundStyle(buttonTextColor)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -142,20 +131,20 @@ struct SetLogInput: View {
     /// underline shows in `textTertiary` by default (a quiet "this is
     /// editable" cue) and shifts to the phase accent at 2pt on focus.
     private func weightStepper(minus: @escaping () -> Void, plus: @escaping () -> Void) -> some View {
-        VStack(spacing: 6) {
+        let unitLabel = isBodyweight ? "Added weight" : "Weight"
+        return VStack(spacing: 6) {
             Text(isBodyweight ? "ADDED KG" : "WEIGHT")
                 .font(.eyebrowSmall)
                 .kerning(1.0)
                 .foregroundStyle(Color.fg2)
+                .accessibilityHidden(true)
 
             HStack(spacing: 8) {
-                Button(action: minus) {
-                    Image(systemName: "minus")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color.fg0)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.ink1))
-                }
+                StepperButton(
+                    systemName: "minus",
+                    accessibilityLabel: "Decrease \(unitLabel.lowercased()) by 2.5 kilograms",
+                    action: minus
+                )
 
                 VStack(spacing: 3) {
                     TextField("0", value: $weight,
@@ -163,26 +152,26 @@ struct SetLogInput: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.center)
                         .focused($weightFieldFocused)
-                        .font(.system(size: 20, weight: .medium, design: .monospaced).monospacedDigit())
+                        .font(.scaled(20, weight: .medium, design: .monospaced, relativeTo: .title3, cap: 30).monospacedDigit())
                         .foregroundStyle(Color.fg0)
                         .frame(minWidth: 70)
                         .onChange(of: weight) { _, newValue in
                             if newValue < 0 { weight = 0 }
                         }
+                        .accessibilityLabel("\(unitLabel) in kilograms")
 
                     Rectangle()
                         .fill(weightFieldFocused ? phaseColor : Color.fg2.opacity(0.35))
                         .frame(width: 36, height: weightFieldFocused ? 2 : 1)
                         .animation(.easeOut(duration: 0.15), value: weightFieldFocused)
+                        .accessibilityHidden(true)
                 }
 
-                Button(action: plus) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color.fg0)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.ink1))
-                }
+                StepperButton(
+                    systemName: "plus",
+                    accessibilityLabel: "Increase \(unitLabel.lowercased()) by 2.5 kilograms",
+                    action: plus
+                )
             }
         }
         .frame(maxWidth: .infinity)
@@ -193,35 +182,40 @@ struct SetLogInput: View {
         )
     }
 
-    private func stepper(label: String, value: String, minus: @escaping () -> Void, plus: @escaping () -> Void) -> some View {
+    private func stepper(
+        label: String,
+        value: String,
+        accessibilityValue: String,
+        minus: @escaping () -> Void,
+        plus: @escaping () -> Void
+    ) -> some View {
         VStack(spacing: 6) {
             Text(label.uppercased())
                 .font(.eyebrowSmall)
                 .kerning(1.0)
                 .foregroundStyle(Color.fg2)
+                .accessibilityHidden(true)
 
             HStack(spacing: 8) {
-                Button(action: minus) {
-                    Image(systemName: "minus")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color.fg0)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.ink1))
-                }
+                StepperButton(
+                    systemName: "minus",
+                    accessibilityLabel: "Decrease \(label.lowercased())",
+                    action: minus
+                )
 
                 Text(value)
-                    .font(.system(size: 20, weight: .medium, design: .monospaced).monospacedDigit())
+                    .font(.scaled(20, weight: .medium, design: .monospaced, relativeTo: .title3, cap: 30).monospacedDigit())
                     .foregroundStyle(Color.fg0)
                     .frame(minWidth: 70)
                     .contentTransition(.numericText())
+                    .accessibilityLabel(label)
+                    .accessibilityValue(accessibilityValue)
 
-                Button(action: plus) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color.fg0)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.ink1))
-                }
+                StepperButton(
+                    systemName: "plus",
+                    accessibilityLabel: "Increase \(label.lowercased())",
+                    action: plus
+                )
             }
         }
         .frame(maxWidth: .infinity)

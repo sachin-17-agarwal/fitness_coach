@@ -18,6 +18,9 @@ struct SettingsView: View {
     @State private var lastSyncAt: Date? = HealthKitManager.shared.lastSyncDate
     @State private var briefingStyle: BriefingStyle = .detailed
     @State private var briefingStatus: StatusMessage?
+    /// Written straight through to UserDefaults, so the dashboard greeting
+    /// updates as it's typed with no explicit save step.
+    @AppStorage(Config.displayNameKey) private var displayName: String = ""
 
     private let mesocycleService = MesocycleService()
     private let preferences = PreferencesService()
@@ -168,21 +171,49 @@ struct SettingsView: View {
     // MARK: - Profile header
 
     private var profileHeader: some View {
-        HStack(spacing: 14) {
-            VauxLogo(size: 48)
-                .shadow(color: .signal.opacity(0.3), radius: 12, x: 0, y: 4)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                VauxLogo(size: 48)
+                    .shadow(color: .signal.opacity(0.3), radius: 12, x: 0, y: 4)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Vaux")
-                    .font(.serifBrand)
-                    .foregroundStyle(Color.fg0)
-                Text("AI FITNESS COACH")
-                    .font(.eyebrowSmall)
-                    .kerning(1.4)
-                    .foregroundStyle(Color.fg2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Vaux")
+                        .font(.serifBrand)
+                        .foregroundStyle(Color.fg0)
+                    Text("AI FITNESS COACH")
+                        .font(.eyebrowSmall)
+                        .kerning(1.4)
+                        .foregroundStyle(Color.fg2)
+                }
+
+                Spacer()
             }
 
-            Spacer()
+            Hairline()
+
+            // The dashboard greeting used to name one person in source. This
+            // is where that name comes from now; blank simply drops the name
+            // from the greeting rather than leaving a placeholder in it.
+            VStack(alignment: .leading, spacing: 5) {
+                Eyebrow(text: "Your name")
+                TextField("Used in your greeting", text: $displayName)
+                    .textFieldStyle(.plain)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
+                    .font(.uiBody)
+                    .foregroundStyle(Color.fg0)
+                    .padding(10)
+                    .frame(minHeight: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.ink1)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.line, lineWidth: 1)
+                    )
+                    .accessibilityLabel("Your name, used in the dashboard greeting")
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

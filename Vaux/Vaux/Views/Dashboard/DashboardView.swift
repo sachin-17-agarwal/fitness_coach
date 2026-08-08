@@ -11,6 +11,7 @@ struct DashboardView: View {
     @State private var navigateToWorkout = false
     @State private var showWeightSheet = false
     @State private var syncError: String?
+    @AppStorage(Config.displayNameKey) private var displayName: String = ""
 
     var switchToChatTab: (() -> Void)? = nil
 
@@ -143,7 +144,7 @@ struct DashboardView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("\(greeting), Sachin")
+                Text(greeting)
                     .font(.serifLG)
                     .foregroundStyle(Color.fg0)
 
@@ -220,7 +221,8 @@ struct DashboardView: View {
                             value: "\(weight.oneDecimal) kg",
                             subtitle: viewModel.latestBodyFatPct.map { "\($0.oneDecimal)% body fat" } ?? "Tap to log",
                             accentColor: .amber,
-                            sparkline: weightSparkline
+                            sparkline: weightSparkline,
+                            isTappable: true
                         )
                     } else {
                         MetricCard(
@@ -228,11 +230,13 @@ struct DashboardView: View {
                             title: "Weight",
                             value: "—",
                             subtitle: "Tap to log",
-                            accentColor: .amber
+                            accentColor: .amber,
+                            isTappable: true
                         )
                     }
                 }
                 .buttonStyle(PressScaleStyle())
+                .accessibilityHint("Opens the weight log")
 
                 if viewModel.weekTonnage > 0 {
                     MetricCard(
@@ -256,14 +260,22 @@ struct DashboardView: View {
 
     // MARK: - Computed display values
 
+    /// Time-of-day greeting, with the athlete's name when one is set. The name
+    /// was hardcoded to a single person; it now comes from Settings, and an
+    /// empty value simply yields the greeting on its own rather than a dangling
+    /// comma.
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
+        let salutation: String
         switch hour {
-        case 5..<12: return "Good morning"
-        case 12..<17: return "Good afternoon"
-        case 17..<22: return "Good evening"
-        default: return "Welcome back"
+        case 5..<12: salutation = "Good morning"
+        case 12..<17: salutation = "Good afternoon"
+        case 17..<22: salutation = "Good evening"
+        default: salutation = "Welcome back"
         }
+
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? salutation : "\(salutation), \(name)"
     }
 
     private var sleepValue: String {

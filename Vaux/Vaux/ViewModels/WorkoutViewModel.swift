@@ -229,6 +229,9 @@ final class WorkoutViewModel {
     /// instead of creating a duplicate. Falls back to `startWorkout` when
     /// nothing is open.
     func startOrResumeWorkout(type: String) async {
+        // Ask ahead of the first rest, so permission is settled by the time
+        // an alert actually needs to be delivered.
+        await RestNotifier.shared.requestAuthorizationIfNeeded()
         if let existing = await fetchInProgressSession(type: type) {
             await resume(session: existing)
         } else {
@@ -889,8 +892,10 @@ final class WorkoutViewModel {
 
     func startRestTimer(seconds: Int) {
         restTotalSeconds = max(1, seconds)
-        restEndDate = Date().addingTimeInterval(Double(seconds))
+        let end = Date().addingTimeInterval(Double(seconds))
+        restEndDate = end
         isResting = true
+        RestNotifier.shared.schedule(at: end, nextSet: upcomingSetSummary)
         loadLastSessionSetsIfNeeded()
     }
 
@@ -975,13 +980,18 @@ final class WorkoutViewModel {
     /// ring reflects the added time instead of sitting pinned at full.
     func extendRest(by seconds: Int) {
         guard seconds > 0 else { return }
-        restEndDate = (restEndDate ?? Date()).addingTimeInterval(Double(seconds))
+        let end = (restEndDate ?? Date()).addingTimeInterval(Double(seconds))
+        restEndDate = end
         restTotalSeconds += seconds
+        // Replaces the pending alert, so the notification tracks the new
+        // deadline instead of firing at the original one.
+        RestNotifier.shared.schedule(at: end, nextSet: upcomingSetSummary)
     }
 
     func skipRest() {
         isResting = false
         restEndDate = nil
+        RestNotifier.shared.cancel()
     }
 
     func updateDuration() {
@@ -1702,6 +1712,9 @@ final class WorkoutViewModel {
         durationTimer?.invalidate()
         isResting = false
         restEndDate = nil
+        // Ending a session mid-rest must not leave an alert armed to fire
+        // minutes later for a workout that's already over.
+        RestNotifier.shared.cancel()
     }
 
     private func resetState() {

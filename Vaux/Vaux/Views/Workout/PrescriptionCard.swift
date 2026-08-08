@@ -15,6 +15,7 @@ struct PrescriptionCard: View {
 
     /// Drives the soft glow pulse on the chip for the set that's up next.
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -85,6 +86,12 @@ struct PrescriptionCard: View {
         )
         .shadow(color: .black.opacity(0.45), radius: 18, x: 0, y: 10)
         .onAppear {
+            // Settle at the pulsed end state under Reduce Motion, so the card
+            // still looks "live" without breathing continuously.
+            guard !reduceMotion else {
+                pulse = true
+                return
+            }
             withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
                 pulse = true
             }

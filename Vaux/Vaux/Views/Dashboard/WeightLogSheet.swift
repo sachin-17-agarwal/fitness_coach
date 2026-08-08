@@ -93,6 +93,12 @@ struct WeightLogSheet: View {
                 if let initialWeight { weight = initialWeight }
             }
         }
+        // A weight entry and an optional body-fat field don't need the full
+        // screen this was taking; a large detent for a short form buries the
+        // dashboard behind it for no gain. Declared on the sheet rather than at
+        // each call site so every presenter gets the same treatment.
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private func save() {

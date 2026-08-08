@@ -97,6 +97,12 @@ struct TrendChart: View {
 
             if visible.count >= 2 {
                 chart
+                    // A line of plotted marks announces nothing useful point
+                    // by point; the shape of the trend is what matters, and
+                    // that is what the summary states.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(title) trend")
+                    .accessibilityValue(trendSummary)
             } else {
                 Text("NOT ENOUGH DATA IN THIS RANGE")
                     .font(.eyebrowSmall)
@@ -107,6 +113,22 @@ struct TrendChart: View {
             }
         }
         .darkCard(padding: 18, cornerRadius: 22)
+    }
+
+    /// Start, end, and direction over the visible range.
+    private var trendSummary: String {
+        guard let first = visible.first, let last = visible.last else {
+            return "No data"
+        }
+        var parts = [
+            "\(visible.count) readings",
+            "from \(first.value.oneDecimal) to \(last.value.oneDecimal) \(unit)",
+        ]
+        if let delta {
+            let direction = delta > 0 ? "up" : (delta < 0 ? "down" : "level")
+            parts.append(delta == 0 ? direction : "\(direction) \(abs(delta).oneDecimal) \(unit)")
+        }
+        return parts.joined(separator: ", ")
     }
 
     // MARK: - Range selector
@@ -131,13 +153,26 @@ struct TrendChart: View {
                         .overlay(
                             Capsule().stroke(isSelected ? color.opacity(0.25) : Color.clear, lineWidth: 1)
                         )
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(accessibleRangeName(option))
+                .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(2)
         .background(Capsule().fill(Color.ink1.opacity(0.8)))
         .overlay(Capsule().stroke(Color.line, lineWidth: 1))
+    }
+
+    /// "30D" is a legible abbreviation on screen but reads as letters aloud.
+    private func accessibleRangeName(_ option: ChartRange) -> String {
+        switch option {
+        case .days30: return "Last 30 days"
+        case .days90: return "Last 90 days"
+        case .all: return "All time"
+        }
     }
 
     // MARK: - Chart

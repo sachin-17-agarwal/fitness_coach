@@ -20,6 +20,7 @@ struct RecoveryRing: View {
     var recentScores: [Int] = []
 
     @State private var animatedProgress: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var zoneColor: Color {
         switch level {
@@ -58,15 +59,48 @@ struct RecoveryRing: View {
         }
         .heroCard(accent: zoneColor, padding: 22, cornerRadius: 28)
         .onAppear {
-            withAnimation(.easeOut(duration: 1.1)) {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 1.1)) {
                 animatedProgress = Double(score) / 100.0
             }
         }
         .onChange(of: score) { _, new in
-            withAnimation(.easeOut(duration: 0.8)) {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.8)) {
                 animatedProgress = Double(new) / 100.0
             }
         }
+        // The card is the screen's headline, and as separate elements it read
+        // as a scatter of bare numbers with the zone — the actual verdict —
+        // announced as an unexplained colour name. One element states the
+        // score, what it means, and the inputs behind it, in that order.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Recovery")
+        .accessibilityValue(accessibilitySummary)
+    }
+
+    /// The card's full reading as one phrase.
+    private var accessibilitySummary: String {
+        var parts: [String] = []
+        if level == .unknown {
+            parts.append("No data yet")
+        } else {
+            parts.append("\(score) out of 100")
+            parts.append(statusChipLabel)
+        }
+        if !statusText.isEmpty {
+            parts.append(statusText)
+        }
+        if let sleep {
+            let hours = Int(sleep)
+            let minutes = Int((sleep - Double(hours)) * 60)
+            parts.append("Sleep \(hours) hours \(minutes) minutes")
+        }
+        if let hrv {
+            parts.append("HRV \(Int(hrv)) milliseconds")
+        }
+        if let rhr {
+            parts.append("Resting heart rate \(Int(rhr)) beats per minute")
+        }
+        return parts.joined(separator: ", ")
     }
 
     // MARK: - Header

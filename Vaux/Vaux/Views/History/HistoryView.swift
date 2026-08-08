@@ -83,9 +83,12 @@ struct HistoryView: View {
                                 }
                             }
                         )
+                        .frame(minHeight: 44)
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(tab.rawValue)
+                .accessibilityAddTraits(selectedTab == tab ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(4)
@@ -154,6 +157,7 @@ struct HistoryView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(color)
                 .frame(height: 16)
+                .accessibilityHidden(true)
             Text(value)
                 .font(.numMD)
                 .foregroundStyle(Color.fg0)
@@ -166,6 +170,9 @@ struct HistoryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .darkCard(padding: 14, cornerRadius: 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
     }
 
     private var emptyTraining: some View {
@@ -344,9 +351,31 @@ struct WorkoutHeatmap: View {
                 }
             }
             .frame(height: 7 * Self.cellHeight + 6 * Self.spacing)
+            // 56 unlabelled squares would be 56 stops that each announce
+            // nothing. The grid carries one summary instead, and the legend
+            // below it only explains the colour coding — which is meaningless
+            // without the colours.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Training activity, last 8 weeks")
+            .accessibilityValue(activitySummary)
 
             legend
+                .accessibilityHidden(true)
         }
+    }
+
+    /// How many of the last 8 weeks' days were trained, and when the most
+    /// recent one was.
+    private var activitySummary: String {
+        let trained = cells.filter { $0.intensity > 0 }
+        guard let latest = trained.last?.date else {
+            return "No sessions in this window"
+        }
+        let days = "\(trained.count) day\(trained.count == 1 ? "" : "s") trained"
+        if Calendar.current.isDateInToday(latest) {
+            return "\(days), most recently today"
+        }
+        return "\(days), most recently \(latest.formatted(.dateTime.month(.wide).day()))"
     }
 
     private var legend: some View {

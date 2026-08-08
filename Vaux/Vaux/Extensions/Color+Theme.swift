@@ -44,10 +44,18 @@ extension Color {
     static let bone = Color(hex: "E7E4DB")
 
     // Foreground text
+    //
+    // Contrast against the ink surfaces these sit on (ink0–ink3):
+    //   fg0  ~17:1   fg1  ~11:1   fg2  ~5.7:1   fg3  ~3.1:1
+    // fg3 is the dimmest rung and clears 3:1 — the floor for large text and
+    // graphical labels — so it is for axis ticks, legends, and other marks
+    // that support a reading rather than carry it. Anything a user has to
+    // actually read (timestamps, tab labels, values) belongs on fg2 or above.
+    // The old fg3 (#4E4E5A) sat at 2.3:1 and left chart axes near-invisible.
     static let fg0 = Color(hex: "F4F3EE")
     static let fg1 = Color(hex: "CFCEC7")
     static let fg2 = Color(hex: "878791")
-    static let fg3 = Color(hex: "4E4E5A")
+    static let fg3 = Color(hex: "676773")
 
     // Signal palette (one accent per role)
     static let signal = Color(hex: "CFFF3E")

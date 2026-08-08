@@ -15,6 +15,7 @@ struct PRCelebration: View {
     @State private var rotation: Double = -12
     @State private var badgeScale: CGFloat = 0.4
     @State private var ripple = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -91,6 +92,19 @@ struct PRCelebration: View {
         }
         .onAppear {
             Haptic.success()
+            guard !reduceMotion else {
+                // Reduce Motion still gets the celebration — a PR is worth
+                // marking — just as a fade onto the finished layout, with no
+                // overshoot spring, no rotation, and no repeating sonar.
+                withAnimation(.easeOut(duration: 0.25)) {
+                    scale = 1.0
+                    opacity = 1.0
+                    badgeScale = 1.0
+                    rotation = 0
+                }
+                scheduleDismissal()
+                return
+            }
             withAnimation(.spring(response: 0.5, dampingFraction: 0.55)) {
                 scale = 1.0
                 opacity = 1.0
@@ -102,13 +116,26 @@ struct PRCelebration: View {
             withAnimation(.easeOut(duration: 1.5).delay(0.25).repeatForever(autoreverses: false)) {
                 ripple = true
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
-                withAnimation(.easeOut(duration: 0.35)) {
-                    opacity = 0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    isShowing = false
-                }
+            scheduleDismissal()
+        }
+        // Announced as one statement, and as an alert so VoiceOver interrupts
+        // to deliver it — the overlay dismisses itself after a few seconds, so
+        // a message waiting politely in the reading order would be missed.
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityLabel(
+            "New personal record. \(exercise), estimated one rep max \(estimated1RM.oneDecimal) kilograms."
+        )
+    }
+
+    /// Fades the overlay out and tears it down after its moment on screen.
+    private func scheduleDismissal() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            withAnimation(.easeOut(duration: 0.35)) {
+                opacity = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                isShowing = false
             }
         }
     }

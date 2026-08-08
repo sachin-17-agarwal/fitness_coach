@@ -113,6 +113,7 @@ private struct HeartBeatIcon: View {
     let isPulsing: Bool
     let color: Color
     @State private var scale: CGFloat = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Image(systemName: "heart.fill")
@@ -126,6 +127,9 @@ private struct HeartBeatIcon: View {
     }
 
     private func startPulse() {
+        // The colour already carries the heart-rate zone; the beat is flourish,
+        // and a forever-repeating one is exactly what Reduce Motion is for.
+        guard !reduceMotion else { return }
         withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
             scale = 1.18
         }

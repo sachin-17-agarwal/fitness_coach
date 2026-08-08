@@ -14,6 +14,10 @@ struct FitnessCoachApp: App {
 
     init() {
         configureNavBarAppearance()
+        // Must be installed before any rest alert could be delivered, so that
+        // one arriving while the app is frontmost is suppressed in favour of
+        // the on-screen countdown.
+        RestNotifier.shared.start()
         requestHealthKitAuthorization()
         Task { await WorkoutService().cleanupStaleSessions() }
     }
@@ -38,30 +42,34 @@ struct FitnessCoachApp: App {
 
     // MARK: - Tab content
 
+    // Every tab stays mounted so scroll position and in-flight state survive
+    // switching, which is why this is opacity rather than a real TabView.
+    //
+    // The catch is that neither `opacity(0)` nor `allowsHitTesting(false)`
+    // removes a view from the accessibility tree — so VoiceOver used to walk
+    // straight out of the Dashboard and into the Coach screen, then the
+    // workout screen, with nothing announcing the crossing. `accessibilityHidden`
+    // is the modifier that actually withdraws them, and it has to track the
+    // selection exactly like the other two do.
     @ViewBuilder
     private var tabContent: some View {
         ZStack {
             DashboardView(switchToChatTab: { selectedTab = .coach })
-                .opacity(selectedTab == .home ? 1 : 0)
-                .allowsHitTesting(selectedTab == .home)
+                .hiddenUnlessActive(selectedTab == .home)
 
             CoachChatView()
-                .opacity(selectedTab == .coach ? 1 : 0)
-                .allowsHitTesting(selectedTab == .coach)
+                .hiddenUnlessActive(selectedTab == .coach)
 
             NavigationStack {
                 WorkoutModeView()
             }
-            .opacity(selectedTab == .train ? 1 : 0)
-            .allowsHitTesting(selectedTab == .train)
+            .hiddenUnlessActive(selectedTab == .train)
 
             HistoryView()
-                .opacity(selectedTab == .history ? 1 : 0)
-                .allowsHitTesting(selectedTab == .history)
+                .hiddenUnlessActive(selectedTab == .history)
 
             SettingsView()
-                .opacity(selectedTab == .settings ? 1 : 0)
-                .allowsHitTesting(selectedTab == .settings)
+                .hiddenUnlessActive(selectedTab == .settings)
         }
     }
 
@@ -136,6 +144,18 @@ struct FitnessCoachApp: App {
     }
 }
 
+// MARK: - Tab visibility
+
+private extension View {
+    /// Hides a mounted-but-unselected tab from sight, touch, and assistive
+    /// technology together, so the three can't drift out of step.
+    func hiddenUnlessActive(_ isActive: Bool) -> some View {
+        opacity(isActive ? 1 : 0)
+            .allowsHitTesting(isActive)
+            .accessibilityHidden(!isActive)
+    }
+}
+
 // MARK: - Capsule tab bar
 //
 // Floating instrument-panel bar: blurred ink surface with a machined
@@ -194,13 +214,19 @@ struct CapsuleTabBar: View {
                     .foregroundStyle(isSelected ? Color.signal : Color.fg2)
                     .shadow(color: isSelected ? Color.signal.opacity(0.6) : .clear, radius: 7)
 
+                // Was 8pt on fg3 — under any reasonable reading size, and at
+                // 2.3:1 the dimmest text in the app sat on the one control
+                // present on every screen. 10pt on fg2 clears 5.7:1 and still
+                // reads as chrome beside the icon.
                 Text(tab.title.uppercased())
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .font(.scaled(10, weight: .semibold, design: .monospaced, relativeTo: .caption2, cap: 14))
                     .kerning(0.8)
-                    .foregroundStyle(isSelected ? Color.signal : Color.fg3)
+                    .foregroundStyle(isSelected ? Color.signal : Color.fg2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
+            .frame(minHeight: 52)
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -215,5 +241,10 @@ struct CapsuleTabBar: View {
             .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .buttonStyle(.plain)
+        // The lime fill and glow are the only thing marking the current tab;
+        // `.isSelected` is how that reaches VoiceOver, which would otherwise
+        // announce all five identically and give no way to tell where you are.
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }

@@ -57,18 +57,29 @@ struct RPESlider: View {
                         .shadow(color: rpeColor.opacity(0.4), radius: 4)
                         .offset(x: max(0, thumbX - 14))
                 }
+                // The drawn track is 28pt tall, under the 44pt minimum, and
+                // this is dragged once per set with a bar still in hand. The
+                // hit area is grown to 44 around the unchanged visuals so the
+                // grab region matches the intent rather than the artwork.
+                .frame(height: 44)
+                .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { gesture in
                             let fraction = gesture.location.x / width
                             let clamped = min(max(fraction, 0), 1)
                             let raw = range.lowerBound + clamped * (range.upperBound - range.lowerBound)
-                            value = (raw / step).rounded() * step
-                            value = min(max(value, range.lowerBound), range.upperBound)
+                            let stepped = min(max((raw / step).rounded() * step, range.lowerBound), range.upperBound)
+                            // Only a change worth feeling gets a tick, so a
+                            // slow drag doesn't buzz continuously.
+                            if stepped != value {
+                                Haptic.selection()
+                                value = stepped
+                            }
                         }
                 )
             }
-            .frame(height: 28)
+            .frame(height: 44)
 
             // Step labels
             HStack {
@@ -81,8 +92,27 @@ struct RPESlider: View {
                     }
                 }
             }
+            .accessibilityHidden(true)
         }
         .padding(.horizontal, 4)
+        // A bare DragGesture is unreachable with VoiceOver — there is no
+        // pointer to drag. Collapsing the control into one adjustable element
+        // gives it the standard swipe-up/down increment instead, which is how
+        // a UISlider behaves and the only way this value can be set at all
+        // without sighted touch.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Rate of perceived exertion")
+        .accessibilityValue("\(value.oneDecimal) out of 10")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                value = min(range.upperBound, value + step)
+            case .decrement:
+                value = max(range.lowerBound, value - step)
+            @unknown default:
+                break
+            }
+        }
     }
 
     private var rpeColor: Color {

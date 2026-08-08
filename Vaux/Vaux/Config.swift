@@ -4,6 +4,21 @@
 import Foundation
 
 struct Config {
+    // MARK: - Athlete
+
+    /// `UserDefaults`/`@AppStorage` key for the name the app greets you by.
+    ///
+    /// Kept on-device rather than in the Supabase `memory` table alongside the
+    /// briefing style: this only ever feeds a local greeting, so it should
+    /// render instantly and offline instead of waiting on a fetch.
+    static let displayNameKey = "displayName"
+
+    /// Falls back to an empty string so callers can decide between a
+    /// personalised and a plain greeting.
+    static var displayName: String {
+        UserDefaults.standard.string(forKey: displayNameKey) ?? ""
+    }
+
     // MARK: - Supabase
 
     static var supabaseURL: String {

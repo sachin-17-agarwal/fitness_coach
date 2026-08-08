@@ -8,6 +8,7 @@
 // signal accent reserved for primary actions and live data.
 
 import SwiftUI
+import UIKit
 
 // MARK: - Screen background
 //
@@ -41,6 +42,7 @@ struct TechBackground: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -110,6 +112,7 @@ struct GlowDot: View {
     var color: Color = .signal
     var size: CGFloat = 6
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Circle()
@@ -118,10 +121,18 @@ struct GlowDot: View {
             .shadow(color: color.opacity(0.9), radius: pulse ? size : size * 0.3)
             .scaleEffect(pulse ? 1.0 : 0.8)
             .onAppear {
+                // Reduce Motion keeps the dot lit at full strength rather than
+                // breathing forever — the glow is the signal, the pulse was
+                // only ever decoration on top of it.
+                guard !reduceMotion else {
+                    pulse = true
+                    return
+                }
                 withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) {
                     pulse = true
                 }
             }
+            .accessibilityHidden(true)
     }
 }
 
@@ -287,12 +298,12 @@ struct CTALabel: View {
             }
             if !busy {
                 Text(text)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.scaled(16, weight: .semibold, relativeTo: .headline))
                     .kerning(0.2)
             }
         }
         .foregroundStyle(textColor)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 44)
         .padding(.vertical, 16)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -308,43 +319,96 @@ struct CTALabel: View {
 }
 
 // MARK: - Typography presets
+//
+// The editorial direction depends on specific point sizes — a 96pt serif
+// numeral is the design, not a rounded-up body style — so these can't simply
+// become `.system(.largeTitle)`. Instead each preset keeps its drawn size and
+// runs it through `UIFontMetrics`, which scales it by the reader's Dynamic
+// Type setting. Display sizes get a ceiling: a 96pt hero tripled would push
+// every neighbouring element off screen, whereas body and label text is
+// allowed to grow freely because that is the text people enlarge the setting
+// for in the first place.
+//
+// These are computed rather than stored so the scale is read at render time
+// instead of being frozen at the value that happened to be set at launch.
+
+private extension Font.TextStyle {
+    /// The UIKit equivalent, since `UIFontMetrics` — the only API that will
+    /// scale an arbitrary point size — is a UIKit type. Taking SwiftUI's own
+    /// `Font.TextStyle` at the call sites keeps them in one framework's
+    /// vocabulary and avoids relying on UIKit being in scope wherever a preset
+    /// is declared.
+    var uiTextStyle: UIFont.TextStyle {
+        switch self {
+        case .largeTitle: return .largeTitle
+        case .title: return .title1
+        case .title2: return .title2
+        case .title3: return .title3
+        case .headline: return .headline
+        case .subheadline: return .subheadline
+        case .body: return .body
+        case .callout: return .callout
+        case .footnote: return .footnote
+        case .caption: return .caption1
+        case .caption2: return .caption2
+        @unknown default: return .body
+        }
+    }
+}
 
 extension Font {
-    // Editorial direction — serif for hero numbers/titles, mono for
-    // numerics/eyebrows, system sans for UI.
+    /// A fixed design size, scaled for Dynamic Type.
+    ///
+    /// - Parameters:
+    ///   - style: the text style whose scaling curve to follow. Labels scale
+    ///     faster than display type, so pairing each preset with a comparable
+    ///     style keeps the hierarchy intact as sizes grow.
+    ///   - cap: upper bound in points, for type that would otherwise break
+    ///     the layout it anchors.
+    static func scaled(
+        _ size: CGFloat,
+        weight: Font.Weight = .regular,
+        design: Font.Design = .default,
+        relativeTo style: Font.TextStyle = .body,
+        cap: CGFloat? = nil
+    ) -> Font {
+        var points = UIFontMetrics(forTextStyle: style.uiTextStyle).scaledValue(for: size)
+        if let cap { points = min(points, cap) }
+        return .system(size: points, weight: weight, design: design)
+    }
 
     // Hero serif numbers
-    static let numHero = Font.system(size: 96, weight: .light, design: .serif)
-    static let numXL = Font.system(size: 68, weight: .light, design: .serif)
-    static let numDisplay = Font.system(size: 46, weight: .light, design: .serif)
-    static let numLG = Font.system(size: 36, weight: .medium, design: .monospaced).monospacedDigit()
-    static let numMD = Font.system(size: 22, weight: .medium, design: .monospaced).monospacedDigit()
-    static let numSM = Font.system(size: 16, weight: .medium, design: .monospaced).monospacedDigit()
+    static var numHero: Font { scaled(96, weight: .light, design: .serif, relativeTo: .largeTitle, cap: 132) }
+    static var numXL: Font { scaled(68, weight: .light, design: .serif, relativeTo: .largeTitle, cap: 96) }
+    static var numDisplay: Font { scaled(46, weight: .light, design: .serif, relativeTo: .title, cap: 68) }
+    static var numLG: Font { scaled(36, weight: .medium, design: .monospaced, relativeTo: .title2, cap: 54).monospacedDigit() }
+    static var numMD: Font { scaled(22, weight: .medium, design: .monospaced, relativeTo: .title3, cap: 36).monospacedDigit() }
+    static var numSM: Font { scaled(16, weight: .medium, design: .monospaced, relativeTo: .body).monospacedDigit() }
 
     // Editorial serif titles
-    static let serifXL = Font.system(size: 52, weight: .light, design: .serif)
-    static let serifLG = Font.system(size: 34, weight: .light, design: .serif)
-    static let serifMD = Font.system(size: 24, weight: .regular, design: .serif)
-    static let serifSM = Font.system(size: 18, weight: .medium, design: .serif)
-    static let serifBrand = Font.system(size: 22, weight: .medium, design: .serif)
+    static var serifXL: Font { scaled(52, weight: .light, design: .serif, relativeTo: .largeTitle, cap: 74) }
+    static var serifLG: Font { scaled(34, weight: .light, design: .serif, relativeTo: .title, cap: 50) }
+    static var serifMD: Font { scaled(24, weight: .regular, design: .serif, relativeTo: .title2, cap: 38) }
+    static var serifSM: Font { scaled(18, weight: .medium, design: .serif, relativeTo: .headline) }
+    static var serifBrand: Font { scaled(22, weight: .medium, design: .serif, relativeTo: .title3, cap: 34) }
 
     // UI + labels
-    static let eyebrow = Font.system(size: 10, weight: .medium, design: .monospaced)
-    static let eyebrowSmall = Font.system(size: 9, weight: .medium, design: .monospaced)
-    static let uiBody = Font.system(size: 14, weight: .regular)
-    static let uiStrong = Font.system(size: 14, weight: .semibold)
-    static let uiSmall = Font.system(size: 12, weight: .regular)
+    static var eyebrow: Font { scaled(10, weight: .medium, design: .monospaced, relativeTo: .caption2) }
+    static var eyebrowSmall: Font { scaled(9, weight: .medium, design: .monospaced, relativeTo: .caption2) }
+    static var uiBody: Font { scaled(14, weight: .regular, relativeTo: .subheadline) }
+    static var uiStrong: Font { scaled(14, weight: .semibold, relativeTo: .subheadline) }
+    static var uiSmall: Font { scaled(12, weight: .regular, relativeTo: .footnote) }
 
     // Legacy aliases — keep existing views compiling while screens migrate.
-    static let display = numXL
-    static let heroNumber = numXL
-    static let largeNumber = numLG
-    static let mediumNumber = numMD
-    static let smallNumber = numSM
-    static let sectionTitle = eyebrow
-    static let cardTitle = uiStrong
-    static let cardBody = uiBody
-    static let chipLabel = eyebrow
+    static var display: Font { numXL }
+    static var heroNumber: Font { numXL }
+    static var largeNumber: Font { numLG }
+    static var mediumNumber: Font { numMD }
+    static var smallNumber: Font { numSM }
+    static var sectionTitle: Font { eyebrow }
+    static var cardTitle: Font { uiStrong }
+    static var cardBody: Font { uiBody }
+    static var chipLabel: Font { eyebrow }
 }
 
 // MARK: - Eyebrow label
@@ -436,15 +500,19 @@ struct PressScaleStyle: ButtonStyle {
 struct RiseIn: ViewModifier {
     var delay: Double = 0
     @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
             .opacity(shown ? 1 : 0)
-            .offset(y: shown ? 0 : 14)
+            // Reduce Motion drops the travel but keeps the fade, which is the
+            // part that reads as "this just loaded" rather than as movement.
+            .offset(y: shown || reduceMotion ? 0 : 14)
             .onAppear {
-                withAnimation(.spring(response: 0.55, dampingFraction: 0.85).delay(delay)) {
-                    shown = true
-                }
+                let animation: Animation = reduceMotion
+                    ? .easeOut(duration: 0.2).delay(delay)
+                    : .spring(response: 0.55, dampingFraction: 0.85).delay(delay)
+                withAnimation(animation) { shown = true }
             }
     }
 }
@@ -483,6 +551,8 @@ struct IconBadge: View {
                 .shadow(color: accent.opacity(0.6), radius: 12)
         }
         .frame(width: size * 1.3, height: size * 1.3)
+        // Always paired with a heading that says the same thing in words.
+        .accessibilityHidden(true)
     }
 }
 

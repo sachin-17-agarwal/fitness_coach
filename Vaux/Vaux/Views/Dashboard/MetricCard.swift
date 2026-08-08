@@ -17,6 +17,12 @@ struct MetricCard: View {
     var trendColor: Color? = nil
     var accentColor: Color = .signal
     var sparkline: [Double]? = nil
+    /// Draws a chevron in the header. The weight tile is the only tappable
+    /// metric on the dashboard, and it advertised that solely through a "Tap to
+    /// log" subtitle that disappeared as soon as a weight existed — after the
+    /// first weigh-in the tile looked exactly like the four inert ones around
+    /// it. A persistent chevron is the affordance the subtitle used to carry.
+    var isTappable: Bool = false
 
     enum Trend {
         case up, down, flat
@@ -74,6 +80,11 @@ struct MetricCard: View {
                 if let trend {
                     trendChip(trend)
                 }
+                if isTappable {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.fg2)
+                }
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -105,11 +116,32 @@ struct MetricCard: View {
                 if let sparkline, sparkline.count >= 2 {
                     sparklineView(sparkline)
                         .frame(width: 64, height: 22)
+                        // The trend it shows is already stated in the subtitle
+                        // and trend chip; as a lone element it would announce
+                        // as an unlabelled chart.
+                        .accessibilityHidden(true)
                 }
             }
         }
         .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
         .darkCard(padding: 16, cornerRadius: 18)
+        // One element per tile: the parts are a single reading ("Sleep, 7:20
+        // hrs, Good"), not four things to swipe through.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(accessibilityValue)
+    }
+
+    /// Value, trend, and subtitle as one spoken phrase.
+    private var accessibilityValue: String {
+        var parts = [value]
+        if let trend {
+            parts.append(trend.label.lowercased())
+        }
+        if let subtitle {
+            parts.append(subtitle)
+        }
+        return parts.joined(separator: ", ")
     }
 
     private func trendChip(_ trend: Trend) -> some View {

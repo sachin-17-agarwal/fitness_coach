@@ -15,6 +15,8 @@ struct WorkoutModeView: View {
     @State private var didCheckResume = false
     /// The logged set currently open for correction, if any.
     @State private var editingSet: WorkoutSet?
+    /// Whether this view currently owns a screen wake-lock hold.
+    @State private var holdsWakeLock = false
 
     /// Session type passed explicitly (e.g. from the Dashboard CTA). When left
     /// empty — the Train tab mounts this view with no argument — the view
@@ -112,6 +114,13 @@ struct WorkoutModeView: View {
             }
             didCheckResume = true
         }
+        // Hold the screen awake for the duration of a session. A set plus its
+        // rest is minutes without a touch, which is exactly what auto-lock
+        // counts, so the display would go dark over the prescription card and
+        // the countdown.
+        .onChange(of: viewModel.isActive) { _, active in syncWakeLock(active) }
+        .onAppear { syncWakeLock(viewModel.isActive) }
+        .onDisappear { syncWakeLock(false) }
         .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
             // Settings (or post-workout advance) changed today's session.
             // Only re-resolve when this view is showing today's auto-picked
@@ -153,7 +162,11 @@ struct WorkoutModeView: View {
                             .padding(.vertical, 6)
                             .background(Capsule().fill(Color.ember.opacity(0.08)))
                             .overlay(Capsule().stroke(Color.ember.opacity(0.22), lineWidth: 1))
+                            .frame(minHeight: 44)
+                            .contentShape(Capsule())
                     }
+                    .accessibilityLabel("End workout")
+                    .accessibilityHint("Finishes this session and shows your summary")
                 }
             }
         }
@@ -173,6 +186,20 @@ struct WorkoutModeView: View {
         // the back-swipe so the Begin screen still feels like a normal
         // push.
         .interactivePopGesture(enabled: !viewModel.isActive && didCheckResume)
+    }
+
+    /// Brings the wake-lock hold in line with `active`, tracking ownership so
+    /// repeated calls are harmless. Needed because the three call sites
+    /// overlap: leaving and re-entering the view while a session is still
+    /// running would otherwise either double-acquire or drop the hold entirely.
+    private func syncWakeLock(_ active: Bool) {
+        guard active != holdsWakeLock else { return }
+        holdsWakeLock = active
+        if active {
+            ScreenWakeLock.acquire()
+        } else {
+            ScreenWakeLock.release()
+        }
     }
 
     // MARK: - Resume probe
