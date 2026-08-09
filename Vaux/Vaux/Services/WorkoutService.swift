@@ -107,7 +107,7 @@ final class WorkoutService: Sendable {
             "id": sessionId.uuidString,
             "date": today,
             "type": type,
-            "status": "in_progress",
+            "status": SessionStatus.openStored,
             "start_time": now,
         ]
 
@@ -147,7 +147,7 @@ final class WorkoutService: Sendable {
         try await client.update(
             "workout_sessions",
             body: [
-                "status": "completed",
+                "status": SessionStatus.finishedStored,
                 "end_time": now,
                 "tonnage_kg": tonnage,
             ],
@@ -330,7 +330,7 @@ final class WorkoutService: Sendable {
         try await client.update(
             "workout_sessions",
             body: [
-                "status": "completed",
+                "status": SessionStatus.finishedStored,
                 "end_time": ISO8601DateFormatter().string(from: Date()),
                 "tonnage_kg": tonnage,
             ],
@@ -434,9 +434,11 @@ final class WorkoutService: Sendable {
     /// Catches three failure modes:
     ///
     /// 1. Sessions from *prior* days that never ended (the original case).
-    /// 2. Sessions created by the backend's implicit-start path, which use
-    ///    `status="active"` rather than the iOS `"in_progress"` — these are
-    ///    the orphan "Pull / Push / Legs" cards with one stray set.
+    /// 2. Sessions created by the backend's implicit-start path — these are
+    ///    the orphan "Pull / Push / Legs" cards with one stray set. Both
+    ///    codebases now write `SessionStatus.openStored`, but rows predating
+    ///    that still say `"active"`, which is why the sweep enumerates every
+    ///    open spelling rather than one.
     /// 3. *Today's* sessions whose newest set is more than 6 hours old: a
     ///    legit workout never spans that long, so anything past that is a
     ///    forgotten session, not a currently-open one. Picks the most
@@ -444,7 +446,7 @@ final class WorkoutService: Sendable {
     ///    as the survivor when several overlap.
     func cleanupStaleSessions() async {
         let today = Self.todayString()
-        let openStatuses = ["in_progress", "active"]
+        let openStatuses = SessionStatus.openRawValues
 
         var openSessions: [WorkoutSession] = []
         for status in openStatuses {
@@ -536,7 +538,7 @@ final class WorkoutService: Sendable {
             }
             _ = try? await client.update(
                 "workout_sessions",
-                body: ["status": "completed", "tonnage_kg": tonnage],
+                body: ["status": SessionStatus.finishedStored, "tonnage_kg": tonnage],
                 match: ["id": id.uuidString]
             )
         }

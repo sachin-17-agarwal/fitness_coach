@@ -281,7 +281,9 @@ final class WorkoutViewModel {
             query: [
                 "date": "eq.\(today)",
                 "type": "eq.\(type)",
-                "status": "eq.in_progress",
+                // Both spellings: a session opened through chat is
+                // "active", and resuming has to find it too.
+                "status": SessionStatus.openQueryFilter,
             ],
             order: "start_time.desc",
             limit: 1

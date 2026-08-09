@@ -7,7 +7,10 @@ substitution memory, and session summaries.
 import logging
 from datetime import datetime, timedelta
 
-from data import get_supabase, now_local, today_local_str
+from data import (
+    OPEN_SESSION_STATUSES, SESSION_STATUS_FINISHED, SESSION_STATUS_OPEN,
+    get_supabase, now_local, today_local_str,
+)
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +85,7 @@ def start_session(session_type: str) -> str:
         result = supabase.table("workout_sessions").insert({
             "date": today_local_str(),
             "type": session_type,
-            "status": "active",
+            "status": SESSION_STATUS_OPEN,
             "start_time": now_local().isoformat()
         }).execute()
         if not result.data:
@@ -124,7 +127,7 @@ def end_session(session_id: str) -> dict:
         )
 
         supabase.table("workout_sessions").update({
-            "status": "complete",
+            "status": SESSION_STATUS_FINISHED,
             "end_time": now_local().isoformat(),
             "tonnage_kg": round(tonnage, 1)
         }).eq("id", session_id).execute()
@@ -350,7 +353,7 @@ def _find_live_session() -> dict | None:
         result = supabase.table("workout_sessions")\
             .select("id, type, date, start_time, status")\
             .eq("date", today)\
-            .eq("status", "in_progress")\
+            .in_("status", list(OPEN_SESSION_STATUSES))\
             .order("start_time", desc=True)\
             .limit(1)\
             .execute()

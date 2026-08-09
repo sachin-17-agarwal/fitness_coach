@@ -402,6 +402,38 @@ class RegressionTests(unittest.TestCase):
             data.next_session_type_for(3, monday, "2026-08-10|Yoga"), "Legs"
         )
 
+    def test_session_status_reads_both_codebases_spellings(self):
+        """The status column has four spellings for two states.
+
+        This backend wrote "active"/"complete" and the iOS app
+        "in_progress"/"completed", with nothing reconciling them, so a session
+        ended in chat read as unfinished to the app — History showed it amber
+        and labelled "COMPLETE" beside green "COMPLETED" ones. There is no
+        migration, so both spellings have to stay readable indefinitely.
+        """
+        for raw in ["complete", "completed", "COMPLETED", "  Complete  "]:
+            with self.subTest(raw=raw):
+                self.assertTrue(data.is_session_finished(raw))
+                self.assertFalse(data.is_session_open(raw))
+
+        for raw in ["active", "in_progress", "IN_PROGRESS"]:
+            with self.subTest(raw=raw):
+                self.assertTrue(data.is_session_open(raw))
+                self.assertFalse(data.is_session_finished(raw))
+
+        # Neither state, and must not be mistaken for finished.
+        for raw in ["", None, "abandoned"]:
+            with self.subTest(raw=raw):
+                self.assertFalse(data.is_session_finished(raw))
+
+    def test_new_session_writes_use_one_spelling_per_state(self):
+        """Both codebases now write the same value, so the split stops here."""
+        self.assertEqual(data.SESSION_STATUS_OPEN, "in_progress")
+        self.assertEqual(data.SESSION_STATUS_FINISHED, "completed")
+        # Whatever is written must still read back as the state it names.
+        self.assertTrue(data.is_session_open(data.SESSION_STATUS_OPEN))
+        self.assertTrue(data.is_session_finished(data.SESSION_STATUS_FINISHED))
+
     def test_rotation_rolls_from_last_position_back_to_first(self):
         """Cardio+Abs (day 4) is followed by Pull (day 1), not by Yoga."""
         monday = datetime(2026, 8, 3, 10, 0)

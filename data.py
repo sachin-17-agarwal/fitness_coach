@@ -45,6 +45,35 @@ YOGA_WEEKDAY = 6  # Monday=0 … Sunday=6, matching datetime.weekday()
 YOGA_SESSION_TYPE = "Yoga"
 
 
+# ── Session lifecycle ────────────────────────────────────────────────────────
+#
+# `workout_sessions.status` has two real states, and four spellings live in the
+# table because the two codebases picked their own from the start: this backend
+# wrote "active"/"complete", the iOS app "in_progress"/"completed". Nothing
+# reconciled them, so a session ended in chat and one ended in the app read as
+# different states — history showed the first as unfinished.
+#
+# New writes use one spelling per state. The old ones stay readable forever
+# rather than being migrated, because the rows already in the table are the
+# athlete's training history and are not worth a migration to tidy.
+SESSION_STATUS_OPEN = "in_progress"
+SESSION_STATUS_FINISHED = "completed"
+
+#: Every spelling that has ever meant each state, for queries and comparisons.
+OPEN_SESSION_STATUSES = ("in_progress", "active")
+FINISHED_SESSION_STATUSES = ("completed", "complete")
+
+
+def is_session_finished(status) -> bool:
+    """True when `status` means the session is over, in any spelling."""
+    return (status or "").strip().lower() in FINISHED_SESSION_STATUSES
+
+
+def is_session_open(status) -> bool:
+    """True when `status` means the session is still going, in any spelling."""
+    return (status or "").strip().lower() in OPEN_SESSION_STATUSES
+
+
 def is_yoga_day(when=None) -> bool:
     """True when the given (or current) local date falls on the yoga day."""
     return (when or now_local()).weekday() == YOGA_WEEKDAY
