@@ -45,31 +45,96 @@ YOGA_WEEKDAY = 6  # Monday=0 … Sunday=6, matching datetime.weekday()
 YOGA_SESSION_TYPE = "Yoga"
 
 
+# ── Session lifecycle ────────────────────────────────────────────────────────
+#
+# `workout_sessions.status` has two real states, and four spellings live in the
+# table because the two codebases picked their own from the start: this backend
+# wrote "active"/"complete", the iOS app "in_progress"/"completed". Nothing
+# reconciled them, so a session ended in chat and one ended in the app read as
+# different states — history showed the first as unfinished.
+#
+# New writes use one spelling per state. The old ones stay readable forever
+# rather than being migrated, because the rows already in the table are the
+# athlete's training history and are not worth a migration to tidy.
+SESSION_STATUS_OPEN = "in_progress"
+SESSION_STATUS_FINISHED = "completed"
+
+#: Every spelling that has ever meant each state, for queries and comparisons.
+OPEN_SESSION_STATUSES = ("in_progress", "active")
+FINISHED_SESSION_STATUSES = ("completed", "complete")
+
+
+def is_session_finished(status) -> bool:
+    """True when `status` means the session is over, in any spelling."""
+    return (status or "").strip().lower() in FINISHED_SESSION_STATUSES
+
+
+def is_session_open(status) -> bool:
+    """True when `status` means the session is still going, in any spelling."""
+    return (status or "").strip().lower() in OPEN_SESSION_STATUSES
+
+
 def is_yoga_day(when=None) -> bool:
     """True when the given (or current) local date falls on the yoga day."""
     return (when or now_local()).weekday() == YOGA_WEEKDAY
 
 
-def session_type_for(mesocycle_day: int, when=None) -> str:
-    """Today's session type: the rotation, with Sunday overriding it."""
+# A one-day manual replacement for whatever the schedule computed, stored in
+# `memory` as "YYYY-MM-DD|Legs". Real training weeks drift — a missed Saturday
+# leaves the athlete wanting Legs on the Sunday the schedule reserves for yoga
+# — and without this the rotation had no give in it at all.
+#
+# The date is part of the value rather than a separate key so the override
+# expires on its own. Nothing has to remember to clear it: tomorrow it simply
+# stops matching, and the ordinary schedule resumes.
+SESSION_OVERRIDE_KEY = "session_override"
+
+
+def parse_session_override(raw, when=None) -> str:
+    """The session type an override names for the given day, or "" if none.
+
+    Anything malformed, or stamped for a different date, reads as absent — a
+    stale override must never quietly re-point a later day's training.
+    """
+    if not raw:
+        return ""
+    date_part, _, type_part = str(raw).partition("|")
+    day = (when or now_local()).date().isoformat()
+    if date_part.strip() != day:
+        return ""
+    forced = type_part.strip()
+    return forced if forced in CYCLE or forced == YOGA_SESSION_TYPE else ""
+
+
+def session_type_for(mesocycle_day: int, when=None, override=None) -> str:
+    """Today's session type: the rotation, with Sunday overriding it, and an
+    explicit per-day override outranking both."""
+    forced = parse_session_override(override, when)
+    if forced:
+        return forced
     if is_yoga_day(when):
         return YOGA_SESSION_TYPE
     return CYCLE[(mesocycle_day - 1) % len(CYCLE)]
 
 
-def next_session_type_for(mesocycle_day: int, when=None) -> str:
+def next_session_type_for(mesocycle_day: int, when=None, override=None) -> str:
     """Tomorrow's session type.
 
     Three cases, and the middle one is the reason this isn't a one-liner:
     tomorrow is the yoga day; today IS the yoga day, so the rotation position
     that Sunday passed over is what comes next; or the ordinary case of
     stepping one along the rotation.
+
+    An override that replaces today's yoga with a rotation session collapses
+    the middle case into the ordinary one: that session consumes the slot
+    today, so tomorrow steps along like any other day.
     """
     today = when or now_local()
     tomorrow = today + timedelta(days=1)
     if is_yoga_day(tomorrow):
         return YOGA_SESSION_TYPE
-    if is_yoga_day(today):
+    today_type = session_type_for(mesocycle_day, today, override)
+    if today_type == YOGA_SESSION_TYPE:
         return CYCLE[(mesocycle_day - 1) % len(CYCLE)]
     return CYCLE[mesocycle_day % len(CYCLE)]
 

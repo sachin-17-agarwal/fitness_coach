@@ -66,8 +66,8 @@ struct SessionCard: View {
     }
 
     /// A day counts as still in progress while any of its rows is.
-    private var combinedStatus: String {
-        sessions.first { $0.status != "completed" }?.status ?? "completed"
+    private var combinedStatus: SessionStatus {
+        sessions.contains { !SessionStatus($0.status).isFinished } ? .open : .finished
     }
 
     private var accent: Color { Color.forSession(session.type) }
@@ -408,10 +408,12 @@ struct SessionCard: View {
         return .strength
     }
 
-    private func statusBadge(_ status: String) -> some View {
-        let isCompleted = status == "completed"
-        let color: Color = isCompleted ? .mint : .amber
-        return Text(status.uppercased())
+    /// Takes the normalised state, not the raw column. Echoing the string was
+    /// how a backend-ended session came out as amber "COMPLETE" next to green
+    /// "COMPLETED" ones — the same state, spelled differently.
+    private func statusBadge(_ status: SessionStatus) -> some View {
+        let color: Color = status.isFinished ? .mint : .amber
+        return Text(status.label)
             .font(.eyebrowSmall)
             .kerning(0.8)
             .foregroundStyle(color)

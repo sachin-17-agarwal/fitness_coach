@@ -90,6 +90,18 @@ final class DashboardViewModel {
         isLoading = false
     }
 
+    /// Swaps today's session for `type`, or restores the schedule when passed
+    /// nil. Reloads the state afterwards so the card reflects what was stored
+    /// rather than what was requested.
+    func setTodayOverride(_ type: String?) async {
+        do {
+            try await mesocycleService.setTodayOverride(type)
+            mesocycle = try await mesocycleService.loadState()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// Refreshes only the mesocycle slice. Called when Settings (or
     /// `MesocycleService.advance()` after a workout) posts
     /// `.mesocycleDidChange` — a full `load()` would needlessly re-pull

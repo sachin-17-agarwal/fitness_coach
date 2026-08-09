@@ -129,6 +129,41 @@ struct MarkdownText: View {
     }
 }
 
+// MARK: - Spoken form
+
+extension MarkdownText {
+    /// The content with markdown markers resolved, for VoiceOver.
+    ///
+    /// The rendered view already reads cleanly because each line goes through
+    /// `AttributedString`, but the raw string does not — announcing a coach
+    /// reply straight from `content` spells out every asterisk and leading
+    /// hyphen. This produces what the screen shows, in one flat string.
+    static func plainText(_ content: String) -> String {
+        content
+            .components(separatedBy: "\n")
+            .map { line -> String in
+                var text = line.trimmingCharacters(in: .whitespaces)
+                // List markers are drawn as a bullet glyph or an index, so the
+                // source marker itself is never spoken content.
+                for marker in ["- ", "* ", "• "] where text.hasPrefix(marker) {
+                    text = String(text.dropFirst(marker.count))
+                    break
+                }
+                if let parsed = try? AttributedString(
+                    markdown: text,
+                    options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                ) {
+                    return String(parsed.characters)
+                }
+                return text
+            }
+            .filter { !$0.isEmpty }
+            // Comma-joined so VoiceOver pauses between lines instead of running
+            // a bulleted list together into one breathless sentence.
+            .joined(separator: ", ")
+    }
+}
+
 #Preview {
     MarkdownText(content: """
     Recovery is looking **strong** today — HRV is trending up.

@@ -58,6 +58,10 @@ final class MuscleStrengthViewModel {
     private(set) var lacking: [LackingFlag] = []
     private(set) var isLoading = false
     private(set) var hasLoadedOnce = false
+    /// Why the last load failed, if it did. As with weekly volume, a swallowed
+    /// fetch error presented as a genuine absence of strength data rather than
+    /// as a failure to read it.
+    private(set) var errorMessage: String?
 
     /// Muscle groups with at least two weekly strength points, for the chart
     /// picker. Sorted by current best e1RM descending (heaviest first).
@@ -109,8 +113,10 @@ final class MuscleStrengthViewModel {
         let allSets: [WorkoutSet]
         do {
             allSets = try await workoutService.fetchSets(since: windowStart)
+            errorMessage = nil
         } catch {
             print("[MuscleStrength] fetch failed: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
             allSets = []
         }
 

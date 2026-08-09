@@ -37,11 +37,30 @@ struct HistoryView: View {
 
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 16) {
-                            switch selectedTab {
-                            case .training: trainingContent
-                            case .strength: strengthContent
-                            case .volume: volumeContent
-                            case .recovery: recoveryContent
+                            // Each segment reads from a different loader, so
+                            // the failure shown has to be the one belonging to
+                            // what's on screen — a volume fetch that failed
+                            // says nothing about the recovery tab.
+                            if let error = currentError, !currentSegmentHasData {
+                                // Nothing to show and a reason why: the reason
+                                // is the content. The alternative was an empty
+                                // state claiming there were no sessions, or a
+                                // volume chart reading a flat zero, neither of
+                                // which was true.
+                                LoadErrorState(message: error, isRetrying: viewModel.isLoading) {
+                                    Task { await viewModel.load() }
+                                }
+                            } else {
+                                if let error = currentError {
+                                    LoadErrorBanner(message: error)
+                                }
+
+                                switch selectedTab {
+                                case .training: trainingContent
+                                case .strength: strengthContent
+                                case .volume: volumeContent
+                                case .recovery: recoveryContent
+                                }
                             }
                             Spacer(minLength: 20)
                         }
@@ -52,6 +71,31 @@ struct HistoryView: View {
             }
             .navigationBarHidden(true)
             .task { await viewModel.load() }
+        }
+    }
+
+    // MARK: - Per-segment load failure
+
+    /// The error belonging to whichever segment is showing. Training and
+    /// Recovery share the screen's own loader; Strength and Volume each run
+    /// their own, and roll up separately so a failure in one doesn't blank the
+    /// others.
+    private var currentError: String? {
+        switch selectedTab {
+        case .training, .recovery: return viewModel.errorMessage
+        case .strength:            return viewModel.muscleStrength.errorMessage
+        case .volume:              return viewModel.weeklyVolume.errorMessage
+        }
+    }
+
+    /// Whether the showing segment has anything to render. Decides between
+    /// annotating the data with a banner and replacing it with the failure.
+    private var currentSegmentHasData: Bool {
+        switch selectedTab {
+        case .training: return !viewModel.sessions.isEmpty
+        case .recovery: return !viewModel.recoveryHistory.isEmpty
+        case .strength: return !viewModel.muscleStrength.muscles.isEmpty
+        case .volume:   return viewModel.weeklyVolume.thisWeekSets > 0
         }
     }
 
@@ -83,9 +127,12 @@ struct HistoryView: View {
                                 }
                             }
                         )
+                        .frame(minHeight: 44)
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(tab.rawValue)
+                .accessibilityAddTraits(selectedTab == tab ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(4)
@@ -155,6 +202,7 @@ struct HistoryView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(color)
                 .frame(height: 16)
+                .accessibilityHidden(true)
             Text(value)
                 .font(.numMD)
                 .foregroundStyle(Color.fg0)
@@ -167,6 +215,9 @@ struct HistoryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .darkCard(padding: 14, cornerRadius: 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
     }
 
     private var emptyTraining: some View {
@@ -345,9 +396,31 @@ struct WorkoutHeatmap: View {
                 }
             }
             .frame(height: 7 * Self.cellHeight + 6 * Self.spacing)
+            // 56 unlabelled squares would be 56 stops that each announce
+            // nothing. The grid carries one summary instead, and the legend
+            // below it only explains the colour coding — which is meaningless
+            // without the colours.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Training activity, last 8 weeks")
+            .accessibilityValue(activitySummary)
 
             legend
+                .accessibilityHidden(true)
         }
+    }
+
+    /// How many of the last 8 weeks' days were trained, and when the most
+    /// recent one was.
+    private var activitySummary: String {
+        let trained = cells.filter { $0.intensity > 0 }
+        guard let latest = trained.last?.date else {
+            return "No sessions in this window"
+        }
+        let days = "\(trained.count) day\(trained.count == 1 ? "" : "s") trained"
+        if Calendar.current.isDateInToday(latest) {
+            return "\(days), most recently today"
+        }
+        return "\(days), most recently \(latest.formatted(.dateTime.month(.wide).day()))"
     }
 
     private var legend: some View {

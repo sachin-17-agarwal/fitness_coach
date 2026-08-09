@@ -293,7 +293,6 @@ final class ExerciseCatalog {
         // nothing, so its sets dropped out of volume and strength entirely.
         "db row": "Back",
         "machine row": "Back",
-        "machine row": "Back",
         "chest-supported row": "Back",
         "chest supported row": "Back",
         "inverted row": "Back",

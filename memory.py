@@ -8,8 +8,8 @@ import os
 from datetime import datetime
 
 from data import (
-    CYCLE, get_supabase, is_yoga_day, next_session_type_for, now_local,
-    session_type_for, today_local_str,
+    CYCLE, SESSION_OVERRIDE_KEY, YOGA_SESSION_TYPE, get_supabase,
+    next_session_type_for, now_local, session_type_for, today_local_str,
 )
 
 log = logging.getLogger(__name__)
@@ -167,12 +167,18 @@ def save_recovery_data(data: dict):
 
 def get_current_session_type(memory: dict) -> str:
     """Return today's session type based on cycle position."""
-    return session_type_for(int(memory.get("mesocycle_day", 1)))
+    return session_type_for(
+        int(memory.get("mesocycle_day", 1)),
+        override=memory.get(SESSION_OVERRIDE_KEY),
+    )
 
 
 def get_next_session_type(memory: dict) -> str:
     """Return tomorrow's session type."""
-    return next_session_type_for(int(memory.get("mesocycle_day", 1)))
+    return next_session_type_for(
+        int(memory.get("mesocycle_day", 1)),
+        override=memory.get(SESSION_OVERRIDE_KEY),
+    )
 
 
 def advance_mesocycle(memory: dict):
@@ -193,7 +199,16 @@ def advance_mesocycle(memory: dict):
     # the resistance rotation forward for a session that never happened, so a
     # Saturday Pull would be followed by a Monday Legs with Push silently
     # skipped. Sunday passes over the top and leaves the position alone.
-    if is_yoga_day():
+    #
+    # The test is what was actually trained, not what day of the week it is,
+    # so a manual override decides this in both directions: Legs standing in
+    # for a Sunday's yoga does consume the slot, and yoga taken on a Tuesday
+    # does not.
+    current_day = int(fresh_memory.get("mesocycle_day", 1))
+    trained_type = session_type_for(
+        current_day, override=fresh_memory.get(SESSION_OVERRIDE_KEY)
+    )
+    if trained_type == YOGA_SESSION_TYPE:
         print(f"Yoga day ({today}); rotation stays on day {fresh_memory.get('mesocycle_day', 1)}")
         fresh_memory["last_advanced_date"] = today
         save_memory(fresh_memory)
@@ -201,7 +216,6 @@ def advance_mesocycle(memory: dict):
         memory["mesocycle_week"] = int(fresh_memory.get("mesocycle_week", 1))
         return
 
-    current_day = int(fresh_memory.get("mesocycle_day", 1))
     next_day = (current_day % len(CYCLE)) + 1
     fresh_memory["mesocycle_day"] = next_day
 

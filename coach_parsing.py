@@ -225,9 +225,10 @@ SESSION_TYPE_ALIASES = {
 }
 
 
-def get_session_type_for_day(mesocycle_day: int) -> str:
-    # Delegates so the Sunday yoga override lives in exactly one place.
-    return session_type_for(mesocycle_day)
+def get_session_type_for_day(mesocycle_day: int, override=None) -> str:
+    # Delegates so the Sunday yoga override, and the athlete's own per-day
+    # override, live in exactly one place.
+    return session_type_for(mesocycle_day, override=override)
 
 
 def _has_set_data_in_text(text: str) -> bool:

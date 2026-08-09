@@ -10,6 +10,7 @@ import SwiftUI
 struct MorningBriefingView: View {
     @State private var viewModel = BriefingViewModel()
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(Config.displayNameKey) private var displayName: String = ""
     var onStartWorkout: ((String) -> Void)? = nil
     var onOpenChat: (() -> Void)? = nil
 
@@ -200,12 +201,16 @@ struct MorningBriefingView: View {
 
     private func timeOfDayGreeting() -> String {
         let hour = Calendar.current.component(.hour, from: Date())
+        let salutation: String
         switch hour {
-        case 5..<12: return "Good morning, Sachin"
-        case 12..<17: return "Good afternoon, Sachin"
-        case 17..<22: return "Good evening, Sachin"
-        default: return "Welcome back, Sachin"
+        case 5..<12: salutation = "Good morning"
+        case 12..<17: salutation = "Good afternoon"
+        case 17..<22: salutation = "Good evening"
+        default: salutation = "Welcome back"
         }
+
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? salutation : "\(salutation), \(name)"
     }
 
     private func prettyDate(_ dateString: String) -> String {

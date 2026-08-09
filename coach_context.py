@@ -9,8 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 from data import (
-    get_athlete_context, get_supabase, next_session_type_for, now_local,
-    session_type_for,
+    SESSION_OVERRIDE_KEY, get_athlete_context, get_supabase,
+    next_session_type_for, now_local, session_type_for,
 )
 from progression import format_stalls, get_load_stalls
 from volume import format_weekly_volume, get_weekly_volume
@@ -247,8 +247,11 @@ def build_context_block(memory: dict, athlete_name: str,
     today_iso = now_local().strftime("%Y-%m-%d")
     mesocycle_week = memory.get("mesocycle_week", 1)
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
-    today_session = session_type_for(mesocycle_day)
-    next_session = next_session_type_for(mesocycle_day)
+    # The athlete's per-day override has to reach the prompt, or the coach
+    # programmes yoga while the app shows Legs.
+    session_override = memory.get(SESSION_OVERRIDE_KEY)
+    today_session = session_type_for(mesocycle_day, override=session_override)
+    next_session = next_session_type_for(mesocycle_day, override=session_override)
 
     # One worker per fetch. Fewer would queue the tail behind the head while
     # each still counts against its own 10s timeout.

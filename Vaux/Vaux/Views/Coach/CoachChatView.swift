@@ -40,14 +40,25 @@ struct CoachChatView: View {
                         messageList
                     }
 
-                    if viewModel.messages.isEmpty {
+                    // Kept available mid-conversation, not just on an empty
+                    // screen: "how's my recovery looking?" is at least as
+                    // useful after a few exchanges as before the first one.
+                    // Hidden only while composing, where the row would sit
+                    // between the field and the keyboard, and while a reply is
+                    // in flight, so a second request can't be queued on top.
+                    if !inputFocused && !viewModel.isLoading {
                         suggestionsRow
                             .padding(.horizontal, 14)
                             .padding(.bottom, 6)
+                            .transition(.opacity)
                     }
 
                     inputBar
                 }
+                // On the container, not on the row: a transition only animates
+                // when the change that inserts the view is itself animated, so
+                // attaching this to the row being inserted would do nothing.
+                .animation(Motion.smooth, value: inputFocused)
             }
             .navigationBarHidden(true)
             .task { await viewModel.loadConversation() }
@@ -184,8 +195,11 @@ struct CoachChatView: View {
                                     lineWidth: 1
                                 )
                         )
+                        .frame(minHeight: 44)
+                        .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityHint("Sends this question to your coach")
                 }
             }
             .padding(.horizontal, 2)
@@ -213,9 +227,10 @@ struct CoachChatView: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16))
                             .foregroundStyle(Color.textTertiary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
                     }
-                    .padding(.trailing, 6)
-                    .padding(.bottom, 10)
+                    .accessibilityLabel("Clear message")
                 }
             }
             .background(
@@ -272,10 +287,13 @@ struct CoachChatView: View {
                         .fill(canSend ? Color.signal : Color.ink3)
                 )
                 .shadow(color: canSend ? Color.signal.opacity(0.40) : .clear, radius: 10, x: 0, y: 4)
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
         }
         .disabled(!canSend)
         .buttonStyle(PressScaleStyle(scale: 0.92))
         .animation(Motion.snappy, value: canSend)
+        .accessibilityLabel("Send")
     }
 
     private var briefingButton: some View {
@@ -295,8 +313,11 @@ struct CoachChatView: View {
             .padding(.vertical, 6)
             .background(Capsule().fill(Color.signal.opacity(0.08)))
             .overlay(Capsule().stroke(Color.signal.opacity(0.22), lineWidth: 1))
+            .frame(minHeight: 44)
+            .contentShape(Capsule())
         }
         .disabled(viewModel.isLoading)
+        .accessibilityLabel("Request morning briefing")
     }
 }
 

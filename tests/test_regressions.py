@@ -346,6 +346,96 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(data.next_session_type_for(2, saturday), "Yoga")
         self.assertEqual(data.next_session_type_for(2, sunday), "Push")
 
+    def test_session_override_replaces_the_computed_type_for_that_day_only(self):
+        """A missed day has to be recoverable without editing the rotation.
+
+        Skipping a Saturday leaves the athlete wanting Legs on the Sunday the
+        schedule reserves for yoga. Before the override there was no give in
+        the programme at all: Sunday returned "Yoga" unconditionally, and no
+        setting anywhere could say otherwise.
+        """
+        sunday = datetime(2026, 8, 9, 10, 0)
+        monday = datetime(2026, 8, 10, 10, 0)
+        override = "2026-08-09|Legs"
+
+        # Day 3 of the rotation is Legs, which Sunday would otherwise cover.
+        self.assertEqual(data.session_type_for(3, sunday), "Yoga")
+        self.assertEqual(data.session_type_for(3, sunday, override), "Legs")
+
+        # Stamped for one date only: the next day is back on the schedule.
+        self.assertEqual(data.session_type_for(4, monday, override), "Cardio+Abs")
+
+    def test_session_override_is_ignored_when_stale_or_malformed(self):
+        """A leftover override must never re-point a later day's training."""
+        sunday = datetime(2026, 8, 9, 10, 0)
+
+        for raw in [
+            "",
+            None,
+            "2026-08-08|Legs",      # yesterday's
+            "2026-08-09|",          # no type
+            "2026-08-09|Brunch",    # not a real session type
+            "garbage",
+        ]:
+            with self.subTest(raw=raw):
+                self.assertEqual(data.parse_session_override(raw, sunday), "")
+                self.assertEqual(data.session_type_for(3, sunday, raw), "Yoga")
+
+    def test_override_changes_whether_the_day_consumes_a_rotation_slot(self):
+        """Advancing keys off what was trained, not what weekday it is.
+
+        Legs standing in for a Sunday is a real rotation session and must move
+        the position on, or the athlete repeats Legs on Monday. Yoga taken on
+        a weekday is still active recovery and must not.
+        """
+        sunday = datetime(2026, 8, 9, 10, 0)
+        monday = datetime(2026, 8, 10, 10, 0)
+
+        # Sunday overridden to Legs: tomorrow steps along to Cardio+Abs
+        # rather than returning the position Sunday would have passed over.
+        self.assertEqual(
+            data.next_session_type_for(3, sunday, "2026-08-09|Legs"), "Cardio+Abs"
+        )
+        self.assertEqual(data.next_session_type_for(3, sunday), "Legs")
+
+        # Yoga forced onto a Monday leaves the rotation where it is, so the
+        # position it passed over is what comes next.
+        self.assertEqual(
+            data.next_session_type_for(3, monday, "2026-08-10|Yoga"), "Legs"
+        )
+
+    def test_session_status_reads_both_codebases_spellings(self):
+        """The status column has four spellings for two states.
+
+        This backend wrote "active"/"complete" and the iOS app
+        "in_progress"/"completed", with nothing reconciling them, so a session
+        ended in chat read as unfinished to the app — History showed it amber
+        and labelled "COMPLETE" beside green "COMPLETED" ones. There is no
+        migration, so both spellings have to stay readable indefinitely.
+        """
+        for raw in ["complete", "completed", "COMPLETED", "  Complete  "]:
+            with self.subTest(raw=raw):
+                self.assertTrue(data.is_session_finished(raw))
+                self.assertFalse(data.is_session_open(raw))
+
+        for raw in ["active", "in_progress", "IN_PROGRESS"]:
+            with self.subTest(raw=raw):
+                self.assertTrue(data.is_session_open(raw))
+                self.assertFalse(data.is_session_finished(raw))
+
+        # Neither state, and must not be mistaken for finished.
+        for raw in ["", None, "abandoned"]:
+            with self.subTest(raw=raw):
+                self.assertFalse(data.is_session_finished(raw))
+
+    def test_new_session_writes_use_one_spelling_per_state(self):
+        """Both codebases now write the same value, so the split stops here."""
+        self.assertEqual(data.SESSION_STATUS_OPEN, "in_progress")
+        self.assertEqual(data.SESSION_STATUS_FINISHED, "completed")
+        # Whatever is written must still read back as the state it names.
+        self.assertTrue(data.is_session_open(data.SESSION_STATUS_OPEN))
+        self.assertTrue(data.is_session_finished(data.SESSION_STATUS_FINISHED))
+
     def test_rotation_rolls_from_last_position_back_to_first(self):
         """Cardio+Abs (day 4) is followed by Pull (day 1), not by Yoga."""
         monday = datetime(2026, 8, 3, 10, 0)

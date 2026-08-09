@@ -46,7 +46,10 @@ import argparse
 import sys
 from collections import defaultdict
 
-from data import get_supabase, now_local, today_local_str
+from data import (
+    OPEN_SESSION_STATUSES, SESSION_STATUS_FINISHED, get_supabase,
+    is_session_finished, is_session_open, now_local, today_local_str,
+)
 
 
 BAD_EXERCISE_NAMES = {
@@ -63,7 +66,8 @@ def _is_bad_exercise_name(name: str) -> bool:
 
 # ── 1. Stale sessions ────────────────────────────────────────────────────────
 
-OPEN_STATUSES = ("active", "in_progress")
+# Re-exported from data so the spellings live in exactly one place.
+OPEN_STATUSES = OPEN_SESSION_STATUSES
 
 
 def cleanup_stale_sessions(supabase, execute: bool) -> None:
@@ -89,7 +93,7 @@ def cleanup_stale_sessions(supabase, execute: bool) -> None:
         if execute:
             for row in stale:
                 supabase.table("workout_sessions").update({
-                    "status": "complete",
+                    "status": SESSION_STATUS_FINISHED,
                     "end_time": now_local().isoformat(),
                 }).eq("id", row["id"]).execute()
                 print(f"  -> Marked session {row['id']} complete.")
@@ -271,15 +275,11 @@ def cleanup_orphan_duplicate_sessions(supabase, execute: bool) -> None:
 
     orphans: list[dict] = []
     for (date, type_), entries in sorted(by_key.items()):
-        has_completed = any(
-            (e.get("status") or "").lower() in {"complete", "completed"}
-            for e in entries
-        )
+        has_completed = any(is_session_finished(e.get("status")) for e in entries)
         if not has_completed:
             continue
         for e in entries:
-            status = (e.get("status") or "").lower()
-            if status in {s.lower() for s in OPEN_STATUSES}:
+            if is_session_open(e.get("status")):
                 orphans.append(e)
 
     if not orphans:

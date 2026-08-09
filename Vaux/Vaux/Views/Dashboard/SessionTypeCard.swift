@@ -9,6 +9,9 @@ import SwiftUI
 struct SessionTypeCard: View {
     let mesocycle: MesocycleState
     let onStartWorkout: () -> Void
+    /// Swaps today's session for another, or restores the schedule when passed
+    /// nil. Optional so the preview and any other caller can omit it.
+    var onChangeSession: ((String?) -> Void)? = nil
 
     private var sessionIcon: String {
         switch mesocycle.todayType {
@@ -34,9 +37,16 @@ struct SessionTypeCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Eyebrow(text: "Today's session")
+            HStack(spacing: 8) {
+                Eyebrow(text: mesocycle.isOverridden ? "Today · changed" : "Today's session")
                 Spacer()
+                if let onChangeSession {
+                    SessionSwapButton(
+                        currentType: mesocycle.todayType,
+                        isOverridden: mesocycle.isOverridden,
+                        onChange: onChangeSession
+                    )
+                }
                 Text("W\(mesocycle.week) · D\(mesocycle.day)")
                     .font(.eyebrowSmall)
                     .kerning(1.2)
@@ -45,6 +55,7 @@ struct SessionTypeCard: View {
                     .padding(.vertical, 4)
                     .background(Capsule().fill(Color.ink1.opacity(0.8)))
                     .overlay(Capsule().stroke(Color.line, lineWidth: 1))
+                    .accessibilityLabel("Week \(mesocycle.week), day \(mesocycle.day)")
             }
 
             HStack(alignment: .center, spacing: 14) {

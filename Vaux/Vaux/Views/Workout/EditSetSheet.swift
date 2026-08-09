@@ -98,6 +98,11 @@ struct EditSetSheet: View {
                 }
             }
         }
+        // Three stepper rows and a delete button — a medium detent fits them
+        // and keeps the set list visible behind, which is the context you're
+        // correcting against.
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var header: some View {
@@ -128,15 +133,27 @@ struct EditSetSheet: View {
 
             Spacer()
 
-            stepButton("minus") { Haptic.light(); onMinus() }
+            StepperButton(
+                systemName: "minus",
+                accessibilityLabel: "Decrease \(label.lowercased())",
+                action: onMinus,
+                diameter: 40
+            )
 
             Text(value)
                 .font(.numMD)
                 .foregroundStyle(Color.fg0)
                 .frame(minWidth: 92)
                 .multilineTextAlignment(.center)
+                .accessibilityLabel(label)
+                .accessibilityValue(value)
 
-            stepButton("plus") { Haptic.light(); onPlus() }
+            StepperButton(
+                systemName: "plus",
+                accessibilityLabel: "Increase \(label.lowercased())",
+                action: onPlus,
+                diameter: 40
+            )
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 14)
@@ -144,17 +161,6 @@ struct EditSetSheet: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.ink2)
         )
-    }
-
-    private func stepButton(_ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Color.fg0)
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Color.ink3))
-        }
-        .buttonStyle(PressScaleStyle())
     }
 
     /// Two-step on purpose — a mis-tap here destroys a set the athlete

@@ -14,6 +14,12 @@ struct CardioYogaLogView: View {
     /// Closure invoked when the user taps "Log abs exercise" on a Cardio+Abs
     /// day. Flips the parent view into the regular strength logging flow.
     var onStartStrengthSession: (() -> Void)? = nil
+    /// Whether today's session is already a manual swap rather than the
+    /// schedule's choice.
+    var isOverridden: Bool = false
+    /// Swaps today's session for another, or restores the schedule when passed
+    /// nil. Omitted by callers that don't own the schedule.
+    var onChangeSession: ((String?) -> Void)? = nil
 
     @State private var healthWorkouts: [HKWorkout] = []
     @State private var isLoadingHK = false
@@ -33,9 +39,16 @@ struct CardioYogaLogView: View {
     private let workoutService = WorkoutService()
     private let health = HealthKitManager.shared
 
-    init(sessionType: String, onStartStrengthSession: (() -> Void)? = nil) {
+    init(
+        sessionType: String,
+        onStartStrengthSession: (() -> Void)? = nil,
+        isOverridden: Bool = false,
+        onChangeSession: ((String?) -> Void)? = nil
+    ) {
         self.sessionType = sessionType
         self.onStartStrengthSession = onStartStrengthSession
+        self.isOverridden = isOverridden
+        self.onChangeSession = onChangeSession
         _selectedActivity = State(initialValue: Self.defaultActivity(for: sessionType))
     }
 
@@ -105,7 +118,21 @@ struct CardioYogaLogView: View {
     private var heroHeader: some View {
         let accent = Color.forSession(sessionType)
         return VStack(alignment: .leading, spacing: 10) {
-            Eyebrow(text: "Today's session")
+            HStack(spacing: 8) {
+                Eyebrow(text: isOverridden ? "Today · changed" : "Today's session")
+                Spacer()
+                // This screen only logs — there is no "begin session" on a
+                // yoga day — so without a swap here the athlete who wanted to
+                // train instead was stuck, with the only way out on another
+                // tab entirely.
+                if let onChangeSession {
+                    SessionSwapButton(
+                        currentType: sessionType,
+                        isOverridden: isOverridden,
+                        onChange: onChangeSession
+                    )
+                }
+            }
             HStack(alignment: .center, spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)

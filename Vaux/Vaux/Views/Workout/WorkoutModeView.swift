@@ -15,6 +15,8 @@ struct WorkoutModeView: View {
     @State private var didCheckResume = false
     /// The logged set currently open for correction, if any.
     @State private var editingSet: WorkoutSet?
+    /// Whether this view currently owns a screen wake-lock hold.
+    @State private var holdsWakeLock = false
 
     /// Session type passed explicitly (e.g. from the Dashboard CTA). When left
     /// empty — the Train tab mounts this view with no argument — the view
@@ -22,8 +24,30 @@ struct WorkoutModeView: View {
     /// Dashboard instead of showing an empty "Full body" placeholder.
     var sessionType: String = ""
 
+    /// Set when today's session is swapped from this screen. Outranks both the
+    /// passed-in type and the resolved one so the view flips immediately —
+    /// picking Legs on a yoga day has to leave the log surface and land on the
+    /// Begin screen in the same tap.
+    @State private var swappedSessionType: String?
+    /// Whether today's session is a manual choice rather than the schedule's.
+    @State private var isOverridden = false
+
     private var effectiveSessionType: String {
-        sessionType.isEmpty ? resolvedSessionType : sessionType
+        if let swappedSessionType { return swappedSessionType }
+        return sessionType.isEmpty ? resolvedSessionType : sessionType
+    }
+
+    /// Persists a swap (or clears it) and re-reads the state, so what shows
+    /// here is what was stored rather than what was asked for.
+    private func changeTodaySession(_ type: String?) {
+        Task {
+            let service = MesocycleService()
+            try? await service.setTodayOverride(type)
+            guard let state = try? await service.loadState() else { return }
+            swappedSessionType = state.todayType
+            resolvedSessionType = state.todayType
+            isOverridden = state.isOverridden
+        }
     }
 
     private var isNonStrengthDay: Bool {
@@ -39,7 +63,9 @@ struct WorkoutModeView: View {
                     sessionType: effectiveSessionType,
                     onStartStrengthSession: effectiveSessionType == "Cardio+Abs"
                         ? { Task { await viewModel.startOrResumeWorkout(type: effectiveSessionType) } }
-                        : nil
+                        : nil,
+                    isOverridden: isOverridden,
+                    onChangeSession: changeTodaySession
                 )
             } else if !viewModel.isActive && !viewModel.showSummary {
                 if didCheckResume {
@@ -89,12 +115,17 @@ struct WorkoutModeView: View {
             }
         }
         .task {
-            // Only fall back to the mesocycle service when the caller didn't
-            // already hand us a session type. Loads once per view lifetime.
-            if sessionType.isEmpty, !didResolveType {
+            // Loads once per view lifetime. The state is read even when the
+            // caller handed us a type, because the swap button still needs to
+            // know whether today is already off-schedule; only the resolved
+            // type is conditional.
+            if !didResolveType {
                 didResolveType = true
                 if let state = try? await MesocycleService().loadState() {
-                    resolvedSessionType = state.todayType
+                    isOverridden = state.isOverridden
+                    if sessionType.isEmpty {
+                        resolvedSessionType = state.todayType
+                    }
                 }
             }
             // If the user left mid-workout (accidental back-swipe, app
@@ -112,6 +143,13 @@ struct WorkoutModeView: View {
             }
             didCheckResume = true
         }
+        // Hold the screen awake for the duration of a session. A set plus its
+        // rest is minutes without a touch, which is exactly what auto-lock
+        // counts, so the display would go dark over the prescription card and
+        // the countdown.
+        .onChange(of: viewModel.isActive) { _, active in syncWakeLock(active) }
+        .onAppear { syncWakeLock(viewModel.isActive) }
+        .onDisappear { syncWakeLock(false) }
         .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
             // Settings (or post-workout advance) changed today's session.
             // Only re-resolve when this view is showing today's auto-picked
@@ -153,7 +191,11 @@ struct WorkoutModeView: View {
                             .padding(.vertical, 6)
                             .background(Capsule().fill(Color.ember.opacity(0.08)))
                             .overlay(Capsule().stroke(Color.ember.opacity(0.22), lineWidth: 1))
+                            .frame(minHeight: 44)
+                            .contentShape(Capsule())
                     }
+                    .accessibilityLabel("End workout")
+                    .accessibilityHint("Finishes this session and shows your summary")
                 }
             }
         }
@@ -173,6 +215,20 @@ struct WorkoutModeView: View {
         // the back-swipe so the Begin screen still feels like a normal
         // push.
         .interactivePopGesture(enabled: !viewModel.isActive && didCheckResume)
+    }
+
+    /// Brings the wake-lock hold in line with `active`, tracking ownership so
+    /// repeated calls are harmless. Needed because the three call sites
+    /// overlap: leaving and re-entering the view while a session is still
+    /// running would otherwise either double-acquire or drop the hold entirely.
+    private func syncWakeLock(_ active: Bool) {
+        guard active != holdsWakeLock else { return }
+        holdsWakeLock = active
+        if active {
+            ScreenWakeLock.acquire()
+        } else {
+            ScreenWakeLock.release()
+        }
     }
 
     // MARK: - Resume probe

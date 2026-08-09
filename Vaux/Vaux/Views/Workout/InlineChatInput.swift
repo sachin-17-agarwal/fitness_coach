@@ -72,8 +72,13 @@ struct InlineChatInput: View {
                                 Circle()
                                     .fill(text.isEmpty ? Color.ink3 : Color.signal)
                             )
+                            // Circle stays 36pt; the tappable region grows to
+                            // the 44pt minimum around it.
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
                     }
                     .disabled(text.isEmpty || isLoading)
+                    .accessibilityLabel("Send message to coach")
                 }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 12)

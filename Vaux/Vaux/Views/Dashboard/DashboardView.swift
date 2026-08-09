@@ -10,7 +10,7 @@ struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var navigateToWorkout = false
     @State private var showWeightSheet = false
-    @State private var syncError: String?
+    @AppStorage(Config.displayNameKey) private var displayName: String = ""
 
     var switchToChatTab: (() -> Void)? = nil
 
@@ -19,8 +19,16 @@ struct DashboardView: View {
             ZStack {
                 TechBackground(accent: .signal)
 
+                // Three states, not two. A failed load with nothing cached
+                // used to fall through to `content`, which rendered a
+                // dashboard of em-dashes and zeroes — indistinguishable from a
+                // genuinely empty account, and offering no way to try again.
                 if viewModel.isLoading && viewModel.recovery == nil {
                     loadingState
+                } else if let error = viewModel.errorMessage, viewModel.recovery == nil {
+                    LoadErrorState(message: error, isRetrying: viewModel.isLoading) {
+                        Task { await viewModel.load() }
+                    }
                 } else {
                     content
                 }
@@ -66,6 +74,14 @@ struct DashboardView: View {
                     .padding(.top, 4)
                     .riseIn()
 
+                // Reaching `content` with an error set means the load failed
+                // but earlier data survived, so this is a caveat on what's
+                // below rather than a replacement for it.
+                if let error = viewModel.errorMessage {
+                    LoadErrorBanner(message: error)
+                        .riseIn(delay: 0.03)
+                }
+
                 RecoveryRing(
                     score: viewModel.recoveryScore,
                     level: viewModel.recoveryColor,
@@ -79,19 +95,17 @@ struct DashboardView: View {
                 )
                 .riseIn(delay: 0.06)
 
-                SessionTypeCard(mesocycle: viewModel.mesocycle) {
-                    navigateToWorkout = true
-                }
+                SessionTypeCard(
+                    mesocycle: viewModel.mesocycle,
+                    onStartWorkout: { navigateToWorkout = true },
+                    onChangeSession: { type in
+                        Task { await viewModel.setTodayOverride(type) }
+                    }
+                )
                 .riseIn(delay: 0.12)
 
                 metricsGrid
                     .riseIn(delay: 0.18)
-
-                if let err = syncError {
-                    Text(err)
-                        .font(.uiSmall)
-                        .foregroundStyle(Color.ember)
-                }
 
                 Spacer(minLength: 12)
             }
@@ -143,7 +157,7 @@ struct DashboardView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("\(greeting), Sachin")
+                Text(greeting)
                     .font(.serifLG)
                     .foregroundStyle(Color.fg0)
 
@@ -220,7 +234,8 @@ struct DashboardView: View {
                             value: "\(weight.oneDecimal) kg",
                             subtitle: viewModel.latestBodyFatPct.map { "\($0.oneDecimal)% body fat" } ?? "Tap to log",
                             accentColor: .amber,
-                            sparkline: weightSparkline
+                            sparkline: weightSparkline,
+                            isTappable: true
                         )
                     } else {
                         MetricCard(
@@ -228,11 +243,13 @@ struct DashboardView: View {
                             title: "Weight",
                             value: "—",
                             subtitle: "Tap to log",
-                            accentColor: .amber
+                            accentColor: .amber,
+                            isTappable: true
                         )
                     }
                 }
                 .buttonStyle(PressScaleStyle())
+                .accessibilityHint("Opens the weight log")
 
                 if viewModel.weekTonnage > 0 {
                     MetricCard(
@@ -256,14 +273,22 @@ struct DashboardView: View {
 
     // MARK: - Computed display values
 
+    /// Time-of-day greeting, with the athlete's name when one is set. The name
+    /// was hardcoded to a single person; it now comes from Settings, and an
+    /// empty value simply yields the greeting on its own rather than a dangling
+    /// comma.
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
+        let salutation: String
         switch hour {
-        case 5..<12: return "Good morning"
-        case 12..<17: return "Good afternoon"
-        case 17..<22: return "Good evening"
-        default: return "Welcome back"
+        case 5..<12: salutation = "Good morning"
+        case 12..<17: salutation = "Good afternoon"
+        case 17..<22: salutation = "Good evening"
+        default: salutation = "Welcome back"
         }
+
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? salutation : "\(salutation), \(name)"
     }
 
     private var sleepValue: String {

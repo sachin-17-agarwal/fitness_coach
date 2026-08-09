@@ -82,6 +82,7 @@ struct RestTimer: View {
     @State private var tickEpoch = Date()
     @State private var showChat: Bool = false
     @FocusState private var chatFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The ring gives up most of its size while composing — with the keyboard
     /// up there isn't room for both, and the thing being looked at is the
@@ -109,13 +110,22 @@ struct RestTimer: View {
                                 .foregroundStyle(Color.fg2)
                         }
 
-                        TimelineView(.animation) { context in
+                        // 20 Hz rather than `.animation`'s every-frame redraw.
+                        // The sweep covers a 220pt ring over minutes, so at
+                        // this rate it still advances sub-pixel per tick and
+                        // reads as continuous — while doing a third of the work
+                        // of a 60 Hz display and a sixth of a 120 Hz one, for
+                        // the whole of every rest period.
+                        TimelineView(.periodic(from: .now, by: 1.0 / 20.0)) { context in
                             let remaining = remaining(at: context.date)
                             ringView(remaining: remaining)
                         }
                         .frame(width: 220, height: 220)
-                        .scaleEffect(pulse ? 1.02 : 1.0)
-                        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: pulse)
+                        .scaleEffect(pulse && !reduceMotion ? 1.02 : 1.0)
+                        .animation(
+                            reduceMotion ? nil : .easeInOut(duration: 1.4).repeatForever(autoreverses: true),
+                            value: pulse
+                        )
                         // Scale visually but also give back the layout height,
                         // so the composer and note rise into the freed space
                         // instead of being pushed under the keyboard.
@@ -159,6 +169,11 @@ struct RestTimer: View {
             guard !Task.isCancelled else { return }
             Haptic.warning()
             isActive = false
+            // Reaching this line means the app was alive to run the timer out
+            // on screen, so the scheduled fallback has nothing left to tell
+            // anyone. Clearing it also removes the banner iOS delivered at the
+            // same instant while the app was frontmost.
+            RestNotifier.shared.cancel()
         }
     }
 
@@ -194,13 +209,36 @@ struct RestTimer: View {
 
             VStack(spacing: 4) {
                 Text(timeString(remaining))
-                    .font(.system(size: 56, weight: .light, design: .serif).monospacedDigit())
+                    .font(.scaled(56, weight: .light, design: .serif, relativeTo: .largeTitle, cap: 76).monospacedDigit())
                     .foregroundStyle(Color.fg0)
                 Text(statusText(remaining))
                     .font(.eyebrowSmall)
                     .kerning(1.4)
                     .foregroundStyle(color)
             }
+        }
+        // Announced as a countdown rather than as two loose strings, and
+        // marked as updating so VoiceOver re-reads it as time runs down
+        // instead of leaving a stale figure on the last focus.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Rest remaining")
+        .accessibilityValue(spokenRemaining(remaining))
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    /// "1 minute 30 seconds", rather than the display's "1:30" — which
+    /// VoiceOver reads as a ratio.
+    private func spokenRemaining(_ remaining: Double) -> String {
+        let total = max(0, Int(remaining.rounded()))
+        let minutes = total / 60
+        let seconds = total % 60
+        switch (minutes, seconds) {
+        case (0, let s):
+            return "\(s) second\(s == 1 ? "" : "s")"
+        case (let m, 0):
+            return "\(m) minute\(m == 1 ? "" : "s")"
+        case (let m, let s):
+            return "\(m) minute\(m == 1 ? "" : "s") \(s) second\(s == 1 ? "" : "s")"
         }
     }
 
@@ -772,8 +810,11 @@ struct RestTimer: View {
                         .foregroundStyle(canSend ? Color.signalInk : Color.fg2)
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(canSend ? Color.signal : Color.ink3))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                 }
                 .disabled(!canSend)
+                .accessibilityLabel("Send message to coach")
             }
             .padding(.horizontal, 22)
         } else {
