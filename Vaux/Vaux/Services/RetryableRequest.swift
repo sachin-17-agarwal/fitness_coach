@@ -4,6 +4,13 @@
 // Small retry helper for URLSession requests. Only retries network-level
 // failures (URLError) — never HTTP 5xx, because the server may have
 // already processed the write and a retry would double-log.
+//
+// The same reasoning divides the URLErrors themselves. "Couldn't resolve
+// the host" proves nothing was delivered; "the connection dropped" and
+// "it timed out" prove nothing at all — the server may have received the
+// request in full and finished the work. Retrying the second kind against
+// a non-idempotent endpoint duplicates it, which is what backgrounding
+// the app mid-request used to do to the coach.
 
 import Foundation
 
@@ -38,15 +45,21 @@ enum RetryableRequestError: LocalizedError {
 /// including HTTP 4xx/5xx that the caller surfaces as a typed error — are
 /// rethrown immediately because retrying a write the server already
 /// committed would duplicate data.
+///
+/// - Parameter idempotent: whether repeating this request is harmless.
+///   `true` for reads. Pass `false` for any request that changes server
+///   state, which restricts retries to failures that provably happened
+///   before delivery.
 func withRetry<T: Sendable>(
     maxAttempts: Int = 3,
+    idempotent: Bool = true,
     attempt: @Sendable () async throws -> T
 ) async throws -> T {
     var lastError: Error?
     for attemptNumber in 1...maxAttempts {
         do {
             return try await attempt()
-        } catch let urlError as URLError where isTransient(urlError) {
+        } catch let urlError as URLError where shouldRetry(urlError, idempotent: idempotent) {
             lastError = urlError
             if attemptNumber == maxAttempts { break }
             let backoffSeconds = pow(2.0, Double(attemptNumber - 1))
@@ -60,11 +73,32 @@ func withRetry<T: Sendable>(
     )
 }
 
-private func isTransient(_ error: URLError) -> Bool {
+private func shouldRetry(_ error: URLError, idempotent: Bool) -> Bool {
+    if failedBeforeDelivery(error) { return true }
+    return idempotent && deliveryUnknown(error)
+}
+
+/// Failures where the request demonstrably never reached the server: the
+/// host never resolved, no connection was established, or there was no
+/// network to send it over. Nothing was processed, so a retry is safe no
+/// matter what the request does.
+private func failedBeforeDelivery(_ error: URLError) -> Bool {
     switch error.code {
-    case .timedOut, .cannotFindHost, .cannotConnectToHost,
-         .networkConnectionLost, .dnsLookupFailed,
-         .notConnectedToInternet, .resourceUnavailable:
+    case .cannotFindHost, .cannotConnectToHost,
+         .dnsLookupFailed, .notConnectedToInternet:
+        return true
+    default:
+        return false
+    }
+}
+
+/// Failures that say nothing about whether the server acted. A connection
+/// that dropped after the request went out, or a wait that elapsed, both
+/// look identical from here whether the server ignored it or completed it.
+/// Backgrounding the app mid-request produces exactly these.
+private func deliveryUnknown(_ error: URLError) -> Bool {
+    switch error.code {
+    case .timedOut, .networkConnectionLost, .resourceUnavailable:
         return true
     default:
         return false

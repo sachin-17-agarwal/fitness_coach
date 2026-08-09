@@ -257,10 +257,13 @@ final class ChatService: Sendable {
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let request = req
 
-        // Retry only on transient URLError. HTTP 5xx is NOT retried because
-        // the backend may have already persisted the user message + Claude
-        // response to the conversations table, and a retry would duplicate.
-        let (data, response) = try await withRetry {
+        // Not idempotent: this appends to the conversation and bills a Claude
+        // call. Backgrounding the app mid-request drops the connection or
+        // runs out the timeout while the backend goes on to finish the work,
+        // so retrying on those sent the identical message a second time —
+        // the coach saw its own log twice and replied "same message coming
+        // through twice". Only pre-delivery failures are retried now.
+        let (data, response) = try await withRetry(idempotent: false) {
             try await URLSession.shared.data(for: request)
         }
 
@@ -306,7 +309,9 @@ final class ChatService: Sendable {
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let request = req
 
-        let (data, response) = try await withRetry {
+        // Same hazard as the chat endpoint — a briefing writes to the
+        // conversation and costs a Claude call.
+        let (data, response) = try await withRetry(idempotent: false) {
             try await URLSession.shared.data(for: request)
         }
 
