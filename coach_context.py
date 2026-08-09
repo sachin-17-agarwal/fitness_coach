@@ -253,9 +253,12 @@ def build_context_block(memory: dict, athlete_name: str,
     today_session = session_type_for(mesocycle_day, override=session_override)
     next_session = next_session_type_for(mesocycle_day, override=session_override)
 
-    # One worker per fetch. Fewer would queue the tail behind the head while
-    # each still counts against its own 10s timeout.
-    with ThreadPoolExecutor(max_workers=7) as executor:
+    # One worker per fetch, counting the conditional recovery fetch below —
+    # eight, not seven. Fewer would queue the tail behind the head while each
+    # still counts against its own 10s timeout. Keep this in step when a fetch
+    # is added; it went briefly out of step when the progression fetch landed
+    # alongside another branch's changes.
+    with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {
             executor.submit(get_full_session_history, 30): "session_history",
             executor.submit(get_recovery_history, 30): "recovery_history",
