@@ -10,7 +10,6 @@ struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var navigateToWorkout = false
     @State private var showWeightSheet = false
-    @State private var syncError: String?
     @AppStorage(Config.displayNameKey) private var displayName: String = ""
 
     var switchToChatTab: (() -> Void)? = nil
@@ -20,8 +19,14 @@ struct DashboardView: View {
             ZStack {
                 TechBackground(accent: .signal)
 
+                // Three states, not two. A failed load with nothing cached
+                // used to fall through to `content`, which rendered a
+                // dashboard of em-dashes and zeroes — indistinguishable from a
+                // genuinely empty account, and offering no way to try again.
                 if viewModel.isLoading && viewModel.recovery == nil {
                     loadingState
+                } else if let error = viewModel.errorMessage, viewModel.recovery == nil {
+                    errorState(error)
                 } else {
                     content
                 }
@@ -58,6 +63,86 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Error
+
+    /// Shown when the load failed and there is nothing cached to fall back on.
+    /// Names the underlying reason rather than "Something went wrong" — the
+    /// difference between being offline, a bad backend URL, and an expired key
+    /// is the whole of what the reader needs to act, and it is the difference
+    /// the message already carries.
+    private func errorState(_ message: String) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            IconBadge(systemName: "wifi.exclamationmark", accent: .ember, size: 72)
+
+            VStack(spacing: 8) {
+                Text("Couldn't load your data")
+                    .font(.serifMD)
+                    .foregroundStyle(Color.fg0)
+
+                Text(message)
+                    .font(.uiSmall)
+                    .foregroundStyle(Color.fg2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 8)
+
+            Button {
+                Haptic.light()
+                Task { await viewModel.load() }
+            } label: {
+                CTALabel(
+                    text: "Try again",
+                    icon: "arrow.clockwise",
+                    busy: viewModel.isLoading
+                )
+            }
+            .buttonStyle(PressScaleStyle())
+            .disabled(viewModel.isLoading)
+            .padding(.top, 4)
+
+            Spacer()
+        }
+        .padding(.horizontal, 32)
+        .accessibilityElement(children: .contain)
+    }
+
+    /// Non-blocking variant, for a refresh that failed while earlier data is
+    /// still on screen. Stale numbers beat no numbers, so the banner sits above
+    /// them rather than replacing them.
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .bold))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Showing your last synced data")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(message)
+                    .font(.uiSmall)
+                    .foregroundStyle(Color.ember.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Color.ember)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.ember.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.ember.opacity(0.22), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+    }
+
     // MARK: - Content
 
     private var content: some View {
@@ -66,6 +151,14 @@ struct DashboardView: View {
                 header
                     .padding(.top, 4)
                     .riseIn()
+
+                // Reaching `content` with an error set means the load failed
+                // but earlier data survived, so this is a caveat on what's
+                // below rather than a replacement for it.
+                if let error = viewModel.errorMessage {
+                    errorBanner(error)
+                        .riseIn(delay: 0.03)
+                }
 
                 RecoveryRing(
                     score: viewModel.recoveryScore,
@@ -87,12 +180,6 @@ struct DashboardView: View {
 
                 metricsGrid
                     .riseIn(delay: 0.18)
-
-                if let err = syncError {
-                    Text(err)
-                        .font(.uiSmall)
-                        .foregroundStyle(Color.ember)
-                }
 
                 Spacer(minLength: 12)
             }
