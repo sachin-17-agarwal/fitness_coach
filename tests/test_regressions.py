@@ -1185,6 +1185,21 @@ class LoadProgressionStallTests(unittest.TestCase):
         self.assertIn("PROGRESSION WATCH", prompt)
         self.assertIn("LOAD INCREASE INDICATED", prompt)
 
+    def test_progression_trigger_does_not_override_recovery(self):
+        """The first version of this rule said a flagged lift "has its load
+        raised in THIS session's prescription" — full stop. That contradicted
+        both Recovery-Aware Programming (bad HRV means hold) and the Week 4
+        deload (holds Week 3 loads, non-negotiable), leaving the coach with
+        two mutually exclusive instructions and no precedence. Detection is
+        computed; the decision stays a judgement.
+        """
+        prompt = load_system_prompt()
+        self.assertIn("Recovery outranks the progression trigger", prompt)
+        self.assertIn("The block detects; you decide", prompt)
+        # Deferring must remain available, with a reason and a stated deadline.
+        self.assertIn("explicitly deferred", prompt)
+        self.assertIn("Deload week", prompt)
+
     def test_prompt_no_longer_hardcodes_a_stale_ab_crunch_load(self):
         """The prompt used to carry an audit list naming "Ab Crunch Machine
         (70kg x12)" as the pending step. He had already been at 75kg for weeks,
