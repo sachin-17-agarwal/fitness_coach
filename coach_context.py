@@ -12,6 +12,7 @@ from data import (
     get_athlete_context, get_supabase, next_session_type_for, now_local,
     session_type_for,
 )
+from progression import format_stalls, get_load_stalls
 from volume import format_weekly_volume, get_weekly_volume
 from workout import get_substitution_history, get_workout_context, get_workout_state
 
@@ -249,7 +250,9 @@ def build_context_block(memory: dict, athlete_name: str,
     today_session = session_type_for(mesocycle_day)
     next_session = next_session_type_for(mesocycle_day)
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    # One worker per fetch. Fewer would queue the tail behind the head while
+    # each still counts against its own 10s timeout.
+    with ThreadPoolExecutor(max_workers=7) as executor:
         futures = {
             executor.submit(get_full_session_history, 30): "session_history",
             executor.submit(get_recovery_history, 30): "recovery_history",
@@ -257,6 +260,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(get_apple_workouts, 30): "apple_workouts",
             executor.submit(get_workout_state): "workout_state",
             executor.submit(get_weekly_volume): "weekly_volume",
+            executor.submit(get_load_stalls): "load_stalls",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
         # its own authoritative snapshot.
@@ -305,6 +309,7 @@ def build_context_block(memory: dict, athlete_name: str,
     workout_state = results.get("workout_state") or {}
     workout_context = get_workout_context(workout_state)
     weekly_volume = format_weekly_volume(results.get("weekly_volume") or {})
+    load_stalls = format_stalls(results.get("load_stalls") or [])
 
     # Split by volatility, not by topic. Everything that only changes once a
     # day goes in the first block so a cache breakpoint can sit between them;
@@ -330,6 +335,9 @@ EXERCISE SUBSTITUTION HISTORY:
 
 APPLE WATCH WORKOUTS (last 30 days):
 {apple_workouts}
+
+PROGRESSION WATCH — top-set load unchanged across 3+ sessions (today excluded):
+{load_stalls}
 """
 
     live = f"""

@@ -10,8 +10,10 @@ from coach import (
     parse_set_from_message,
     extract_exercise_from_context,
     extract_exercise_from_set_message,
+    load_system_prompt,
 )
 import data
+import progression
 from parse_health import parse_health_export
 from parse_workouts import parse_workouts
 from telegram_bot import split_message
@@ -1050,6 +1052,146 @@ class RegressionTests(unittest.TestCase):
                 })
 
         self.assertEqual(handler.call_count, 2)
+
+
+class LoadProgressionStallTests(unittest.TestCase):
+    """The ab crunch machine sat at one load for five sessions at 12-15 reps
+    and RPE 7-8 — past the load-increase trigger, with the rule spelled out in
+    the system prompt naming that exact machine — and only moved when the
+    athlete asked why it hadn't. The trigger is computed now rather than left
+    to the coach to notice mid-session.
+    """
+
+    @staticmethod
+    def _set(date, exercise, weight, reps, rpe,
+             target_reps=None, target_rpe=None, is_warmup=False, notes=None):
+        return {
+            "date": date, "exercise": exercise,
+            "actual_weight_kg": weight, "actual_reps": reps, "actual_rpe": rpe,
+            "target_reps": target_reps, "target_rpe": target_rpe,
+            "is_warmup": is_warmup, "notes": notes,
+        }
+
+    def _ab_crunch_history(self):
+        rows = []
+        for date, reps, rpe in [
+            ("2026-07-10", 13, 8), ("2026-07-17", 12, 8), ("2026-07-24", 14, 8),
+            ("2026-07-31", 15, 7), ("2026-08-05", 13, 8),
+        ]:
+            for _ in range(3):
+                rows.append(self._set(date, "Ab Crunch Machine", 75, reps, rpe,
+                                      target_reps=10, target_rpe=8))
+        return rows
+
+    def test_stalled_load_is_flagged_with_increase_indicated(self):
+        stalls = progression.find_stalls(self._ab_crunch_history())
+        match = [s for s in stalls if s["exercise"] == "Ab Crunch Machine"]
+        self.assertEqual(len(match), 1)
+        self.assertEqual(match[0]["sessions"], 5)
+        self.assertEqual(match[0]["load"], 75)
+        self.assertTrue(match[0]["increase_indicated"])
+        self.assertIn("LOAD INCREASE INDICATED", progression.format_stalls(stalls))
+
+    def test_progressing_lift_is_not_flagged(self):
+        """A load that moves every session must never appear. If it did, the
+        block would cry wolf and get ignored like the prose rule it replaces.
+        """
+        rows = [
+            self._set(d, "Leg Press", w, 10, 9, target_reps=6, target_rpe=9)
+            for d, w in [("2026-07-12", 190), ("2026-07-19", 195),
+                         ("2026-07-26", 200), ("2026-08-02", 205)]
+        ]
+        self.assertEqual(progression.find_stalls(rows), [])
+
+    def test_stall_without_meeting_target_is_reported_but_not_indicated(self):
+        """Held load + missed reps is a real reason to hold. Report the stall,
+        withhold the verdict.
+        """
+        rows = [
+            self._set(d, "Machine Calf Raise", 117, 9, 9, target_reps=11, target_rpe=9)
+            for d in ("2026-07-12", "2026-07-19", "2026-07-26")
+        ]
+        stalls = progression.find_stalls(rows)
+        self.assertEqual(len(stalls), 1)
+        self.assertFalse(stalls[0]["increase_indicated"])
+        self.assertNotIn("LOAD INCREASE INDICATED", progression.format_stalls(stalls))
+
+    def test_missing_target_never_fakes_a_trigger(self):
+        """A set logged with no prescription proves nothing. Treating an
+        absent target as satisfied would fire the trigger on every free-form
+        entry in the log.
+        """
+        rows = [
+            self._set(d, "Cable Chest Fly", 17.5, 11, 8)
+            for d in ("2026-07-13", "2026-07-20", "2026-07-27")
+        ]
+        stalls = progression.find_stalls(rows)
+        self.assertEqual(len(stalls), 1)
+        self.assertFalse(stalls[0]["increase_indicated"])
+
+    def test_bodyweight_lift_stalls_on_load_not_reps(self):
+        """Pull-ups carry no stack, so every session reads the same load. It
+        must collapse to one key rather than looking like a load change.
+        """
+        rows = [
+            self._set(d, "Pull-Ups", None, reps, 8, target_reps=8, target_rpe=8)
+            for d, reps in [("2026-07-11", 10), ("2026-07-18", 11), ("2026-07-25", 12)]
+        ]
+        stalls = progression.find_stalls(rows)
+        self.assertEqual(len(stalls), 1)
+        self.assertEqual(stalls[0]["load"], "BW")
+        self.assertIn("bodyweight", progression.format_stalls(stalls))
+
+    def test_warmups_and_cardio_are_excluded(self):
+        """A warm-up is not a top set, and a cardio row stores minutes in the
+        reps column — either one would corrupt the comparison.
+        """
+        rows = self._ab_crunch_history()
+        rows.append(self._set("2026-08-05", "Ab Crunch Machine", 200, 20, 6, is_warmup=True))
+        rows += [self._set(d, "Boxing", None, 30, None, notes="cardio session")
+                 for d in ("2026-07-14", "2026-07-21", "2026-07-28")]
+        stalls = progression.find_stalls(rows)
+        self.assertEqual([s["exercise"] for s in stalls], ["Ab Crunch Machine"])
+        self.assertEqual(stalls[0]["load"], 75)
+
+    def test_streak_counts_back_from_the_most_recent_session(self):
+        """The streak is CONSECUTIVE sessions ending at the newest one, not a
+        tally of every session that happened to use the current load.
+
+        The history deliberately returns to 35kg after a session at 30kg. A
+        counter that just tallies matches reports four sessions and overstates
+        the stall; only one that stops at the first different load reports the
+        true three.
+        """
+        history = [
+            ("2026-06-27", 35), ("2026-07-04", 30), ("2026-07-11", 35),
+            ("2026-07-18", 35), ("2026-07-25", 35),
+        ]
+        rows = [self._set(d, "Tricep Pushdown", w, 10, 8, target_reps=10, target_rpe=8)
+                for d, w in history]
+        stalls = progression.find_stalls(rows)
+        self.assertEqual(stalls[0]["load"], 35)
+        self.assertEqual(stalls[0]["sessions"], 3)
+        self.assertEqual(stalls[0]["first_date"], "2026-07-11")
+
+    def test_empty_history_renders_a_readable_line(self):
+        self.assertIn("No lift has held", progression.format_stalls([]))
+
+    def test_prompt_points_the_coach_at_the_computed_block(self):
+        """The rule failed as prose for months. It is only fixed if the prompt
+        tells the coach the block is binding and names the action.
+        """
+        prompt = load_system_prompt()
+        self.assertIn("PROGRESSION WATCH", prompt)
+        self.assertIn("LOAD INCREASE INDICATED", prompt)
+
+    def test_prompt_no_longer_hardcodes_a_stale_ab_crunch_load(self):
+        """The prompt used to carry an audit list naming "Ab Crunch Machine
+        (70kg x12)" as the pending step. He had already been at 75kg for weeks,
+        so the coach was reading a decision that was months out of date.
+        """
+        prompt = load_system_prompt()
+        self.assertNotIn("Ab Crunch Machine (70kg", prompt)
 
 
 if __name__ == "__main__":
