@@ -123,7 +123,13 @@ struct PrescriptionCard: View {
             Spacer(minLength: 0)
 
             if let w = prescription.targetWeightKg, let r = prescription.targetReps {
+                // Wins the squeeze against the exercise name. Without this the
+                // HStack divided the width evenly, and a long name next to a
+                // rep range broke "117kg × 10-12" across two lines mid-
+                // expression. The name is the side that can absorb it — it
+                // already wraps to two lines and scales down.
                 targetBadge(weight: w, reps: r, repsHigh: prescription.targetRepsHigh, rpe: prescription.targetRpe)
+                    .layoutPriority(1)
             }
         }
     }
@@ -134,13 +140,18 @@ struct PrescriptionCard: View {
             return "\(reps)"
         }()
         return VStack(spacing: 2) {
+            // "117kg × 10-12" is one quantity and has to read as one line.
+            // Shrinking it slightly is fine; splitting it after the × is not.
             Text("\(formatWeight(weight)) × \(repsText)")
                 .font(.numSM)
                 .foregroundStyle(Color.fg0)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             if let rpe {
                 Text("RPE \(formatRPE(rpe))")
                     .font(.eyebrowSmall)
                     .foregroundStyle(Color.mint)
+                    .lineLimit(1)
             }
         }
         .padding(.horizontal, 12)
@@ -218,10 +229,12 @@ struct PrescriptionCard: View {
             Text("\(formatWeight(displayWeight)) × \(repsText)")
                 .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
                 .foregroundStyle(isCompleted ? color : isCurrent ? Color.fg0 : Color.fg1)
+                .lineLimit(1)
             if let rpe = displayRpe {
                 Text("@\(formatRPE(rpe))")
                     .font(.eyebrowSmall)
                     .foregroundStyle(isCompleted ? color.opacity(0.7) : Color.fg2)
+                    .lineLimit(1)
             }
         }
         .padding(.horizontal, 10)
