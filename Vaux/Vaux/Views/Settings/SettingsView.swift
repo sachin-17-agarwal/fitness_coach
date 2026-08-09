@@ -9,6 +9,9 @@ import SwiftUI
 struct SettingsView: View {
     @State private var mesocycleWeek = 1
     @State private var mesocycleDay = 1
+    /// Today's manual swap, if one is set — so the session preview below the
+    /// steppers agrees with the rest of the app.
+    @State private var todayOverride: String?
     @State private var backendURL = Config.backendURL
     @State private var apiToken = Config.appAPIToken
     @State private var isSyncing = false
@@ -246,7 +249,14 @@ struct SettingsView: View {
                     .font(.uiBody)
                     .foregroundStyle(Color.fg1)
                 Spacer()
-                let type = Config.cycle[(mesocycleDay - 1) % Config.cycleLength]
+                // Through MesocycleState, not the raw rotation. Reading the
+                // cycle array directly ignored both the yoga rule and any
+                // swap, so on a Sunday this label announced "LEGS" while
+                // every other screen showed Yoga — and someone moving the Day
+                // stepper to fix a missed session was told it had worked.
+                let type = MesocycleState(
+                    day: mesocycleDay, week: mesocycleWeek, todayOverride: todayOverride
+                ).todayType
                 Text(type.uppercased())
                     .font(.eyebrowSmall)
                     .kerning(1.0)
@@ -500,6 +510,7 @@ struct SettingsView: View {
         if let state = try? await mesocycleService.loadState() {
             mesocycleWeek = state.week
             mesocycleDay = state.day
+            todayOverride = state.todayOverride
         }
     }
 

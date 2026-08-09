@@ -24,8 +24,30 @@ struct WorkoutModeView: View {
     /// Dashboard instead of showing an empty "Full body" placeholder.
     var sessionType: String = ""
 
+    /// Set when today's session is swapped from this screen. Outranks both the
+    /// passed-in type and the resolved one so the view flips immediately —
+    /// picking Legs on a yoga day has to leave the log surface and land on the
+    /// Begin screen in the same tap.
+    @State private var swappedSessionType: String?
+    /// Whether today's session is a manual choice rather than the schedule's.
+    @State private var isOverridden = false
+
     private var effectiveSessionType: String {
-        sessionType.isEmpty ? resolvedSessionType : sessionType
+        if let swappedSessionType { return swappedSessionType }
+        return sessionType.isEmpty ? resolvedSessionType : sessionType
+    }
+
+    /// Persists a swap (or clears it) and re-reads the state, so what shows
+    /// here is what was stored rather than what was asked for.
+    private func changeTodaySession(_ type: String?) {
+        Task {
+            let service = MesocycleService()
+            try? await service.setTodayOverride(type)
+            guard let state = try? await service.loadState() else { return }
+            swappedSessionType = state.todayType
+            resolvedSessionType = state.todayType
+            isOverridden = state.isOverridden
+        }
     }
 
     private var isNonStrengthDay: Bool {
@@ -41,7 +63,9 @@ struct WorkoutModeView: View {
                     sessionType: effectiveSessionType,
                     onStartStrengthSession: effectiveSessionType == "Cardio+Abs"
                         ? { Task { await viewModel.startOrResumeWorkout(type: effectiveSessionType) } }
-                        : nil
+                        : nil,
+                    isOverridden: isOverridden,
+                    onChangeSession: changeTodaySession
                 )
             } else if !viewModel.isActive && !viewModel.showSummary {
                 if didCheckResume {
@@ -91,12 +115,17 @@ struct WorkoutModeView: View {
             }
         }
         .task {
-            // Only fall back to the mesocycle service when the caller didn't
-            // already hand us a session type. Loads once per view lifetime.
-            if sessionType.isEmpty, !didResolveType {
+            // Loads once per view lifetime. The state is read even when the
+            // caller handed us a type, because the swap button still needs to
+            // know whether today is already off-schedule; only the resolved
+            // type is conditional.
+            if !didResolveType {
                 didResolveType = true
                 if let state = try? await MesocycleService().loadState() {
-                    resolvedSessionType = state.todayType
+                    isOverridden = state.isOverridden
+                    if sessionType.isEmpty {
+                        resolvedSessionType = state.todayType
+                    }
                 }
             }
             // If the user left mid-workout (accidental back-swipe, app
