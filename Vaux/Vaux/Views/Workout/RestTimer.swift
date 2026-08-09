@@ -76,6 +76,10 @@ struct RestTimer: View {
     var stats: RestStats? = nil
 
     @State private var pulse: Bool = false
+    /// Stable anchor for the heart-rate card's one-second schedule. Deriving
+    /// it from `.now` inside the body would re-anchor the schedule on every
+    /// re-render instead of leaving it running.
+    @State private var tickEpoch = Date()
     @State private var showChat: Bool = false
     @FocusState private var chatFocused: Bool
 
@@ -526,43 +530,76 @@ struct RestTimer: View {
 
     /// Heart rate falling in real time is the one number that is genuinely
     /// *happening* during rest — everything else on this screen is static.
-    /// Samples once a second into a rolling trace for the length of the rest.
+    /// Which makes it the one number that must never pretend: a value the
+    /// Watch recorded eight minutes ago is not the current heart rate, and
+    /// this card used to present the two identically.
     private func recoveryCard(_ stats: RestStats) -> some View {
         statCard("HEART RATE") {
             if let monitor = stats.heartRate, let bpm = monitor.currentBPM {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\(bpm)")
-                            .font(.numMD)
-                            .foregroundStyle(Color.fg0)
-                            .monospacedDigit()
-                        Text("BPM")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.fg2)
-                        Spacer(minLength: 0)
-                        Text(monitor.zoneLabel(for: bpm))
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.fg1)
-                    }
+                // Ticks so the age of the reading stays honest while the
+                // card sits on screen. The ring's TimelineView doesn't
+                // extend down here, and nothing else re-renders per second.
+                TimelineView(.periodic(from: tickEpoch, by: 1)) { context in
+                    let stale = monitor.isStale(at: context.date)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("\(bpm)")
+                                .font(.numMD)
+                                .foregroundStyle(stale ? Color.fg2 : Color.fg0)
+                                .monospacedDigit()
+                            Text("BPM")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.fg2)
+                            Spacer(minLength: 0)
+                            // A training zone is a claim about right now. On
+                            // a stalled feed that claim is unsupported, so
+                            // report the age of the reading instead.
+                            Text(stale ? ageLabel(monitor, now: context.date)
+                                       : monitor.zoneLabel(for: bpm))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(stale ? Color.amber : Color.fg1)
+                        }
 
-                    hrTrace(monitor.trace)
-                        .frame(height: 40)
-                        .padding(.top, 2)
+                        hrTrace(monitor.trace)
+                            .frame(height: 40)
+                            .padding(.top, 2)
 
-                    // Session range rather than "since peak". The old line
-                    // compared against a peak inside one rest, which on a
-                    // sparse feed was usually the same value as now, so it
-                    // rendered "-0" or nothing at all.
-                    if let lo = monitor.minBPM, let hi = monitor.maxBPM, hi > lo {
-                        Text("Session \(lo)–\(hi) bpm")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.fg2)
+                        hrFootnote(monitor, now: context.date)
                     }
                 }
             } else {
                 Text("No heart-rate signal — needs the Watch on and streaming.")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.fg1)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func ageLabel(_ monitor: HeartRateMonitor, now: Date) -> String {
+        guard let age = monitor.sampleAge(at: now) else { return "no signal" }
+        if age < 90 { return "\(Int(age))s ago" }
+        return "\(Int(age / 60))m ago"
+    }
+
+    /// The session range, the sample count behind it, and — when the feed has
+    /// stalled — what to do about it. The count matters: "94–96 bpm" over
+    /// four samples in ten minutes is a sampling problem, and reading it
+    /// without the count makes it look like a heart-rate problem.
+    @ViewBuilder
+    private func hrFootnote(_ monitor: HeartRateMonitor, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if let lo = monitor.minBPM, let hi = monitor.maxBPM {
+                Text(hi > lo
+                     ? "Session \(lo)–\(hi) bpm · \(monitor.sampleCount) samples"
+                     : "Session flat at \(lo) bpm · \(monitor.sampleCount) samples")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.fg2)
+            }
+            if monitor.isStale(at: now) {
+                Text("Feed has stalled. Start a workout on the Watch — without one it samples every few minutes, not every few seconds.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.amber)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -582,7 +619,14 @@ struct RestTimer: View {
         } else {
             let lo = Double(samples.min() ?? 0)
             let hi = Double(samples.max() ?? 1)
-            let pad = max((hi - lo) * 0.2, 2)
+            // Enforce a floor on the visible span. Scaling the axis to the
+            // data range meant a 2 bpm drift was stretched to fill the card,
+            // drawing a dramatic wave over a feed that had barely moved — the
+            // chart looked alive precisely when the data was stuck. Against a
+            // fixed 30 bpm window a flat trace reads flat, and a real climb
+            // through a working set still has somewhere to go.
+            let mid = (lo + hi) / 2
+            let half = max((hi - lo) / 2 * 1.2, 15)
             Chart {
                 ForEach(Array(samples.enumerated()), id: \.offset) { i, bpm in
                     LineMark(
@@ -594,7 +638,7 @@ struct RestTimer: View {
                     .interpolationMethod(.catmullRom)
                 }
             }
-            .chartYScale(domain: (lo - pad)...(hi + pad))
+            .chartYScale(domain: (mid - half)...(mid + half))
             .chartXAxis(.hidden)
             .chartYAxis(.hidden)
             .chartLegend(.hidden)

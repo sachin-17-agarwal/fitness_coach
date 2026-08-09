@@ -290,7 +290,12 @@ struct WorkoutModeView: View {
                 tonnage: viewModel.totalTonnage,
                 setCount: viewModel.setCount,
                 duration: viewModel.sessionDuration,
-                heartRate: viewModel.heartRateMonitor.currentBPM
+                // A minutes-old reading shown in a bar labelled "live" is
+                // worse than no reading: the dash is honest, the stale
+                // number is not. The rest-timer card carries the detail.
+                heartRate: viewModel.heartRateMonitor.isStale()
+                    ? nil
+                    : viewModel.heartRateMonitor.currentBPM
             )
 
             if let week = viewModel.mesocycleWeek,

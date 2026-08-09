@@ -39,12 +39,37 @@ final class HeartRateMonitor {
     /// of hundred points is far more than a sparkline can resolve anyway.
     private let traceLimit = 240
 
+    /// End timestamp of the newest sample received — when the reading was
+    /// taken on the Watch, not when it reached the phone. Without this the UI
+    /// has no way to tell a live number from one recorded eight minutes ago,
+    /// and presents both as the current heart rate.
+    private(set) var lastSampleAt: Date?
+
+    /// How many samples have arrived this session. Alongside the session
+    /// clock this is what separates "streaming" from "trickling": a Watch
+    /// running a workout delivers every few seconds, one that isn't delivers
+    /// every few minutes.
+    private(set) var sampleCount: Int = 0
+
+    /// Seconds since the newest sample was recorded, or `nil` before the
+    /// first one arrives.
+    func sampleAge(at now: Date = Date()) -> TimeInterval? {
+        guard let lastSampleAt else { return nil }
+        return max(0, now.timeIntervalSince(lastSampleAt))
+    }
+
+    /// `true` once the newest sample is old enough that showing it as the
+    /// current heart rate would be a lie.
+    func isStale(at now: Date = Date()) -> Bool {
+        guard let age = sampleAge(at: now) else { return true }
+        return age > 90
+    }
+
     private let store = HKHealthStore()
     private var query: HKAnchoredObjectQuery?
     private var anchor: HKQueryAnchor?
     private var sessionStart: Date?
     private var sampleSum: Double = 0
-    private var sampleCount: Int = 0
 
     private let bpmUnit = HKUnit.count().unitDivided(by: .minute())
 
@@ -131,6 +156,7 @@ final class HeartRateMonitor {
 
         if let latest = sorted.last {
             currentBPM = Int(latest.quantity.doubleValue(for: bpmUnit).rounded())
+            lastSampleAt = latest.endDate
         }
         if sampleCount > 0 {
             avgBPM = Int((sampleSum / Double(sampleCount)).rounded())
@@ -145,6 +171,7 @@ final class HeartRateMonitor {
         avgBPM = nil
         sampleSum = 0
         sampleCount = 0
+        lastSampleAt = nil
         anchor = nil
         sessionStart = nil
     }
