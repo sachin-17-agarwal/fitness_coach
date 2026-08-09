@@ -22,7 +22,12 @@ import UserNotifications
 
 /// One rest runs at a time, so a single identifier is enough — rescheduling
 /// after an extend simply replaces the pending request.
-private let restRequestID = "vaux.rest.complete"
+///
+/// Explicitly `nonisolated`: the target builds with default MainActor
+/// isolation, which infers that onto file-level declarations too, putting this
+/// out of reach of the non-isolated delegate below. Opting out is safe for an
+/// immutable `let` of a Sendable type — there is nothing here to race on.
+private nonisolated let restRequestID = "vaux.rest.complete"
 
 final class RestNotifier {
     static let shared = RestNotifier()
