@@ -9,6 +9,11 @@ import SwiftUI
 struct SessionTypeCard: View {
     let mesocycle: MesocycleState
     let onStartWorkout: () -> Void
+    /// Swaps today's session for another, or restores the schedule when passed
+    /// nil. Optional so the preview and any other caller can omit it.
+    var onChangeSession: ((String?) -> Void)? = nil
+
+    @State private var showingPicker = false
 
     private var sessionIcon: String {
         switch mesocycle.todayType {
@@ -34,9 +39,12 @@ struct SessionTypeCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Eyebrow(text: "Today's session")
+            HStack(spacing: 8) {
+                Eyebrow(text: mesocycle.isOverridden ? "Today · changed" : "Today's session")
                 Spacer()
+                if onChangeSession != nil {
+                    changeButton
+                }
                 Text("W\(mesocycle.week) · D\(mesocycle.day)")
                     .font(.eyebrowSmall)
                     .kerning(1.2)
@@ -45,6 +53,7 @@ struct SessionTypeCard: View {
                     .padding(.vertical, 4)
                     .background(Capsule().fill(Color.ink1.opacity(0.8)))
                     .overlay(Capsule().stroke(Color.line, lineWidth: 1))
+                    .accessibilityLabel("Week \(mesocycle.week), day \(mesocycle.day)")
             }
 
             HStack(alignment: .center, spacing: 14) {
@@ -103,6 +112,59 @@ struct SessionTypeCard: View {
                 )
         )
         .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 8)
+    }
+
+    /// Opens the swap picker. The schedule is a plan, not a contract — a
+    /// missed day has to be recoverable — and until this existed the computed
+    /// session was the only session, with no setting anywhere to say otherwise.
+    private var changeButton: some View {
+        Button {
+            Haptic.light()
+            showingPicker = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 9, weight: .bold))
+                Text("CHANGE")
+                    .font(.eyebrowSmall)
+                    .kerning(1.2)
+            }
+            .foregroundStyle(mesocycle.isOverridden ? Color.amber : Color.fg2)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                Capsule().fill((mesocycle.isOverridden ? Color.amber : Color.fg2).opacity(0.10))
+            )
+            .overlay(
+                Capsule().stroke((mesocycle.isOverridden ? Color.amber : Color.fg2).opacity(0.25), lineWidth: 1)
+            )
+            .frame(minHeight: 44)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Change today's session")
+        .accessibilityValue(mesocycle.todayType)
+        .confirmationDialog("Today's session", isPresented: $showingPicker, titleVisibility: .visible) {
+            ForEach(Config.selectableSessionTypes, id: \.self) { type in
+                Button(type) {
+                    Haptic.selection()
+                    onChangeSession?(type)
+                }
+            }
+            if mesocycle.isOverridden {
+                Button("Back to schedule", role: .destructive) {
+                    Haptic.light()
+                    onChangeSession?(nil)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                mesocycle.isOverridden
+                    ? "Swapped from the schedule for today only. It returns to normal tomorrow."
+                    : "Changes today only. Tomorrow returns to your schedule."
+            )
+        }
     }
 
     private var startButton: some View {

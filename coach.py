@@ -13,7 +13,7 @@ from datetime import datetime
 
 from anthropic import Anthropic
 
-from data import now_local
+from data import SESSION_OVERRIDE_KEY, now_local
 from exercises import find_exercise
 from memory import (
     advance_mesocycle, load_memory, load_today_conversation,
@@ -272,7 +272,9 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     conversation_history = load_today_conversation()
     normalised_text = incoming_text.lower().replace("'", "'").strip()
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
-    expected_session_type = get_session_type_for_day(mesocycle_day)
+    expected_session_type = get_session_type_for_day(
+        mesocycle_day, memory.get(SESSION_OVERRIDE_KEY)
+    )
 
     # ── "add exercise [name]" command ─────────────────────────────────────────
     add_match = re.match(
@@ -305,7 +307,9 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                         end_session(stale_id)
                     advance_mesocycle(memory)
                     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
-                    expected_session_type = get_session_type_for_day(mesocycle_day)
+                    expected_session_type = get_session_type_for_day(
+                        mesocycle_day, memory.get(SESSION_OVERRIDE_KEY)
+                    )
         except Exception:
             log.exception("Stale session check failed")
 

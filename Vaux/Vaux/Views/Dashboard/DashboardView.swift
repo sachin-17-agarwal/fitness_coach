@@ -95,9 +95,13 @@ struct DashboardView: View {
                 )
                 .riseIn(delay: 0.06)
 
-                SessionTypeCard(mesocycle: viewModel.mesocycle) {
-                    navigateToWorkout = true
-                }
+                SessionTypeCard(
+                    mesocycle: viewModel.mesocycle,
+                    onStartWorkout: { navigateToWorkout = true },
+                    onChangeSession: { type in
+                        Task { await viewModel.setTodayOverride(type) }
+                    }
+                )
                 .riseIn(delay: 0.12)
 
                 metricsGrid

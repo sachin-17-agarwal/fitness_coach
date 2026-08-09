@@ -76,6 +76,50 @@ struct Config {
         calendar.component(.weekday, from: date) == 1
     }
 
+    // MARK: - Per-day session override
+
+    /// `memory` key holding a one-day manual replacement for the computed
+    /// session, stored as "YYYY-MM-DD|Legs".
+    ///
+    /// Real weeks drift — a missed Saturday leaves you wanting Legs on the
+    /// Sunday the schedule reserves for yoga — and the rotation had no give in
+    /// it at all. Server-side in `memory`, not on the device, because the coach
+    /// builds its prompt from the same value: a local-only override would have
+    /// the app showing Legs while the coach programmed stretching.
+    ///
+    /// The date lives inside the value so the override expires by itself.
+    /// Nothing has to remember to clear it. Mirrors `SESSION_OVERRIDE_KEY` and
+    /// `parse_session_override` in data.py.
+    static let sessionOverrideKey = "session_override"
+
+    /// Every session an athlete can pick for a given day.
+    static var selectableSessionTypes: [String] { cycle + [yogaSessionType] }
+
+    static func isoDay(_ date: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f.string(from: date)
+    }
+
+    /// The session type an override names for `date`, or nil. Anything stale
+    /// or malformed reads as absent — a leftover override must never quietly
+    /// re-point a later day's training.
+    static func sessionOverride(from raw: String?, on date: Date = Date()) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let parts = raw.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        let stamped = parts[0].trimmingCharacters(in: .whitespaces)
+        let type = parts[1].trimmingCharacters(in: .whitespaces)
+        guard stamped == isoDay(date), selectableSessionTypes.contains(type) else { return nil }
+        return type
+    }
+
+    /// The value to store for an override of `type` on `date`.
+    static func sessionOverrideValue(_ type: String, on date: Date = Date()) -> String {
+        "\(isoDay(date))|\(type)"
+    }
+
     /// Weeks in one mesocycle: baseline → volume → peak → deload, then the
     /// next cycle restarts at week 1. Must match the server's wrap in
     /// memory.py's advance_mesocycle.

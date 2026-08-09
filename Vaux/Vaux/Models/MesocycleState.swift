@@ -10,11 +10,19 @@ import Foundation
 struct MesocycleState: Sendable {
     var day: Int
     var week: Int
+    /// A manual replacement for today's computed session, when the athlete has
+    /// set one. Outranks both the rotation and the yoga day.
+    var todayOverride: String? = nil
 
-    /// Today's session: the rotation, with the yoga day overriding it.
+    /// Today's session: the rotation, with the yoga day overriding it, and an
+    /// explicit override outranking both.
     var sessionType: String {
-        Config.isYogaDay() ? Config.yogaSessionType : rotationSessionType
+        if let todayOverride { return todayOverride }
+        return Config.isYogaDay() ? Config.yogaSessionType : rotationSessionType
     }
+
+    /// Whether today's session is a manual choice rather than the schedule's.
+    var isOverridden: Bool { todayOverride != nil }
 
     /// Where the resistance rotation is standing, ignoring the yoga override.
     /// On a yoga day this is the session that Sunday passed over and which
@@ -26,10 +34,15 @@ struct MesocycleState: Sendable {
     /// Tomorrow's session. Three cases: tomorrow is the yoga day; today IS the
     /// yoga day, so the rotation position Sunday passed over is next; or the
     /// ordinary case of stepping one along.
+    ///
+    /// The middle case keys off what is actually being trained today rather
+    /// than the weekday, so an override that replaces a Sunday's yoga with a
+    /// rotation session consumes the slot and tomorrow steps along normally.
+    /// Mirrors `next_session_type_for` in data.py.
     var nextSessionType: String {
         let tomorrow = Date().addingTimeInterval(24 * 60 * 60)
         if Config.isYogaDay(tomorrow) { return Config.yogaSessionType }
-        if Config.isYogaDay() { return rotationSessionType }
+        if sessionType == Config.yogaSessionType { return rotationSessionType }
         return Config.cycle[day % Config.cycle.count]
     }
 

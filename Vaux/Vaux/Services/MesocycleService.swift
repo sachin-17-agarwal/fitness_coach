@@ -25,11 +25,12 @@ final class MesocycleService: Sendable {
     func loadState() async throws -> MesocycleState {
         let rows: [MemoryRow] = try await client.fetch(
             "memory",
-            query: ["key": "in.(mesocycle_day,mesocycle_week)"]
+            query: ["key": "in.(mesocycle_day,mesocycle_week,\(Config.sessionOverrideKey))"]
         )
 
         var day = 1
         var week = 1
+        var override: String?
 
         for row in rows {
             switch row.key {
@@ -37,6 +38,10 @@ final class MesocycleService: Sendable {
                 day = Int(row.value) ?? 1
             case "mesocycle_week":
                 week = Int(row.value) ?? 1
+            case Config.sessionOverrideKey:
+                // Returns nil for anything stamped for another date, so a
+                // stale row expires on its own rather than needing clearing.
+                override = Config.sessionOverride(from: row.value)
             default:
                 break
             }
@@ -57,7 +62,21 @@ final class MesocycleService: Sendable {
             day = ((day - 1) % Config.cycleLength + Config.cycleLength) % Config.cycleLength + 1
         }
 
-        return MesocycleState(day: day, week: week)
+        return MesocycleState(day: day, week: week, todayOverride: override)
+    }
+
+    // MARK: - Per-day override
+
+    /// Replaces today's session with `type`, or clears the replacement when
+    /// passed nil. Written to the same `memory` row the backend reads, so the
+    /// coach programmes the session the app is showing.
+    ///
+    /// Posts `.mesocycleDidChange` so the Dashboard card and the Train tab
+    /// pick it up without a relaunch — the same signal `saveState` uses.
+    func setTodayOverride(_ type: String?) async throws {
+        let value = type.map { Config.sessionOverrideValue($0) } ?? ""
+        try await setMemory(key: Config.sessionOverrideKey, value: value)
+        NotificationCenter.default.post(name: .mesocycleDidChange, object: nil)
     }
 
     // MARK: - Save
@@ -92,7 +111,12 @@ final class MesocycleService: Sendable {
         // push the resistance rotation forward for a session that never
         // happened, so a Saturday Pull would be followed by a Monday Legs with
         // Push silently skipped. Mirrors `advance_mesocycle` in memory.py.
-        guard !Config.isYogaDay() else { return state }
+        //
+        // The test is what was actually trained, not the weekday, so a manual
+        // override decides it in both directions: Legs standing in for a
+        // Sunday's yoga does consume the slot — otherwise Legs would come up
+        // again on Monday — and yoga taken on a Tuesday does not.
+        guard state.sessionType != Config.yogaSessionType else { return state }
 
         var next = state
         if next.day >= Config.cycleLength {
