@@ -67,7 +67,6 @@ final class HeartRateMonitor {
 
     private let store = HKHealthStore()
     private var query: HKAnchoredObjectQuery?
-    private var anchor: HKQueryAnchor?
     private var sessionStart: Date?
     private var sampleSum: Double = 0
 
@@ -97,11 +96,11 @@ final class HeartRateMonitor {
             predicate: predicate,
             anchor: nil,
             limit: HKObjectQueryNoLimit
-        ) { [weak self] _, samples, _, newAnchor, _ in
-            self?.handle(samples: samples, anchor: newAnchor)
+        ) { [weak self] _, samples, _, _, _ in
+            self?.handle(samples: samples)
         }
-        query.updateHandler = { [weak self] _, samples, _, newAnchor, _ in
-            self?.handle(samples: samples, anchor: newAnchor)
+        query.updateHandler = { [weak self] _, samples, _, _, _ in
+            self?.handle(samples: samples)
         }
         self.query = query
         store.execute(query)
@@ -132,31 +131,65 @@ final class HeartRateMonitor {
 
     // MARK: - Private
 
-    private func handle(samples: [HKSample]?, anchor newAnchor: HKQueryAnchor?) {
-        self.anchor = newAnchor
+    /// One sample reduced to plain values. `HKQuantitySample` is a reference
+    /// type; converting on the delivery queue means the hop to main carries
+    /// nothing but numbers.
+    private struct Reading {
+        let bpm: Int
+        let at: Date
+    }
+
+    /// Runs on HealthKit's private background queue — every anchored-query
+    /// handler does.
+    private func handle(samples: [HKSample]?) {
         guard let quantitySamples = samples as? [HKQuantitySample], !quantitySamples.isEmpty else {
             return
         }
 
         // Order matters for the "current" BPM — latest end date wins.
-        let sorted = quantitySamples.sorted { $0.endDate < $1.endDate }
-        for sample in sorted {
-            let bpm = sample.quantity.doubleValue(for: bpmUnit)
-            guard bpm > 0 else { continue }
-            sampleSum += bpm
+        let readings = quantitySamples
+            .sorted { $0.endDate < $1.endDate }
+            .compactMap { sample -> Reading? in
+                let bpm = sample.quantity.doubleValue(for: bpmUnit)
+                guard bpm > 0 else { return nil }
+                return Reading(bpm: Int(bpm.rounded()), at: sample.endDate)
+            }
+        guard !readings.isEmpty else { return }
+
+        // Every property `apply` touches is read by SwiftUI through
+        // @Observable. Mutating observable state off the main thread does not
+        // reliably invalidate the views observing it, so the card stayed
+        // pinned to whatever value happened to be there when it was first
+        // built while the model moved on underneath — a heart rate frozen at
+        // one number for a whole session. This hop is what makes it move.
+        DispatchQueue.main.async { [weak self] in
+            self?.apply(readings)
+        }
+    }
+
+    private func apply(_ readings: [Reading]) {
+        for reading in readings {
+            sampleSum += Double(reading.bpm)
             sampleCount += 1
-            let rounded = Int(bpm.rounded())
-            if let existingMin = minBPM { minBPM = Swift.min(existingMin, rounded) } else { minBPM = rounded }
-            if let existingMax = maxBPM { maxBPM = Swift.max(existingMax, rounded) } else { maxBPM = rounded }
-            trace.append(rounded)
+            if let existingMin = minBPM {
+                minBPM = Swift.min(existingMin, reading.bpm)
+            } else {
+                minBPM = reading.bpm
+            }
+            if let existingMax = maxBPM {
+                maxBPM = Swift.max(existingMax, reading.bpm)
+            } else {
+                maxBPM = reading.bpm
+            }
+            trace.append(reading.bpm)
         }
         if trace.count > traceLimit {
             trace.removeFirst(trace.count - traceLimit)
         }
 
-        if let latest = sorted.last {
-            currentBPM = Int(latest.quantity.doubleValue(for: bpmUnit).rounded())
-            lastSampleAt = latest.endDate
+        if let latest = readings.last {
+            currentBPM = latest.bpm
+            lastSampleAt = latest.at
         }
         if sampleCount > 0 {
             avgBPM = Int((sampleSum / Double(sampleCount)).rounded())
@@ -172,7 +205,6 @@ final class HeartRateMonitor {
         sampleSum = 0
         sampleCount = 0
         lastSampleAt = nil
-        anchor = nil
         sessionStart = nil
     }
 }
