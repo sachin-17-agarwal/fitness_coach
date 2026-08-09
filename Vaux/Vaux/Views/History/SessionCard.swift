@@ -214,6 +214,12 @@ struct SessionCard: View {
     /// A Button rather than plain text, for the same reason the set rows are:
     /// the card's own `onTapGesture` would otherwise take the tap and simply
     /// collapse the card, so "tap to retry" would do anything but.
+    ///
+    /// Ember, not amber, and deliberately: `LoadErrorState` and
+    /// `LoadErrorBanner` already established ember as the colour of a failed
+    /// load, while `statusBadge` a few lines below uses amber for a session
+    /// still in progress. Amber here would put two meanings on one colour
+    /// inside a single card.
     private var retryNotice: some View {
         Button {
             Haptic.light()
@@ -226,7 +232,7 @@ struct SessionCard: View {
                                   : "This list may be incomplete — tap to retry.")
                     .font(.system(size: 12))
             }
-            .foregroundStyle(Color.amber)
+            .foregroundStyle(Color.ember)
             .padding(.top, 4)
         }
         .buttonStyle(.plain)

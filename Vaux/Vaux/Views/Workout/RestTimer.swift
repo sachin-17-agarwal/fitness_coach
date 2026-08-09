@@ -595,7 +595,7 @@ struct RestTimer: View {
                             Text(stale ? ageLabel(monitor, now: context.date)
                                        : monitor.zoneLabel(for: bpm))
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(stale ? Color.amber : Color.fg1)
+                                .foregroundStyle(stale ? Color.ember : Color.fg1)
                         }
 
                         hrTrace(monitor.trace)
@@ -637,7 +637,7 @@ struct RestTimer: View {
             if monitor.isStale(at: now) {
                 Text("Feed has stalled. Start a workout on the Watch — without one it samples every few minutes, not every few seconds.")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.amber)
+                    .foregroundStyle(Color.ember)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
