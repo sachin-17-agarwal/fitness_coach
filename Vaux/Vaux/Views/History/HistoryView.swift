@@ -37,11 +37,30 @@ struct HistoryView: View {
 
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 16) {
-                            switch selectedTab {
-                            case .training: trainingContent
-                            case .strength: strengthContent
-                            case .volume: volumeContent
-                            case .recovery: recoveryContent
+                            // Each segment reads from a different loader, so
+                            // the failure shown has to be the one belonging to
+                            // what's on screen — a volume fetch that failed
+                            // says nothing about the recovery tab.
+                            if let error = currentError, !currentSegmentHasData {
+                                // Nothing to show and a reason why: the reason
+                                // is the content. The alternative was an empty
+                                // state claiming there were no sessions, or a
+                                // volume chart reading a flat zero, neither of
+                                // which was true.
+                                LoadErrorState(message: error, isRetrying: viewModel.isLoading) {
+                                    Task { await viewModel.load() }
+                                }
+                            } else {
+                                if let error = currentError {
+                                    LoadErrorBanner(message: error)
+                                }
+
+                                switch selectedTab {
+                                case .training: trainingContent
+                                case .strength: strengthContent
+                                case .volume: volumeContent
+                                case .recovery: recoveryContent
+                                }
                             }
                             Spacer(minLength: 20)
                         }
@@ -52,6 +71,31 @@ struct HistoryView: View {
             }
             .navigationBarHidden(true)
             .task { await viewModel.load() }
+        }
+    }
+
+    // MARK: - Per-segment load failure
+
+    /// The error belonging to whichever segment is showing. Training and
+    /// Recovery share the screen's own loader; Strength and Volume each run
+    /// their own, and roll up separately so a failure in one doesn't blank the
+    /// others.
+    private var currentError: String? {
+        switch selectedTab {
+        case .training, .recovery: return viewModel.errorMessage
+        case .strength:            return viewModel.muscleStrength.errorMessage
+        case .volume:              return viewModel.weeklyVolume.errorMessage
+        }
+    }
+
+    /// Whether the showing segment has anything to render. Decides between
+    /// annotating the data with a banner and replacing it with the failure.
+    private var currentSegmentHasData: Bool {
+        switch selectedTab {
+        case .training: return !viewModel.sessions.isEmpty
+        case .recovery: return !viewModel.recoveryHistory.isEmpty
+        case .strength: return !viewModel.muscleStrength.muscles.isEmpty
+        case .volume:   return viewModel.weeklyVolume.thisWeekSets > 0
         }
     }
 

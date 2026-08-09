@@ -48,6 +48,11 @@ final class WeeklyVolumeViewModel {
     private(set) var thisWeekSets: Int = 0
     private(set) var isLoading = false
     private(set) var hasLoadedOnce = false
+    /// Why the last load failed, if it did. A failed set fetch used to be
+    /// swallowed into an empty array, so a network error rendered as a real
+    /// reading of zero volume — worse than a blank screen, because it looks
+    /// like a training fact and invites acting on it.
+    private(set) var errorMessage: String?
 
     private let workoutService = WorkoutService()
 
@@ -67,8 +72,10 @@ final class WeeklyVolumeViewModel {
         let allSets: [WorkoutSet]
         do {
             allSets = try await workoutService.fetchSets(since: priorWeekStart)
+            errorMessage = nil
         } catch {
             print("[WeeklyVolume] fetch failed: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
             allSets = []
         }
 
