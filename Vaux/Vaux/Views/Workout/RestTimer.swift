@@ -578,12 +578,13 @@ struct RestTimer: View {
                 // card sits on screen. The ring's TimelineView doesn't
                 // extend down here, and nothing else re-renders per second.
                 TimelineView(.periodic(from: tickEpoch, by: 1)) { context in
-                    let stale = monitor.isStale(at: context.date)
+                    let lagging = monitor.isLagging(at: context.date)
+                    let stalled = monitor.hasStalled(at: context.date)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("\(bpm)")
                                 .font(.numMD)
-                                .foregroundStyle(stale ? Color.fg2 : Color.fg0)
+                                .foregroundStyle(lagging ? Color.fg2 : Color.fg0)
                                 .monospacedDigit()
                             Text("BPM")
                                 .font(.system(size: 11))
@@ -592,17 +593,20 @@ struct RestTimer: View {
                             // A training zone is a claim about right now. On
                             // a stalled feed that claim is unsupported, so
                             // report the age of the reading instead.
-                            Text(stale ? ageLabel(monitor, now: context.date)
-                                       : monitor.zoneLabel(for: bpm))
+                            // Behind-real-time is normal on a batching bridge, so
+                            // the age reads as neutral information. Only a feed
+                            // that has actually stopped gets the alarm colour.
+                            Text(lagging ? ageLabel(monitor, now: context.date)
+                                         : monitor.zoneLabel(for: bpm))
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(stale ? Color.ember : Color.fg1)
+                                .foregroundStyle(stalled ? Color.ember : Color.fg2)
                         }
 
                         hrTrace(monitor.trace)
                             .frame(height: 40)
                             .padding(.top, 2)
 
-                        hrFootnote(monitor, now: context.date)
+                        hrFootnote(monitor, now: context.date, stalled: stalled)
                     }
                 }
             } else {
@@ -620,27 +624,43 @@ struct RestTimer: View {
         return "\(Int(age / 60))m ago"
     }
 
-    /// The session range, the sample count behind it, and — when the feed has
-    /// stalled — what to do about it. The count matters: "94–96 bpm" over
-    /// four samples in ten minutes is a sampling problem, and reading it
-    /// without the count makes it look like a heart-rate problem.
+    /// The session range, the sample count behind it, and a warning only when
+    /// the feed has genuinely stopped.
+    ///
+    /// The count is what makes the range readable: "94-96 bpm" across four
+    /// samples is a delivery problem, and without the count it looks like a
+    /// heart-rate problem. It also settles the question the previous version
+    /// got wrong — 112 samples over nine minutes is one every five seconds,
+    /// which is a Watch running a workout, so nothing about that feed needed
+    /// fixing however far behind its newest reading was.
     @ViewBuilder
-    private func hrFootnote(_ monitor: HeartRateMonitor, now: Date) -> some View {
+    private func hrFootnote(_ monitor: HeartRateMonitor, now: Date, stalled: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             if let lo = monitor.minBPM, let hi = monitor.maxBPM {
                 Text(hi > lo
-                     ? "Session \(lo)–\(hi) bpm · \(monitor.sampleCount) samples"
-                     : "Session flat at \(lo) bpm · \(monitor.sampleCount) samples")
+                     ? "Session \(lo)–\(hi) bpm · \(rateSummary(monitor, now: now))"
+                     : "Session flat at \(lo) bpm · \(rateSummary(monitor, now: now))")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.fg2)
             }
-            if monitor.isStale(at: now) {
-                Text("Feed has stalled. Start a workout on the Watch — without one it samples every few minutes, not every few seconds.")
+            if stalled {
+                // No instruction to start a Watch workout: this fires while one
+                // is running, and telling the athlete to do what he has already
+                // done is how the card lost its credibility the first time.
+                Text("No new readings for a few minutes — the Watch has stopped sending.")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.ember)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// Sample count, plus the observed cadence once there is enough to mean
+    /// something. The cadence is the honest health check on this feed.
+    private func rateSummary(_ monitor: HeartRateMonitor, now: Date) -> String {
+        let count = "\(monitor.sampleCount) samples"
+        guard let rate = monitor.secondsPerSample(at: now) else { return count }
+        return "\(count) · one every \(Int(rate.rounded()))s"
     }
 
     @ViewBuilder

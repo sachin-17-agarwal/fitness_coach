@@ -45,24 +45,64 @@ final class HeartRateMonitor {
     /// and presents both as the current heart rate.
     private(set) var lastSampleAt: Date?
 
-    /// How many samples have arrived this session. Alongside the session
-    /// clock this is what separates "streaming" from "trickling": a Watch
-    /// running a workout delivers every few seconds, one that isn't delivers
-    /// every few minutes.
+    /// Wall-clock time the last BATCH arrived on the phone — a different clock
+    /// from `lastSampleAt`, and the distinction matters.
+    ///
+    /// The Watch→iPhone bridge delivers in batches, not sample by sample. A
+    /// batch carries several minutes of readings at once, so the newest sample
+    /// inside it is ALREADY minutes old at the moment it lands. Judging health
+    /// by sample age therefore condemns a perfectly working feed: a session
+    /// delivering 112 samples in nine minutes — dead-on the 5-second Watch
+    /// workout cadence — still showed a newest sample three minutes behind,
+    /// and got called stalled for it.
+    ///
+    /// Whether data is still FLOWING is this clock. How far behind real time
+    /// the reading is, is the other one. Both are worth showing; only this one
+    /// means something has gone wrong.
+    private(set) var lastDeliveryAt: Date?
+
+    /// How many samples have arrived this session. Against the session clock
+    /// this gives the true delivery rate: roughly one per 5s means the Watch
+    /// is running a workout, one per few minutes means it is not.
     private(set) var sampleCount: Int = 0
 
-    /// Seconds since the newest sample was recorded, or `nil` before the
-    /// first one arrives.
+    /// Seconds since the newest sample was RECORDED, or `nil` before the first
+    /// one arrives. Expect this to sit in the minutes even on a healthy feed —
+    /// it is the bridge's lag, not a fault.
     func sampleAge(at now: Date = Date()) -> TimeInterval? {
         guard let lastSampleAt else { return nil }
         return max(0, now.timeIntervalSince(lastSampleAt))
     }
 
-    /// `true` once the newest sample is old enough that showing it as the
-    /// current heart rate would be a lie.
-    func isStale(at now: Date = Date()) -> Bool {
+    /// Seconds since the last batch landed, or `nil` before the first one.
+    func deliveryAge(at now: Date = Date()) -> TimeInterval? {
+        guard let lastDeliveryAt else { return nil }
+        return max(0, now.timeIntervalSince(lastDeliveryAt))
+    }
+
+    /// `true` when the reading on screen is far enough behind real time that
+    /// presenting it as the current heart rate would overstate it. Says
+    /// nothing about whether the feed is broken — see `hasStalled`.
+    func isLagging(at now: Date = Date()) -> Bool {
         guard let age = sampleAge(at: now) else { return true }
-        return age > 90
+        return age > 60
+    }
+
+    /// `true` when no batch has arrived for long enough that the feed itself
+    /// has stopped, rather than merely running behind. Three minutes is past
+    /// the batching interval seen in normal operation.
+    func hasStalled(at now: Date = Date()) -> Bool {
+        guard let age = deliveryAge(at: now) else { return true }
+        return age > 180
+    }
+
+    /// Observed delivery rate in seconds per sample, once there is enough to
+    /// mean anything. About 5s is a Watch running a workout.
+    func secondsPerSample(at now: Date = Date()) -> Double? {
+        guard let sessionStart, sampleCount >= 5 else { return nil }
+        let elapsed = now.timeIntervalSince(sessionStart)
+        guard elapsed > 0 else { return nil }
+        return elapsed / Double(sampleCount)
     }
 
     private let store = HKHealthStore()
@@ -191,6 +231,9 @@ final class HeartRateMonitor {
             currentBPM = latest.bpm
             lastSampleAt = latest.at
         }
+        // Stamped on arrival, not from the sample — this is the clock that
+        // says data is still flowing.
+        lastDeliveryAt = Date()
         if sampleCount > 0 {
             avgBPM = Int((sampleSum / Double(sampleCount)).rounded())
         }
@@ -205,6 +248,7 @@ final class HeartRateMonitor {
         sampleSum = 0
         sampleCount = 0
         lastSampleAt = nil
+        lastDeliveryAt = nil
         sessionStart = nil
     }
 }

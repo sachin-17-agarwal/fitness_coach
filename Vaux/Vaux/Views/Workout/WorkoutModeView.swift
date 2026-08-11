@@ -346,10 +346,12 @@ struct WorkoutModeView: View {
                 tonnage: viewModel.totalTonnage,
                 setCount: viewModel.setCount,
                 duration: viewModel.sessionDuration,
-                // A minutes-old reading shown in a bar labelled "live" is
-                // worse than no reading: the dash is honest, the stale
-                // number is not. The rest-timer card carries the detail.
-                heartRate: viewModel.heartRateMonitor.isStale()
+                // Blanked only when the feed has actually STOPPED, not merely
+                // when it is running behind. The bridge delivers in batches,
+                // so a healthy feed's newest reading is routinely a couple of
+                // minutes old — hiding the number for that would blank the bar
+                // through most of a normal session.
+                heartRate: viewModel.heartRateMonitor.hasStalled()
                     ? nil
                     : viewModel.heartRateMonitor.currentBPM
             )
