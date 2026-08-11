@@ -1,4 +1,5 @@
 import os
+import re
 import unittest
 from datetime import datetime
 from unittest.mock import patch
@@ -1142,6 +1143,55 @@ class RegressionTests(unittest.TestCase):
                 })
 
         self.assertEqual(handler.call_count, 2)
+
+
+class SessionTemplateTests(unittest.TestCase):
+    """The prompt states each session's working-set total AND enumerates the
+    per-exercise counts. Both are load-bearing — "set counts are a LOOKUP,
+    never a derivation" points the coach at the enumerated line, while the
+    total is what it checks a whole session against before sending. If the two
+    ever disagree the coach gets a contradiction and picks one at random,
+    which is how the same question started returning three different answers.
+    """
+
+    _TEMPLATE = re.compile(
+        r"\*(?P<name>PUSH|PULL|LEGS) — (?P<total>\d+) working sets\*\n(?P<line>[^\n]+)"
+    )
+
+    def test_enumerated_set_counts_match_each_stated_total(self):
+        prompt = load_system_prompt()
+        found = list(self._TEMPLATE.finditer(prompt))
+        self.assertEqual({m.group("name") for m in found}, {"PUSH", "PULL", "LEGS"})
+        for match in found:
+            counts = [int(n) for n in re.findall(r"\s(\d+)(?:\s·|$)", match.group("line"))]
+            self.assertTrue(counts, f"{match.group('name')}: no set counts parsed")
+            self.assertEqual(
+                sum(counts), int(match.group("total")),
+                f"{match.group('name')} enumerates {sum(counts)} sets "
+                f"but its header says {match.group('total')}",
+            )
+
+    def test_pull_day_carries_the_added_rear_delt_work(self):
+        """Reverse Cable Fly was added to Pull in August 2026, taking rear
+        delts from 6 sets a week to 9. Moving face pulls across instead would
+        have changed no weekly total whatsoever.
+        """
+        prompt = load_system_prompt()
+        pull = self._TEMPLATE.search(prompt)
+        self.assertIn("Reverse Cable Fly 2", prompt)
+        self.assertIn("PULL — 16 working sets", prompt)
+        # Face pulls stay on Push: the only external rotation in a pressing day.
+        self.assertIn("No face pulls here", prompt)
+
+    def test_rear_delt_band_matches_the_measured_figure(self):
+        """The band was raised from 4-8 when the volume readout was corrected.
+        A band left behind by its own measurement is what made a sensible dose
+        read as over-training.
+        """
+        prompt = load_system_prompt()
+        self.assertIn("Rear delts 8-14", prompt)
+        self.assertNotIn("Rear delts 4-8", prompt)
+        self.assertIn("rear delts 9", prompt)
 
 
 class LoadProgressionStallTests(unittest.TestCase):
