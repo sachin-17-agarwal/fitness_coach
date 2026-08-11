@@ -655,12 +655,18 @@ struct RestTimer: View {
         }
     }
 
-    /// Sample count, plus the observed cadence once there is enough to mean
-    /// something. The cadence is the honest health check on this feed.
+    /// Sample count, plus how long since the last batch landed.
+    ///
+    /// Deliberately NOT a session-average cadence. That average was the same
+    /// mistake in a new place: 112 samples over seventeen minutes reads as
+    /// "one every 9s" and looks perfectly healthy, while in fact every one of
+    /// them arrived in the first six minutes and nothing has come since. Time
+    /// since the last delivery cannot be flattered that way.
     private func rateSummary(_ monitor: HeartRateMonitor, now: Date) -> String {
         let count = "\(monitor.sampleCount) samples"
-        guard let rate = monitor.secondsPerSample(at: now) else { return count }
-        return "\(count) · one every \(Int(rate.rounded()))s"
+        guard let gap = monitor.deliveryAge(at: now) else { return count }
+        if gap < 90 { return "\(count) · last \(Int(gap))s ago" }
+        return "\(count) · last \(Int(gap / 60))m ago"
     }
 
     @ViewBuilder

@@ -5,6 +5,7 @@ import SwiftUI
 
 struct WorkoutModeView: View {
     @State private var viewModel = WorkoutViewModel()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var resolvedSessionType: String = ""
     @State private var didResolveType = false
     /// Set to false while the view is probing Supabase for an in-progress
@@ -150,6 +151,15 @@ struct WorkoutModeView: View {
         .onChange(of: viewModel.isActive) { _, active in syncWakeLock(active) }
         .onAppear { syncWakeLock(viewModel.isActive) }
         .onDisappear { syncWakeLock(false) }
+        // Rebuild the heart-rate query every time the app comes back to the
+        // front. iOS suspends the app when you switch away, which stops the
+        // anchored query delivering — and nothing restarted it, so the feed
+        // died at whatever moment you first checked a message and stayed dead
+        // for the rest of the session. It resumes from its stored anchor, so
+        // this costs nothing when the feed was never interrupted.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { viewModel.heartRateMonitor.resume() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
             // Settings (or post-workout advance) changed today's session.
             // Only re-resolve when this view is showing today's auto-picked

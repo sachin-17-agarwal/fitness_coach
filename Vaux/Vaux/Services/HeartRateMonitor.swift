@@ -96,17 +96,16 @@ final class HeartRateMonitor {
         return age > 180
     }
 
-    /// Observed delivery rate in seconds per sample, once there is enough to
-    /// mean anything. About 5s is a Watch running a workout.
-    func secondsPerSample(at now: Date = Date()) -> Double? {
-        guard let sessionStart, sampleCount >= 5 else { return nil }
-        let elapsed = now.timeIntervalSince(sessionStart)
-        guard elapsed > 0 else { return nil }
-        return elapsed / Double(sampleCount)
-    }
-
     private let store = HKHealthStore()
     private var query: HKAnchoredObjectQuery?
+    /// Where the last delivery left off. Removed once as "unused" — it is
+    /// precisely what makes `resume()` safe, because a query rebuilt with it
+    /// picks up from that point instead of replaying the session.
+    private var anchor: HKQueryAnchor?
+    /// Newest sample end date already folded into the aggregates. A resumed
+    /// query can hand back rows it has given us before; without this the trace
+    /// would double-count them and the session range would widen for nothing.
+    private var lastIngestedEnd: Date?
     private var sessionStart: Date?
     private var sampleSum: Double = 0
 
@@ -121,9 +120,34 @@ final class HeartRateMonitor {
         guard let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
         guard !isStreaming else { return }
 
+        _ = type
         reset()
         sessionStart = start
         isStreaming = true
+        executeQuery(from: start, anchor: nil)
+    }
+
+    /// Rebuilds the query without disturbing anything already collected.
+    ///
+    /// An anchored query stops delivering when iOS suspends the app, and
+    /// nothing brought it back: the query object was still held, `isStreaming`
+    /// was still true, and not one further sample ever arrived. From the
+    /// outside that looks like a session streaming healthily for six minutes
+    /// and then sitting frozen on the same reading for the next eleven, which
+    /// is exactly what it did.
+    ///
+    /// Safe to call at any time. The stored anchor means the rebuilt query
+    /// delivers only what has accumulated since the last one stopped, and the
+    /// high-water mark catches anything it repeats anyway.
+    func resume() {
+        guard isStreaming, let sessionStart else { return }
+        if let query { store.stop(query) }
+        query = nil
+        executeQuery(from: sessionStart, anchor: anchor)
+    }
+
+    private func executeQuery(from start: Date, anchor startAnchor: HKQueryAnchor?) {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
 
         let predicate = HKQuery.predicateForSamples(
             withStart: start,
@@ -134,13 +158,13 @@ final class HeartRateMonitor {
         let query = HKAnchoredObjectQuery(
             type: type,
             predicate: predicate,
-            anchor: nil,
+            anchor: startAnchor,
             limit: HKObjectQueryNoLimit
-        ) { [weak self] _, samples, _, _, _ in
-            self?.handle(samples: samples)
+        ) { [weak self] _, samples, _, newAnchor, _ in
+            self?.handle(samples: samples, anchor: newAnchor)
         }
-        query.updateHandler = { [weak self] _, samples, _, _, _ in
-            self?.handle(samples: samples)
+        query.updateHandler = { [weak self] _, samples, _, newAnchor, _ in
+            self?.handle(samples: samples, anchor: newAnchor)
         }
         self.query = query
         store.execute(query)
@@ -181,10 +205,8 @@ final class HeartRateMonitor {
 
     /// Runs on HealthKit's private background queue — every anchored-query
     /// handler does.
-    private func handle(samples: [HKSample]?) {
-        guard let quantitySamples = samples as? [HKQuantitySample], !quantitySamples.isEmpty else {
-            return
-        }
+    private func handle(samples: [HKSample]?, anchor newAnchor: HKQueryAnchor?) {
+        let quantitySamples = (samples as? [HKQuantitySample]) ?? []
 
         // Order matters for the "current" BPM — latest end date wins.
         let readings = quantitySamples
@@ -194,8 +216,7 @@ final class HeartRateMonitor {
                 guard bpm > 0 else { return nil }
                 return Reading(bpm: Int(bpm.rounded()), at: sample.endDate)
             }
-        guard !readings.isEmpty else { return }
-
+        // Hops even with nothing in it, so the anchor still advances.
         // Every property `apply` touches is read by SwiftUI through
         // @Observable. Mutating observable state off the main thread does not
         // reliably invalidate the views observing it, so the card stayed
@@ -203,12 +224,24 @@ final class HeartRateMonitor {
         // built while the model moved on underneath — a heart rate frozen at
         // one number for a whole session. This hop is what makes it move.
         DispatchQueue.main.async { [weak self] in
-            self?.apply(readings)
+            self?.apply(readings, anchor: newAnchor)
         }
     }
 
-    private func apply(_ readings: [Reading]) {
-        for reading in readings {
+    private func apply(_ readings: [Reading], anchor newAnchor: HKQueryAnchor?) {
+        if let newAnchor { anchor = newAnchor }
+
+        // Only genuinely new readings count. A resumed query may repeat rows
+        // it already delivered, and re-folding those would inflate the sample
+        // count and widen the session range without any new data existing.
+        let fresh = readings.filter { reading in
+            guard let mark = lastIngestedEnd else { return true }
+            return reading.at > mark
+        }
+        guard !fresh.isEmpty else { return }
+        lastIngestedEnd = fresh.last?.at
+
+        for reading in fresh {
             sampleSum += Double(reading.bpm)
             sampleCount += 1
             if let existingMin = minBPM {
@@ -227,7 +260,7 @@ final class HeartRateMonitor {
             trace.removeFirst(trace.count - traceLimit)
         }
 
-        if let latest = readings.last {
+        if let latest = fresh.last {
             currentBPM = latest.bpm
             lastSampleAt = latest.at
         }
@@ -249,6 +282,8 @@ final class HeartRateMonitor {
         sampleCount = 0
         lastSampleAt = nil
         lastDeliveryAt = nil
+        anchor = nil
+        lastIngestedEnd = nil
         sessionStart = nil
     }
 }
