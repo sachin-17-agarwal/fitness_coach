@@ -15,6 +15,7 @@ from coach import (
 )
 import data
 import progression
+import volume
 from parse_health import parse_health_export
 from parse_workouts import parse_workouts
 from telegram_bot import split_message
@@ -1192,6 +1193,95 @@ class SessionTemplateTests(unittest.TestCase):
         self.assertIn("Rear delts 8-14", prompt)
         self.assertNotIn("Rear delts 4-8", prompt)
         self.assertIn("rear delts 9", prompt)
+
+
+class WeakPointBlockTests(unittest.TestCase):
+    """The Cardio+Abs weak-point block is the mechanism that feeds the two
+    lowest muscles, and the measured volume says it has not been landing:
+    calves 4.5 against a 6-10 band, hamstrings 6.8 against 10-16, while the
+    block naming both has been scheduled every rotation. Whether it is being
+    prescribed and skipped, or never prescribed, is invisible in a 30-day log
+    of raw sets — so it is computed and reported.
+    """
+
+    @staticmethod
+    def _sets(*exercises):
+        return [{"exercise": e, "is_warmup": False, "notes": None} for e in exercises]
+
+    def test_block_work_is_separated_from_the_days_ab_staples(self):
+        history = volume.find_weak_point_work([
+            {"date": "2026-08-01", "sets": self._sets(
+                "Cable Crunch", "Hanging Leg Raises",
+                "Seated Leg Curl", "Seated Leg Curl", "Machine Calf Raise")},
+        ])
+        self.assertEqual(history[0]["muscles"], {"Hamstrings": 2.0, "Calves": 1.0})
+
+    def test_a_session_with_only_abs_and_cardio_reports_none(self):
+        """The whole point. A session that did abs and went home must read as
+        a miss, not as an absence of data.
+        """
+        history = volume.find_weak_point_work([
+            {"date": "2026-08-05", "sets": [
+                {"exercise": "Cable Crunch", "is_warmup": False, "notes": None},
+                {"exercise": "Boxing", "is_warmup": False, "notes": "cardio session"},
+            ]},
+        ])
+        self.assertEqual(history[0]["muscles"], {})
+        self.assertIn("none logged", volume.format_weak_point_history(history))
+
+    def test_repeated_misses_are_counted_out_loud(self):
+        history = volume.find_weak_point_work([
+            {"date": "2026-08-05", "sets": self._sets("Cable Crunch")},
+            {"date": "2026-08-01", "sets": self._sets("Cable Crunch", "Machine Calf Raise")},
+            {"date": "2026-07-28", "sets": self._sets("Hanging Leg Raises")},
+        ])
+        rendered = volume.format_weak_point_history(history)
+        self.assertIn("2 of the last 3", rendered)
+
+    def test_warmups_do_not_count_as_block_work(self):
+        history = volume.find_weak_point_work([
+            {"date": "2026-08-05", "sets": [
+                {"exercise": "Machine Calf Raise", "is_warmup": True, "notes": None},
+            ]},
+        ])
+        self.assertEqual(history[0]["muscles"], {})
+
+    def test_empty_history_says_so_rather_than_claiming_compliance(self):
+        self.assertIn("No Cardio+Abs sessions", volume.format_weak_point_history([]))
+
+    def test_prompt_makes_the_block_binding_and_names_its_movements(self):
+        prompt = load_system_prompt()
+        self.assertIn("WEAK-POINT BLOCK readout", prompt)
+        # Prescribed with the abs, not after them — the failure was positional.
+        self.assertIn("SAME reply as the ab block", prompt)
+        # Abs yield to the block, never the other way round.
+        self.assertIn("cut AB sets to protect this block", prompt)
+
+
+class SeatedLegCurlSwapTests(unittest.TestCase):
+    """Prone curls train the hamstring at a short muscle length; seated at a
+    long one, which is worth 14% growth against 9% over 12 weeks. The swap
+    costs nothing — same sets, same machine family.
+    """
+
+    def test_legs_template_uses_the_seated_curl(self):
+        prompt = load_system_prompt()
+        self.assertIn("Seated Leg Curl 3", prompt)
+        self.assertNotIn("Lying Leg Curl 3", prompt)
+
+    def test_no_load_is_carried_across_from_the_prone_variant(self):
+        """85kg x5 on a lying curl means nothing seated — different seat, hip
+        angle and leverage. Carrying it over would prescribe a load he has
+        never lifted in that position.
+        """
+        prompt = load_system_prompt()
+        self.assertNotIn("Lying Leg Curl 85kg", prompt)
+        self.assertIn("Seated Leg Curl: NO history", prompt)
+
+    def test_seated_curl_resolves_to_hamstrings_in_the_volume_map(self):
+        self.assertEqual(
+            volume.resolve_contributions("Seated Leg Curl"), {"Hamstrings": 1.0}
+        )
 
 
 class LoadProgressionStallTests(unittest.TestCase):

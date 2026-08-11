@@ -153,3 +153,108 @@ def format_weekly_volume(counts: dict[str, float]) -> str:
     lowest = ", ".join(g for g, _ in ordered[:2])
     lines.append(f"  Lowest two: {lowest}")
     return "\n".join(lines)
+
+
+# Exercises that ARE the Cardio+Abs day's scheduled work rather than its
+# weak-point block. Anything else logged on that day is block work.
+_CARDIO_DAY_STAPLES = ("Abs",)
+
+
+def find_weak_point_work(sessions: list[dict]) -> list[dict]:
+    """What the weak-point block actually delivered, per Cardio+Abs session.
+
+    Pure function over `[{date, sets: [...]}]` so it is testable without a
+    database.
+
+    The block is the mechanism the programme relies on to feed its two
+    lowest muscles, and the volume readout says it is not landing: calves
+    and hamstrings have sat under their bands while the block that names
+    them has been scheduled the whole time. Whether that is because it is
+    never prescribed, or prescribed and skipped, is not something the coach
+    can tell from a 30-day log of raw sets — so it is computed here and
+    reported as a finding, the same treatment that stopped load stalls going
+    unnoticed.
+
+    Everything on the day that is not cardio, not warm-up and not an ab
+    movement is block work by definition; the day has no other content.
+    """
+    out = []
+    for session in sessions:
+        muscles: dict[str, float] = {}
+        for row in session.get("sets") or []:
+            if row.get("is_warmup") or _is_cardio_or_yoga(row):
+                continue
+            shares = resolve_contributions(row.get("exercise", ""))
+            if not shares or all(m in _CARDIO_DAY_STAPLES for m in shares):
+                continue
+            for muscle, share in shares.items():
+                muscles[muscle] = muscles.get(muscle, 0.0) + share
+        out.append({"date": session.get("date"), "muscles": muscles})
+    return out
+
+
+def format_weak_point_history(history: list[dict]) -> str:
+    """Render block compliance, newest first.
+
+    States the absence explicitly rather than omitting empty sessions. A
+    session that simply does not appear reads as missing data; "none logged"
+    reads as the finding it actually is.
+    """
+    if not history:
+        return "  No Cardio+Abs sessions in the window."
+    lines = []
+    for entry in history:
+        if entry["muscles"]:
+            worked = ", ".join(
+                f"{m} {v:g}" for m, v in sorted(entry["muscles"].items(), key=lambda kv: -kv[1])
+            )
+        else:
+            worked = "none logged"
+        lines.append(f"  {entry['date']}: {worked}")
+    missed = sum(1 for e in history if not e["muscles"])
+    if missed:
+        lines.append(
+            f"  {missed} of the last {len(history)} Cardio+Abs sessions carried NO "
+            f"weak-point work. That block is why the lowest two muscles are lowest."
+        )
+    return "\n".join(lines)
+
+
+def get_weak_point_history(sessions_back: int = 4) -> list[dict]:
+    """Recent Cardio+Abs sessions and what non-ab work each one carried.
+
+    Returns [] when the data can't be read, which callers render as "no
+    readout" rather than "nothing was done".
+    """
+    try:
+        supabase = get_supabase()
+        if not supabase:
+            return []
+        ws = (
+            supabase.table("workout_sessions")
+            .select("id, date")
+            .eq("type", "Cardio+Abs")
+            .order("date", desc=True)
+            .limit(sessions_back)
+            .execute()
+        )
+        rows = ws.data or []
+        if not rows:
+            return []
+        sets_result = (
+            supabase.table("workout_sets")
+            .select("workout_session_id, exercise, is_warmup, notes")
+            .in_("workout_session_id", [r["id"] for r in rows])
+            .execute()
+        )
+    except Exception:
+        log.exception("Weak-point history fetch failed")
+        return []
+
+    by_session: dict[str, list[dict]] = {}
+    for row in sets_result.data or []:
+        by_session.setdefault(row["workout_session_id"], []).append(row)
+
+    return find_weak_point_work(
+        [{"date": r["date"], "sets": by_session.get(r["id"], [])} for r in rows]
+    )
