@@ -152,15 +152,38 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # instead of 1.25x and needs three reads to break even, which a session
     # of twenty-plus turns clears easily.
     response = get_anthropic_client().messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-5",
+        # Thinking is set EXPLICITLY, and that is the whole point of the line.
+        # Omitting it meant "no thinking" on Sonnet 4.6; on Sonnet 5 the same
+        # omission means adaptive thinking — and `effort` defaults to `high`,
+        # so a bare model-string swap would have quietly started spending a
+        # large share of the token budget on reasoning before a word of the
+        # prescription was written. With max_tokens capping thinking and
+        # response text TOGETHER, that lands on the one failure the parsers
+        # cannot see (see below).
+        #
+        # Disabled rather than adaptive because the coach's failures have been
+        # architectural — a truncated context window, an uncomputed stall, a
+        # retry classifier — not shallow reasoning. Worth revisiting: adaptive
+        # at `effort: "low"` is a one-line experiment now the ceiling has room
+        # for it, and the judgement calls this thing makes (progression,
+        # recovery-aware programming) are the kind of work thinking helps.
+        thinking={"type": "disabled"},
         # A recap plus a full Warm-up/Working Set/Back-off/Form block runs
         # close to 1000 tokens, and ab days — which enumerate every straight
         # set inline — routinely exceed it. Truncating mid-block leaves the
         # parser a partial prescription that still looks well-formed, so the
         # card renders half a plan with nothing reporting an error. Output is
-        # billed per token generated, not per token allowed, so a higher
-        # ceiling costs nothing until a reply actually needs it.
-        max_tokens=2000,
+        # billed per token generated, not per token allowed, and max_tokens is
+        # never shown to the model, so a higher ceiling costs nothing until a
+        # reply actually needs it.
+        #
+        # Raised from 2000 with the move to Sonnet 5, whose tokenizer produces
+        # roughly 1.35x the tokens for identical text (its 1M window holds
+        # ~555k words against Sonnet 4.6's ~750k). A 1400-token prescription
+        # becomes ~1900 without a word being added, which brushes the old
+        # ceiling on exactly the long ab days flagged above.
+        max_tokens=4000,
         # Three blocks, breakpoint after the second. The context used to be
         # one lump AFTER the only breakpoint, so all ~4k tokens of it were
         # re-billed on every request — a third of the cost of a logged set.

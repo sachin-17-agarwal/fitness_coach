@@ -14,6 +14,7 @@ from coach import (
     load_system_prompt,
 )
 import data
+import coach as coach_module
 import progression
 import volume
 from parse_health import parse_health_export
@@ -1144,6 +1145,64 @@ class RegressionTests(unittest.TestCase):
                 })
 
         self.assertEqual(handler.call_count, 2)
+
+
+class ModelRequestConfigTests(unittest.TestCase):
+    """Pins the three parameters that interact.
+
+    Sonnet 4.6 treated an omitted `thinking` as "no thinking". Sonnet 5 treats
+    the same omission as adaptive thinking, and `effort` defaults to `high` on
+    the Claude API — so simply swapping the model string would have started
+    spending a large share of the budget on reasoning. `max_tokens` caps
+    thinking and response text together, which lands that on the one failure
+    the parsers cannot detect: a prescription truncated mid-block still matches
+    the `Warm-up:` / `Working Set:` prefixes it managed to emit, so the card
+    renders half a plan and nothing reports an error.
+    """
+
+    def _captured_request(self):
+        captured = {}
+
+        class FakeMessages:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                return type("R", (), {
+                    "content": [type("B", (), {"text": "ok"})()],
+                    "usage": None, "stop_reason": "end_turn",
+                })()
+
+        fake_client = type("C", (), {"messages": FakeMessages()})()
+        with patch("coach.get_anthropic_client", return_value=fake_client),              patch("coach.load_system_prompt", return_value="SYSTEM"),              patch("coach.build_context_block", return_value=("STABLE", "LIVE")),              patch("coach._truncate_history", side_effect=lambda h: h), \
+             patch("coach.save_conversation_message"):
+            coach_module.chat_with_coach("hi", [], {})
+        return captured
+
+    def test_thinking_is_set_explicitly_not_left_to_the_default(self):
+        """Omission is the bug. An explicit value — either value — is the fix."""
+        self.assertIn("thinking", self._captured_request())
+
+    def test_thinking_is_disabled(self):
+        self.assertEqual(self._captured_request()["thinking"], {"type": "disabled"})
+
+    def test_max_tokens_leaves_room_for_a_long_prescription(self):
+        """Sonnet 5's tokenizer yields ~1.35x the tokens for identical text, so
+        a 1400-token prescription becomes ~1900 — brushing the old 2000 ceiling
+        with nothing added.
+        """
+        self.assertGreaterEqual(self._captured_request()["max_tokens"], 4000)
+
+    def test_model_is_pinned_to_sonnet_5(self):
+        self.assertEqual(self._captured_request()["model"], "claude-sonnet-5")
+
+    def test_the_cache_breakpoint_still_sits_between_stable_and_live_context(self):
+        """Caching is a prefix match, so the stable block must physically
+        precede the live one. Re-checked here because a model swap is exactly
+        when someone reshuffles this array.
+        """
+        system = self._captured_request()["system"]
+        self.assertEqual([b["text"] for b in system], ["SYSTEM", "STABLE", "LIVE"])
+        self.assertIn("cache_control", system[1])
+        self.assertNotIn("cache_control", system[2])
 
 
 class SessionTemplateTests(unittest.TestCase):
