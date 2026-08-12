@@ -5,3 +5,9 @@ __pycache__/
 *.pyc
 .vscode/
 .DS_Store
+
+# Xcode per-user state: window positions, open tabs, scheme ordering. Changes
+# every time the project is opened, which made project.pbxproj conflicts a
+# routine event on pull rather than a signal that something real diverged.
+xcuserdata/
+*.xcuserstate
