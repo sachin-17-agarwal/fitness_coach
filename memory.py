@@ -190,8 +190,9 @@ def get_next_session_type(memory: dict) -> str:
 def advance_mesocycle(memory: dict):
     """Advance mesocycle day after a session using fresh DB state.
 
-    Guarded by last_advanced_date so concurrent webhook + scheduler callers
-    can't double-advance within the same day.
+    Guarded by last_advanced_date so concurrent callers can't double-advance
+    within the same day — the app can finish a session while a Telegram
+    message is in flight, and both paths land here.
     """
     fresh_memory = load_memory()
     today = today_local_str()

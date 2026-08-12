@@ -26,7 +26,6 @@ the **Vaux** SwiftUI iOS app that consumes it.
 - `exercises.py`: exercise library lookup and fuzzy matching
 - `parse_health.py`: Apple Health recovery payload parser
 - `parse_workouts.py`: Apple Health workout payload parser
-- `scheduler.py`: morning briefing job
 
 ### iOS App (Vaux)
 
@@ -94,11 +93,16 @@ This exposes:
 - `POST /apple-health` — Apple Health webhook
 - `GET  /status` — health check
 
-Run the scheduler job manually:
+Send a morning briefing to Telegram on demand:
 
 ```bash
-python scheduler.py
+python coach.py morning
 ```
+
+There is no longer a cron job for this. The app's own Briefing button calls
+`POST /api/briefing`, which is cached per day on the device, so the scheduled
+Telegram briefing was a second full Claude call every morning covering the same
+ground. If you re-add a cron service, be aware it bills independently of the app.
 
 Interactive terminal mode (handy for local debugging of coach responses):
 
@@ -216,4 +220,4 @@ Check `SUPABASE_URL`, `SUPABASE_KEY`, and the expected Supabase tables.
 Check that the `X-Health-Token` header matches `HEALTH_WEBHOOK_TOKEN`.
 
 **Morning briefing fails**
-Run `python scheduler.py` directly and inspect the logged exception.
+Run `python coach.py morning` directly and inspect the logged exception.
