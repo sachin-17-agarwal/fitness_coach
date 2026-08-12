@@ -36,19 +36,35 @@ def get_full_session_history(days: int = 30) -> str:
 
         all_sessions = []
 
+        # Every ORDER BY below carries a tiebreaker, and that is a caching
+        # requirement rather than a cosmetic one. This block is rendered into
+        # the *cached* half of the system prompt, so the coach only gets a
+        # cache hit when the bytes are identical to last call. Postgres makes
+        # no ordering promise without ORDER BY, and under MVCC an UPDATE
+        # rewrites the tuple at the end of the heap — so logging a set could
+        # reshuffle how a session from three weeks ago renders, changing the
+        # prefix and silently re-billing ~32k tokens at write rates instead of
+        # read rates. Same data, different bytes, 20x the price, and nothing
+        # visible in the reply to say so.
         ws = supabase.table("workout_sessions")\
             .select("id, date, type, tonnage_kg")\
             .gte("date", since)\
             .order("date", desc=True)\
+            .order("id")\
             .execute()
 
         session_ids = [s["id"] for s in (ws.data or [])]
         all_sets_data = []
         if session_ids:
+            # logged_at first so each session reads in the order it was
+            # actually performed; id breaks the tie when a batch lands on the
+            # same timestamp.
             all_sets_result = supabase.table("workout_sets")\
                 .select("workout_session_id, exercise, actual_weight_kg, actual_reps, actual_rpe, is_warmup")\
                 .in_("workout_session_id", session_ids)\
                 .eq("is_warmup", False)\
+                .order("logged_at")\
+                .order("id")\
                 .execute()
             all_sets_data = all_sets_result.data or []
 
@@ -70,14 +86,18 @@ def get_full_session_history(days: int = 30) -> str:
             .select("id, date, type, summary, tonnage_kg")\
             .gte("date", since)\
             .order("date", desc=True)\
+            .order("id")\
             .execute()
 
         old_session_ids = [s["id"] for s in (ls.data or [])]
         old_sets_data = []
         if old_session_ids:
+            # Legacy table has no logged_at; the serial id is insertion order,
+            # which is the same thing here.
             old_sets_result = supabase.table("sets")\
                 .select("session_id, exercise, weight_kg, reps, rpe")\
                 .in_("session_id", old_session_ids)\
+                .order("id")\
                 .execute()
             old_sets_data = old_sets_result.data or []
 
@@ -133,10 +153,14 @@ def get_apple_workouts(days: int = 30) -> str:
         if not supabase:
             return "No database connection."
         since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
+        # start_time is NOT NULL and part of the table's uniqueness constraint,
+        # so it fully disambiguates two workouts on the same day. Without it
+        # the rows could swap between calls and break the prompt cache.
         result = supabase.table("apple_workouts")\
             .select("date, workout_type, duration_minutes, avg_heart_rate, active_energy_kcal")\
             .gte("date", since)\
             .order("date", desc=True)\
+            .order("start_time", desc=True)\
             .execute()
         if not result.data:
             return "No Apple Watch workouts recorded."
@@ -156,6 +180,7 @@ def get_recovery_history(days: int = 30) -> str:
         if not supabase:
             return "No database connection."
         since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
+        # date is the primary key here, so ordering is already total.
         result = supabase.table("recovery")\
             .select("date, sleep_hours, hrv, resting_hr, steps, weight_kg, body_fat_pct, vo2_max")\
             .gte("date", since)\
@@ -199,6 +224,29 @@ def _split_history_at_today(history: str, today_iso: str) -> tuple[str, str]:
     return (
         "\n\n".join(past) if past else "No earlier sessions in the window.",
         "\n\n".join(today) if today else "Nothing logged yet today.",
+    )
+
+
+def _split_lines_at_today(rendered: str, today_iso: str,
+                          empty_past: str, empty_today: str) -> tuple[str, str]:
+    """`_split_history_at_today` for lists that render one row per line.
+
+    Same purpose: today's rows keep changing while the athlete trains, so
+    they cannot sit in the cached half of the prompt. A row that does not
+    begin with a date — "No Apple Watch workouts recorded.", or an error
+    string from a failed fetch — falls to the past side, which is where it
+    renders today.
+    """
+    if not rendered or not rendered.strip():
+        return empty_past, empty_today
+    past, today = [], []
+    for line in rendered.split("\n"):
+        if not line.strip():
+            continue
+        (today if line.strip().startswith(today_iso) else past).append(line)
+    return (
+        "\n".join(past) if past else empty_past,
+        "\n".join(today) if today else empty_today,
     )
 
 
@@ -311,9 +359,27 @@ def build_context_block(memory: dict, athlete_name: str,
     # The 30-day log is stable all day EXCEPT for today's rows, which change
     # with every logged set. Separating them is what makes the bulk cacheable.
     past_sessions, today_sessions = _split_history_at_today(session_history, today_iso)
-    recovery_history = results.get("recovery_history") or "No recovery data."
+    # Today leaks into both of these the same way it leaked into the session
+    # log, and for the same reason: the fetches are date-bounded below but not
+    # above. Health Auto Export keeps rewriting today's row while the athlete
+    # trains — resting HR and VO2 max move after a session, a Watch workout's
+    # duration and average HR climb until it ends — so leaving today in the
+    # cached half means an external sync can invalidate ~32k tokens mid-set.
+    recovery_history, _recovery_today = _split_lines_at_today(
+        results.get("recovery_history") or "No recovery data.", today_iso,
+        "No earlier recovery data in the window.", "",
+    )
+    # `_recovery_today` is deliberately dropped rather than moved: TODAY'S
+    # RECOVERY below already carries every field this line has and more. Worse,
+    # when the iOS app supplies a live snapshot via recovery_override, the DB
+    # row can disagree with it — so the coach was reading today's recovery
+    # twice, with two different sets of numbers.
     substitution_history = results.get("substitution_history") or ""
-    apple_workouts = results.get("apple_workouts") or ""
+    apple_workouts, apple_workouts_today = _split_lines_at_today(
+        results.get("apple_workouts") or "", today_iso,
+        "No earlier Apple Watch workouts in the window.",
+        "Nothing recorded by the Watch yet today.",
+    )
     workout_state = results.get("workout_state") or {}
     workout_context = get_workout_context(workout_state)
     weekly_volume = format_weekly_volume(results.get("weekly_volume") or {})
@@ -342,7 +408,7 @@ SESSIONS BEFORE TODAY (last 30 days):
 EXERCISE SUBSTITUTION HISTORY:
 {substitution_history}
 
-APPLE WATCH WORKOUTS (last 30 days):
+APPLE WATCH WORKOUTS (last 30 days, before today):
 {apple_workouts}
 
 PROGRESSION WATCH — top-set load unchanged across 3+ sessions (today excluded):
@@ -364,6 +430,9 @@ Body weight: {data.get('weight_kg', 'N/A')}kg | Body fat: {data.get('body_fat_pc
 
 TODAY'S SESSIONS SO FAR:
 {today_sessions}
+
+TODAY'S APPLE WATCH WORKOUTS:
+{apple_workouts_today}
 
 WEEKLY VOLUME — working sets per muscle, last 7 days (lowest first):
 {weekly_volume}

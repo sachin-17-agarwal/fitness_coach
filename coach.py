@@ -100,6 +100,11 @@ def load_system_prompt() -> str:
     return _SYSTEM_PROMPT_CACHE
 
 
+# Above the system prompt's own size, so an ordinary short write can't trip
+# it — only a rewrite of the cached prefix itself.
+_PREFIX_REWRITE_ALARM_TOKENS = 10_000
+
+
 def _log_cache_usage(response) -> None:
     """Record what the prompt cache actually did on this call.
 
@@ -119,6 +124,18 @@ def _log_cache_usage(response) -> None:
             "prompt cache: read=%d write=%d uncached=%d total=%d (%.0f%% from cache)",
             read, written, fresh, total, pct,
         )
+        # A rewrite of the whole prefix costs ~20x what reading it does, and
+        # produces an identical reply — so it is invisible unless something
+        # says so out loud. It is legitimate on the first call of a session and
+        # after the 1h TTL lapses; back to back it means the cached half is
+        # moving between calls, which is a bug in what we put there rather
+        # than in the cache.
+        if written > _PREFIX_REWRITE_ALARM_TOKENS and read == 0:
+            log.warning(
+                "prompt cache MISS: rewrote %d tokens with no read. Expected once "
+                "per session; if this repeats, something in the stable context "
+                "block is changing between calls.", written,
+            )
     except Exception:  # never let telemetry break a coaching reply
         log.debug("Could not read cache usage", exc_info=True)
 

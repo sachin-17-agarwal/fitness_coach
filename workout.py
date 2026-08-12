@@ -320,9 +320,14 @@ def log_substitution(original: str, substitution: str, reason: str = ""):
 def get_substitution_history() -> str:
     try:
         supabase = get_supabase()
+        # id breaks ties on created_at. This renders into the cached half of
+        # the coach's system prompt, where two rows swapping places costs a
+        # full prefix rewrite — and two substitutions logged in the same
+        # second is exactly what a batch import produces.
         result = supabase.table("exercise_substitutions")\
             .select("original_exercise, substitution, reason, created_at")\
             .order("created_at", desc=True)\
+            .order("id", desc=True)\
             .limit(20)\
             .execute()
         if not result.data:

@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import unittest
@@ -1496,6 +1497,237 @@ class LoadProgressionStallTests(unittest.TestCase):
         """
         prompt = load_system_prompt()
         self.assertNotIn("Ab Crunch Machine (70kg", prompt)
+
+
+class CachedPrefixStabilityTests(unittest.TestCase):
+    """The stable block must not change while the athlete trains.
+
+    It sits behind the prompt cache breakpoint, so a cache hit needs the bytes
+    to match the previous call exactly. Anything that moves mid-session — a
+    row for today, a Health Auto Export sync, an unordered query whose rows
+    come back shuffled — turns a ~$0.006 read into a ~$0.13 write for the same
+    32k tokens. The reply is identical either way, which is what makes this
+    class of bug survive: it costs 20x and shows no symptom.
+
+    Two leaks were live when these were written. `get_recovery_history` and
+    `get_apple_workouts` bound their queries below by date but not above, so
+    today's rows sat in the cached half and changed every time Health Auto
+    Export pushed. And `get_full_session_history` fetched sets with no ORDER
+    BY at all, leaving the render order to Postgres — which under MVCC moves
+    an updated tuple to the end of the heap, so logging a set could reshuffle
+    how a session from three weeks ago printed.
+    """
+
+    FETCHES = {
+        "get_full_session_history": "",
+        "get_recovery_history": "",
+        "get_substitution_history": "  Lying Leg Curl -> Seated Leg Curl",
+        "get_apple_workouts": "",
+        "get_workout_state": {},
+        "get_weekly_volume": {},
+        "get_load_stalls": [],
+        "get_weak_point_history": [],
+    }
+
+    def _build(self, **overrides):
+        """Run the real build_context_block against fixture fetches."""
+        import coach_context
+
+        today_iso = coach_context.now_local().strftime("%Y-%m-%d")
+        fixtures = dict(self.FETCHES)
+        fixtures.update(overrides)
+
+        patches = []
+        for name, value in fixtures.items():
+            patches.append(patch.object(
+                coach_context, name, **{"side_effect": lambda *a, _v=value, **k: _v}
+            ))
+        for p in patches:
+            p.start()
+        self.addCleanup(lambda: [p.stop() for p in patches])
+
+        stable, live = coach_context.build_context_block(
+            {"mesocycle_week": 1, "mesocycle_day": 1},
+            "Athlete", 80, 75, logging.getLogger("test"),
+            recovery_override={"date": today_iso, "hrv": 60, "resting_hr": 52},
+        )
+        return stable, live, today_iso
+
+    def test_stable_block_is_identical_when_only_today_changes(self):
+        """The invariant, stated directly: today must not move the prefix.
+
+        Between the two calls the Watch workout gains eight minutes and 20
+        bpm, today's recovery row gains a weight reading, and another set
+        lands. That is an ordinary five minutes of a session. None of it may
+        reach the cached half.
+        """
+        import coach_context
+        today_iso = coach_context.now_local().strftime("%Y-%m-%d")
+
+        early_stable, _, _ = self._build(
+            get_apple_workouts=f"  {today_iso} — Traditional Strength Training 12min | avg HR 96bpm\n  2026-08-10 — Walking 30min",
+            get_recovery_history=f"  {today_iso} | sleep:7.1h | HRV:60\n  2026-08-10 | sleep:6.8h | HRV:55",
+            get_full_session_history=f"\n{today_iso} — Pull (tonnage: 400kg)\n  Lat Pulldown: 60kg x 10\n\n2026-08-10 — Push (tonnage: 5000kg)\n  Bench: 80kg x 8",
+        )
+        late_stable, _, _ = self._build(
+            get_apple_workouts=f"  {today_iso} — Traditional Strength Training 20min | avg HR 116bpm\n  2026-08-10 — Walking 30min",
+            get_recovery_history=f"  {today_iso} | sleep:7.1h | HRV:60 | weight:79.4kg\n  2026-08-10 | sleep:6.8h | HRV:55",
+            get_full_session_history=f"\n{today_iso} — Pull (tonnage: 900kg)\n  Lat Pulldown: 60kg x 10 | 60kg x 10\n\n2026-08-10 — Push (tonnage: 5000kg)\n  Bench: 80kg x 8",
+        )
+
+        self.assertEqual(
+            early_stable, late_stable,
+            "the cached prefix moved mid-session — every later call pays write "
+            "rates on ~32k tokens instead of read rates",
+        )
+
+    def test_todays_date_never_appears_in_the_cached_block(self):
+        """A blunt catch-all for the next fetch that forgets an upper bound."""
+        import coach_context
+        today_iso = coach_context.now_local().strftime("%Y-%m-%d")
+        stable, _, _ = self._build(
+            get_apple_workouts=f"  {today_iso} — Traditional Strength Training 20min",
+            get_recovery_history=f"  {today_iso} | sleep:7.1h | HRV:60",
+            get_full_session_history=f"\n{today_iso} — Pull (tonnage: 900kg)\n  Lat Pulldown: 60kg x 10",
+        )
+        self.assertNotIn(today_iso, stable)
+
+    def test_todays_watch_workout_is_moved_to_live_not_dropped(self):
+        """Splitting it out of the cache must not lose it.
+
+        The coach reads stable and live as one continuous block, so this is a
+        move, not a deletion — and today's Watch data is exactly what it needs
+        to judge whether the athlete has already been active.
+        """
+        today_stable, live, today_iso = self._build(
+            get_apple_workouts="  {} — Traditional Strength Training 20min | avg HR 116bpm".format(
+                __import__("coach_context").now_local().strftime("%Y-%m-%d")
+            ),
+        )
+        self.assertIn("Traditional Strength Training", live)
+        self.assertNotIn("Traditional Strength Training", today_stable)
+
+    def test_todays_recovery_is_not_printed_twice_with_two_sets_of_numbers(self):
+        """The DB row and the app's live snapshot can disagree.
+
+        `recovery_override` carries what the athlete sees on the dashboard;
+        the 30-day table carries whatever last synced. Printing both let the
+        coach read today's HRV as 60 in one block and 41 in another.
+        """
+        stable, live, today_iso = self._build(
+            get_recovery_history=f"  {today_iso if False else __import__('coach_context').now_local().strftime('%Y-%m-%d')} | sleep:7.1h | HRV:41",
+        )
+        self.assertNotIn("HRV:41", stable)
+        self.assertNotIn("HRV:41", live)
+        self.assertIn("60", live)
+
+    def test_earlier_history_still_reaches_the_cached_block(self):
+        """Splitting today out must not take the other 29 days with it."""
+        stable, _, _ = self._build(
+            get_apple_workouts="  2026-08-10 — Walking 30min",
+            get_recovery_history="  2026-08-10 | sleep:6.8h | HRV:55",
+            get_full_session_history="\n2026-08-10 — Push (tonnage: 5000kg)\n  Bench: 80kg x 8",
+        )
+        self.assertIn("Walking 30min", stable)
+        self.assertIn("HRV:55", stable)
+        self.assertIn("Bench: 80kg x 8", stable)
+
+    def test_split_helper_keeps_non_dated_rows_on_the_stable_side(self):
+        """"No workouts recorded." and error strings must not become "today"."""
+        from coach_context import _split_lines_at_today
+        past, today = _split_lines_at_today(
+            "Could not load Apple Watch workouts: timeout", "2026-08-12", "none", "nothing",
+        )
+        self.assertIn("timeout", past)
+        self.assertEqual(today, "nothing")
+
+
+class DeterministicQueryOrderTests(unittest.TestCase):
+    """Every query feeding the cached block needs a total order.
+
+    Postgres promises nothing without ORDER BY, and a partial order is not
+    enough: two rows sharing a date can swap between calls and rewrite the
+    prefix. These assert a tiebreaker is present, because the failure is
+    invisible in the reply and only shows up on the bill.
+    """
+
+    @staticmethod
+    def _recording_supabase(seen: dict, rows_for=None):
+        """A Supabase stand-in that records the ORDER BY keys per table."""
+        class RecordingTable:
+            def __init__(self, name):
+                self.name = name
+                seen.setdefault(name, [])
+
+            def select(self, *a, **k): return self
+            def eq(self, *a, **k): return self
+            def in_(self, *a, **k): return self
+            def gte(self, *a, **k): return self
+            def lt(self, *a, **k): return self
+            def lte(self, *a, **k): return self
+            def limit(self, *a, **k): return self
+
+            def order(self, field, desc=False):
+                seen[self.name].append(field)
+                return self
+
+            def execute(self):
+                return FakeResponse((rows_for or {}).get(self.name, []))
+
+        class RecordingSupabase:
+            def table(self, name):
+                return RecordingTable(name)
+
+        return RecordingSupabase()
+
+    def test_session_history_orders_every_table_it_touches(self):
+        """workout_sets had no ORDER BY at all — this is the expensive one."""
+        import coach_context
+
+        seen = {}
+        parents = [{"id": 1, "date": "2026-08-10", "type": "Push",
+                    "tonnage_kg": 5000, "summary": None}]
+        fake = self._recording_supabase(
+            seen, {"workout_sessions": parents, "sessions": parents},
+        )
+        with patch.object(coach_context, "get_supabase", return_value=fake):
+            coach_context.get_full_session_history(30)
+
+        self.assertTrue(
+            seen.get("workout_sets"),
+            "workout_sets is fetched with no ORDER BY — the render order is "
+            "whatever Postgres returns, and MVCC changes it on every UPDATE",
+        )
+        self.assertTrue(seen.get("sets"), "legacy sets table has no ORDER BY")
+        for table in ("workout_sessions", "sessions"):
+            self.assertGreaterEqual(
+                len(seen.get(table, [])), 2,
+                f"{table} orders by date alone — two sessions on one day can swap",
+            )
+
+    def test_apple_workouts_orders_beyond_date(self):
+        import coach_context
+
+        seen = {}
+        fake = self._recording_supabase(seen)
+        with patch.object(coach_context, "get_supabase", return_value=fake):
+            coach_context.get_apple_workouts(30)
+
+        self.assertGreaterEqual(
+            len(seen.get("apple_workouts", [])), 2,
+            "two Watch workouts on the same day can swap and break the cache",
+        )
+
+    def test_substitution_history_orders_beyond_created_at(self):
+        seen = {}
+        fake = self._recording_supabase(seen)
+        with patch.object(workout, "get_supabase", return_value=fake):
+            workout.get_substitution_history()
+
+        self.assertGreaterEqual(
+            len(seen.get("exercise_substitutions", [])), 2,
+            "created_at ties on batch inserts, leaving the order undefined",
+        )
 
 
 class HistoryWindowInvariantTests(unittest.TestCase):
