@@ -1498,5 +1498,145 @@ class LoadProgressionStallTests(unittest.TestCase):
         self.assertNotIn("Ab Crunch Machine (70kg", prompt)
 
 
+class HistoryWindowInvariantTests(unittest.TestCase):
+    """Lock the contract of `truncate_history` before anyone reshapes it.
+
+    The window is the most expensive part of a request — it is the one block
+    the prompt cache never covers, so it is a standing target for cost work.
+    It is also the block whose failure mode is the coach forgetting a stated
+    injury, which is why the pinning exists at all. Two tests guarded a
+    function carrying that much weight.
+
+    These assert the properties any rewrite must preserve, rather than the
+    current implementation's mechanics, so a change to *how* the window is cut
+    stays free while a change to what the coach can see does not.
+    """
+
+    @staticmethod
+    def _log_pairs(n: int, start: int = 0) -> list:
+        """n athlete/coach exchanges, each uniquely identifiable."""
+        out = []
+        for i in range(start, start + n):
+            out.append({"role": "user", "content": f"Logged working set {i}"})
+            out.append({"role": "assistant", "content": f"Reply {i}"})
+        return out
+
+    def test_short_history_is_returned_untouched(self):
+        from coach_context import truncate_history, MAX_CONVERSATION_MESSAGES
+        history = self._log_pairs(MAX_CONVERSATION_MESSAGES // 2)
+        self.assertEqual(len(history), MAX_CONVERSATION_MESSAGES)
+        self.assertEqual(truncate_history(history), history)
+
+    def test_never_shows_the_coach_less_than_the_window(self):
+        """The floor, not the exact size.
+
+        A rewrite may legitimately keep MORE than the window (a wider cut
+        point is how you stop the prefix moving on every turn). Keeping less
+        is the regression — that is context the coach used to have.
+        """
+        from coach_context import truncate_history, MAX_CONVERSATION_MESSAGES
+        for exchanges in (25, 30, 40, 60):
+            with self.subTest(exchanges=exchanges):
+                history = self._log_pairs(exchanges)
+                kept = truncate_history(history)
+                self.assertGreaterEqual(
+                    len(kept), MAX_CONVERSATION_MESSAGES,
+                    "truncation dropped below the window the coach is tuned against",
+                )
+
+    def test_the_tail_is_contiguous_and_ends_at_the_newest_message(self):
+        """No gaps in the recent stretch, and the last message is the newest.
+
+        A set log means nothing without the reply it answers. Any cut that
+        interleaves or reorders the tail would have the coach reading a
+        conversation that never happened.
+        """
+        from coach_context import truncate_history, MAX_CONVERSATION_MESSAGES
+        history = self._log_pairs(40)
+        kept = truncate_history(history)
+
+        self.assertEqual(kept[-1], history[-1])
+
+        tail = kept[-MAX_CONVERSATION_MESSAGES:]
+        start = history.index(tail[0])
+        self.assertEqual(
+            tail, history[start:start + MAX_CONVERSATION_MESSAGES],
+            "the recent window is not a contiguous slice of the real conversation",
+        )
+
+    def test_pinned_constraints_stay_in_chronological_order(self):
+        """Two injuries must not arrive newest-first.
+
+        The coach reads them as a sequence — "shoulder hurt, then it settled"
+        reverses into something else entirely if the order flips.
+        """
+        from coach_context import truncate_history
+        history = [
+            {"role": "user", "content": "my shoulder is hurting today"},
+            {"role": "assistant", "content": "Noted."},
+            {"role": "user", "content": "also my knee is sore, skip the leg press"},
+            {"role": "assistant", "content": "Noted."},
+        ]
+        history += self._log_pairs(40)
+
+        kept = truncate_history(history)
+        texts = [m.get("content") or "" for m in kept]
+        shoulder = next(i for i, t in enumerate(texts) if "shoulder is hurting" in t)
+        knee = next(i for i, t in enumerate(texts) if "knee is sore" in t)
+        self.assertLess(shoulder, knee)
+
+    def test_pinning_is_capped_so_chat_cannot_crowd_out_the_window(self):
+        from coach_context import truncate_history, _MAX_PINNED, MAX_CONVERSATION_MESSAGES
+        history = []
+        for i in range(_MAX_PINNED * 3):
+            history.append({"role": "user", "content": f"my knee is sore, round {i}"})
+            history.append({"role": "assistant", "content": "Noted."})
+        history += self._log_pairs(40)
+
+        kept = truncate_history(history)
+        pinned_count = len(kept) - MAX_CONVERSATION_MESSAGES
+        self.assertLessEqual(
+            pinned_count, _MAX_PINNED,
+            "pinned messages exceeded their cap and are eating the recent window",
+        )
+
+    def test_the_newest_constraint_survives_when_the_cap_is_hit(self):
+        """When constraints must be dropped, drop the stale ones.
+
+        Today's injury outranks one from six sessions ago; keeping the oldest
+        six would pin history and discard the thing that changes today's plan.
+        """
+        from coach_context import truncate_history, _MAX_PINNED
+        history = []
+        for i in range(_MAX_PINNED + 4):
+            history.append({"role": "user", "content": f"my knee is sore, round {i}"})
+            history.append({"role": "assistant", "content": "Noted."})
+        newest_round = _MAX_PINNED + 3
+        history += self._log_pairs(40)
+
+        kept = truncate_history(history)
+        texts = [m.get("content") or "" for m in kept]
+        self.assertTrue(
+            any(f"round {newest_round}" in t for t in texts),
+            "the most recent constraint was dropped in favour of older ones",
+        )
+
+    def test_assistant_messages_are_never_pinned(self):
+        """Only the athlete states a constraint.
+
+        The coach echoing "understood, no pull-ups" is not new information,
+        and pinning its own replies would double the cost of every injury.
+        """
+        from coach_context import truncate_history
+        history = [
+            {"role": "assistant", "content": "Your shoulder is hurting, so no pull-ups."},
+        ]
+        history += self._log_pairs(40)
+        kept = truncate_history(history)
+        self.assertFalse(
+            any((m.get("content") or "").startswith("Your shoulder") for m in kept)
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
