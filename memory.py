@@ -102,11 +102,17 @@ def load_today_conversation() -> list:
     try:
         supabase = get_supabase()
         today = today_local_str()
+        # id breaks ties on created_at. Two rows sharing a timestamp is not
+        # hypothetical here — a set log and its reply are written within the
+        # same request — and an undefined order between them hands the coach a
+        # conversation where its own answer precedes the question. Cheap
+        # insurance: id is BIGSERIAL, so it is already insertion order.
         result = (
             supabase.table("conversations")
             .select("role, content")
             .eq("date", today)
             .order("created_at")
+            .order("id")
             .execute()
         )
         return [{"role": row["role"], "content": row["content"]} for row in result.data]
