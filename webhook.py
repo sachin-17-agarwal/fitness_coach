@@ -90,8 +90,14 @@ def webhook():
 @app.route("/apple-health", methods=["POST"])
 def apple_health():
     """
-    Receives daily Apple Health data from Make.com.
-    
+    Receives Apple Health data from the external exporter.
+
+    NOT the only writer of the `recovery` table, and worth knowing before you
+    reason about how often that table changes: the iOS app upserts it directly
+    via the Supabase REST API (RecoveryService.saveHealthKitSync), driven by
+    HealthKit observer queries that fire continuously while a workout streams
+    from the Watch. This endpoint still carries the workout payloads.
+
     Expected JSON payload:
     {
         "date": "2026-03-09",

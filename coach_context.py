@@ -361,10 +361,22 @@ def build_context_block(memory: dict, athlete_name: str,
     past_sessions, today_sessions = _split_history_at_today(session_history, today_iso)
     # Today leaks into both of these the same way it leaked into the session
     # log, and for the same reason: the fetches are date-bounded below but not
-    # above. Health Auto Export keeps rewriting today's row while the athlete
-    # trains — resting HR and VO2 max move after a session, a Watch workout's
-    # duration and average HR climb until it ends — so leaving today in the
-    # cached half means an external sync can invalidate ~32k tokens mid-set.
+    # above.
+    #
+    # For recovery that is not an occasional external sync — it is continuous.
+    # The iOS app writes this table directly, not through the webhook:
+    # HealthKitManager observes stepCount and activeEnergyBurned, both of which
+    # stream off the Watch throughout a workout, and every sample fires an
+    # HKObserverQuery that upserts today's row. Foreground observers are not
+    # throttled by enableBackgroundDelivery's hourly frequency, so during a
+    # session today's row changes every few seconds. With today inside the
+    # cached prefix that meant a cache MISS on very nearly every coach call of
+    # a workout — ~32k tokens rewritten at 2x instead of read at 0.1x, roughly
+    # 20x the price, for a reply identical either way.
+    #
+    # Apple workouts move on the external exporter's schedule instead, but a
+    # workout's duration and average HR climb until it ends, so today's row is
+    # unstable there too.
     recovery_history, _recovery_today = _split_lines_at_today(
         results.get("recovery_history") or "No recovery data.", today_iso,
         "No earlier recovery data in the window.", "",
