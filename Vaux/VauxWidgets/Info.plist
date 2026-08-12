@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- installd rejects any appex without this dictionary, which is what
+	     "does not define an NSExtension dictionary in its Info.plist" meant.
+	     Synthesising it from INFOPLIST_KEY_NSExtensionPointIdentifier did not
+	     produce it, so the extension declares it outright.
+
+	     WidgetKit needs no NSExtensionPrincipalClass: the entry point is the
+	     @main WidgetBundle in VauxWidgetsEntryPoint.swift.
+
+	     This file is listed in the target's membershipExceptions so it is used
+	     as the plist and NOT also copied in as a resource — copying it would
+	     put two build commands on the same output path. -->
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.widgetkit-extension</string>
+	</dict>
+</dict>
+</plist>
