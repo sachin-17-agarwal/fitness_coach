@@ -1,10 +1,18 @@
 // RestActivityAttributes.swift
 // Vaux
 //
-// Shared contract between the app and the widget extension. Both targets
-// compile this file — if only one does, the activity starts and then renders
-// as a blank capsule, because the system cannot decode a state it has no type
-// for.
+// Shared contract between the app and the widget extension. Both targets must
+// compile this file — if only one does, the activity starts and then renders as
+// a blank capsule, because the system cannot decode a state it has no type for.
+//
+// That is why it sits in Vaux/Shared/ rather than beside the controller. The
+// project uses file-system synchronized groups, so a folder belongs to targets
+// rather than a file doing so, and Shared/ is listed by both. Nothing has to be
+// ticked by hand, and a new shared type is shared by being dropped in here.
+//
+//     Vaux/Vaux/        -> app only
+//     Vaux/VauxWidgets/ -> extension only (holds the @main)
+//     Vaux/Shared/      -> both
 //
 // Everything that changes during a session lives in ContentState, and only
 // `sessionType` is fixed in the attributes. That split is deliberate: an

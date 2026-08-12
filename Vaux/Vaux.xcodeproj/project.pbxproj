@@ -6,8 +6,37 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AA10000000000000000000AC /* VauxWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A1 /* VauxWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA10000000000000000000AE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0386876B2F93B280007D1705 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA10000000000000000000A4;
+			remoteInfo = VauxWidgetsExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA10000000000000000000AB /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA10000000000000000000AC /* VauxWidgetsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		038687732F93B280007D1705 /* Vaux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vaux.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA10000000000000000000A1 /* VauxWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VauxWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -29,10 +58,27 @@
 			path = Vaux;
 			sourceTree = "<group>";
 		};
+		AA10000000000000000000A2 /* VauxWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = VauxWidgets;
+			sourceTree = "<group>";
+		};
+		AA10000000000000000000A3 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		038687702F93B280007D1705 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA10000000000000000000A6 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -46,6 +92,8 @@
 			isa = PBXGroup;
 			children = (
 				038687752F93B280007D1705 /* Vaux */,
+				AA10000000000000000000A3 /* Shared */,
+				AA10000000000000000000A2 /* VauxWidgets */,
 				038687742F93B280007D1705 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,6 +102,7 @@
 			isa = PBXGroup;
 			children = (
 				038687732F93B280007D1705 /* Vaux.app */,
+				AA10000000000000000000A1 /* VauxWidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -68,13 +117,16 @@
 				0386876F2F93B280007D1705 /* Sources */,
 				038687702F93B280007D1705 /* Frameworks */,
 				038687712F93B280007D1705 /* Resources */,
+				AA10000000000000000000AB /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA10000000000000000000AD /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				038687752F93B280007D1705 /* Vaux */,
+				AA10000000000000000000A3 /* Shared */,
 			);
 			name = Vaux;
 			packageProductDependencies = (
@@ -83,7 +135,38 @@
 			productReference = 038687732F93B280007D1705 /* Vaux.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA10000000000000000000A4 /* VauxWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA10000000000000000000A8 /* Build configuration list for PBXNativeTarget "VauxWidgetsExtension" */;
+			buildPhases = (
+				AA10000000000000000000A5 /* Sources */,
+				AA10000000000000000000A6 /* Frameworks */,
+				AA10000000000000000000A7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA10000000000000000000A2 /* VauxWidgets */,
+				AA10000000000000000000A3 /* Shared */,
+			);
+			name = VauxWidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = VauxWidgetsExtension;
+			productReference = AA10000000000000000000A1 /* VauxWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		AA10000000000000000000AD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA10000000000000000000A4 /* VauxWidgetsExtension */;
+			targetProxy = AA10000000000000000000AE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		0386876B2F93B280007D1705 /* Project object */ = {
@@ -94,6 +177,9 @@
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					038687722F93B280007D1705 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					AA10000000000000000000A4 = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -113,6 +199,7 @@
 			projectRoot = "";
 			targets = (
 				038687722F93B280007D1705 /* Vaux */,
+				AA10000000000000000000A4 /* VauxWidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -125,10 +212,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA10000000000000000000A7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0386876F2F93B280007D1705 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA10000000000000000000A5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -337,6 +438,65 @@
 			};
 			name = Release;
 		};
+		AA10000000000000000000A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RW2Q35J6UX;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Vaux Rest";
+				INFOPLIST_KEY_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Sachin.Vaux.VauxWidgetsExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA10000000000000000000AA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RW2Q35J6UX;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Vaux Rest";
+				INFOPLIST_KEY_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Sachin.Vaux.VauxWidgetsExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -354,6 +514,15 @@
 			buildConfigurations = (
 				0386877F2F93B283007D1705 /* Debug */,
 				038687802F93B283007D1705 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA10000000000000000000A8 /* Build configuration list for PBXNativeTarget "VauxWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA10000000000000000000A9 /* Debug */,
+				AA10000000000000000000AA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
