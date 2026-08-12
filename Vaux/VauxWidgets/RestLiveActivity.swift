@@ -3,15 +3,9 @@
 //
 // Lock Screen and Dynamic Island presentation for the rest countdown.
 //
-// The extension's @main entry point is NOT here. Xcode's Widget Extension
-// template always generates a `VauxWidgetsBundle.swift`, and shipping a second
-// file of that name only produced two @main declarations fighting each other.
-// Use the generated one and point it at this widget:
-//
-//     @main
-//     struct VauxWidgetsBundle: WidgetBundle {
-//         var body: some Widget { RestLiveActivity() }
-//     }
+// The extension's @main entry point lives in VauxWidgetsEntryPoint.swift,
+// named to stay clear of the `VauxWidgetsBundle.swift` that Xcode's template
+// generates.
 //
 // Every countdown here is `Text(timerInterval:)` and every bar is
 // `ProgressView(timerInterval:)`. Neither needs an update to advance — the
