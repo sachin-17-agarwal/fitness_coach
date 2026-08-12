@@ -18,6 +18,10 @@ struct FitnessCoachApp: App {
         // one arriving while the app is frontmost is suppressed in favour of
         // the on-screen countdown.
         RestNotifier.shared.start()
+        // If the app was killed mid-rest, iOS still has the Live Activity on
+        // the Lock Screen — nothing told it the workout ended. Clear it here
+        // so today's session doesn't open underneath yesterday's countdown.
+        Task { @MainActor in RestActivityController.shared.clearOrphans() }
         requestHealthKitAuthorization()
         Task { await WorkoutService().cleanupStaleSessions() }
     }

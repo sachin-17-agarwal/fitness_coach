@@ -10,6 +10,14 @@
 	<string></string>
 	<key>CFBundleSignature</key>
 	<string></string>
+	<!-- Required for the rest-timer Live Activity. Without this the app
+	     builds and runs, but Activity.request throws every time and the
+	     Dynamic Island stays empty. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<!-- Lets the rest countdown keep updating while the phone is locked. -->
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict/>

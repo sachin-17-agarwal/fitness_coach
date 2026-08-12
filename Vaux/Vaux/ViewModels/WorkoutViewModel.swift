@@ -894,10 +894,21 @@ final class WorkoutViewModel {
 
     func startRestTimer(seconds: Int) {
         restTotalSeconds = max(1, seconds)
-        let end = Date().addingTimeInterval(Double(seconds))
+        let start = Date()
+        let end = start.addingTimeInterval(Double(seconds))
         restEndDate = end
         isResting = true
         RestNotifier.shared.schedule(at: end, nextSet: upcomingSetSummary)
+        // Third path to the same deadline, alongside the on-screen ring and
+        // the scheduled alert. This one is the only one that shows how much
+        // time is LEFT without unlocking the phone.
+        RestActivityController.shared.start(
+            from: start,
+            to: end,
+            exercise: currentPrescription?.exerciseName ?? sessionType,
+            sessionType: sessionType,
+            nextUp: upcomingSetSummary
+        )
         loadLastSessionSetsIfNeeded()
     }
 
@@ -988,12 +999,21 @@ final class WorkoutViewModel {
         // Replaces the pending alert, so the notification tracks the new
         // deadline instead of firing at the original one.
         RestNotifier.shared.schedule(at: end, nextSet: upcomingSetSummary)
+        // The ring's total grew, so the Live Activity's bar has to grow with
+        // it — otherwise the island shows a bar that is already full while the
+        // countdown still has a minute on it.
+        RestActivityController.shared.extend(
+            from: end.addingTimeInterval(-Double(restTotalSeconds)),
+            to: end,
+            nextUp: upcomingSetSummary
+        )
     }
 
     func skipRest() {
         isResting = false
         restEndDate = nil
         RestNotifier.shared.cancel()
+        RestActivityController.shared.cancel()
     }
 
     func updateDuration() {
@@ -1715,8 +1735,10 @@ final class WorkoutViewModel {
         isResting = false
         restEndDate = nil
         // Ending a session mid-rest must not leave an alert armed to fire
-        // minutes later for a workout that's already over.
+        // minutes later for a workout that's already over — nor a countdown
+        // sitting on the Lock Screen for it.
         RestNotifier.shared.cancel()
+        RestActivityController.shared.cancel()
     }
 
     private func resetState() {

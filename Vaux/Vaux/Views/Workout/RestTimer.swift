@@ -174,6 +174,11 @@ struct RestTimer: View {
             // anyone. Clearing it also removes the banner iOS delivered at the
             // same instant while the app was frontmost.
             RestNotifier.shared.cancel()
+            // `complete` rather than `cancel`: the island holds "Go" for a few
+            // seconds on the way out. When the app was suspended instead this
+            // line never runs, and the widget falls back to its staleDate to
+            // show the same thing.
+            RestActivityController.shared.complete()
         }
     }
 
