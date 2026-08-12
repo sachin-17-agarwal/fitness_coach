@@ -40,6 +40,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AA10000000000000000000AF /* Exceptions for "VauxWidgets" folder in "VauxWidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AA10000000000000000000A4 /* VauxWidgetsExtension */;
+		};
 		038687832F93B413007D1705 /* Exceptions for "Vaux" folder in "Vaux" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -60,6 +67,9 @@
 		};
 		AA10000000000000000000A2 /* VauxWidgets */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA10000000000000000000AF /* Exceptions for "VauxWidgets" folder in "VauxWidgetsExtension" target */,
+			);
 			path = VauxWidgets;
 			sourceTree = "<group>";
 		};
