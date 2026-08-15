@@ -104,14 +104,11 @@ def _met_target(row: dict) -> bool:
     return actual_rpe <= target_rpe
 
 
-def find_stalls(rows: list[dict], min_sessions: int = DEFAULT_MIN_SESSIONS) -> list[dict]:
-    """Exercises whose top-set load has not moved for `min_sessions` sessions.
-
-    Pure function over set rows so it can be tested without a database.
-    Returns newest-stall-first, longest streak first, each entry carrying the
-    evidence behind it rather than just a verdict.
-    """
-    by_exercise: dict[str, dict[str, list[dict]]] = {}
+def _group_by_exercise_and_date(rows: list[dict]) -> dict[str, dict[str, list[dict]]]:
+    """Working sets keyed exercise -> date -> rows. Warm-ups and the cardio /
+    yoga rows that share the table are dropped; neither carries a load to
+    progress."""
+    grouped: dict[str, dict[str, list[dict]]] = {}
     for row in rows:
         if row.get("is_warmup") or _is_cardio_or_yoga(row):
             continue
@@ -119,7 +116,70 @@ def find_stalls(rows: list[dict], min_sessions: int = DEFAULT_MIN_SESSIONS) -> l
         date = row.get("date")
         if not exercise or not date:
             continue
-        by_exercise.setdefault(exercise, {}).setdefault(str(date), []).append(row)
+        grouped.setdefault(exercise, {}).setdefault(str(date), []).append(row)
+    return grouped
+
+
+def find_current_loads(rows: list[dict]) -> list[dict]:
+    """The load each exercise is currently ON — one line per exercise.
+
+    This exists because the coach was getting it wrong by reading. Asked to
+    open Leg Press it scanned a 30-day log, landed on a peak-week 205kg from
+    three weeks earlier, and prescribed a load the athlete had already moved
+    past — then found the right answer immediately when challenged, from the
+    same data. Nothing was missing from its context; the lookup was just buried
+    in ~26 sessions of prose and it read the wrong line.
+
+    So the answer is computed instead of searched. Same division of labour as
+    find_stalls: this establishes the fact, the coach decides what to do with
+    it.
+    """
+    loads = []
+    for exercise, sessions in _group_by_exercise_and_date(rows).items():
+        latest = max(sessions.keys())
+        top = _top_set(sessions[latest])
+        if top is None:
+            continue
+        loads.append({
+            "exercise": exercise,
+            "date": latest,
+            "load": _load_key(top),
+            "reps": _as_int(top.get("actual_reps")),
+            "rpe": _as_float(top.get("actual_rpe")),
+            "met_target": _met_target(top),
+        })
+    # Alphabetical: this is a lookup table, and the coach arrives knowing the
+    # exercise name, not the date.
+    loads.sort(key=lambda entry: entry["exercise"].lower())
+    return loads
+
+
+def format_current_loads(loads: list[dict]) -> str:
+    if not loads:
+        return "  No working sets logged in the window."
+    lines = []
+    for entry in loads:
+        load = entry["load"]
+        load_text = "bodyweight" if load == "BW" else f"{load:g}kg"
+        reps = entry["reps"]
+        detail = f"x{reps}" if reps is not None else "reps unknown"
+        if entry["rpe"] is not None:
+            detail += f" @RPE{entry['rpe']:g}"
+        note = " — met target" if entry["met_target"] else ""
+        lines.append(
+            f"  {entry['exercise']}: {load_text} {detail} on {entry['date']}{note}"
+        )
+    return "\n".join(lines)
+
+
+def find_stalls(rows: list[dict], min_sessions: int = DEFAULT_MIN_SESSIONS) -> list[dict]:
+    """Exercises whose top-set load has not moved for `min_sessions` sessions.
+
+    Pure function over set rows so it can be tested without a database.
+    Returns newest-stall-first, longest streak first, each entry carrying the
+    evidence behind it rather than just a verdict.
+    """
+    by_exercise = _group_by_exercise_and_date(rows)
 
     stalls = []
     for exercise, sessions in by_exercise.items():
@@ -194,24 +254,25 @@ def format_stalls(stalls: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def get_load_stalls(days: int = 42, min_sessions: int = DEFAULT_MIN_SESSIONS) -> list[dict]:
-    """Fetch and analyse recent sets.
+def _fetch_sets_before_today(days: int) -> list[dict] | None:
+    """Working-set rows from the window, today excluded.
 
-    Excludes today for two reasons. It keeps this block in the cacheable half
-    of the context, which only changes once a day; and a progression decision
-    is about sessions that are finished, so a partly-logged session in
-    progress should not flip a flag mid-workout.
+    Excluding today does two jobs. It keeps everything derived from this in the
+    cacheable half of the context, which only changes once a day; and a
+    progression decision is about sessions that are finished, so a partly
+    logged session in progress must not move the numbers mid-workout. Today's
+    sets reach the coach through the live block regardless.
 
     Six weeks covers a full mesocycle plus margin — an exercise recurring 1.5
     times a week gives about nine sessions to compare.
 
-    Returns [] when the data can't be read, which callers render as "no
-    readout" rather than "nothing has stalled".
+    Returns None when the data can't be read, so callers can tell "nothing
+    found" apart from "couldn't look".
     """
     try:
         supabase = get_supabase()
         if not supabase:
-            return []
+            return None
         today = now_local().date()
         since = (today - timedelta(days=days)).isoformat()
         result = (
@@ -222,8 +283,24 @@ def get_load_stalls(days: int = 42, min_sessions: int = DEFAULT_MIN_SESSIONS) ->
             .lt("date", today.isoformat())
             .execute()
         )
+        return result.data or []
     except Exception:
-        log.exception("Load-stall fetch failed")
-        return []
+        log.exception("Progression fetch failed")
+        return None
 
-    return find_stalls(result.data or [], min_sessions=min_sessions)
+
+def get_load_stalls(days: int = 42, min_sessions: int = DEFAULT_MIN_SESSIONS) -> list[dict]:
+    """Exercises sitting on the same load. [] when the data can't be read,
+    which callers render as "no readout" rather than "nothing has stalled"."""
+    rows = _fetch_sets_before_today(days)
+    if rows is None:
+        return []
+    return find_stalls(rows, min_sessions=min_sessions)
+
+
+def get_current_loads(days: int = 42) -> list[dict]:
+    """The load each exercise is currently on, ready to be read off."""
+    rows = _fetch_sets_before_today(days)
+    if rows is None:
+        return []
+    return find_current_loads(rows)

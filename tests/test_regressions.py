@@ -1730,6 +1730,127 @@ class DeterministicQueryOrderTests(unittest.TestCase):
         )
 
 
+class CurrentWorkingLoadTests(unittest.TestCase):
+    """Opening a Legs session, the coach prescribed a load the athlete had
+    already passed.
+
+    His last five Leg Press sessions were 205kg on 07-21, 07-25, 07-30 and
+    08-04, then 210kg on 08-09. It read the 07-21 figure as the current top set
+    and opened at "205 -> 210". Asked to check again it produced the right
+    answer from the same context — so nothing was missing, the lookup was just
+    buried in twenty-six sessions of prose and it picked the wrong line.
+
+    Reading is therefore not the mechanism. The load is computed.
+    """
+
+    LEG_PRESS = [
+        {"date": "2026-07-21", "exercise": "Leg Press", "actual_weight_kg": 205,
+         "actual_reps": 12, "actual_rpe": 9, "target_reps": 6, "target_rpe": 8},
+        {"date": "2026-07-25", "exercise": "Leg Press", "actual_weight_kg": 205,
+         "actual_reps": 8, "actual_rpe": 7, "target_reps": 6, "target_rpe": 8},
+        {"date": "2026-07-30", "exercise": "Leg Press", "actual_weight_kg": 205,
+         "actual_reps": 10, "actual_rpe": 8, "target_reps": 6, "target_rpe": 8},
+        {"date": "2026-08-04", "exercise": "Leg Press", "actual_weight_kg": 205,
+         "actual_reps": 12, "actual_rpe": 8, "target_reps": 6, "target_rpe": 8},
+        {"date": "2026-08-09", "exercise": "Leg Press", "actual_weight_kg": 210,
+         "actual_reps": 11, "actual_rpe": 9, "target_reps": 6, "target_rpe": 8},
+    ]
+
+    def test_reports_the_most_recent_load_not_the_heaviest_history(self):
+        from progression import find_current_loads
+        [entry] = find_current_loads(self.LEG_PRESS)
+        self.assertEqual(entry["load"], 210)
+        self.assertEqual(entry["date"], "2026-08-09")
+
+    def test_row_order_from_the_database_cannot_change_the_answer(self):
+        """The rows arrive unordered, so the newest must be found, not assumed.
+
+        This is the specific shape of the original bug: something earlier in
+        the list was treated as current.
+        """
+        from progression import find_current_loads
+        for rows in (self.LEG_PRESS, list(reversed(self.LEG_PRESS))):
+            with self.subTest(order="reversed" if rows is not self.LEG_PRESS else "natural"):
+                [entry] = find_current_loads(rows)
+                self.assertEqual(entry["load"], 210)
+
+    def test_a_lighter_recent_session_still_wins(self):
+        """Recency beats magnitude. A deload week is the current load.
+
+        Taking the heaviest ever would have got 07-21 right by luck here and
+        wrong the moment the athlete backs off — which week 4 does by design.
+        """
+        from progression import find_current_loads
+        rows = self.LEG_PRESS + [
+            {"date": "2026-08-11", "exercise": "Leg Press", "actual_weight_kg": 160,
+             "actual_reps": 12, "actual_rpe": 6, "target_reps": 12, "target_rpe": 6},
+        ]
+        [entry] = find_current_loads(rows)
+        self.assertEqual(entry["load"], 160)
+
+    def test_warmups_are_never_the_current_load(self):
+        from progression import find_current_loads
+        rows = self.LEG_PRESS + [
+            {"date": "2026-08-09", "exercise": "Leg Press", "actual_weight_kg": 150,
+             "actual_reps": 12, "is_warmup": True},
+        ]
+        [entry] = find_current_loads(rows)
+        self.assertEqual(entry["load"], 210)
+
+    def test_bodyweight_movements_report_reps_not_a_phantom_weight(self):
+        from progression import find_current_loads, format_current_loads
+        rows = [
+            {"date": "2026-08-11", "exercise": "Pull-ups", "actual_weight_kg": 0,
+             "actual_reps": 9, "actual_rpe": 9, "target_reps": 8, "target_rpe": 9},
+        ]
+        entries = find_current_loads(rows)
+        self.assertEqual(entries[0]["load"], "BW")
+        self.assertIn("bodyweight x9", format_current_loads(entries))
+
+    def test_cardio_and_yoga_rows_are_excluded(self):
+        """They share the table but carry a duration in the reps column."""
+        from progression import find_current_loads
+        rows = [
+            {"date": "2026-08-11", "exercise": "Treadmill", "actual_reps": 30,
+             "notes": "cardio — incline walk"},
+        ]
+        self.assertEqual(find_current_loads(rows), [])
+
+    def test_the_rendered_block_names_load_reps_rpe_and_date(self):
+        """All four, because the coach reasons about the next step from them."""
+        from progression import find_current_loads, format_current_loads
+        text = format_current_loads(find_current_loads(self.LEG_PRESS))
+        for fragment in ("Leg Press", "210kg", "x11", "RPE9", "2026-08-09"):
+            self.assertIn(fragment, text)
+
+    def test_empty_history_says_so_rather_than_rendering_nothing(self):
+        from progression import format_current_loads
+        self.assertIn("No working sets", format_current_loads([]))
+
+    def test_each_exercise_appears_exactly_once(self):
+        from progression import find_current_loads
+        rows = self.LEG_PRESS + [
+            {"date": "2026-08-10", "exercise": "Lat Pulldown", "actual_weight_kg": 75,
+             "actual_reps": 10, "actual_rpe": 8, "target_reps": 8, "target_rpe": 8},
+        ]
+        entries = find_current_loads(rows)
+        names = [e["exercise"] for e in entries]
+        self.assertEqual(sorted(names), names, "block must read alphabetically")
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_the_block_reaches_the_cached_half_of_the_context(self):
+        """It excludes today, so it belongs with PROGRESSION WATCH in stable.
+
+        Putting it in the live block would re-bill it on every logged set for
+        data that cannot change until tomorrow.
+        """
+        import coach_context
+        self.assertIn("CURRENT WORKING LOADS", open("system_prompt.txt", encoding="utf-8").read())
+        src = open("coach_context.py", encoding="utf-8").read()
+        stable = src.split("stable = f\"\"\"")[1].split('"""')[0]
+        self.assertIn("{current_loads}", stable)
+
+
 class HistoryWindowInvariantTests(unittest.TestCase):
     """Lock the contract of `truncate_history` before anyone reshapes it.
 
