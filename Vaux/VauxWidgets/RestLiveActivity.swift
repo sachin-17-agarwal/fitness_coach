@@ -109,8 +109,28 @@ struct RestLiveActivity: Widget {
                         .frame(width: 44)
                 }
             } minimal: {
-                Image(systemName: done ? "checkmark" : "timer")
-                    .foregroundStyle(done ? Color.vauxMint : Color.vauxSignal)
+                // iOS drops BOTH activities to this tiny slot whenever a second
+                // one is running, and during a session there always is one —
+                // the Watch workout. So this is the state the athlete actually
+                // sees most of the time, not an edge case.
+                //
+                // A static icon here read as dead: the countdown was live but
+                // nothing on screen moved until you tapped to expand. A
+                // depleting ring is the most information this slot can hold —
+                // no room for digits — and it is driven by the same date range,
+                // so it empties on its own with no updates pushed.
+                if done {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Color.vauxMint)
+                } else {
+                    ProgressView(
+                        timerInterval: context.state.startDate...context.state.endDate,
+                        countsDown: true
+                    )
+                    .progressViewStyle(.circular)
+                    .tint(.vauxSignal)
+                    .labelsHidden()
+                }
             }
             .keylineTint(.vauxSignal)
         }
