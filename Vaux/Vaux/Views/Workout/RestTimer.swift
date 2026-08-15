@@ -607,11 +607,12 @@ struct RestTimer: View {
                                 .foregroundStyle(stalled ? Color.ember : Color.fg2)
                         }
 
-                        hrTrace(monitor.trace)
-                            .frame(height: 40)
+                        hrTrace(monitor, now: context.date)
+                            .frame(height: 44)
                             .padding(.top, 2)
 
-                        hrFootnote(monitor, now: context.date, stalled: stalled)
+                        hrFootnote(monitor, now: context.date,
+                                   lagging: lagging, stalled: stalled)
                     }
                 }
             } else {
@@ -629,24 +630,31 @@ struct RestTimer: View {
         return "\(Int(age / 60))m ago"
     }
 
-    /// The session range, the sample count behind it, and a warning only when
-    /// the feed has genuinely stopped.
+    /// What the athlete is actually asking during a rest: is it coming down.
     ///
-    /// The count is what makes the range readable: "94-96 bpm" across four
-    /// samples is a delivery problem, and without the count it looks like a
-    /// heart-rate problem. It also settles the question the previous version
-    /// got wrong — 112 samples over nine minutes is one every five seconds,
-    /// which is a Watch running a workout, so nothing about that feed needed
-    /// fixing however far behind its newest reading was.
+    /// The previous version answered a different question — "290 samples ·
+    /// last 1s ago" is instrumentation, written while the feed was broken and
+    /// the only thing worth knowing was whether data was arriving at all. It
+    /// stopped earning its place the moment the feed was fixed.
+    ///
+    /// The diagnostics are not deleted, only demoted: they still say exactly
+    /// what they used to, but now only when the feed is behind or stopped,
+    /// which is when the distinction between a delivery problem and a heart
+    /// problem matters. A healthy feed spends that line on recovery instead.
     @ViewBuilder
-    private func hrFootnote(_ monitor: HeartRateMonitor, now: Date, stalled: Bool) -> some View {
+    private func hrFootnote(_ monitor: HeartRateMonitor, now: Date,
+                            lagging: Bool, stalled: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            if let lo = monitor.minBPM, let hi = monitor.maxBPM {
-                Text(hi > lo
-                     ? "Session \(lo)–\(hi) bpm · \(rateSummary(monitor, now: now))"
-                     : "Session flat at \(lo) bpm · \(rateSummary(monitor, now: now))")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.fg2)
+            if lagging || stalled {
+                if let lo = monitor.minBPM, let hi = monitor.maxBPM {
+                    Text(hi > lo
+                         ? "Session \(lo)–\(hi) bpm · \(rateSummary(monitor, now: now))"
+                         : "Session flat at \(lo) bpm · \(rateSummary(monitor, now: now))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.fg2)
+                }
+            } else {
+                recoveryLine(monitor, now: now)
             }
             if stalled {
                 // No instruction to start a Watch workout: this fires while one
@@ -674,8 +682,47 @@ struct RestTimer: View {
         return "\(count) · last \(Int(gap / 60))m ago"
     }
 
+    /// Window the trace and the recovery figure both read from.
+    ///
+    /// Three minutes holds the working set's peak and the descent after it, so
+    /// the line reads as a recovery curve. The whole session was the wrong
+    /// window: thirty minutes of climbs and falls compressed into one card is
+    /// a texture, not a signal, and it told the athlete nothing he could act on.
+    private static let hrWindow: TimeInterval = 180
+
+    /// How far the heart rate has fallen from the peak of the last set.
+    ///
+    /// This is the number that answers "am I ready for the next set" — the
+    /// same quantity as clinical heart-rate recovery, which is one of the
+    /// better-validated fitness markers there is. A rate that is not falling
+    /// is worth saying out loud rather than leaving as an absence.
     @ViewBuilder
-    private func hrTrace(_ samples: [Int]) -> some View {
+    private func recoveryLine(_ monitor: HeartRateMonitor, now: Date) -> some View {
+        if let peak = monitor.peak(inLast: Self.hrWindow, at: now),
+           let drop = monitor.dropFromPeak(inLast: Self.hrWindow, at: now) {
+            // Two states, not three. The peak is the maximum of the same
+            // window the current reading sits in, so the drop cannot come out
+            // negative — a "still climbing" branch would never have run.
+            // Being within a few bpm of the peak IS still climbing, and says
+            // so without pretending to measure a rise it cannot see.
+            if drop >= 3 {
+                Text("Down \(drop) from \(peak) peak")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.mint)
+            } else {
+                Text("At \(peak) — hasn't started dropping")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.amber)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func hrTrace(_ monitor: HeartRateMonitor, now: Date) -> some View {
+        let window = monitor.samples(inLast: Self.hrWindow, at: now)
+        // Falls back to the raw trace early in a session, when three minutes
+        // has not happened yet and windowing would leave nothing to draw.
+        let samples = window.count >= 3 ? window.map(\.bpm) : monitor.trace
         if samples.count < 3 {
             // Under three real deliveries there is no shape to show. Says so
             // plainly instead of drawing a flat line, which read as a broken
@@ -696,8 +743,22 @@ struct RestTimer: View {
             // through a working set still has somewhere to go.
             let mid = (lo + hi) / 2
             let half = max((hi - lo) / 2 * 1.2, 15)
+            let peakIndex = samples.firstIndex(of: Int(hi)) ?? 0
             Chart {
                 ForEach(Array(samples.enumerated()), id: \.offset) { i, bpm in
+                    // The fill is what makes a descent read as a descent at
+                    // this size. A bare 2pt line over 44pt of card is legible
+                    // as a squiggle and not much else.
+                    AreaMark(
+                        x: .value("Sample", i),
+                        y: .value("BPM", bpm)
+                    )
+                    .foregroundStyle(.linearGradient(
+                        colors: [Color.ember.opacity(0.30), Color.ember.opacity(0.02)],
+                        startPoint: .top, endPoint: .bottom
+                    ))
+                    .interpolationMethod(.catmullRom)
+
                     LineMark(
                         x: .value("Sample", i),
                         y: .value("BPM", bpm)
@@ -705,6 +766,25 @@ struct RestTimer: View {
                     .foregroundStyle(Color.ember)
                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
                     .interpolationMethod(.catmullRom)
+                }
+
+                // The two points the athlete is comparing: what the set cost
+                // him, and where he is now. Marking them turns the curve into
+                // a statement about recovery rather than a decorative line.
+                PointMark(
+                    x: .value("Sample", peakIndex),
+                    y: .value("BPM", samples[peakIndex])
+                )
+                .foregroundStyle(Color.fg2)
+                .symbolSize(26)
+
+                if let current = samples.last {
+                    PointMark(
+                        x: .value("Sample", samples.count - 1),
+                        y: .value("BPM", current)
+                    )
+                    .foregroundStyle(Color.ember)
+                    .symbolSize(64)
                 }
             }
             .chartYScale(domain: (mid - half)...(mid + half))

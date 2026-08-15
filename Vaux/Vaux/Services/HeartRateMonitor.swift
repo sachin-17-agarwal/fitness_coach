@@ -39,6 +39,48 @@ final class HeartRateMonitor {
     /// of hundred points is far more than a sparkline can resolve anyway.
     private let traceLimit = 240
 
+    /// One reading with the time it was taken, exposed so a view can ask about
+    /// a window rather than the whole session.
+    ///
+    /// `trace` alone cannot answer the question the athlete is actually asking
+    /// during a rest — "is it coming down?" — because a bare [Int] has no way
+    /// to say which points belong to the last two minutes. Plotting all of it
+    /// drew thirty minutes of climbs and falls squeezed into 250 points of
+    /// noise, which is why the card showed a busy line that meant nothing.
+    struct Sample: Identifiable, Equatable {
+        let bpm: Int
+        let at: Date
+        var id: Date { at }
+    }
+
+    private(set) var samples: [Sample] = []
+
+    /// Readings from the last `seconds`, oldest first.
+    ///
+    /// Three minutes is the useful default: long enough to contain the working
+    /// set's peak and the descent after it, so the shape reads as a recovery
+    /// curve rather than a squiggle.
+    func samples(inLast seconds: TimeInterval, at now: Date = Date()) -> [Sample] {
+        let cutoff = now.addingTimeInterval(-seconds)
+        return samples.filter { $0.at >= cutoff }
+    }
+
+    /// Highest reading in the window — the peak being recovered FROM.
+    func peak(inLast seconds: TimeInterval, at now: Date = Date()) -> Int? {
+        samples(inLast: seconds, at: now).map(\.bpm).max()
+    }
+
+    /// How far the heart rate has fallen from that peak.
+    ///
+    /// Never negative: the peak is taken from the same window the current
+    /// reading sits in, so at worst the current reading IS the peak and this
+    /// returns 0. A caller wanting "is it still rising" should read 0 as that
+    /// rather than expecting a negative number.
+    func dropFromPeak(inLast seconds: TimeInterval, at now: Date = Date()) -> Int? {
+        guard let peak = peak(inLast: seconds, at: now), let current = currentBPM else { return nil }
+        return peak - current
+    }
+
     /// End timestamp of the newest sample received — when the reading was
     /// taken on the Watch, not when it reached the phone. Without this the UI
     /// has no way to tell a live number from one recorded eight minutes ago,
@@ -255,9 +297,13 @@ final class HeartRateMonitor {
                 maxBPM = reading.bpm
             }
             trace.append(reading.bpm)
+            samples.append(Sample(bpm: reading.bpm, at: reading.at))
         }
         if trace.count > traceLimit {
             trace.removeFirst(trace.count - traceLimit)
+        }
+        if samples.count > traceLimit {
+            samples.removeFirst(samples.count - traceLimit)
         }
 
         if let latest = fresh.last {
@@ -275,6 +321,7 @@ final class HeartRateMonitor {
     private func reset() {
         currentBPM = nil
         trace = []
+        samples = []
         minBPM = nil
         maxBPM = nil
         avgBPM = nil
