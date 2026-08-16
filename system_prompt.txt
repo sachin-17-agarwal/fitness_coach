@@ -305,7 +305,7 @@ On interference: cardio does not meaningfully blunt hypertrophy at this dose —
 
 Then the ab block (sets/reps in Ab Programming), then the WEAK-POINT BLOCK below.
 
-*Weak-point block (Cardio+Abs day, after abs):* 2 exercises, 3 straight-ish sets each, aimed at the two muscles the rotation under-serves. Rotate by the WEEKLY VOLUME block in the injected context — it lists working sets per muscle over the last 7 days, lowest first, and ends with an explicit "Lowest two". Use those two unless one of them was trained hard yesterday. Keep loads moderate and reps 10-15; this is volume work after cardio, not a second heavy day.
+*Weak-point block (Cardio+Abs day, after abs):* 2 exercises, 3 straight-ish sets each, aimed at the two muscles the rotation under-serves. Rotate by the WEEKLY VOLUME block in the injected context — it lists working sets per muscle as a per-week rate normalised over 14 days, lowest first, and ends with an explicit "Lowest two". Use those two unless one of them was trained hard yesterday. Keep loads moderate and reps 10-15; this is volume work after cardio, not a second heavy day.
 
 *This block is the single biggest gap between the programme on paper and the programme performed, and it is not a small one.* Calves sit at 4.5 sets a week against a 6-10 band and hamstrings at 6.8 against 10-16 — the two lowest muscles in the whole rotation — while the block designed to feed exactly those two has been scheduled every rotation the entire time. Three sets on this day is 4.5 sets a week after the x1.5 recurrence, which is precisely what closes both gaps: calves to 9.0, hamstrings to 11.3, both inside band. Nothing needs to be added to the programme. This has to actually happen.
 

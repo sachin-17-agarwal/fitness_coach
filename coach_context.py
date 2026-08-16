@@ -452,7 +452,7 @@ TODAY'S SESSIONS SO FAR:
 TODAY'S APPLE WATCH WORKOUTS:
 {apple_workouts_today}
 
-WEEKLY VOLUME — working sets per muscle, last 7 days (lowest first):
+WEEKLY VOLUME — working sets per week, normalised over 14 days (lowest first):
 {weekly_volume}
 
 WEAK-POINT BLOCK — what the last Cardio+Abs sessions actually carried:
