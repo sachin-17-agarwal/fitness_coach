@@ -1730,6 +1730,86 @@ class DeterministicQueryOrderTests(unittest.TestCase):
         )
 
 
+class LiveSessionIsClosedListTests(unittest.TestCase):
+    """The coach reported exercises as done on a session with zero sets.
+
+    Opening a Cardio+Abs session it stated Hanging Leg Raises was "done
+    (12, 12, 10 @ RPE7)" with Cable Crunch and Pallof Press "done before
+    that" — while the app header read TONNAGE 0kg, SETS 0. Those were real
+    numbers from an earlier session, re-dated to today.
+
+    The live block said only "None yet" under a heading, and told the coach
+    the values were ground truth without ever saying the list was exhaustive.
+    An empty list therefore read as "what I happen to have seen" rather than
+    "nothing has happened", and thirty days of history supplied the rest.
+    """
+
+    def _block(self, rows):
+        from unittest.mock import patch
+        import workout
+
+        class Table:
+            def __init__(self, name): self.name = name
+            def select(self, *a, **k): return self
+            def eq(self, *a, **k): return self
+            def order(self, *a, **k): return self
+            def execute(self):
+                if self.name == "workout_sessions":
+                    return FakeResponse([{"type": "Cardio+Abs"}])
+                return FakeResponse(rows)
+
+        class Supa:
+            def table(self, name): return Table(name)
+
+        with patch.object(workout, "get_supabase", return_value=Supa()), \
+             patch.object(workout, "get_session_duration_minutes", return_value=12):
+            return workout.get_workout_context({
+                "workout_mode": "active", "current_session_id": "sess-1",
+            })
+
+    def test_an_empty_session_states_that_nothing_was_done(self):
+        text = self._block([])
+        self.assertIn("NOTHING", text)
+        self.assertIn("Working sets logged this session: 0", text)
+
+    def test_an_empty_session_names_the_history_as_the_wrong_source(self):
+        """The failure was specifically substitution from earlier sessions."""
+        text = self._block([])
+        self.assertIn("whatever earlier sessions in the history show", text)
+
+    def test_the_list_is_declared_complete(self):
+        """Without this the block is a sample, and a sample invites filling in."""
+        text = self._block([])
+        self.assertIn("THIS LIST IS COMPLETE", text)
+        self.assertIn("has NOT been performed today", text)
+
+    def test_prescribing_is_distinguished_from_performing(self):
+        """The conversation is full of prescriptions for exercises not yet done."""
+        self.assertIn("Prescribing an exercise is\nnot performing it", self._block([]))
+
+    def test_the_working_count_excludes_warmups(self):
+        rows = [
+            {"exercise": "Cable Crunch", "set_number": 1, "is_warmup": True,
+             "actual_weight_kg": 20, "actual_reps": 12, "logged_at": "2026-08-12T10:00:00"},
+            {"exercise": "Cable Crunch", "set_number": 2, "is_warmup": False,
+             "actual_weight_kg": 35, "actual_reps": 12, "logged_at": "2026-08-12T10:03:00"},
+            {"exercise": "Cable Crunch", "set_number": 3, "is_warmup": False,
+             "actual_weight_kg": 35, "actual_reps": 11, "logged_at": "2026-08-12T10:06:00"},
+        ]
+        text = self._block(rows)
+        self.assertIn("Working sets logged this session: 2", text)
+        self.assertNotIn("NOTHING", text)
+
+    def test_a_populated_session_still_carries_the_completeness_claim(self):
+        """Partial logs mislead the same way — three of six exercises done
+        does not license the coach to treat the other three as finished."""
+        rows = [
+            {"exercise": "Pallof Press", "set_number": 1, "is_warmup": False,
+             "actual_weight_kg": 15, "actual_reps": 12, "logged_at": "2026-08-12T10:00:00"},
+        ]
+        self.assertIn("THIS LIST IS COMPLETE", self._block(rows))
+
+
 class CurrentWorkingLoadTests(unittest.TestCase):
     """Opening a Legs session, the coach prescribed a load the athlete had
     already passed.

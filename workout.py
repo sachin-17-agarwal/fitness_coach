@@ -478,7 +478,17 @@ def get_workout_context(state: dict) -> str:
                     lines.append(fmt_set(r, i))
                 for i, r in enumerate(non_warmups, start=1):
                     lines.append(fmt_set(r, i))
-        sets_text = "\n".join(lines) if lines else "  None yet"
+        # "None yet" was too soft for what this has to establish. Faced with an
+        # empty list and thirty days of history containing the very exercises
+        # it was about to prescribe, the coach reported Hanging Leg Raises as
+        # "done (12, 12, 10 @ RPE7)" on a session with zero sets logged — real
+        # numbers from an earlier session, re-dated to today. An absence has to
+        # be stated as a fact or it reads as a gap to be filled.
+        working_count = sum(1 for r in strength_rows if not r.get("is_warmup"))
+        sets_text = "\n".join(lines) if lines else (
+            "  NOTHING. Zero sets logged. No exercise has been performed in "
+            "this session yet, whatever earlier sessions in the history show."
+        )
 
         last_line = ""
         if strength_rows:
@@ -501,6 +511,8 @@ def get_workout_context(state: dict) -> str:
 Session type: {session_type}
 Session duration: {duration} minutes{duration_warning}{current_line}{last_line}
 
+Working sets logged this session: {working_count}
+
 Logged this session (grouped by exercise, in order):
 {sets_text}
 
@@ -508,6 +520,16 @@ NOTE TO COACH: the values above are persisted ground truth. When the
 athlete (or the app) sends a "Logged …" message, those numbers also
 appear here — quote them exactly. Never substitute a prescription
 target for an actual performance.
+
+THIS LIST IS COMPLETE. It is not a sample and it is not "what I happen to
+have seen" — it is every set persisted against this session. An exercise
+that does not appear above has NOT been performed today, no matter how
+familiar it looks from the 30-day history, how recently it was prescribed,
+or how much of this conversation discussed it. Prescribing an exercise is
+not performing it. Never tell the athlete something is "done" or "already
+logged" unless it is listed above, and if the count is 0 then nothing has
+been done today — say exactly that rather than reconstructing a session
+from earlier ones.
 [END LIVE WORKOUT]
 """
     except Exception as e:
