@@ -295,11 +295,15 @@ class RegressionTests(unittest.TestCase):
              patch("coach.send_telegram_message") as send_mock:
             response = handle_incoming_message("Done 100 x 12 @8", memory)
 
-        self.assertEqual(response, "Logged")
+        # The coach's own reply is preserved intact; the exercise here was
+        # inferred from context rather than named, so the attribution note is
+        # prepended ahead of it.
+        self.assertTrue(response.endswith("Logged"))
+        self.assertIn("Back Squat", response)
         log_set_mock.assert_called_once()
         set_state_mock.assert_called_once()
         advance_mock.assert_not_called()
-        send_mock.assert_called_once_with("Logged")
+        send_mock.assert_called_once_with(response)
 
     def test_cardio_wrap_ends_active_session(self):
         memory = {"mesocycle_day": 4, "mesocycle_week": 1}
@@ -1728,6 +1732,49 @@ class DeterministicQueryOrderTests(unittest.TestCase):
             len(seen.get("exercise_substitutions", [])), 2,
             "created_at ties on batch inserts, leaving the order undefined",
         )
+
+
+class InheritedExerciseAttributionTests(unittest.TestCase):
+    """A Telegram session filed eight sets under one exercise, silently.
+
+    With the app down, a Cardio+Abs session was logged over Telegram. Sets
+    arrive there as bare numbers — "101 x 12" — so nothing names the lift, and
+    the resolver falls back to whichever exercise was last active. Loads from
+    37.5kg to 120kg all landed on "Ab crunch machine", and the athlete only
+    found out days later reading his own history.
+
+    Inference is not the bug; over Telegram it is the only option. Doing it
+    without saying so is, because a wrong guess then persists for the rest of
+    the session and pollutes the log that progression reads from.
+    """
+
+    def test_the_reply_names_the_exercise_it_guessed(self):
+        from coach_parsing import extract_exercise_from_set_message, resolve_exercise_name
+        # A bare set message names nothing to resolve — the state the whole
+        # failure depends on.
+        self.assertFalse(resolve_exercise_name(
+            extract_exercise_from_set_message("101 x 12") or ""
+        ))
+
+    def test_source_prepends_a_locally_authored_attribution_line(self):
+        """Authored in Python, not requested from the model.
+
+        Same reasoning as the iOS fact prefix: the one thing the backend knows
+        for certain is what it just wrote to the database, and a warning the
+        model may or may not include is not a warning.
+        """
+        src = open("coach.py", encoding="utf-8").read()
+        self.assertIn("inherited_attribution", src)
+        self.assertIn("you didn't name a lift", src)
+        marker = src.index("if inherited_attribution:")
+        chat = src.index("response = chat_with_coach(incoming_text")
+        self.assertGreater(marker, chat,
+                           "the note must be prepended to a reply that already exists")
+
+    def test_an_explicitly_named_exercise_produces_no_note(self):
+        """The note must not fire on every set or it becomes wallpaper."""
+        src = open("coach.py", encoding="utf-8").read()
+        self.assertIn("if not exercise_was_named:", src)
 
 
 class LiveSessionIsClosedListTests(unittest.TestCase):

@@ -397,6 +397,7 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     _active_exercise = (state.get("current_exercise_name") or "").strip()
     all_sets: list = []
     unresolved_candidate = ""
+    inherited_attribution: tuple[str, int] | None = None
 
     if workout_active and session_id and not ios_log:
         all_sets = parse_all_sets_from_message(incoming_text)
@@ -408,6 +409,13 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
 
             explicit_exercise = extract_exercise_from_set_message(incoming_text)
             exercise = resolve_exercise_name(explicit_exercise)
+            # Whether the athlete named the lift or we inferred it. Over
+            # Telegram a set usually arrives as bare numbers ("101 x 12"), so
+            # inference is the norm rather than the exception — and when it is
+            # wrong it is wrong silently, for as long as it takes him to
+            # notice. One Cardio+Abs session filed eight sets spanning 37.5kg
+            # to 120kg under a single exercise this way.
+            exercise_was_named = bool(exercise)
             if not exercise and explicit_exercise and _is_valid_exercise(explicit_exercise):
                 unresolved_candidate = explicit_exercise
 
@@ -459,6 +467,9 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                           f"{set_entry['weight']}kg x {set_entry['reps']}"
                           + (f" @RPE{set_entry['rpe']}" if set_entry.get("rpe") else ""))
 
+                if not exercise_was_named:
+                    inherited_attribution = (exercise, len(all_sets))
+
                 _active_exercise = exercise
                 set_workout_state({
                     "current_set_number": str(current_set_base + len(all_sets)),
@@ -468,6 +479,15 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     # ── Get coach response ────────────────────────────────────────────────────
     response = chat_with_coach(incoming_text, conversation_history, memory,
                                recovery_override=recovery_override)
+
+    if inherited_attribution:
+        guessed, count = inherited_attribution
+        plural = "" if count == 1 else "s"
+        response = (
+            f"Logged {count} set{plural} to *{guessed}* — you didn't name a lift, "
+            f"so I used the last one. Say the exercise name if that's wrong.\n\n"
+            + response
+        )
 
     if workout_active and all_sets and unresolved_candidate:
         note = build_exercise_note(unresolved_candidate)
