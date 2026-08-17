@@ -1286,15 +1286,19 @@ final class WorkoutViewModel {
         // logged working set as the back-off — showing it checked off and
         // prefilling a phantom next set. Phases already on screen are ground
         // truth; only non-empty incoming phases may replace them.
-        // A `Revised:` block is exempt: the coach explicitly marked the new
-        // structure as deliberate (e.g. the athlete asked to drop a warm-up),
-        // so applying it verbatim is the whole point — reconciling it would
-        // put the removed sets straight back on the card.
+        // A `Revised:` block takes a different path rather than skipping this
+        // entirely. The coach marked the new structure as deliberate, so it is
+        // allowed to shrink the plan — that is the point of the marker, and
+        // reconciling it would put a deliberately removed warm-up straight
+        // back on the card. But "deliberate" only extends to work not yet
+        // done: `preservingLoggedSets` keeps a floor at the number already in
+        // the database, because a revision cannot un-perform a set.
         if let current = currentPrescription,
            let first = prescriptions.first,
-           first.exerciseName == current.exerciseName,
-           !first.isRevision {
-            prescriptions[0] = mergingDroppedPhases(into: first, from: current)
+           first.exerciseName == current.exerciseName {
+            prescriptions[0] = first.isRevision
+                ? preservingLoggedSets(into: first, from: current)
+                : mergingDroppedPhases(into: first, from: current)
         }
 
         if !prescriptions.isEmpty {
@@ -1406,14 +1410,73 @@ final class WorkoutViewModel {
     /// their checkmarks from the card and made the phase tracker skip ahead
     /// (the next warm-up would have logged as a working set). A partial
     /// block must never shrink the plan; it may only update upcoming targets.
+    /// How many sets of each phase are already in the log for this exercise.
+    /// Shared so the two merge paths cannot drift apart on what "done" means.
+    private func phaseCompletionCounts(
+        against current: ExercisePrescription
+    ) -> (warmups: Int, working: Int, backoff: Int) {
+        let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
+        let nonWarmupsDone = exerciseSetsForCurrentExercise.count - warmupsDone
+        return (
+            warmups: warmupsDone,
+            working: min(nonWarmupsDone, current.workingSets.count),
+            backoff: max(0, nonWarmupsDone - current.workingSets.count)
+        )
+    }
+
+    /// Applies a `Revised:` block, which is deliberately allowed to shrink the
+    /// plan — with one floor: it may not erase sets already performed.
+    ///
+    /// The blanket exemption this replaces was too broad. Told to re-send a
+    /// FULL block on any change, the coach dropped the back-off load and sent
+    /// a Revised block containing only the back-off, omitting the working set
+    /// that was already logged. Applied verbatim that deleted the working
+    /// phase, and the completion math — "the first N non-warmups are working
+    /// sets" — then read the logged 95kg x 5 as the back-off, checked it off,
+    /// and moved the card on to the next exercise with the real back-off never
+    /// prescribed.
+    ///
+    /// A revision changes what is still ahead. What is behind is in the
+    /// database and is not the coach's to rewrite.
+    private func preservingLoggedSets(
+        into incoming: ExercisePrescription,
+        from current: ExercisePrescription
+    ) -> ExercisePrescription {
+        let done = phaseCompletionCounts(against: current)
+
+        var merged = incoming
+        merged.warmupSets = revisedPhase(
+            incoming: incoming.warmupSets, current: current.warmupSets, done: done.warmups
+        )
+        merged.workingSets = revisedPhase(
+            incoming: incoming.workingSets, current: current.workingSets, done: done.working
+        )
+        merged.backoffSets = revisedPhase(
+            incoming: incoming.backoffSets, current: current.backoffSets, done: done.backoff
+        )
+        if merged.formCue == nil { merged.formCue = current.formCue }
+        if merged.tempo == nil { merged.tempo = current.tempo }
+        if merged.restSeconds == nil { merged.restSeconds = current.restSeconds }
+        return merged
+    }
+
+    /// A revised phase is taken verbatim unless it is shorter than the number
+    /// already logged in it, in which case the performed sets are kept in
+    /// front of whatever the revision prescribes next. Dropping an unperformed
+    /// warm-up still works; un-performing a completed set does not.
+    private func revisedPhase<T>(incoming: [T], current: [T], done: Int) -> [T] {
+        guard incoming.count < done else { return incoming }
+        return Array(current.prefix(done)) + incoming
+    }
+
     private func mergingDroppedPhases(
         into incoming: ExercisePrescription,
         from current: ExercisePrescription
     ) -> ExercisePrescription {
-        let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
-        let nonWarmupsDone = exerciseSetsForCurrentExercise.count - warmupsDone
-        let workingDone = min(nonWarmupsDone, current.workingSets.count)
-        let backoffDone = max(0, nonWarmupsDone - current.workingSets.count)
+        let counts = phaseCompletionCounts(against: current)
+        let warmupsDone = counts.warmups
+        let workingDone = counts.working
+        let backoffDone = counts.backoff
 
         var merged = incoming
         merged.warmupSets = reconciledPhase(
