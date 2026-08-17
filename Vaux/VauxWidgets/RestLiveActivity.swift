@@ -16,6 +16,14 @@
 // Sizing note: the compact and minimal regions are hard-constrained by iOS,
 // and a timer whose glyph widths change ("9:59" -> "10:00") makes the island
 // visibly jump. `monospacedDigit()` plus a fixed frame holds the layout still.
+//
+// Every ProgressView here passes `label:` and `currentValueLabel:` explicitly
+// as EmptyView, and that is load-bearing rather than tidy. The two-argument
+// form supplies a default value label — the countdown digits — and
+// `.labelsHidden()` does not suppress it. In the minimal slot that rendered
+// "1:34" crammed inside a ~24pt ring, which is what the athlete saw and
+// rightly called broken. The bars have the same default; only the ring made
+// it obvious.
 
 import ActivityKit
 import SwiftUI
@@ -75,11 +83,12 @@ struct RestLiveActivity: Widget {
                         if !done {
                             ProgressView(
                                 timerInterval: context.state.startDate...context.state.endDate,
-                                countsDown: true
+                                countsDown: true,
+                                label: { EmptyView() },
+                                currentValueLabel: { EmptyView() }
                             )
                             .progressViewStyle(.linear)
                             .tint(.vauxSignal)
-                            .labelsHidden()
                         }
                         if let next = context.state.nextUp, !next.isEmpty {
                             Text(next)
@@ -125,11 +134,12 @@ struct RestLiveActivity: Widget {
                 } else {
                     ProgressView(
                         timerInterval: context.state.startDate...context.state.endDate,
-                        countsDown: true
+                        countsDown: true,
+                        label: { EmptyView() },
+                        currentValueLabel: { EmptyView() }
                     )
                     .progressViewStyle(.circular)
                     .tint(.vauxSignal)
-                    .labelsHidden()
                 }
             }
             .keylineTint(.vauxSignal)
@@ -168,11 +178,12 @@ private struct LockScreenRestView: View {
                 if !done {
                     ProgressView(
                         timerInterval: context.state.startDate...context.state.endDate,
-                        countsDown: true
+                        countsDown: true,
+                        label: { EmptyView() },
+                        currentValueLabel: { EmptyView() }
                     )
                     .progressViewStyle(.linear)
                     .tint(.vauxSignal)
-                    .labelsHidden()
                     .padding(.top, 2)
                 }
             }
