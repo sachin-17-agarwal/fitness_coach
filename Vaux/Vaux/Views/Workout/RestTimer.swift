@@ -54,6 +54,10 @@ struct RestTimer: View {
     @Binding var endDate: Date?
     @Binding var isActive: Bool
     let onSkip: () -> Void
+    /// Fired when the countdown runs out on screen, as distinct from onSkip.
+    /// Both end the rest; only this one means it was actually served, and the
+    /// heart-rate recovery recorded for it is only comparable if the rest ran.
+    let onFinished: () -> Void
     /// Extending has to go through the view model so the ring's total grows
     /// with the deadline; mutating `endDate` alone left the ring pinned full.
     var onExtend: (Int) -> Void = { _ in }
@@ -179,6 +183,7 @@ struct RestTimer: View {
             // line never runs, and the widget falls back to its staleDate to
             // show the same thing.
             RestActivityController.shared.complete()
+            onFinished()
         }
     }
 
@@ -706,15 +711,60 @@ struct RestTimer: View {
             // Being within a few bpm of the peak IS still climbing, and says
             // so without pretending to measure a rise it cannot see.
             if drop >= 3 {
-                Text("Down \(drop) from \(peak) peak")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.mint)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(rateText(monitor, drop: drop, now: now))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.fg2)
+                    // The comparison is the point. A raw drop answers nothing
+                    // on its own — 35 bpm is good or bad depending entirely on
+                    // how long it took and what this athlete usually does. Held
+                    // back until two rests are on record, because "faster than
+                    // usual" against a sample of one is noise wearing a verdict.
+                    if let verdict = recoveryVerdict(monitor, drop: drop, now: now) {
+                        Text(verdict.text)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(verdict.tint)
+                    }
+                }
             } else {
                 Text("At \(peak) — hasn't started dropping")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.amber)
             }
         }
+    }
+
+    /// "−35 bpm · 34/min". Kept terse because this card sits in a horizontal
+    /// strip and the previous wording was already being clipped.
+    private func rateText(_ monitor: HeartRateMonitor, drop: Int, now: Date) -> String {
+        guard let elapsed = monitor.secondsSincePeak(inLast: Self.hrWindow, at: now),
+              elapsed >= 10 else {
+            return "−\(drop) bpm"
+        }
+        let perMinute = Int((Double(drop) * 60 / elapsed).rounded())
+        return "−\(drop) bpm · \(perMinute)/min"
+    }
+
+    /// Compares this rest against the session's own median rate.
+    ///
+    /// Deliberately not compared to a population norm or a clinical HRR band.
+    /// Those describe resting-state autonomic function measured under
+    /// controlled conditions, not a lifter between sets with a phone in one
+    /// hand — the only honest reference point is what this athlete has been
+    /// doing for the last hour. A rate falling away across a session is the
+    /// signal worth having: it is what accumulating fatigue looks like.
+    private func recoveryVerdict(
+        _ monitor: HeartRateMonitor, drop: Int, now: Date
+    ) -> (text: String, tint: Color)? {
+        guard let typical = monitor.typicalRecoveryRate,
+              let elapsed = monitor.secondsSincePeak(inLast: Self.hrWindow, at: now),
+              elapsed >= 20, typical > 0 else { return nil }
+        let rate = Double(drop) * 60 / elapsed
+        // A 15% band either side. Tighter than that and the label flickers
+        // between rests for no reason the athlete can act on.
+        if rate > typical * 1.15 { return ("recovering faster than usual", .mint) }
+        if rate < typical * 0.85 { return ("slower than usual — fatigue building", .amber) }
+        return ("in line with today", .fg2)
     }
 
     @ViewBuilder

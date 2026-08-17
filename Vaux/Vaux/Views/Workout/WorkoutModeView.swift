@@ -84,6 +84,7 @@ struct WorkoutModeView: View {
                     endDate: $viewModel.restEndDate,
                     isActive: $viewModel.isResting,
                     onSkip: { viewModel.skipRest() },
+                    onFinished: { viewModel.finishRestRecovery() },
                     onExtend: { viewModel.extendRest(by: $0) },
                     nextSet: viewModel.upcomingSetSummary,
                     coachNote: viewModel.coachNote,

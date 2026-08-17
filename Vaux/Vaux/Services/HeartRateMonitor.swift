@@ -70,6 +70,59 @@ final class HeartRateMonitor {
         samples(inLast: seconds, at: now).map(\.bpm).max()
     }
 
+    /// Time since that peak, which stands in for "how long since the set
+    /// ended". Without it a drop is not comparable to anything: 35 bpm over 45
+    /// seconds and 35 over three minutes are different events.
+    func secondsSincePeak(inLast seconds: TimeInterval, at now: Date = Date()) -> TimeInterval? {
+        let window = samples(inLast: seconds, at: now)
+        guard let peak = window.map(\.bpm).max(),
+              let peakAt = window.last(where: { $0.bpm == peak })?.at else { return nil }
+        let elapsed = now.timeIntervalSince(peakAt)
+        return elapsed > 0 ? elapsed : nil
+    }
+
+    /// Heart-rate recovery across one completed rest.
+    ///
+    /// A raw drop is not comparable to anything: 35 bpm over 45 seconds and 35
+    /// over three minutes are different events. The rate is, which is why it is
+    /// what gets stored and compared.
+    struct RestRecovery: Equatable {
+        let drop: Int
+        let seconds: TimeInterval
+        var perMinute: Double { seconds > 0 ? Double(drop) * 60 / seconds : 0 }
+    }
+
+    private(set) var restRecoveries: [RestRecovery] = []
+
+    /// Fold a finished rest into the session's record.
+    ///
+    /// Called when a rest ends rather than continuously, so a rest the athlete
+    /// skipped after ten seconds does not enter as a terrible recovery — it
+    /// enters as too short to mean anything and is dropped.
+    func recordRestRecovery(from start: Date, to end: Date) {
+        let seconds = end.timeIntervalSince(start)
+        guard seconds >= 20 else { return }
+        let window = samples.filter { $0.at >= start && $0.at <= end }
+        guard let peak = window.map(\.bpm).max(),
+              let last = window.last?.bpm,
+              peak > last else { return }
+        restRecoveries.append(RestRecovery(drop: peak - last, seconds: seconds))
+    }
+
+    /// The session's typical recovery rate, as a median.
+    ///
+    /// Median rather than mean: one rest spent talking to the coach with the
+    /// phone down, or one cut short, would drag an average far enough to make
+    /// the comparison meaningless.
+    var typicalRecoveryRate: Double? {
+        guard restRecoveries.count >= 2 else { return nil }
+        let rates = restRecoveries.map(\.perMinute).sorted()
+        let mid = rates.count / 2
+        return rates.count.isMultiple(of: 2)
+            ? (rates[mid - 1] + rates[mid]) / 2
+            : rates[mid]
+    }
+
     /// How far the heart rate has fallen from that peak.
     ///
     /// Never negative: the peak is taken from the same window the current
@@ -322,6 +375,7 @@ final class HeartRateMonitor {
         currentBPM = nil
         trace = []
         samples = []
+        restRecoveries = []
         minBPM = nil
         maxBPM = nil
         avgBPM = nil

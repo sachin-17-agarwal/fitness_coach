@@ -108,6 +108,11 @@ final class WorkoutViewModel {
     /// disagree, and extended in step by `extendRest`.
     var restTotalSeconds: Int = 120
 
+    /// When the current rest began. Heart-rate recovery is only meaningful
+    /// against the window it happened in, and the monitor has no idea the
+    /// athlete is resting — it just sees a stream.
+    private var restStartedAt: Date?
+
     /// The set the rest is counting down to, for display on the timer —
     /// otherwise the full-screen countdown hides the target the athlete is
     /// resting for.
@@ -898,6 +903,7 @@ final class WorkoutViewModel {
         let end = start.addingTimeInterval(Double(seconds))
         restEndDate = end
         isResting = true
+        restStartedAt = start
         RestNotifier.shared.schedule(at: end, nextSet: upcomingSetSummary)
         // Third path to the same deadline, alongside the on-screen ring and
         // the scheduled alert. This one is the only one that shows how much
@@ -1010,10 +1016,22 @@ final class WorkoutViewModel {
     }
 
     func skipRest() {
+        finishRestRecovery()
         isResting = false
         restEndDate = nil
         RestNotifier.shared.cancel()
         RestActivityController.shared.cancel()
+    }
+
+    /// Folds the rest that just ended into the session's recovery record.
+    ///
+    /// Called on every exit from a rest — skipped, run out, or the session
+    /// ending underneath it — because a rest that is missed here is a hole in
+    /// the comparison the card draws against.
+    func finishRestRecovery() {
+        guard let start = restStartedAt else { return }
+        restStartedAt = nil
+        heartRateMonitor.recordRestRecovery(from: start, to: Date())
     }
 
     func updateDuration() {
