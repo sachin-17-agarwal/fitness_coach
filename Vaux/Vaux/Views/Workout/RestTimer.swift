@@ -734,36 +734,40 @@ struct RestTimer: View {
         }
     }
 
-    /// "−35 bpm · 34/min". Kept terse because this card sits in a horizontal
-    /// strip and the previous wording was already being clipped.
+    /// "−35 bpm" while recovering, becoming "−35 in 60s" once there is a real
+    /// HRR60 behind it. Terse because this card sits in a horizontal strip and
+    /// the earlier wording was already being clipped.
     private func rateText(_ monitor: HeartRateMonitor, drop: Int, now: Date) -> String {
-        guard let elapsed = monitor.secondsSincePeak(inLast: Self.hrWindow, at: now),
-              elapsed >= 10 else {
-            return "−\(drop) bpm"
-        }
-        let perMinute = Int((Double(drop) * 60 / elapsed).rounded())
-        return "−\(drop) bpm · \(perMinute)/min"
+        monitor.liveRecoveryDrop(at: now) != nil
+            ? "−\(drop) in 60s"
+            : "−\(drop) bpm"
     }
 
-    /// Compares this rest against the session's own median rate.
+    /// Compares this rest's HRR60 against the session's own median HRR60.
     ///
-    /// Deliberately not compared to a population norm or a clinical HRR band.
-    /// Those describe resting-state autonomic function measured under
-    /// controlled conditions, not a lifter between sets with a phone in one
-    /// hand — the only honest reference point is what this athlete has been
-    /// doing for the last hour. A rate falling away across a session is the
-    /// signal worth having: it is what accumulating fatigue looks like.
+    /// Two things this deliberately is not. It is not a rate: heart-rate
+    /// recovery is biexponential, so dividing by however long the rest lasted
+    /// measures rest length rather than recovery — see
+    /// `HeartRateMonitor.recoveryWindow`. And it is not compared to a
+    /// population norm or a clinical band, which describe resting-state
+    /// autonomic function under controlled conditions rather than a lifter
+    /// between sets with a phone in one hand. The only honest reference is
+    /// what this athlete has done in the last hour.
+    ///
+    /// Even so this compares across different exercises and set intensities,
+    /// which are real confounders it cannot remove. Treat a single reading as
+    /// weak and a trend across a session as suggestive, not diagnostic.
     private func recoveryVerdict(
         _ monitor: HeartRateMonitor, drop: Int, now: Date
     ) -> (text: String, tint: Color)? {
-        guard let typical = monitor.typicalRecoveryRate,
-              let elapsed = monitor.secondsSincePeak(inLast: Self.hrWindow, at: now),
-              elapsed >= 20, typical > 0 else { return nil }
-        let rate = Double(drop) * 60 / elapsed
+        guard let live = monitor.liveRecoveryDrop(at: now),
+              let typical = monitor.typicalRecoveryDrop,
+              typical > 0 else { return nil }
+        let value = Double(live)
         // A 15% band either side. Tighter than that and the label flickers
         // between rests for no reason the athlete can act on.
-        if rate > typical * 1.15 { return ("recovering faster than usual", .mint) }
-        if rate < typical * 0.85 { return ("slower than usual — fatigue building", .amber) }
+        if value > typical * 1.15 { return ("recovering faster than usual", .mint) }
+        if value < typical * 0.85 { return ("slower than usual — fatigue building", .amber) }
         return ("in line with today", .fg2)
     }
 

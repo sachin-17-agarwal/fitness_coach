@@ -225,6 +225,16 @@ struct WorkoutModeView: View {
         // Idle state (no active session, resume probe finished) keeps
         // the back-swipe so the Begin screen still feels like a normal
         // push.
+        // Hiding the back button is the documented way to suppress the
+        // interactive pop gesture, and unlike the UIKit gate below it does not
+        // depend on winning a lookup against SwiftUI's controller hierarchy.
+        // Two independent mechanisms because one accidental swipe mid-session
+        // costs a resume round-trip and a card rebuild, and the gate alone has
+        // now failed twice.
+        //
+        // Nothing is trapped by this: END finishes the session deliberately,
+        // and the tab bar is still there to leave it running.
+        .navigationBarBackButtonHidden(viewModel.isActive || !didCheckResume)
         .interactivePopGesture(enabled: !viewModel.isActive && didCheckResume)
     }
 
