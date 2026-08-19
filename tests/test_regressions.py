@@ -1734,6 +1734,51 @@ class DeterministicQueryOrderTests(unittest.TestCase):
         )
 
 
+class RPEReductionArithmeticTests(unittest.TestCase):
+    """A suppressed-HRV Legs session was prescribed `215kg x8-10 @ RPE7`.
+
+    The previous plan was `215kg x6-8 @ RPE8`. So the card asked for MORE reps
+    at LESS effort with the same load, which cannot be performed — RPE is
+    reps-in-reserve, an outcome of load and reps rather than a third dial.
+
+    The arithmetic was already in the prompt and already emphatic, but it sat
+    inside the deload-week section. The rule the coach actually applied —
+    "HRV >10% below 7-day avg: reduce RPE targets by 1" — carried no arithmetic
+    and no pointer to any, so the number on the card moved and the reps did not.
+    """
+
+    def setUp(self):
+        self.prompt = open("system_prompt.txt", encoding="utf-8").read()
+
+    def test_the_hrv_rule_states_what_an_rpe_drop_costs_in_reps(self):
+        block = self.prompt.split("### Recovery-Aware Programming")[1][:3000]
+        self.assertIn("REP change", block)
+        self.assertIn("one point of RPE at a fixed load is one rep", block)
+
+    def test_the_impossible_prescription_is_named_verbatim(self):
+        """The wrong answer written out, because the right rule stated
+        abstractly did not stop it."""
+        self.assertIn("215kg x6-8 @ RPE8", self.prompt)
+        self.assertIn("215kg x8-10 @ RPE7", self.prompt)
+
+    def test_the_low_rep_escape_hatch_is_present_outside_deload(self):
+        """Subtracting reps from a heavy triple leaves a near-single, which is
+        a strength stimulus rather than a lighter day."""
+        block = self.prompt.split("### Recovery-Aware Programming")[1][:3000]
+        self.assertIn("fewer than 5", block)
+        self.assertIn("drop the load", block)
+
+    def test_overlapping_recovery_rules_resolve_to_the_strictest(self):
+        """5.8h sleep with HRV 25% down matched three rules at once, and the
+        mildest was applied silently."""
+        block = self.prompt.split("### Recovery-Aware Programming")[1][:3000]
+        self.assertIn("STRICTEST applies", block)
+
+    def test_the_deload_arithmetic_is_still_there(self):
+        """The new text generalises the rule; it must not have replaced it."""
+        self.assertIn("Prescribing MORE reps at the same load", self.prompt)
+
+
 class InheritedExerciseAttributionTests(unittest.TestCase):
     """A Telegram session filed eight sets under one exercise, silently.
 
