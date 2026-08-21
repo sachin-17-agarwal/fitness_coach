@@ -590,15 +590,26 @@ struct RestTimer: View {
                 TimelineView(.periodic(from: tickEpoch, by: 1)) { context in
                     let lagging = monitor.isLagging(at: context.date)
                     let stalled = monitor.hasStalled(at: context.date)
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    // Layout note. Everything here is on the shared type scale
+                    // — the card used to set raw .system(size: 11) point sizes,
+                    // which is why it read as though it belonged to a different
+                    // app than the one around it. And the trace was drawn in
+                    // ember, which in this palette means a load that failed;
+                    // a heart rate permanently in the alarm colour looks like
+                    // something is wrong when nothing is. It now takes the same
+                    // mint / amber / ember ladder the header BPM uses, so the
+                    // two agree and the colour carries meaning again.
+                    let tint = heartRateTint(bpm)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
                             Text("\(bpm)")
-                                .font(.numMD)
-                                .foregroundStyle(lagging ? Color.fg2 : Color.fg0)
-                                .monospacedDigit()
+                                .font(.numLG)
+                                .foregroundStyle(lagging ? Color.fg2 : tint)
+                                .contentTransition(.numericText())
                             Text("BPM")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.fg2)
+                                .font(.eyebrowSmall)
+                                .kerning(1.0)
+                                .foregroundStyle(Color.fg3)
                             Spacer(minLength: 0)
                             // A training zone is a claim about right now. On
                             // a stalled feed that claim is unsupported, so
@@ -608,13 +619,13 @@ struct RestTimer: View {
                             // that has actually stopped gets the alarm colour.
                             Text(lagging ? ageLabel(monitor, now: context.date)
                                          : monitor.zoneLabel(for: bpm))
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(stalled ? Color.ember : Color.fg2)
+                                .font(.eyebrow)
+                                .kerning(0.8)
+                                .foregroundStyle(stalled ? Color.ember : Color.fg3)
                         }
 
-                        hrTrace(monitor, now: context.date)
-                            .frame(height: 44)
-                            .padding(.top, 2)
+                        hrTrace(monitor, now: context.date, tint: tint)
+                            .frame(height: 36)
 
                         hrFootnote(monitor, now: context.date,
                                    lagging: lagging, stalled: stalled)
@@ -622,7 +633,7 @@ struct RestTimer: View {
                 }
             } else {
                 Text("No heart-rate signal — needs the Watch on and streaming.")
-                    .font(.system(size: 13))
+                    .font(.uiBody)
                     .foregroundStyle(Color.fg1)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -655,7 +666,7 @@ struct RestTimer: View {
                     Text(hi > lo
                          ? "Session \(lo)–\(hi) bpm · \(rateSummary(monitor, now: now))"
                          : "Session flat at \(lo) bpm · \(rateSummary(monitor, now: now))")
-                        .font(.system(size: 11))
+                        .font(.uiSmall)
                         .foregroundStyle(Color.fg2)
                 }
             } else {
@@ -666,7 +677,7 @@ struct RestTimer: View {
                 // is running, and telling the athlete to do what he has already
                 // done is how the card lost its credibility the first time.
                 Text("No new readings for a few minutes — the Watch has stopped sending.")
-                    .font(.system(size: 11))
+                    .font(.uiSmall)
                     .foregroundStyle(Color.ember)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -713,7 +724,7 @@ struct RestTimer: View {
             if drop >= 3 {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(rateText(monitor, drop: drop, now: now))
-                        .font(.system(size: 11))
+                        .font(.uiSmall)
                         .foregroundStyle(Color.fg2)
                     // The comparison is the point. A raw drop answers nothing
                     // on its own — 35 bpm is good or bad depending entirely on
@@ -722,13 +733,13 @@ struct RestTimer: View {
                     // usual" against a sample of one is noise wearing a verdict.
                     if let verdict = recoveryVerdict(monitor, drop: drop, now: now) {
                         Text(verdict.text)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.uiSmall)
                             .foregroundStyle(verdict.tint)
                     }
                 }
             } else {
                 Text("At \(peak) — hasn't started dropping")
-                    .font(.system(size: 11))
+                    .font(.uiSmall)
                     .foregroundStyle(Color.amber)
             }
         }
@@ -772,73 +783,81 @@ struct RestTimer: View {
     }
 
     @ViewBuilder
-    private func hrTrace(_ monitor: HeartRateMonitor, now: Date) -> some View {
+    /// Smooths and thins the feed before drawing it.
+    ///
+    /// The Watch delivers every few seconds and the signal is genuinely noisy,
+    /// so plotting it raw produced the jagged squiggle that made this card look
+    /// like static. A three-point moving average over at most 40 points reads
+    /// as the curve the heart rate is actually tracing, without inventing
+    /// anything: the same data, drawn at the resolution it carries.
+    private func smoothedTrace(_ samples: [Int]) -> [Double] {
+        guard samples.count > 2 else { return samples.map(Double.init) }
+        let stride = max(1, samples.count / 40)
+        let thinned = samples.enumerated()
+            .filter { $0.offset % stride == 0 || $0.offset == samples.count - 1 }
+            .map { Double($0.element) }
+        guard thinned.count > 2 else { return thinned }
+        return thinned.indices.map { i in
+            let lo = max(0, i - 1), hi = min(thinned.count - 1, i + 1)
+            return thinned[lo...hi].reduce(0, +) / Double(hi - lo + 1)
+        }
+    }
+
+    /// Same ladder the header BPM uses, so the two never disagree about what
+    /// colour a given heart rate is.
+    private func heartRateTint(_ bpm: Int) -> Color {
+        switch bpm {
+        case ..<100: return .mint
+        case ..<140: return .amber
+        default:     return .ember
+        }
+    }
+
+    @ViewBuilder
+    private func hrTrace(_ monitor: HeartRateMonitor, now: Date, tint: Color) -> some View {
         let window = monitor.samples(inLast: Self.hrWindow, at: now)
         // Falls back to the raw trace early in a session, when three minutes
         // has not happened yet and windowing would leave nothing to draw.
-        let samples = window.count >= 3 ? window.map(\.bpm) : monitor.trace
-        if samples.count < 3 {
+        let raw = window.count >= 3 ? window.map(\.bpm) : monitor.trace
+        if raw.count < 3 {
             // Under three real deliveries there is no shape to show. Says so
             // plainly instead of drawing a flat line, which read as a broken
             // chart rather than as missing data.
-            Text("Building trace — the Watch delivers a sample every few seconds.")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.fg2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Building trace…")
+                .font(.uiSmall)
+                .foregroundStyle(Color.fg3)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
         } else {
-            let lo = Double(samples.min() ?? 0)
-            let hi = Double(samples.max() ?? 1)
+            let points = smoothedTrace(raw)
+            let lo = points.min() ?? 0
+            let hi = points.max() ?? 1
             // Enforce a floor on the visible span. Scaling the axis to the
             // data range meant a 2 bpm drift was stretched to fill the card,
             // drawing a dramatic wave over a feed that had barely moved — the
-            // chart looked alive precisely when the data was stuck. Against a
-            // fixed 30 bpm window a flat trace reads flat, and a real climb
-            // through a working set still has somewhere to go.
+            // chart looked alive precisely when the data was stuck.
             let mid = (lo + hi) / 2
-            let half = max((hi - lo) / 2 * 1.2, 15)
-            let peakIndex = samples.firstIndex(of: Int(hi)) ?? 0
+            let half = max((hi - lo) / 2 * 1.25, 15)
             Chart {
-                ForEach(Array(samples.enumerated()), id: \.offset) { i, bpm in
-                    // The fill is what makes a descent read as a descent at
-                    // this size. A bare 2pt line over 44pt of card is legible
-                    // as a squiggle and not much else.
-                    AreaMark(
-                        x: .value("Sample", i),
-                        y: .value("BPM", bpm)
-                    )
-                    .foregroundStyle(.linearGradient(
-                        colors: [Color.ember.opacity(0.30), Color.ember.opacity(0.02)],
-                        startPoint: .top, endPoint: .bottom
-                    ))
-                    .interpolationMethod(.catmullRom)
+                ForEach(Array(points.enumerated()), id: \.offset) { i, bpm in
+                    AreaMark(x: .value("t", i), y: .value("BPM", bpm))
+                        .foregroundStyle(.linearGradient(
+                            colors: [tint.opacity(0.18), tint.opacity(0.0)],
+                            startPoint: .top, endPoint: .bottom
+                        ))
+                        .interpolationMethod(.monotone)
 
-                    LineMark(
-                        x: .value("Sample", i),
-                        y: .value("BPM", bpm)
-                    )
-                    .foregroundStyle(Color.ember)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .interpolationMethod(.catmullRom)
+                    LineMark(x: .value("t", i), y: .value("BPM", bpm))
+                        .foregroundStyle(tint.opacity(0.85))
+                        .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        .interpolationMethod(.monotone)
                 }
 
-                // The two points the athlete is comparing: what the set cost
-                // him, and where he is now. Marking them turns the curve into
-                // a statement about recovery rather than a decorative line.
-                PointMark(
-                    x: .value("Sample", peakIndex),
-                    y: .value("BPM", samples[peakIndex])
-                )
-                .foregroundStyle(Color.fg2)
-                .symbolSize(26)
-
-                if let current = samples.last {
-                    PointMark(
-                        x: .value("Sample", samples.count - 1),
-                        y: .value("BPM", current)
-                    )
-                    .foregroundStyle(Color.ember)
-                    .symbolSize(64)
+                // One marker, not two. The pair of dots was reading as clutter
+                // at this size and the peak is already the top of the curve.
+                if let current = points.last {
+                    PointMark(x: .value("t", points.count - 1), y: .value("BPM", current))
+                        .foregroundStyle(tint)
+                        .symbolSize(36)
                 }
             }
             .chartYScale(domain: (mid - half)...(mid + half))
@@ -846,7 +865,7 @@ struct RestTimer: View {
             .chartYAxis(.hidden)
             .chartLegend(.hidden)
             .chartPlotStyle { plot in
-                plot.padding(.vertical, 6)
+                plot.padding(.vertical, 4)
             }
         }
     }
