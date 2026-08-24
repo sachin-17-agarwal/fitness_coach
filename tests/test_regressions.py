@@ -1734,6 +1734,60 @@ class DeterministicQueryOrderTests(unittest.TestCase):
         )
 
 
+class TelegramSetNumberingTests(unittest.TestCase):
+    """Set numbers ran straight through a machine change on the Telegram path.
+
+    `current_set_number` is seeded to 0 when the SESSION starts and never
+    again, so three sets of cable crunch followed by a calf raise numbered the
+    calf raise sets 4, 5 and 6. The iOS app numbers per exercise, so the same
+    session logged the two ways produced two different histories and only one
+    of them was right.
+
+    This matters exactly when the app is unavailable — an expired signing
+    profile puts every set through this path for a week.
+    """
+
+    def _log_sets(self, message, state):
+        from unittest.mock import patch
+        calls = []
+
+        def record(**kwargs):
+            calls.append(kwargs)
+            return {"is_pr": False}
+
+        library_hit = {"status": "confident",
+                       "match": {"name": "Machine Calf Raise"},
+                       "candidates": [], "confidence": 0.95}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="ok"), \
+             patch("coach.get_workout_state", return_value=state), \
+             patch("coach.extract_exercise_from_context", return_value="Machine Calf Raise"), \
+             patch("coach.find_exercise", return_value=library_hit), \
+             patch("coach.log_set", side_effect=record), \
+             patch("coach.set_workout_state"), \
+             patch("coach.advance_mesocycle"), \
+             patch("coach.send_telegram_message"):
+            handle_incoming_message(message, {"mesocycle_day": 4, "mesocycle_week": 2})
+        return calls
+
+    def test_a_new_exercise_starts_its_sets_at_one(self):
+        calls = self._log_sets(
+            "Machine Calf Raise 101 x 12",
+            {"workout_mode": "active", "current_session_id": "s1",
+             "current_set_number": "3", "current_exercise_name": "Cable Crunch"},
+        )
+        self.assertEqual([c["set_number"] for c in calls], [1])
+
+    def test_continuing_the_same_exercise_keeps_counting(self):
+        """The reset must fire on a change, not on every message."""
+        calls = self._log_sets(
+            "101 x 12",
+            {"workout_mode": "active", "current_session_id": "s1",
+             "current_set_number": "2", "current_exercise_name": "Machine Calf Raise"},
+        )
+        self.assertEqual([c["set_number"] for c in calls], [3])
+
+
 class RPEReductionArithmeticTests(unittest.TestCase):
     """A suppressed-HRV Legs session was prescribed `215kg x8-10 @ RPE7`.
 

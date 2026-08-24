@@ -407,6 +407,9 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
         if all_sets:
             current_set_base = int(state.get("current_set_number", 0))
 
+            # Resolved the same way the incoming one is, so a state value
+            # written before a rename does not read as a different exercise.
+            previous_exercise = resolve_exercise_name(_active_exercise) or _active_exercise
             explicit_exercise = extract_exercise_from_set_message(incoming_text)
             exercise = resolve_exercise_name(explicit_exercise)
             # Whether the athlete named the lift or we inferred it. Over
@@ -449,6 +452,16 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                 if not unresolved_candidate:
                     unresolved_candidate = "that set"
             else:
+                # A new exercise starts its own count. current_set_number is
+                # seeded to 0 when the SESSION starts and never again, so on
+                # the Telegram path it ran straight through a machine change —
+                # three sets of cable crunch then a calf raise gave the calf
+                # raise sets 4, 5 and 6. The iOS app numbers per exercise, so
+                # the same session logged two ways produced two different
+                # histories, and only one of them was right.
+                if exercise != previous_exercise:
+                    current_set_base = 0
+
                 for i, set_entry in enumerate(all_sets):
                     current_set = current_set_base + i + 1
                     pr_info = log_set(
