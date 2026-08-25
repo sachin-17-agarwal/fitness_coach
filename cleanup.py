@@ -398,6 +398,73 @@ def cleanup_duplicate_sets(supabase, execute: bool) -> None:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+def purge_session(supabase, execute: bool, date: str, type_: str) -> None:
+    """Delete one named session outright, with its sets.
+
+    For a session whose data is wrong in a way that cannot be repaired. The
+    Cardio+Abs of 2026-08-10 is the case this was written for: logged over
+    Telegram while the signing profile was expired, where sets arrive as bare
+    numbers. Every one of them inherited whichever exercise was last active,
+    so loads from 37.5kg to 120kg all filed under "Ab crunch machine", with
+    set numbers running 1-8 straight through two machine changes. Both bugs
+    are fixed now, but the rows they wrote are unsalvageable — nothing in
+    them records what was actually performed.
+
+    Leaving them is not neutral. The 30-day log feeds CURRENT WORKING LOADS,
+    so a phantom 120kg ab crunch becomes the load the next session is
+    prescribed from.
+
+    Deliberately narrow: one date, one type, named explicitly on the command
+    line. Nothing here infers which sessions look wrong — that judgement is
+    the athlete's, and a heuristic that deletes training history is not a
+    trade worth making.
+    """
+    print(f"\n[purge] Looking for {type_} on {date}...")
+
+    result = (
+        supabase.table("workout_sessions")
+        .select("id, date, type, status, tonnage_kg")
+        .eq("date", date)
+        .eq("type", type_)
+        .execute()
+    )
+    sessions = result.data or []
+    if not sessions:
+        print("  No matching session. Nothing to do.")
+        return
+
+    for session in sessions:
+        sid = session["id"]
+        sets_result = (
+            supabase.table("workout_sets")
+            .select("exercise, set_number, actual_weight_kg, actual_reps, is_warmup")
+            .eq("workout_session_id", sid)
+            .order("logged_at")
+            .order("id")
+            .execute()
+        )
+        rows = sets_result.data or []
+        print(f"  session {sid} — status={session.get('status')} "
+              f"tonnage={session.get('tonnage_kg')} sets={len(rows)}")
+        # Print every row before removing it. This is the last chance to
+        # notice that the wrong session was named.
+        for r in rows:
+            tag = " (warm-up)" if r.get("is_warmup") else ""
+            print(f"      {r.get('exercise')} set {r.get('set_number')}: "
+                  f"{r.get('actual_weight_kg')}kg x {r.get('actual_reps')}{tag}")
+
+        if not execute:
+            print("      DRY RUN — would delete the session and all rows above.")
+            continue
+
+        # workout_sets has ON DELETE CASCADE on workout_session_id, but the
+        # delete is issued explicitly so the count is visible in the output
+        # rather than inferred from the schema.
+        supabase.table("workout_sets").delete().eq("workout_session_id", sid).execute()
+        supabase.table("workout_sessions").delete().eq("id", sid).execute()
+        print(f"      DELETED session {sid} and {len(rows)} set(s).")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument(
@@ -407,7 +474,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--only",
-        choices=["sessions", "sets", "memory", "orphans", "dupsets"],
+        choices=["sessions", "sets", "memory", "orphans", "dupsets", "purge"],
         help="Only run one of the cleanup steps.",
     )
     parser.add_argument(
@@ -416,7 +483,21 @@ def main() -> int:
         help="For the mis-labeled sets step: rename to this exercise name "
              "instead of deleting.",
     )
+    parser.add_argument(
+        "--date", default="",
+        help="For --only purge: the session date, YYYY-MM-DD.",
+    )
+    parser.add_argument(
+        "--type", dest="session_type", default="",
+        help="For --only purge: the session type, e.g. 'Cardio+Abs'.",
+    )
     args = parser.parse_args()
+
+    # purge is destructive and targeted, so it never runs as part of the
+    # default sweep and never runs without being told exactly what to remove.
+    if args.only == "purge" and not (args.date and args.session_type):
+        print("ERROR: --only purge requires both --date and --type.")
+        return 1
 
     supabase = get_supabase()
     if not supabase:
@@ -429,6 +510,13 @@ def main() -> int:
     steps = {"sessions", "sets", "memory", "orphans", "dupsets"}
     if args.only:
         steps = {args.only}
+
+    if "purge" in steps:
+        purge_session(supabase, args.execute, args.date, args.session_type)
+        print("\nDone.")
+        if not args.execute:
+            print("Re-run with --execute to apply changes.")
+        return 0
 
     if "sessions" in steps:
         cleanup_stale_sessions(supabase, args.execute)
