@@ -1734,6 +1734,66 @@ class DeterministicQueryOrderTests(unittest.TestCase):
         )
 
 
+class SetCountLookupTests(unittest.TestCase):
+    """A Push session was prescribed a SECOND back-off on Machine Chest Press.
+
+    It has had one since August 2026, when Incline Press was added and chest
+    went to four movements at 2 sets rather than three at 3. The athlete asked
+    why, and the coach then explained the change correctly — so the fact was
+    available to it the whole time.
+
+    The prompt already carried the rule, the reason, the consequence of getting
+    it wrong, AND a warning that older sessions in the log still show two
+    back-offs. It lost anyway, because the log is longer, more concrete and
+    more recent-feeling than a sentence in a document. Stating it more firmly
+    was not going to work; it is now computed and handed over.
+    """
+
+    def setUp(self):
+        self.prompt = load_system_prompt()
+
+    def test_push_day_gives_chest_press_two_sets_not_three(self):
+        from coach_parsing import parse_session_template
+        pairs, _ = parse_session_template(self.prompt, "Push")
+        counts = dict(pairs)
+        self.assertEqual(counts["Machine Chest Press"], 2)
+
+    def test_every_training_day_parses_and_sums_to_its_stated_total(self):
+        from coach_parsing import parse_session_template
+        for session, exercises in (("Push", 8), ("Pull", 7), ("Legs", 6)):
+            with self.subTest(session=session):
+                pairs, total = parse_session_template(self.prompt, session)
+                self.assertEqual(len(pairs), exercises)
+                self.assertEqual(sum(n for _, n in pairs), total)
+
+    def test_a_day_without_a_template_line_renders_nothing(self):
+        """Cardio+Abs and yoga have no such line. Emitting an empty heading
+        would read as "no sets prescribed", which is worse than silence."""
+        from coach_parsing import format_session_template
+        self.assertEqual(format_session_template(self.prompt, "Cardio+Abs"), "")
+        self.assertEqual(format_session_template(self.prompt, ""), "")
+
+    def test_the_block_spells_out_the_top_and_backoff_split(self):
+        """The error was in the SHAPE of the sets, not the total — "2 sets"
+        alone still leaves room to read it as two back-offs."""
+        from coach_parsing import format_session_template
+        text = format_session_template(self.prompt, "Push")
+        self.assertIn("Machine Chest Press: 2 working sets (1 top set + 1 back-off)", text)
+        self.assertIn("Machine Shoulder Press: 3 working sets (1 top set + 2 back-offs)", text)
+
+    def test_the_block_demotes_the_log_where_the_numbers_are_read(self):
+        """The competing source has to be named at the point of use. It is
+        named in the prompt already and that did not hold."""
+        from coach_parsing import format_session_template
+        text = format_session_template(self.prompt, "Push")
+        self.assertIn("30-day log may show DIFFERENT counts", text)
+        self.assertIn("Where they disagree, THIS is right", text)
+
+    def test_it_reaches_the_prompt_for_the_session_being_trained(self):
+        src = open("coach.py", encoding="utf-8").read()
+        self.assertIn("live_context += format_session_template(system_prompt, today_type)", src)
+
+
 class TelegramSetNumberingTests(unittest.TestCase):
     """Set numbers ran straight through a machine change on the Telegram path.
 

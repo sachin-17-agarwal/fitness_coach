@@ -286,3 +286,70 @@ def infer_session_type_from_recent(conversation_history: list, default: str) -> 
                         or re.search(rf"\b(?:doing|starting)\s+{escaped}\b", content)):
                     return canonical
     return default
+
+
+# ── Session template ─────────────────────────────────────────────────────────
+
+_TEMPLATE_RE = re.compile(
+    r"\*(?P<name>PUSH|PULL|LEGS) — (?P<total>\d+) working sets\*\n(?P<line>[^\n]+)"
+)
+_EXERCISE_RE = re.compile(r"^(?P<name>.+?)\s+(?P<sets>\d+)$")
+
+
+def parse_session_template(prompt: str, session_type: str) -> tuple[list[tuple[str, int]], int]:
+    """Per-exercise working-set counts for a session type, from the programme.
+
+    The prompt enumerates them on one line per day —
+    "Machine Chest Press 2 · Incline Press 2 · Dips 2 · ..." — which is
+    authoritative and machine-readable, and was being ignored in favour of the
+    30-day log.
+
+    Returns ([(exercise, sets)], stated_total), or ([], 0) for a day with no
+    such line (Cardio+Abs, yoga).
+    """
+    wanted = (session_type or "").strip().upper()
+    for match in _TEMPLATE_RE.finditer(prompt):
+        if match.group("name") != wanted:
+            continue
+        pairs: list[tuple[str, int]] = []
+        for chunk in match.group("line").split("·"):
+            found = _EXERCISE_RE.match(chunk.strip())
+            if found:
+                pairs.append((found.group("name").strip(), int(found.group("sets"))))
+        return pairs, int(match.group("total"))
+    return [], 0
+
+
+def format_session_template(prompt: str, session_type: str) -> str:
+    """Render the template as a lookup table for the live context.
+
+    Written because stating the rule in prose did not hold. The prompt already
+    says Machine Chest Press dropped from 3 sets to 2 in August 2026, names the
+    consequence of getting it wrong, and warns that older sessions in the log
+    still show two back-offs — and a Push session was still prescribed with a
+    second back-off. The log is longer, more concrete and more recent-feeling
+    than a sentence in a document, so it wins.
+
+    So the count is computed and handed over, and the log is explicitly
+    demoted where the numbers are read.
+    """
+    pairs, total = parse_session_template(prompt, session_type)
+    if not pairs:
+        return ""
+    lines = []
+    for name, sets in pairs:
+        backoffs = max(0, sets - 1)
+        shape = "1 top set" + (
+            f" + {backoffs} back-off{'s' if backoffs != 1 else ''}" if backoffs else ""
+        )
+        lines.append(f"  {name}: {sets} working sets ({shape})")
+    body = "\n".join(lines)
+    return (
+        f"\nTODAY'S SET COUNTS — the programme's template, and a LOOKUP rather "
+        f"than something to infer:\n{body}\n"
+        f"  Total: {total} working sets.\n"
+        f"Sessions in the 30-day log may show DIFFERENT counts for these "
+        f"exercises. The programme changed in August 2026 and the log still "
+        f"holds sessions from before it. The log is what happened; this is what "
+        f"is prescribed. Where they disagree, THIS is right.\n"
+    )

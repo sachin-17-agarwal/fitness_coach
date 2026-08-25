@@ -13,7 +13,7 @@ from datetime import datetime
 
 from anthropic import Anthropic
 
-from data import SESSION_OVERRIDE_KEY, now_local
+from data import SESSION_OVERRIDE_KEY, now_local, session_type_for
 from exercises import find_exercise
 from memory import (
     advance_mesocycle, load_memory, load_today_conversation,
@@ -52,6 +52,7 @@ from coach_parsing import (
     infer_session_type_from_recent,
     is_ios_structured_log,
     is_session_completion_message,
+    format_session_template,
     is_warmup_set,
     parse_all_sets_from_message,
     parse_set_from_message,
@@ -151,6 +152,17 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         log,
         recovery_override=recovery_override,
     )
+
+    # Appended to the LIVE half deliberately. It is derived from the prompt
+    # rather than the database, so it would sit happily in the cached block —
+    # but it has to be read against today's session type, and putting it beside
+    # the live workout state is where the coach is already looking when it
+    # decides how many sets an exercise gets.
+    today_type = session_type_for(
+        _safe_int(memory.get("mesocycle_day", 1)),
+        override=memory.get(SESSION_OVERRIDE_KEY),
+    )
+    live_context += format_session_template(system_prompt, today_type)
 
     conversation_history.append({"role": "user", "content": user_message})
     save_conversation_message("user", user_message)
