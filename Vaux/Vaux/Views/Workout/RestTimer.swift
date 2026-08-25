@@ -600,7 +600,7 @@ struct RestTimer: View {
                     // mint / amber / ember ladder the header BPM uses, so the
                     // two agree and the colour carries meaning again.
                     let tint = heartRateTint(bpm)
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .firstTextBaseline, spacing: 5) {
                             Text("\(bpm)")
                                 .font(.numLG)
@@ -624,8 +624,7 @@ struct RestTimer: View {
                                 .foregroundStyle(stalled ? Color.ember : Color.fg3)
                         }
 
-                        hrTrace(monitor, now: context.date, tint: tint)
-                            .frame(height: 36)
+                        zoneBar(bpm: bpm, tint: lagging ? Color.fg3 : tint)
 
                         hrFootnote(monitor, now: context.date,
                                    lagging: lagging, stalled: stalled)
@@ -783,26 +782,6 @@ struct RestTimer: View {
     }
 
     @ViewBuilder
-    /// Smooths and thins the feed before drawing it.
-    ///
-    /// The Watch delivers every few seconds and the signal is genuinely noisy,
-    /// so plotting it raw produced the jagged squiggle that made this card look
-    /// like static. A three-point moving average over at most 40 points reads
-    /// as the curve the heart rate is actually tracing, without inventing
-    /// anything: the same data, drawn at the resolution it carries.
-    private func smoothedTrace(_ samples: [Int]) -> [Double] {
-        guard samples.count > 2 else { return samples.map(Double.init) }
-        let stride = max(1, samples.count / 40)
-        let thinned = samples.enumerated()
-            .filter { $0.offset % stride == 0 || $0.offset == samples.count - 1 }
-            .map { Double($0.element) }
-        guard thinned.count > 2 else { return thinned }
-        return thinned.indices.map { i in
-            let lo = max(0, i - 1), hi = min(thinned.count - 1, i + 1)
-            return thinned[lo...hi].reduce(0, +) / Double(hi - lo + 1)
-        }
-    }
-
     /// Same ladder the header BPM uses, so the two never disagree about what
     /// colour a given heart rate is.
     private func heartRateTint(_ bpm: Int) -> Color {
@@ -813,61 +792,45 @@ struct RestTimer: View {
         }
     }
 
-    @ViewBuilder
-    private func hrTrace(_ monitor: HeartRateMonitor, now: Date, tint: Color) -> some View {
-        let window = monitor.samples(inLast: Self.hrWindow, at: now)
-        // Falls back to the raw trace early in a session, when three minutes
-        // has not happened yet and windowing would leave nothing to draw.
-        let raw = window.count >= 3 ? window.map(\.bpm) : monitor.trace
-        if raw.count < 3 {
-            // Under three real deliveries there is no shape to show. Says so
-            // plainly instead of drawing a flat line, which read as a broken
-            // chart rather than as missing data.
-            Text("Building trace…")
-                .font(.uiSmall)
-                .foregroundStyle(Color.fg3)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-        } else {
-            let points = smoothedTrace(raw)
-            let lo = points.min() ?? 0
-            let hi = points.max() ?? 1
-            // Enforce a floor on the visible span. Scaling the axis to the
-            // data range meant a 2 bpm drift was stretched to fill the card,
-            // drawing a dramatic wave over a feed that had barely moved — the
-            // chart looked alive precisely when the data was stuck.
-            let mid = (lo + hi) / 2
-            let half = max((hi - lo) / 2 * 1.25, 15)
-            Chart {
-                ForEach(Array(points.enumerated()), id: \.offset) { i, bpm in
-                    AreaMark(x: .value("t", i), y: .value("BPM", bpm))
-                        .foregroundStyle(.linearGradient(
-                            colors: [tint.opacity(0.18), tint.opacity(0.0)],
-                            startPoint: .top, endPoint: .bottom
-                        ))
-                        .interpolationMethod(.monotone)
+    /// Where the current rate sits across the zones, as a bar rather than a
+    /// line chart.
+    ///
+    /// The chart this replaces was the wrong form for the signal. Between sets
+    /// the heart rate barely moves, so a line plotted against an axis with a
+    /// 15 bpm floor sat flat along the bottom of the card under a slab of
+    /// gradient fill, with two-thirds of the space empty — a lot of ink for
+    /// "it is roughly the same as it was". Position across the zones is the
+    /// thing that is actually legible at a glance, and it reads instantly:
+    /// how far along the bar you are, and how far back the fill has moved
+    /// since the peak.
+    ///
+    /// Ticks sit at the zone boundaries the monitor uses — 50/60/70/80/90% of
+    /// 220-age — so the bar and the "Zone 3" label can never tell different
+    /// stories.
+    private func zoneBar(bpm: Int, tint: Color) -> some View {
+        let maxHR = 190.0   // 220 - 30, matching HeartRateMonitor.zoneLabel
+        let fraction = min(1.0, max(0.0, Double(bpm) / maxHR))
+        return GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.ink3.opacity(0.9))
 
-                    LineMark(x: .value("t", i), y: .value("BPM", bpm))
-                        .foregroundStyle(tint.opacity(0.85))
-                        .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                        .interpolationMethod(.monotone)
-                }
+                Capsule()
+                    .fill(tint.opacity(0.9))
+                    .frame(width: max(3, geo.size.width * fraction))
 
-                // One marker, not two. The pair of dots was reading as clutter
-                // at this size and the peak is already the top of the curve.
-                if let current = points.last {
-                    PointMark(x: .value("t", points.count - 1), y: .value("BPM", current))
-                        .foregroundStyle(tint)
-                        .symbolSize(36)
+                ForEach([0.5, 0.6, 0.7, 0.8, 0.9], id: \.self) { boundary in
+                    Rectangle()
+                        .fill(Color.ink0.opacity(0.85))
+                        .frame(width: 1)
+                        .offset(x: geo.size.width * boundary)
                 }
-            }
-            .chartYScale(domain: (mid - half)...(mid + half))
-            .chartXAxis(.hidden)
-            .chartYAxis(.hidden)
-            .chartLegend(.hidden)
-            .chartPlotStyle { plot in
-                plot.padding(.vertical, 4)
             }
         }
+        .frame(height: 6)
+        .animation(Motion.smooth, value: bpm)
+        .accessibilityLabel("Heart rate zone position")
+        .accessibilityValue("\(bpm) beats per minute")
     }
 
     /// The live-stats bar exists at the top of the workout screen, but this
