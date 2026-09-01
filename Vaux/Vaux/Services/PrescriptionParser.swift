@@ -138,7 +138,7 @@ final class PrescriptionParser {
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            let lower = trimmed.lowercased()
+            let lower = Self.canonicalisePhaseLabel(trimmed.lowercased())
 
             if Self.warmupPrefixes.contains(where: lower.hasPrefix) {
                 let content = extractAfterColon(trimmed)
@@ -235,6 +235,31 @@ final class PrescriptionParser {
             out.append((weight, reps, repsHigh, rpe))
         }
         return out
+    }
+
+    /// Collapses a numbered phase label to its bare prefix so the strict
+    /// matchers still fire: "Back-off 2 of 2:" -> "back-off:".
+    ///
+    /// The app teaches the coach this phrasing itself — the per-set message it
+    /// sends says "Next: back-off 2 of 2 on <exercise>" — and the coach echoes
+    /// it back on the prescription line. The strict prefixes only ever matched
+    /// "Back-off:", and the loose fallback wants "2 sets:", so a revised set
+    /// arrived in a shape both dropped: the coach said 90kg and the card went
+    /// on rendering the superseded 95kg.
+    ///
+    /// Only rewrites a leading word-run followed by digits and a colon, so
+    /// "3 sets: 90kg x12" (starts with a digit) and "Tempo: 3-1-2" (no digits
+    /// before the colon) are left alone.
+    static func canonicalisePhaseLabel(_ lower: String) -> String {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"^([a-z][a-z \-]*?)\s+\d+(?:\s*of\s*\d+)?\s*:"#
+        ) else { return lower }
+        let ns = lower as NSString
+        return regex.stringByReplacingMatches(
+            in: lower,
+            range: NSRange(location: 0, length: ns.length),
+            withTemplate: "$1:"
+        )
     }
 
     // MARK: - Name extraction

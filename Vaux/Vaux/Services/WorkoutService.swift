@@ -103,13 +103,28 @@ final class WorkoutService: Sendable {
         let today = Self.todayString()
         let now = ISO8601DateFormatter().string(from: Date())
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "id": sessionId.uuidString,
             "date": today,
             "type": type,
             "status": SessionStatus.openStored,
             "start_time": now,
         ]
+
+        // Stamp the mesocycle position onto the session. It has to be recorded
+        // here because it cannot be recovered afterwards: the week advances on
+        // completion of a full rotation, not per calendar week, and yoga days
+        // and session swaps deliberately don't advance it — so a session's week
+        // is not a function of its date. The coach's PEAK WEEK REFERENCE LOADS
+        // block reads this to answer "what did he lift in week 3", which is what
+        // a deload holds and what the next cycle opens above.
+        //
+        // Best-effort: a failed read must not block starting a workout, so the
+        // stamp is omitted and the backend treats the week as unknown.
+        if let state = try? await MesocycleService(client: client).loadState() {
+            body["mesocycle_week"] = state.week
+            body["mesocycle_day"] = state.day
+        }
 
         let session: WorkoutSession = try await client.insertAndDecode(
             "workout_sessions", body: body
