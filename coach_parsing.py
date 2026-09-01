@@ -679,24 +679,34 @@ def check_set_counts(reply: str, prompt: str, session_type: str) -> dict:
     re-ask mid-exercise risks a partial block, which the app applies by
     replacing the whole card (see the re-send rule in the system prompt).
 
-    Two things are deliberately NOT flagged:
-      * `Revised:` blocks — the marker means the structure changed on purpose,
-        usually because the athlete asked for it.
-      * exercises absent from the template — substitutions, weak-point work and
-        the whole Cardio+Abs day have no template line. They are reported
-        separately under `unmatched` so the check's real coverage is visible
-        rather than assumed.
+    The target is NOT "every exercise runs its template count, always". The
+    template is a default, and a coach that can never depart from it cannot
+    coach — a tweaked knee, reps falling off, a session running past 90
+    minutes are all real reasons to prescribe something else. What went wrong
+    was not deviation, it was SILENT deviation: nothing distinguished a
+    considered 2-set prescription from the count simply coming out differently
+    this time.
+
+    So deviations are split rather than suppressed:
+      * `mismatches` — the count differs and the reply gives no reason. This
+        is the drift the check exists to surface.
+      * `deliberate` — the count differs and the block carries a `Revised:`
+        line, the marker the coach already uses to say a structure was chosen
+        on purpose. Still recorded, because a run of them means the template
+        is wrong rather than the reply.
+      * `unmatched` — exercises with no template entry: substitutions, and the
+        weak-point slots, which are named generically because which muscle
+        fills them is decided at prescription time. Reported so the check's
+        real coverage is visible rather than assumed from a silent zero.
     """
     pairs, _total = parse_session_template(prompt, session_type)
     expected = {_normalise_exercise(name): count for name, count in pairs}
 
-    findings = {"mismatches": [], "unmatched": [], "checked": 0}
+    findings = {"mismatches": [], "deliberate": [], "unmatched": [], "checked": 0}
     if not expected:
         return findings
 
     for block in parse_all_prescriptions(reply):
-        if block.get("revised"):
-            continue
         name = block.get("exercise", "")
         key = _normalise_exercise(name)
         target = expected.get(key)
@@ -708,10 +718,13 @@ def check_set_counts(reply: str, prompt: str, session_type: str) -> dict:
 
         actual = len(block.get("working") or []) + len(block.get("backoff") or [])
         findings["checked"] += 1
-        if actual != target:
-            findings["mismatches"].append({
-                "exercise": name,
-                "expected": target,
-                "actual": actual,
-            })
+        if actual == target:
+            continue
+        entry = {"exercise": name, "expected": target, "actual": actual}
+        # A deviation the coach marked is a coaching decision; an unmarked one
+        # is the drift this check exists to catch. Both are recorded — a
+        # deliberate deviation is still worth seeing, because a run of them
+        # says the template is wrong rather than the reply.
+        bucket = "deliberate" if block.get("revised") else "mismatches"
+        findings[bucket].append(entry)
     return findings

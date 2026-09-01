@@ -2373,13 +2373,26 @@ class SetCountEnforcementTests(unittest.TestCase):
         self.assertEqual(found["mismatches"], [])
         self.assertIn("Press", found["unmatched"])
 
-    def test_a_revised_block_is_not_flagged(self):
-        """`Revised:` means the structure changed deliberately — usually
-        because the athlete asked. Flagging it would train the reader to
-        ignore the warnings."""
+    def test_a_reasoned_deviation_is_recorded_but_not_a_fault(self):
+        """Not every exercise should run its template count, always. A sore
+        knee is a real reason to prescribe 2, and a coach that cannot do that
+        is worse, not more disciplined. The failure was silent deviation, so a
+        `Revised:` block is separated out rather than flagged — still recorded,
+        because a run of them means the template is what needs changing."""
         reply = self._block("Seated Leg Curl", "50kg x12 RPE8", "45kg x14 RPE7",
-                            extra="Revised: dropping a set, knee is sore\n")
-        self.assertEqual(check_set_counts(reply, self.prompt, "Legs")["mismatches"], [])
+                            extra="Revised: knee sore, dropping to 2 sets\n")
+        found = check_set_counts(reply, self.prompt, "Legs")
+        self.assertEqual(found["mismatches"], [])
+        self.assertEqual(len(found["deliberate"]), 1)
+        self.assertEqual(found["deliberate"][0]["actual"], 2)
+
+    def test_the_same_count_without_a_reason_is_a_fault(self):
+        """The pair to the test above — identical prescription, no marker.
+        This is the distinction the whole check turns on."""
+        reply = self._block("Seated Leg Curl", "50kg x12 RPE8", "45kg x14 RPE7")
+        found = check_set_counts(reply, self.prompt, "Legs")
+        self.assertEqual(found["deliberate"], [])
+        self.assertEqual(len(found["mismatches"]), 1)
 
     def test_every_exercise_in_a_reply_is_checked_not_just_the_first(self):
         """_parse_prescription returns only the first block, because the card
@@ -2396,7 +2409,8 @@ class SetCountEnforcementTests(unittest.TestCase):
         """Most messages in a session carry no prescription at all."""
         found = check_set_counts("Nice work — 90 seconds then go again.",
                                  self.prompt, "Legs")
-        self.assertEqual(found, {"mismatches": [], "unmatched": [], "checked": 0})
+        self.assertEqual(found, {"mismatches": [], "deliberate": [],
+                                 "unmatched": [], "checked": 0})
 
 
 class SystemPromptConsistencyTests(unittest.TestCase):

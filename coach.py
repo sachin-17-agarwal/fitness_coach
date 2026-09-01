@@ -265,9 +265,18 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         counts = check_set_counts(assistant_message, system_prompt, today_type)
         for bad in counts["mismatches"]:
             log.warning(
-                "SET COUNT MISMATCH (%s): %s prescribed %d working sets, "
-                "template says %d",
+                "SET COUNT DRIFT (%s): %s prescribed %d working sets, template "
+                "says %d, and the reply gives no reason",
                 today_type, bad["exercise"], bad["actual"], bad["expected"],
+            )
+        for chosen in counts["deliberate"]:
+            # Not a fault. Logged because a run of these on one exercise means
+            # the template is the thing that is wrong.
+            log.info(
+                "Set count deviated deliberately (%s): %s prescribed %d "
+                "against a template of %d, marked Revised:",
+                today_type, chosen["exercise"], chosen["actual"],
+                chosen["expected"],
             )
         if counts["unmatched"]:
             # Not an error — substitutions and the whole Cardio+Abs day have no
