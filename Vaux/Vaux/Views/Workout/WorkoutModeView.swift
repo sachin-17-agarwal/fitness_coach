@@ -91,6 +91,8 @@ struct WorkoutModeView: View {
                     isCoachThinking: viewModel.isCoachThinking,
                     chatText: $viewModel.inlineChatText,
                     onSend: { Task { await viewModel.sendInlineMessage() } },
+                    sessionType: effectiveSessionType,
+                    calibration: viewModel.restCalibration,
                     stats: RestStats(
                         exerciseName: viewModel.currentPrescription?.exerciseName ?? "",
                         tonnage: viewModel.totalTonnage,
