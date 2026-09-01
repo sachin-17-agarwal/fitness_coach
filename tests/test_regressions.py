@@ -2137,6 +2137,55 @@ class CurrentWorkingLoadTests(unittest.TestCase):
         self.assertIn("{current_loads}", stable)
 
 
+class NumberedPhaseLabelTests(unittest.TestCase):
+    """The coach echoed the app's own phrasing and the card ignored it.
+
+    Mid-deload the coach revised a back-off down to 90kg and wrote it as
+    "Back-off 2 of 2: 90kg x6 RPE6" — the phrasing the app itself teaches, since
+    the per-set message it sends says "Next: back-off 2 of 2 on <exercise>". The
+    strict prefixes only matched "Back-off:", and the loose fallback wants
+    "N sets:", so the line was dropped and the card kept rendering the
+    superseded 95kg. The athlete was told 90kg twice and shown 95kg throughout.
+    """
+
+    def test_numbered_backoff_line_is_parsed(self):
+        from webhook import _parse_prescription
+        text = (
+            "*Single Leg Sumo Press*\n"
+            "Working Set: 120kg x8 RPE7 | Tempo: 3-1-2 | Rest: 2min\n"
+            "Back-off 2 of 2: 90kg x6 RPE6\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["backoff"], [{"weight": 90.0, "reps": 6, "rpe": 6.0}])
+
+    def test_numbered_working_and_warmup_labels_are_parsed(self):
+        from webhook import _parse_prescription
+        text = (
+            "*Leg Press*\n"
+            "Warm-up 1 of 2: 60kg x10\n"
+            "Working Set 1 of 2: 220kg x8 RPE7 | Tempo: 3-1-2 | Rest: 2min\n"
+        )
+        rx = _parse_prescription(text)
+        self.assertIsNotNone(rx)
+        self.assertEqual(rx["warmup"], [{"weight": 60.0, "reps": 10}])
+        self.assertEqual(rx["working"], [{"weight": 220.0, "reps": 8, "rpe": 7.0}])
+
+    def test_loose_and_metadata_lines_are_left_alone(self):
+        """The rewrite must not disturb lines that legitimately carry digits."""
+        from webhook import _canonicalise_phase_label as c
+        for line in ("3 sets: 90kg x12 rpe7", "tempo: 3-1-2", "form: pull with abs"):
+            self.assertEqual(c(line), line)
+
+    def test_both_parsers_share_the_phrasing_the_app_teaches(self):
+        """iOS and backend must agree, or the card and the coach diverge again."""
+        swift = open("Vaux/Vaux/Services/PrescriptionParser.swift", encoding="utf-8").read()
+        self.assertIn("canonicalisePhaseLabel", swift)
+        ios = open("Vaux/Vaux/ViewModels/WorkoutViewModel.swift", encoding="utf-8").read()
+        # The message that teaches the coach "back-off N of M" phrasing.
+        self.assertIn("of \\(phaseTotal)", ios)
+
+
 class PeakWeekReferenceLoadTests(unittest.TestCase):
     """On a week 4 deload, the coach anchored to month-old numbers.
 
