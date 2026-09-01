@@ -72,6 +72,38 @@ def has_session_for_today() -> bool:
         log.exception("has_session_for_today failed")
         return False
 
+def current_mesocycle_stamp() -> dict:
+    """The mesocycle position to record on a new session.
+
+    Stamped at creation because the week is a rotation counter, not a calendar
+    fact: advance_mesocycle only bumps it once a full 4-day rotation completes,
+    and yoga days and session swaps deliberately don't advance it. A session's
+    week is therefore not recoverable from its date afterwards, so it has to be
+    written down while it is still known. Everything anchored to "the peak week"
+    — deload holds, next-cycle openings — depends on this.
+
+    Goes through load_memory so the stored value gets the same self-healing the
+    coach sees (a leftover week 6 wraps to week 2). Best-effort by design: a
+    session must still be created if the memory read fails, so a failure stamps
+    nothing and consumers treat the absence as "unknown", never as week 1.
+    """
+    try:
+        from memory import load_memory  # local: keeps module import order flat
+
+        memory = load_memory()
+        stamp = {}
+        week = memory.get("mesocycle_week")
+        day = memory.get("mesocycle_day")
+        if isinstance(week, int):
+            stamp["mesocycle_week"] = week
+        if isinstance(day, int):
+            stamp["mesocycle_day"] = day
+        return stamp
+    except Exception:
+        log.exception("Could not read mesocycle position for session stamp")
+        return {}
+
+
 def start_session(session_type: str) -> str:
     """Create a new workout session and activate workout mode."""
     try:
@@ -82,12 +114,14 @@ def start_session(session_type: str) -> str:
             return existing_session_id
 
         supabase = get_supabase()
-        result = supabase.table("workout_sessions").insert({
+        row = {
             "date": today_local_str(),
             "type": session_type,
             "status": SESSION_STATUS_OPEN,
-            "start_time": now_local().isoformat()
-        }).execute()
+            "start_time": now_local().isoformat(),
+        }
+        row.update(current_mesocycle_stamp())
+        result = supabase.table("workout_sessions").insert(row).execute()
         if not result.data:
             print("Failed to start session: insert returned no data")
             return ""

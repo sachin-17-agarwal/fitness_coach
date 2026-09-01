@@ -2137,6 +2137,127 @@ class CurrentWorkingLoadTests(unittest.TestCase):
         self.assertIn("{current_loads}", stable)
 
 
+class PeakWeekReferenceLoadTests(unittest.TestCase):
+    """On a week 4 deload, the coach anchored to month-old numbers.
+
+    The deload holds week 3's load, so the coach went looking for "week 3
+    numbers" — and found them in a `Week 3 reference loads:` line typed into the
+    system prompt, frozen weeks earlier. Reminded, it produced the right figures
+    immediately from the same context. Same shape as the CURRENT WORKING LOADS
+    bug above: nothing missing, the wrong source consulted.
+
+    So the peak week is computed too. It cannot be derived from dates — the
+    mesocycle week advances per completed rotation, not per calendar week — so
+    it is read from the week stamped on each session.
+    """
+
+    # Week 3 peaked at 205kg x12; week 4 deloaded by holding the load and
+    # cutting reps, which is what makes "most recent" the wrong answer here.
+    ROWS = [
+        {"date": "2026-08-04", "exercise": "Leg Press", "mesocycle_week": 2,
+         "actual_weight_kg": 190, "actual_reps": 10, "actual_rpe": 8},
+        {"date": "2026-08-09", "exercise": "Leg Press", "mesocycle_week": 3,
+         "actual_weight_kg": 205, "actual_reps": 12, "actual_rpe": 9},
+        {"date": "2026-08-14", "exercise": "Leg Press", "mesocycle_week": 4,
+         "actual_weight_kg": 205, "actual_reps": 6, "actual_rpe": 7},
+    ]
+
+    def test_returns_the_peak_week_set_not_the_most_recent(self):
+        from progression import find_peak_week_loads
+        [entry] = find_peak_week_loads(self.ROWS)
+        self.assertEqual(entry["load"], 205)
+        self.assertEqual(entry["date"], "2026-08-09")
+        # The deload shares the load but not the reps; quoting 6 back as the
+        # peak would under-open week 1 of the next cycle.
+        self.assertEqual(entry["reps"], 12)
+
+    def test_most_recent_peak_week_wins_over_an_older_one(self):
+        """Cycles repeat, so week 3 recurs. The latest one is the reference."""
+        from progression import find_peak_week_loads
+        rows = self.ROWS + [
+            {"date": "2026-09-06", "exercise": "Leg Press", "mesocycle_week": 3,
+             "actual_weight_kg": 215, "actual_reps": 10, "actual_rpe": 9},
+        ]
+        [entry] = find_peak_week_loads(rows)
+        self.assertEqual(entry["load"], 215)
+        self.assertEqual(entry["date"], "2026-09-06")
+
+    def test_unstamped_sessions_are_skipped_not_guessed(self):
+        """Sessions predating the stamp have no week and must not be inferred.
+
+        Reading an unstamped row as week 3 would resurrect exactly the failure
+        this block exists to end.
+        """
+        from progression import find_peak_week_loads
+        rows = [{k: v for k, v in row.items() if k != "mesocycle_week"}
+                for row in self.ROWS]
+        self.assertEqual(find_peak_week_loads(rows), [])
+
+    def test_empty_block_names_the_fallback_instead_of_going_silent(self):
+        """An unexplained empty heading is what gets filled from memory."""
+        from progression import format_peak_week_loads
+        text = format_peak_week_loads([])
+        self.assertIn("CURRENT WORKING LOADS", text)
+        self.assertIn("Do NOT", text)
+
+    def test_block_is_injected_into_the_cacheable_half(self):
+        """It excludes today, so it belongs in stable alongside the others."""
+        src = open("coach_context.py", encoding="utf-8").read()
+        stable = src.split("stable = f\"\"\"")[1].split('"""')[0]
+        self.assertIn("{peak_week_loads}", stable)
+        self.assertIn("PEAK WEEK REFERENCE LOADS", stable)
+
+    def test_prompt_carries_no_hardcoded_reference_loads(self):
+        """The regression itself: a load list typed into the prompt.
+
+        `Week 3 reference loads:` lines used to carry real weights per session
+        template. They went stale and were prescribed on a deload. The heading
+        may stay as a pointer; a kg figure on that line may not.
+        """
+        prompt = open("system_prompt.txt", encoding="utf-8").read()
+        for line in prompt.splitlines():
+            if line.strip().startswith("Week 3 reference loads:"):
+                self.assertNotIn("kg", line, f"hardcoded load survived: {line[:90]}")
+                self.assertIn("PEAK WEEK REFERENCE LOADS", line)
+
+
+class MesocycleStampTests(unittest.TestCase):
+    """A session records the mesocycle week it belongs to, at creation.
+
+    It cannot be recovered later: `advance_mesocycle` bumps the week only when a
+    full rotation completes, and yoga days and session swaps deliberately do not
+    advance it, so the week is not a function of the calendar.
+    """
+
+    def test_start_session_stamps_the_current_week(self):
+        store = {"memory": [], "workout_sessions": []}
+        with patch.object(workout, "get_supabase", return_value=FakeSupabase(store)), \
+             patch("memory.load_memory", return_value={"mesocycle_week": 3, "mesocycle_day": 2}):
+            workout.start_session("Legs")
+
+        [row] = store["workout_sessions"]
+        self.assertEqual(row["mesocycle_week"], 3)
+        self.assertEqual(row["mesocycle_day"], 2)
+
+    def test_a_failed_memory_read_still_creates_the_session(self):
+        """Stamping is best-effort — it must never block starting a workout.
+
+        Asserted on the written row rather than the returned id: FakeSupabase
+        has no `gen_random_uuid()` default, so the insert comes back without an
+        id and start_session returns "" regardless of stamping.
+        """
+        store = {"memory": [], "workout_sessions": []}
+        with patch.object(workout, "get_supabase", return_value=FakeSupabase(store)), \
+             patch("memory.load_memory", side_effect=RuntimeError("db down")):
+            workout.start_session("Legs")
+
+        [row] = store["workout_sessions"]
+        self.assertEqual(row["type"], "Legs")
+        # Absent, not defaulted to 1 — a wrong week is worse than no week.
+        self.assertNotIn("mesocycle_week", row)
+        self.assertNotIn("mesocycle_day", row)
+
+
 class HistoryWindowInvariantTests(unittest.TestCase):
     """Lock the contract of `truncate_history` before anyone reshapes it.
 
