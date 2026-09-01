@@ -308,228 +308,43 @@ def api_chat():
         except (TypeError, ValueError):
             return default
 
-    prescription = _parse_prescription(response)
-
+    # No `prescription` key. It used to carry a server-side parse of the first
+    # exercise block, and the app merged it as `[serverRx] + clientParsed
+    # .dropFirst()` — so exercise 1 came from this parser and the rest from
+    # PrescriptionParser.swift. The two count sets differently: this one scans
+    # the whole line with finditer, the Swift one splits on commas and takes
+    # only the first match per segment, so `Back-off: 100kg x12 and 90kg x12`
+    # is two sets here and one there. Same reply, different number of chips on
+    # the card, decided by which parser happened to supply the block.
+    #
+    # Dropping this half is safe and needs no app release: ChatService declares
+    # `prescription` optional and WorkoutViewModel already falls back to the
+    # client parse when it is absent. `Revised:` survives too — the Swift
+    # parser detects it itself (PrescriptionParser.swift:163).
     result = {
         "response": response,
         "mesocycle_day": _int_or_default(memory.get("mesocycle_day"), 1),
         "mesocycle_week": _int_or_default(memory.get("mesocycle_week"), 1),
     }
-    if prescription:
-        result["prescription"] = prescription
     if prs:
         result["prs"] = prs
 
     return jsonify(result)
 
-# ── Prescription parser (server-side) ────────────────────────────────────────
+# ── Prescription parser ──────────────────────────────────────────────────────
+#
+# The implementation now lives in coach_parsing so coach.py can reach it too —
+# coach.py validates the reply's set counts against the session template before
+# returning, and it cannot import webhook (webhook imports coach). Re-exported
+# under the original private names so existing callers and tests are unchanged.
 
-def _parse_prescription(text: str) -> dict | None:
-    """Extract structured prescription data from Claude's workout response."""
-    # Find bold exercise names: *Exercise Name*
-    name_pattern = re.compile(r'^\s*\*{1,2}([^*\n]+)\*{1,2}\s*$', re.MULTILINE)
-    matches = list(name_pattern.finditer(text))
-    if not matches:
-        return None
-
-    # Take the first exercise block that has actual set data
-    for i, match in enumerate(matches):
-        name = match.group(1).strip()
-        start = match.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        block = text[start:end]
-
-        rx = _parse_block(name, block)
-        if rx and (rx.get("warmup") or rx.get("working") or rx.get("backoff")):
-            return rx
-
-    return None
-
-
-_WARMUP_PREFIXES = ("warm-up:", "warmup:", "warm up:", "warm-up sets:",
-                    "warmup sets:", "warm up sets:", "warm sets:", "warm:")
-_WORKING_PREFIXES = ("working set:", "working sets:", "work:", "working:",
-                     "top set:", "top sets:", "primary set:", "primary:",
-                     "main set:", "main:")
-_BACKOFF_PREFIXES = ("back-off:", "backoff:", "back off:", "back-off set:",
-                     "back off set:", "backoff set:", "drop set:", "drop:",
-                     "light set:", "light:")
-
-# Matches loose phrasings like "3 sets: 90kg x12 RPE7" or "3x 90kg x 12 RPE7".
-# The optional `(\d+)-(\d+)` rep range mirrors the strict parser so a loose
-# "3 sets: 90kg x6-8" keeps the low bound in reps and the top in reps_high.
-_LOOSE_SET_PATTERN = re.compile(
-    r'(?:^|\s)(?:\d+\s*(?:sets?|x)\s*:?\s*)'
-    r'(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)(?:\s*[-–—]\s*(\d+))?'
-    r'(?:\s*(?:rpe|@)\s*(\d+(?:\.\d+)?))?',
-    re.IGNORECASE,
+from coach_parsing import (  # noqa: E402
+    _parse_block,
+    _parse_loose_sets,
+    _parse_prescription,
+    _parse_set_list,
+    _parse_set_list_with_rpe,
 )
-
-
-def _parse_block(name: str, block: str) -> dict | None:
-    """Parse a single exercise block into structured data."""
-    result = {"exercise": name}
-    warmup = []
-    working = []
-    backoff = []
-    form = None
-    tempo = None
-    rest = None
-    revised = False
-
-    for line in block.split("\n"):
-        line = line.strip()
-        lower = line.lower()
-
-        if any(lower.startswith(p) for p in _WARMUP_PREFIXES):
-            content = line.split(":", 1)[1].strip()
-            warmup = _parse_set_list(content)
-        elif any(lower.startswith(p) for p in _WORKING_PREFIXES):
-            content = line.split(":", 1)[1].strip()
-            parts = [p.strip() for p in content.split("|")]
-            if parts:
-                working = _parse_set_list_with_rpe(parts[0])
-            for part in parts[1:]:
-                pl = part.lower()
-                if pl.startswith("tempo"):
-                    tempo = part.split(":", 1)[1].strip() if ":" in part else part[6:].strip()
-                elif pl.startswith("rest"):
-                    rest = part.split(":", 1)[1].strip() if ":" in part else part[5:].strip()
-        elif any(lower.startswith(p) for p in _BACKOFF_PREFIXES):
-            content = line.split(":", 1)[1].strip()
-            parts = [p.strip() for p in content.split("|")]
-            if parts:
-                backoff = _parse_set_list_with_rpe(parts[0])
-        elif lower.startswith(("form:", "form cue:", "cue:")):
-            form = line.split(":", 1)[1].strip()
-        elif lower.startswith("tempo:"):
-            tempo = line.split(":", 1)[1].strip()
-        elif lower.startswith("rest:"):
-            rest = line.split(":", 1)[1].strip()
-        elif lower.startswith(("revised:", "revision:")):
-            # Explicit marker that this block deliberately restructures the
-            # prescription (athlete asked to add/remove sets). The iOS app
-            # applies a revised block verbatim instead of reconciling it
-            # against the card, so removed sets actually leave the screen.
-            revised = True
-
-    # Fallback: Claude sometimes drops the `Working Set:` / `Back-off:` prefixes
-    # and writes loose lines like "3 sets: 90kg x12 RPE7" + "3 sets: 60kg x15 RPE7".
-    # Scan the block for those whenever a phase is missing — including the case
-    # where the strict `Working Set:` line was sent but the back-off was only
-    # mentioned narratively, which would otherwise drop silently and leave the
-    # card with a working chip and no back-off.
-    if not working or not backoff:
-        loose = _parse_loose_sets(block)
-        # Don't double-count anything the strict prefixes already captured.
-        already = {(s["weight"], s["reps"]) for s in working + backoff}
-        loose = [s for s in loose if (s["weight"], s["reps"]) not in already]
-        if loose:
-            if not working:
-                working = [loose.pop(0)]
-            # Straight-set prescriptions (abs) enumerate 2+ sets on the
-            # `Working Set:` line and legitimately have no back-off — don't
-            # promote stray narrative numbers into a phantom back-off.
-            if not backoff and loose and len(working) <= 1:
-                backoff = [loose[0]]
-
-    if warmup:
-        result["warmup"] = warmup
-    if working:
-        result["working"] = working
-    if backoff:
-        result["backoff"] = backoff
-    if form:
-        result["form"] = form
-    if tempo:
-        result["tempo"] = tempo
-    if rest:
-        result["rest"] = rest
-    if revised:
-        result["revised"] = True
-
-    return result
-
-
-def _parse_loose_sets(block: str) -> list:
-    """Extract sets from loose phrasings inside an exercise block.
-
-    Handles lines like:
-      "3 sets: 90kg x12 RPE7"
-      "3x 90kg x 12 RPE7"
-    Returns a list of {weight, reps, rpe?} dicts in source order.
-    """
-    seen = []
-    for match in _LOOSE_SET_PATTERN.finditer(block):
-        try:
-            weight = float(match.group(1))
-            reps = int(match.group(2))
-        except (TypeError, ValueError):
-            continue
-        entry = {"weight": weight, "reps": reps}
-        if match.group(3):
-            try:
-                reps_high = int(match.group(3))
-                if reps_high > reps:
-                    entry["reps_high"] = reps_high
-            except ValueError:
-                pass
-        if match.group(4):
-            try:
-                entry["rpe"] = float(match.group(4))
-            except ValueError:
-                pass
-        seen.append(entry)
-    return seen
-
-
-def _parse_set_list(text: str) -> list:
-    """Parse '60kg x10, 80kg x6' (or 'BW x10, BW x6') into structured sets.
-
-    Bodyweight phrasings ('BW', 'Bodyweight', 'BW + 10kg') resolve to weight 0
-    so swaps to assisted/pull-up style exercises still render a card."""
-    pattern = re.compile(
-        r'(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)',
-        re.IGNORECASE,
-    )
-    sets = []
-    for m in pattern.finditer(text):
-        raw_weight = m.group(1)
-        weight = 0.0 if not raw_weight[0].isdigit() else float(raw_weight)
-        sets.append({"weight": weight, "reps": int(m.group(2))})
-    return sets
-
-
-def _parse_set_list_with_rpe(text: str) -> list:
-    """Parse '120kg x6-8 RPE8-9' (or 'BW x6 RPE8') into structured sets.
-
-    Rep ranges ("x6-8") keep the low bound in `reps` (so prefill/logging and
-    the actual-vs-target comparison stay on a single number) and surface the
-    top of the range in `reps_high`. The card renders the full range, which
-    stops it from contradicting the coach's prose target (e.g. card shows
-    "6" while the coach says "aim for 7-8")."""
-    pattern = re.compile(
-        r'(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)'
-        r'(?:\s*[-–—]\s*(\d+))?',
-        re.IGNORECASE,
-    )
-    rpe_pattern = re.compile(r'(?:RPE\s*|@)(\d+(?:\.\d+)?)', re.IGNORECASE)
-    results = []
-    for m in pattern.finditer(text):
-        raw_weight = m.group(1)
-        weight = 0.0 if not raw_weight[0].isdigit() else float(raw_weight)
-        entry = {"weight": weight, "reps": int(m.group(2))}
-        if m.group(3):
-            reps_high = int(m.group(3))
-            if reps_high > entry["reps"]:
-                entry["reps_high"] = reps_high
-        rpe_match = rpe_pattern.search(text[m.end():m.end() + 30])
-        if not rpe_match:
-            rpe_match = rpe_pattern.search(text)
-        if rpe_match:
-            entry["rpe"] = float(rpe_match.group(1))
-        results.append(entry)
-    return results
 
 
 # ── Status ────────────────────────────────────────────────────────────────────

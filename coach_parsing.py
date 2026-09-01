@@ -3,10 +3,14 @@ coach_parsing.py - Set parsing, exercise resolution, and session-completion
 heuristics shared by the chat handler.
 """
 
+import logging
 import re
 
 from data import session_type_for
 from exercises import find_exercise
+from volume import resolve_muscle_group
+
+log = logging.getLogger(__name__)
 
 
 # ── Set parsing ───────────────────────────────────────────────────────────────
@@ -291,8 +295,16 @@ def infer_session_type_from_recent(conversation_history: list, default: str) -> 
 # ── Session template ─────────────────────────────────────────────────────────
 
 _TEMPLATE_RE = re.compile(
-    r"\*(?P<name>PUSH|PULL|LEGS) — (?P<total>\d+) working sets\*\n(?P<line>[^\n]+)"
+    r"\*(?P<name>PUSH|PULL|LEGS|CARDIO\+ABS) — (?P<total>\d+) working sets\*\n(?P<line>[^\n]+)"
 )
+
+# Days that MUST parse to a template. Yoga is the only session type that
+# legitimately has none. Without this the two failure states are identical: a
+# day with no template line and a day whose template line stopped matching the
+# regex both return ([], 0) and render nothing, so an editing accident in the
+# prompt would silently remove the set counts and look exactly like normal
+# operation for Yoga.
+_DAYS_REQUIRING_A_TEMPLATE = ("Push", "Pull", "Legs", "Cardio+Abs")
 _EXERCISE_RE = re.compile(r"^(?P<name>.+?)\s+(?P<sets>\d+)$")
 
 
@@ -320,6 +332,37 @@ def parse_session_template(prompt: str, session_type: str) -> tuple[list[tuple[s
     return [], 0
 
 
+# The Cardio+Abs template names its two weak-point slots generically, because
+# which muscle fills them is chosen at prescription time from the WEEKLY VOLUME
+# readout. The COUNT is fixed at 3 either way, which is the thing worth stating.
+_WEAK_POINT_SLOT_RE = re.compile(r"^\s*weak[- ]point exercise\b", re.IGNORECASE)
+
+
+def _set_shape(exercise: str, sets: int) -> str:
+    """How the sets are structured, not just how many there are.
+
+    The count alone was not enough — the original failure was a SECOND back-off
+    on a 2-set exercise, which "2 sets" does not rule out. But rendering every
+    entry as top-set-plus-back-offs was wrong in the other direction: it told
+    the coach the Ab Crunch Machine takes "1 top set + 2 back-offs" when all
+    direct ab work is straight sets at one load, with every set enumerated on
+    the `Working Set:` line and NO `Back-off:` line at all. The block then
+    closed by asserting "Where they disagree, THIS is right", so the one
+    computed authority in the system was confidently specifying the wrong
+    shape for the exercise that ends every Legs day.
+
+    Ab work is identified through the same muscle map the volume readout uses,
+    so a renamed or added ab movement is picked up without a list to maintain
+    here.
+    """
+    if resolve_muscle_group(exercise) == "Abs" or _WEAK_POINT_SLOT_RE.match(exercise or ""):
+        return f"{sets} straight sets at one load, no back-off line"
+    backoffs = max(0, sets - 1)
+    return "1 top set" + (
+        f" + {backoffs} back-off{'s' if backoffs != 1 else ''}" if backoffs else ""
+    )
+
+
 def format_session_template(prompt: str, session_type: str) -> str:
     """Render the template as a lookup table for the live context.
 
@@ -335,14 +378,17 @@ def format_session_template(prompt: str, session_type: str) -> str:
     """
     pairs, total = parse_session_template(prompt, session_type)
     if not pairs:
+        if (session_type or "").strip() in _DAYS_REQUIRING_A_TEMPLATE:
+            log.error(
+                "No template line parsed for %s — the set-count block is EMPTY for a "
+                "day that has one. Check the '*%s — N working sets*' header and the "
+                "exercise line under it in system_prompt.txt.",
+                session_type, (session_type or "").upper(),
+            )
         return ""
     lines = []
     for name, sets in pairs:
-        backoffs = max(0, sets - 1)
-        shape = "1 top set" + (
-            f" + {backoffs} back-off{'s' if backoffs != 1 else ''}" if backoffs else ""
-        )
-        lines.append(f"  {name}: {sets} working sets ({shape})")
+        lines.append(f"  {name}: {sets} working sets ({_set_shape(name, sets)})")
     body = "\n".join(lines)
     return (
         f"\nTODAY'S SET COUNTS — the programme's template, and a LOOKUP rather "
@@ -353,3 +399,319 @@ def format_session_template(prompt: str, session_type: str) -> str:
         f"holds sessions from before it. The log is what happened; this is what "
         f"is prescribed. Where they disagree, THIS is right.\n"
     )
+
+
+# ── Prescription parser ──────────────────────────────────────────────────────
+#
+# Moved here from webhook.py so coach.py can reach it. coach.py cannot import
+# webhook (webhook imports coach), and the set-count check below has to run on
+# the reply before it leaves chat_with_coach. webhook.py re-exports the private
+# names so its own callers and the regression suite are unaffected.
+
+def _parse_prescription(text: str) -> dict | None:
+    """Extract structured prescription data from Claude's workout response."""
+    # Find bold exercise names: *Exercise Name*
+    name_pattern = re.compile(r'^\s*\*{1,2}([^*\n]+)\*{1,2}\s*$', re.MULTILINE)
+    matches = list(name_pattern.finditer(text))
+    if not matches:
+        return None
+
+    # Take the first exercise block that has actual set data
+    for i, match in enumerate(matches):
+        name = match.group(1).strip()
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        block = text[start:end]
+
+        rx = _parse_block(name, block)
+        if rx and (rx.get("warmup") or rx.get("working") or rx.get("backoff")):
+            return rx
+
+    return None
+
+
+_WARMUP_PREFIXES = ("warm-up:", "warmup:", "warm up:", "warm-up sets:",
+                    "warmup sets:", "warm up sets:", "warm sets:", "warm:")
+_WORKING_PREFIXES = ("working set:", "working sets:", "work:", "working:",
+                     "top set:", "top sets:", "primary set:", "primary:",
+                     "main set:", "main:")
+_BACKOFF_PREFIXES = ("back-off:", "backoff:", "back off:", "back-off set:",
+                     "back off set:", "backoff set:", "drop set:", "drop:",
+                     "light set:", "light:")
+
+# Matches loose phrasings like "3 sets: 90kg x12 RPE7" or "3x 90kg x 12 RPE7".
+# The optional `(\d+)-(\d+)` rep range mirrors the strict parser so a loose
+# "3 sets: 90kg x6-8" keeps the low bound in reps and the top in reps_high.
+_LOOSE_SET_PATTERN = re.compile(
+    r'(?:^|\s)(?:\d+\s*(?:sets?|x)\s*:?\s*)'
+    r'(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?\s*[xX×]\s*(\d+)(?:\s*[-–—]\s*(\d+))?'
+    r'(?:\s*(?:rpe|@)\s*(\d+(?:\.\d+)?))?',
+    re.IGNORECASE,
+)
+
+
+def _parse_block(name: str, block: str) -> dict | None:
+    """Parse a single exercise block into structured data."""
+    result = {"exercise": name}
+    warmup = []
+    working = []
+    backoff = []
+    form = None
+    tempo = None
+    rest = None
+    revised = False
+
+    for line in block.split("\n"):
+        line = line.strip()
+        lower = line.lower()
+
+        if any(lower.startswith(p) for p in _WARMUP_PREFIXES):
+            content = line.split(":", 1)[1].strip()
+            warmup = _parse_set_list(content)
+        elif any(lower.startswith(p) for p in _WORKING_PREFIXES):
+            content = line.split(":", 1)[1].strip()
+            parts = [p.strip() for p in content.split("|")]
+            if parts:
+                working = _parse_set_list_with_rpe(parts[0])
+            for part in parts[1:]:
+                pl = part.lower()
+                if pl.startswith("tempo"):
+                    tempo = part.split(":", 1)[1].strip() if ":" in part else part[6:].strip()
+                elif pl.startswith("rest"):
+                    rest = part.split(":", 1)[1].strip() if ":" in part else part[5:].strip()
+        elif any(lower.startswith(p) for p in _BACKOFF_PREFIXES):
+            content = line.split(":", 1)[1].strip()
+            parts = [p.strip() for p in content.split("|")]
+            if parts:
+                backoff = _parse_set_list_with_rpe(parts[0])
+        elif lower.startswith(("form:", "form cue:", "cue:")):
+            form = line.split(":", 1)[1].strip()
+        elif lower.startswith("tempo:"):
+            tempo = line.split(":", 1)[1].strip()
+        elif lower.startswith("rest:"):
+            rest = line.split(":", 1)[1].strip()
+        elif lower.startswith(("revised:", "revision:")):
+            # Explicit marker that this block deliberately restructures the
+            # prescription (athlete asked to add/remove sets). The iOS app
+            # applies a revised block verbatim instead of reconciling it
+            # against the card, so removed sets actually leave the screen.
+            revised = True
+
+    # Fallback: Claude sometimes drops the `Working Set:` / `Back-off:` prefixes
+    # and writes loose lines like "3 sets: 90kg x12 RPE7" + "3 sets: 60kg x15 RPE7".
+    # Scan the block for those whenever a phase is missing — including the case
+    # where the strict `Working Set:` line was sent but the back-off was only
+    # mentioned narratively, which would otherwise drop silently and leave the
+    # card with a working chip and no back-off.
+    if not working or not backoff:
+        loose = _parse_loose_sets(block)
+        # Don't double-count anything the strict prefixes already captured.
+        already = {(s["weight"], s["reps"]) for s in working + backoff}
+        loose = [s for s in loose if (s["weight"], s["reps"]) not in already]
+        if loose:
+            if not working:
+                working = [loose.pop(0)]
+            # Straight-set prescriptions (abs) enumerate 2+ sets on the
+            # `Working Set:` line and legitimately have no back-off — don't
+            # promote stray narrative numbers into a phantom back-off.
+            if not backoff and loose and len(working) <= 1:
+                backoff = [loose[0]]
+
+    if warmup:
+        result["warmup"] = warmup
+    if working:
+        result["working"] = working
+    if backoff:
+        result["backoff"] = backoff
+    if form:
+        result["form"] = form
+    if tempo:
+        result["tempo"] = tempo
+    if rest:
+        result["rest"] = rest
+    if revised:
+        result["revised"] = True
+
+    return result
+
+
+def _parse_loose_sets(block: str) -> list:
+    """Extract sets from loose phrasings inside an exercise block.
+
+    Handles lines like:
+      "3 sets: 90kg x12 RPE7"
+      "3x 90kg x 12 RPE7"
+    Returns a list of {weight, reps, rpe?} dicts in source order.
+    """
+    seen = []
+    for match in _LOOSE_SET_PATTERN.finditer(block):
+        try:
+            weight = float(match.group(1))
+            reps = int(match.group(2))
+        except (TypeError, ValueError):
+            continue
+        entry = {"weight": weight, "reps": reps}
+        if match.group(3):
+            try:
+                reps_high = int(match.group(3))
+                if reps_high > reps:
+                    entry["reps_high"] = reps_high
+            except ValueError:
+                pass
+        if match.group(4):
+            try:
+                entry["rpe"] = float(match.group(4))
+            except ValueError:
+                pass
+        seen.append(entry)
+    return seen
+
+
+def _parse_set_list(text: str) -> list:
+    """Parse '60kg x10, 80kg x6' (or 'BW x10, BW x6') into structured sets.
+
+    Bodyweight phrasings ('BW', 'Bodyweight', 'BW + 10kg') resolve to weight 0
+    so swaps to assisted/pull-up style exercises still render a card."""
+    pattern = re.compile(
+        r'(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)',
+        re.IGNORECASE,
+    )
+    sets = []
+    for m in pattern.finditer(text):
+        raw_weight = m.group(1)
+        weight = 0.0 if not raw_weight[0].isdigit() else float(raw_weight)
+        sets.append({"weight": weight, "reps": int(m.group(2))})
+    return sets
+
+
+def _parse_set_list_with_rpe(text: str) -> list:
+    """Parse '120kg x6-8 RPE8-9' (or 'BW x6 RPE8') into structured sets.
+
+    Rep ranges ("x6-8") keep the low bound in `reps` (so prefill/logging and
+    the actual-vs-target comparison stay on a single number) and surface the
+    top of the range in `reps_high`. The card renders the full range, which
+    stops it from contradicting the coach's prose target (e.g. card shows
+    "6" while the coach says "aim for 7-8")."""
+    pattern = re.compile(
+        r'(BW|bodyweight|body\s*weight|\d+(?:\.\d+)?)\s*(?:kg)?\s*[xX×]\s*(\d+)'
+        r'(?:\s*[-–—]\s*(\d+))?',
+        re.IGNORECASE,
+    )
+    rpe_pattern = re.compile(r'(?:RPE\s*|@)(\d+(?:\.\d+)?)', re.IGNORECASE)
+    results = []
+    for m in pattern.finditer(text):
+        raw_weight = m.group(1)
+        weight = 0.0 if not raw_weight[0].isdigit() else float(raw_weight)
+        entry = {"weight": weight, "reps": int(m.group(2))}
+        if m.group(3):
+            reps_high = int(m.group(3))
+            if reps_high > entry["reps"]:
+                entry["reps_high"] = reps_high
+        rpe_match = rpe_pattern.search(text[m.end():m.end() + 30])
+        if not rpe_match:
+            rpe_match = rpe_pattern.search(text)
+        if rpe_match:
+            entry["rpe"] = float(rpe_match.group(1))
+        results.append(entry)
+    return results
+
+
+# ── Set-count check ──────────────────────────────────────────────────────────
+
+def parse_all_prescriptions(text: str) -> list[dict]:
+    """Every exercise block in a reply, not just the first.
+
+    `_parse_prescription` returns the first block carrying set data, because
+    the card only renders one exercise at a time. The set-count check needs
+    all of them: a session-opening reply lists the whole day, and the count
+    that goes wrong is as likely to be on exercise four as exercise one.
+    """
+    name_pattern = re.compile(r'^\s*\*{1,2}([^*\n]+)\*{1,2}\s*$', re.MULTILINE)
+    matches = list(name_pattern.finditer(text))
+    blocks = []
+    for i, match in enumerate(matches):
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        parsed = _parse_block(match.group(1).strip(), text[start:end])
+        if parsed and (parsed.get("working") or parsed.get("backoff")):
+            blocks.append(parsed)
+    return blocks
+
+
+def _normalise_exercise(name: str) -> str:
+    return " ".join((name or "").split()).lower()
+
+
+def _match_template_key(key: str, expected: dict) -> int | None:
+    """Fall back from an exact name match to an unambiguous partial one.
+
+    The prompt names the same movement four different ways ("Seated Leg Curl"
+    in the template line, "leg curl" in the exercise-selection list, "Leg Curl"
+    in the briefing example), and the coach writes whichever it read. An exact
+    match alone would silently skip the check on precisely the exercise this
+    was built for.
+
+    Deliberately NOT a fuzzy score, and deliberately not `find_exercise` —
+    that resolves against the exercise library rather than the template, and
+    it costs a database round trip on a path that runs on every reply. A
+    containment match is enough here, and it is only accepted when exactly one
+    template key matches, so a partial name can never be attributed to the
+    wrong exercise. "Press" against a Push day matches four keys and is
+    correctly rejected as ambiguous.
+    """
+    hits = [count for name, count in expected.items()
+            if name in key or key in name]
+    return hits[0] if len(hits) == 1 else None
+
+
+def check_set_counts(reply: str, prompt: str, session_type: str) -> dict:
+    """Compare the reply's working-set counts against the session template.
+
+    This is the missing half of the set-count machinery. `parse_session_template`
+    already computes what each exercise should get and renders it into context,
+    but nothing ever looked at what came back — a reply prescribing 2 working
+    sets of Seated Leg Curl against a template of 3 reached the card, logged as
+    a complete session, and raised nothing anywhere.
+
+    Deliberately observational. It returns findings for the caller to log; it
+    does not edit the reply and does not block it. Rewriting a prescription
+    would mean inventing a load and rep target the coach never chose, and a
+    re-ask mid-exercise risks a partial block, which the app applies by
+    replacing the whole card (see the re-send rule in the system prompt).
+
+    Two things are deliberately NOT flagged:
+      * `Revised:` blocks — the marker means the structure changed on purpose,
+        usually because the athlete asked for it.
+      * exercises absent from the template — substitutions, weak-point work and
+        the whole Cardio+Abs day have no template line. They are reported
+        separately under `unmatched` so the check's real coverage is visible
+        rather than assumed.
+    """
+    pairs, _total = parse_session_template(prompt, session_type)
+    expected = {_normalise_exercise(name): count for name, count in pairs}
+
+    findings = {"mismatches": [], "unmatched": [], "checked": 0}
+    if not expected:
+        return findings
+
+    for block in parse_all_prescriptions(reply):
+        if block.get("revised"):
+            continue
+        name = block.get("exercise", "")
+        key = _normalise_exercise(name)
+        target = expected.get(key)
+        if target is None:
+            target = _match_template_key(key, expected)
+        if target is None:
+            findings["unmatched"].append(name)
+            continue
+
+        actual = len(block.get("working") or []) + len(block.get("backoff") or [])
+        findings["checked"] += 1
+        if actual != target:
+            findings["mismatches"].append({
+                "exercise": name,
+                "expected": target,
+                "actual": actual,
+            })
+    return findings

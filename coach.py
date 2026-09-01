@@ -46,6 +46,7 @@ from coach_parsing import (
     PPL_END_PHRASES,
     SESSION_TYPE_ALIASES,
     build_exercise_note,
+    check_set_counts,
     extract_exercise_from_context,
     extract_exercise_from_set_message,
     get_session_type_for_day,
@@ -247,6 +248,40 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
             "Coach reply hit max_tokens — prescription may be truncated (%d chars)",
             len(assistant_message),
         )
+    # The set count the coach was HANDED, checked against the one it sent.
+    #
+    # format_session_template puts an explicit "Seated Leg Curl: 3 working sets"
+    # into the live context on every Legs day, and replies came back with 2
+    # anyway. Nothing downstream noticed: the app renders whatever chips the
+    # reply parses to, marks the session complete against that same number, and
+    # the log then shows a 2-set session as though it were prescribed.
+    #
+    # Log-only on purpose. Editing the reply would mean inventing a load and
+    # rep target the coach never chose, and a re-ask mid-exercise can return a
+    # partial block, which the app applies by replacing the entire card —
+    # including the athlete's completed-set checkmarks. Making the divergence
+    # visible is the fix; deciding what to do about it needs the log first.
+    try:
+        counts = check_set_counts(assistant_message, system_prompt, today_type)
+        for bad in counts["mismatches"]:
+            log.warning(
+                "SET COUNT MISMATCH (%s): %s prescribed %d working sets, "
+                "template says %d",
+                today_type, bad["exercise"], bad["actual"], bad["expected"],
+            )
+        if counts["unmatched"]:
+            # Not an error — substitutions and the whole Cardio+Abs day have no
+            # template line. Logged so the check's real coverage is visible
+            # rather than assumed from a silent zero.
+            log.info(
+                "Set-count check skipped %d block(s) with no template entry: %s",
+                len(counts["unmatched"]), ", ".join(counts["unmatched"]),
+            )
+    except Exception:
+        # A reply must never fail to reach the athlete because a check on it
+        # raised.
+        log.exception("Set-count check failed")
+
     conversation_history.append({"role": "assistant", "content": assistant_message})
     save_conversation_message("assistant", assistant_message)
 

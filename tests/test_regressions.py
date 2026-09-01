@@ -14,6 +14,7 @@ from coach import (
     extract_exercise_from_set_message,
     load_system_prompt,
 )
+from coach_parsing import check_set_counts, parse_session_template
 import data
 import coach as coach_module
 import progression
@@ -1340,7 +1341,13 @@ class SeatedLegCurlSwapTests(unittest.TestCase):
         """
         prompt = load_system_prompt()
         self.assertNotIn("Lying Leg Curl 85kg", prompt)
-        self.assertIn("Seated Leg Curl: NO history", prompt)
+        # The reference-load line used to answer this with static text ("NO
+        # history, fresh baseline"), which was true when written and then
+        # never stopped being read — the coach saw "no history" on every
+        # request no matter how many sessions had been logged since. It now
+        # points at the block that is recomputed from the log each request.
+        self.assertIn("Seated Leg Curl: read CURRENT WORKING LOADS", prompt)
+        self.assertNotIn("NO history, fresh baseline", prompt)
 
     def test_seated_curl_resolves_to_hamstrings_in_the_volume_map(self):
         self.assertEqual(
@@ -1766,12 +1773,49 @@ class SetCountLookupTests(unittest.TestCase):
                 self.assertEqual(len(pairs), exercises)
                 self.assertEqual(sum(n for _, n in pairs), total)
 
-    def test_a_day_without_a_template_line_renders_nothing(self):
-        """Cardio+Abs and yoga have no such line. Emitting an empty heading
-        would read as "no sets prescribed", which is worse than silence."""
+    def test_only_yoga_renders_nothing(self):
+        """Yoga is the one session type with no set counts to state.
+
+        Cardio+Abs used to be here too, and that was the hole: the day whose
+        set counts were most often wrong was the only training day with no
+        computed lookup, so the weak-point block's 3 sets survived on prose
+        alone at the end of the longest instruction in the programme.
+        """
         from coach_parsing import format_session_template
-        self.assertEqual(format_session_template(self.prompt, "Cardio+Abs"), "")
+        self.assertEqual(format_session_template(self.prompt, "Yoga"), "")
         self.assertEqual(format_session_template(self.prompt, ""), "")
+
+    def test_every_training_day_renders_a_lookup(self):
+        """An empty block and a broken regex used to be the same state. If a
+        prompt edit stops a header matching, this fails instead of silently
+        shipping a session with no set counts."""
+        from coach_parsing import format_session_template
+        for session in ("Push", "Pull", "Legs", "Cardio+Abs"):
+            with self.subTest(session=session):
+                self.assertIn("TODAY'S SET COUNTS",
+                              format_session_template(self.prompt, session))
+
+    def test_cardio_day_states_the_weak_point_block_count(self):
+        """The block is 3 sets per slot regardless of which muscle fills it.
+        That number reaching the coach as a lookup is the whole point."""
+        from coach_parsing import format_session_template
+        block = format_session_template(self.prompt, "Cardio+Abs")
+        self.assertIn("Weak-Point Exercise 1: 3 working sets", block)
+        self.assertIn("Weak-Point Exercise 2: 3 working sets", block)
+        self.assertIn("Total: 16 working sets.", block)
+
+    def test_ab_work_is_not_described_as_top_set_plus_back_offs(self):
+        """All direct ab work is straight sets with NO back-off line. The
+        lookup used to render the Ab Crunch Machine as "1 top set + 2
+        back-offs" and then assert "Where they disagree, THIS is right" —
+        the one computed authority specifying the wrong shape."""
+        from coach_parsing import format_session_template
+        legs = format_session_template(self.prompt, "Legs")
+        ab_line = next(line for line in legs.split("\n")
+                       if line.strip().startswith("Ab Crunch Machine:"))
+        self.assertIn("straight sets", ab_line)
+        self.assertIn("no back-off line", ab_line)
+        self.assertNotIn("top set", ab_line)
 
     def test_the_block_spells_out_the_top_and_backoff_split(self):
         """The error was in the SHAPE of the sets, not the total — "2 sets"
@@ -2279,3 +2323,161 @@ class HistoryWindowInvariantTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SetCountEnforcementTests(unittest.TestCase):
+    """The set count was computed, handed to the coach, and then never checked.
+
+    format_session_template puts "Seated Leg Curl: 3 working sets" into the
+    live context on every Legs day. Replies came back with 2 anyway, and
+    nothing downstream noticed — the app renders whatever chips the reply
+    parses to, marks the session complete against that same number, and the
+    log then shows a 2-set session as though it had been prescribed.
+    """
+
+    def setUp(self):
+        self.prompt = load_system_prompt()
+
+    @staticmethod
+    def _block(name, working, backoff=None, extra=""):
+        text = f"\n*{name}*\n{extra}Working Set: {working}\n"
+        if backoff:
+            text += f"Back-off: {backoff}\n"
+        return text + "Form: Control the eccentric.\n"
+
+    def test_a_two_set_leg_curl_on_legs_day_is_flagged(self):
+        """The athlete's reported case, exactly."""
+        reply = self._block("Seated Leg Curl", "50kg x12 RPE8", "45kg x14 RPE7")
+        found = check_set_counts(reply, self.prompt, "Legs")
+        self.assertEqual(len(found["mismatches"]), 1)
+        self.assertEqual(found["mismatches"][0]["expected"], 3)
+        self.assertEqual(found["mismatches"][0]["actual"], 2)
+
+    def test_a_correct_three_set_prescription_is_silent(self):
+        reply = self._block("Seated Leg Curl", "50kg x12 RPE8",
+                            "45kg x14 RPE7, 45kg x12 RPE7")
+        self.assertEqual(check_set_counts(reply, self.prompt, "Legs")["mismatches"], [])
+
+    def test_an_alias_name_still_binds_to_the_template(self):
+        """The prompt calls this movement four different things. An exact-match
+        check would silently skip the exercise it was built for."""
+        reply = self._block("Leg Curl", "50kg x12 RPE8", "45kg x14 RPE7")
+        found = check_set_counts(reply, self.prompt, "Legs")
+        self.assertEqual(len(found["mismatches"]), 1)
+
+    def test_an_ambiguous_partial_name_is_not_guessed(self):
+        """"Press" matches four Push-day keys. Attributing it to one of them
+        would invent a mismatch on an exercise that was never prescribed."""
+        reply = self._block("Press", "100kg x8 RPE8", "90kg x10 RPE7")
+        found = check_set_counts(reply, self.prompt, "Push")
+        self.assertEqual(found["mismatches"], [])
+        self.assertIn("Press", found["unmatched"])
+
+    def test_a_revised_block_is_not_flagged(self):
+        """`Revised:` means the structure changed deliberately — usually
+        because the athlete asked. Flagging it would train the reader to
+        ignore the warnings."""
+        reply = self._block("Seated Leg Curl", "50kg x12 RPE8", "45kg x14 RPE7",
+                            extra="Revised: dropping a set, knee is sore\n")
+        self.assertEqual(check_set_counts(reply, self.prompt, "Legs")["mismatches"], [])
+
+    def test_every_exercise_in_a_reply_is_checked_not_just_the_first(self):
+        """_parse_prescription returns only the first block, because the card
+        renders one exercise. A wrong count is as likely to be on the fourth."""
+        reply = (self._block("Leg Press", "205kg x12 RPE9",
+                             "160kg x15 RPE8, 160kg x13 RPE8")
+                 + self._block("Seated Leg Curl", "50kg x12 RPE8", "45kg x14 RPE7"))
+        found = check_set_counts(reply, self.prompt, "Legs")
+        self.assertEqual(found["checked"], 2)
+        self.assertEqual([m["exercise"] for m in found["mismatches"]],
+                         ["Seated Leg Curl"])
+
+    def test_narrative_replies_are_not_flagged(self):
+        """Most messages in a session carry no prescription at all."""
+        found = check_set_counts("Nice work — 90 seconds then go again.",
+                                 self.prompt, "Legs")
+        self.assertEqual(found, {"mismatches": [], "unmatched": [], "checked": 0})
+
+
+class SystemPromptConsistencyTests(unittest.TestCase):
+    """Nothing checked the prompt against itself.
+
+    Every set count in this document exists in several places — the template
+    line, the 2-set/3-set membership lists, the worked briefing example, the
+    reference-load lines — and they had drifted apart. A model reading one of
+    the stale copies gets a defensible wrong answer, which is how the same
+    exercise came to be prescribed at 2 sets one day and 3 the next.
+    """
+
+    def setUp(self):
+        self.prompt = load_system_prompt()
+
+    def test_each_day_sums_to_its_stated_total(self):
+        for session in ("Push", "Pull", "Legs", "Cardio+Abs"):
+            with self.subTest(session=session):
+                pairs, total = parse_session_template(self.prompt, session)
+                self.assertTrue(pairs, f"{session} template did not parse")
+                self.assertEqual(sum(n for _, n in pairs), total)
+
+    def test_the_three_set_list_agrees_with_the_templates(self):
+        """Line 56 names the exercises that carry 3 sets. If an exercise is
+        named there and the template gives it 2, the model has two sources
+        and no way to choose."""
+        three_set_line = next(
+            line for line in self.prompt.split("\n")
+            if line.startswith("- *3 working sets*")
+        )
+        templates = {}
+        for session in ("Push", "Pull", "Legs"):
+            templates.update(dict(parse_session_template(self.prompt, session)[0]))
+        for name, count in templates.items():
+            if name in three_set_line:
+                with self.subTest(exercise=name):
+                    self.assertEqual(
+                        count, 3,
+                        f"{name} is in the 3-set list but the template gives it {count}",
+                    )
+
+    def test_the_two_set_list_agrees_with_the_templates(self):
+        two_set_line = next(
+            line for line in self.prompt.split("\n")
+            if line.startswith("- *2 working sets*")
+        )
+        templates = {}
+        for session in ("Push", "Pull", "Legs"):
+            templates.update(dict(parse_session_template(self.prompt, session)[0]))
+        for name, count in templates.items():
+            if name in two_set_line:
+                with self.subTest(exercise=name):
+                    self.assertEqual(
+                        count, 2,
+                        f"{name} is in the 2-set list but the template gives it {count}",
+                    )
+
+    def test_no_stale_lying_leg_curl_reference_survives(self):
+        """The swap happened in August 2026. Every surviving mention describes
+        the old exercise as current — including, at the time this was written,
+        the do-not-cut list, which left the seated curl unprotected on a
+        literal reading."""
+        # The sentence documenting the swap itself has to name the old
+        # exercise, so it is exempt. Everything else that still mentions it is
+        # describing a movement the programme no longer contains.
+        stale = [line.strip()[:90] for line in self.prompt.split("\n")
+                 if "lying leg curl" in line.lower()
+                 and "replaced the Lying Leg Curl" not in line]
+        self.assertEqual(stale, [], f"stale lying leg curl references: {stale}")
+
+    def test_the_do_not_cut_list_names_the_exercise_that_exists(self):
+        """The time-pressure rule protected "the lying leg curl". On a literal
+        reading that left Seated Leg Curl — the only direct hamstring work on
+        Legs day — cuttable, which is one of the routes to a 2-set session."""
+        protection = next(line for line in self.prompt.split("\n")
+                          if line.startswith("- Sessions fill the 90-minute budget"))
+        self.assertIn("Seated Leg Curl", protection)
+
+    def test_the_volume_ramp_exception_is_gone(self):
+        """It authorised running a template-3 exercise at 2 sets, was scoped
+        to "first cycle of the new programme only", and nothing anywhere
+        tracked which cycle he was in — so it never expired."""
+        self.assertNotIn("weeks 1-2 double as the volume ramp", self.prompt)
+        self.assertNotIn("Week 1 carries 2-3 of the new sets", self.prompt)
