@@ -12,6 +12,11 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
     var startTime: String?
     var endTime: String?
     var tonnageKg: Double?
+    /// Where in the mesocycle this session was trained, stamped at start
+    /// (see `WorkoutService.startSession`). Rows from before stamping began
+    /// carry nil and are positioned by `BlockCalendar` from the rotation.
+    var mesocycleWeek: Int?
+    var mesocycleDay: Int?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -21,5 +26,7 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         case startTime = "start_time"
         case endTime = "end_time"
         case tonnageKg = "tonnage_kg"
+        case mesocycleWeek = "mesocycle_week"
+        case mesocycleDay = "mesocycle_day"
     }
 }
