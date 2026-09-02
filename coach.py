@@ -460,18 +460,20 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     # happens to be, and returning ahead of it would defer a correctness fix,
     # not just a formatting one.
     #
-    # Returning here deliberately skips save_conversation_message: the report is
-    # a diagnostic, and today's conversation is replayed into the model's context
-    # on every subsequent request, so persisting a few hundred lines of table
-    # would crowd out the actual session and cost tokens on every later message.
+    # The REPORT is not persisted — today's conversation is replayed into the
+    # model's context on every later request, so a few hundred lines of table
+    # would crowd out the actual session and be re-billed all day. A short
+    # SUMMARY is, because persisting nothing costs two things that token
+    # argument does not cover: the iOS app reloads its transcript from the
+    # conversations table whenever the chat reappears, so the report would
+    # vanish on a tab switch, and a follow-up question would reach the model
+    # with no record that a replay ever ran.
     replay_match = re.match(r'^/?replay(?:\s+(\d+))?$', normalised_text)
     if replay_match:
         days = int(replay_match.group(1) or DEFAULT_REPLAY_DAYS)
         try:
-            from replay import run_pull_replay  # local: keeps import order flat
-            # surface="chat": this reply lands in a phone-width bubble, not
-            # a browser. /admin/replay keeps the wide rendering.
-            report = run_pull_replay(days, surface="chat")
+            from replay import run_chat_replay  # local: keeps import order flat
+            report, summary = run_chat_replay(days)
         except Exception as exc:
             # Never raise at the athlete: a failed replay must read as a failed
             # replay, not as a 500 in the app or silence in Telegram.
@@ -479,6 +481,14 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             report = (f"Replay failed: {exc}\n\n"
                       f"This is a diagnostic, so nothing about your training is "
                       f"affected.")
+            summary = f"A replay was requested but failed: {exc}"
+        try:
+            save_conversation_message("user", incoming_text)
+            save_conversation_message("assistant", summary)
+        except Exception:
+            # The transcript is a convenience here, not the deliverable — the
+            # athlete already has the report in front of him either way.
+            log.exception("Could not record the replay in the transcript")
         if send_reply:
             send_telegram_message(report)
         return report

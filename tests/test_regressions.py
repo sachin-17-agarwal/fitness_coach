@@ -3005,9 +3005,9 @@ class ReplayCommandTests(unittest.TestCase):
         memory = {"mesocycle_day": 1, "mesocycle_week": 1}
         sent = []
         run_mock = patch(
-            "replay.run_pull_replay",
+            "replay.run_chat_replay",
             side_effect=raises if raises else None,
-            return_value=None if raises else report,
+            return_value=None if raises else (report, "SUMMARY"),
         )
         with patch("coach.load_today_conversation", return_value=[]), \
              patch("coach.chat_with_coach", return_value="LLM WAS CALLED") as llm, \
@@ -3030,7 +3030,7 @@ class ReplayCommandTests(unittest.TestCase):
             with self.subTest(text=text):
                 out, _, _, _, run = self._run(text, report="ok")
                 self.assertEqual(out, "ok")
-                run.assert_called_once_with(expected_days, surface="chat")
+                run.assert_called_once_with(expected_days)
 
     def test_ordinary_chat_containing_the_word_is_not_hijacked(self):
         """"can you replay it" is a question for the coach, not a command."""
@@ -3041,12 +3041,35 @@ class ReplayCommandTests(unittest.TestCase):
                 run.assert_not_called()
                 self.assertEqual(out, "LLM WAS CALLED")
 
-    def test_the_report_is_not_persisted_into_the_conversation(self):
-        """Today's conversation is replayed into the model's context on every
-        later request. A few hundred lines of table would crowd out the actual
-        session and be re-billed on every message for the rest of the day."""
-        _, _, save, _, _ = self._run("replay", report="X\n" * 400)
-        save.assert_not_called()
+    def test_the_summary_is_persisted_but_the_report_is_not(self):
+        """Two costs pull in opposite directions and both are real.
+
+        Today's conversation is replayed into the model's context on every later
+        request, so persisting a few hundred lines of table would crowd out the
+        actual session and be re-billed all day. But persisting NOTHING loses
+        the report on a tab switch — the iOS app reloads its transcript from the
+        conversations table whenever the chat reappears — and leaves a follow-up
+        question reaching the model with no record that a replay ever ran, which
+        is the exact confabulation the rest of this codebase prevents.
+        """
+        report = "X\n" * 400
+        _, _, save, _, _ = self._run("replay", report=report)
+        saved = [c.args for c in save.call_args_list]
+        self.assertEqual(saved, [("user", "replay"), ("assistant", "SUMMARY")])
+        self.assertNotIn(report, [a[1] for a in saved])
+
+    def test_a_transcript_failure_does_not_cost_the_athlete_the_report(self):
+        """The transcript is a convenience here; the report is the deliverable."""
+        from unittest.mock import patch
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="LLM"), \
+             patch("coach.get_workout_state", return_value={}), \
+             patch("coach.send_telegram_message"), \
+             patch("coach.save_conversation_message",
+                   side_effect=RuntimeError("supabase down")), \
+             patch("replay.run_chat_replay", return_value=("REPORT", "S")):
+            out = handle_incoming_message("replay", {"mesocycle_day": 1})
+        self.assertEqual(out, "REPORT")
 
     def test_a_failed_replay_reads_as_a_failed_replay(self):
         """It must never surface as a 500 in the app or as silence in Telegram."""
@@ -3078,7 +3101,7 @@ class ReplayCommandTests(unittest.TestCase):
              patch("coach.send_telegram_message"), \
              patch("coach.end_session") as end, \
              patch("coach.advance_mesocycle") as advance, \
-             patch("replay.run_pull_replay", return_value="R"):
+             patch("replay.run_chat_replay", return_value=("R", "S")):
             out = handle_incoming_message("replay", memory)
         self.assertEqual(out, "R")
         end.assert_called_once_with("old-session")
@@ -3092,14 +3115,64 @@ class ReplayCommandTests(unittest.TestCase):
         self.assertEqual(sent_ios, [])
 
 
+def _ios_blocks(content: str) -> list:
+    """Port of MarkdownText.blocks — Vaux/Vaux/Components/MarkdownText.swift:30.
+
+    The iOS coach bubble renders through MarkdownText, not as plain text. Its
+    block parser trims every line, then joins each run of consecutive non-blank
+    lines with a SINGLE SPACE, flushing only on a blank line; "- " lines become
+    bullets that each get their own row. Any report written for a terminal
+    therefore arrives as run-on paragraphs. Testing the raw string cannot see
+    that, so the tests below assert on what this produces.
+    """
+    import re as _re
+    blocks, buf, bullets, numbered = [], [], [], []
+
+    def flush_paragraph():
+        if buf:
+            text = " ".join(buf).strip()
+            if text:
+                blocks.append(("paragraph", text))
+            buf.clear()
+
+    def flush_bullets():
+        if bullets:
+            blocks.append(("bullet", list(bullets)))
+            bullets.clear()
+
+    def flush_numbered():
+        if numbered:
+            blocks.append(("numbered", list(numbered)))
+            numbered.clear()
+
+    for raw in content.split("\n"):
+        line = raw.strip()
+        if not line:
+            flush_paragraph(); flush_bullets(); flush_numbered()
+            continue
+        if line[:2] in ("- ", "* ", "\u2022 "):
+            flush_paragraph(); flush_numbered()
+            bullets.append(line[2:].strip())
+        elif _re.match(r"^\d+\.\s+", line):
+            flush_paragraph(); flush_bullets()
+            numbered.append(_re.sub(r"^\d+\.\s+", "", line))
+        else:
+            flush_bullets(); flush_numbered()
+            buf.append(line)
+    flush_paragraph(); flush_bullets(); flush_numbered()
+    return blocks
+
+
 class ChatReplayRenderingTests(unittest.TestCase):
-    """The report was built for a browser and then pointed at a phone.
+    """The report was built for a browser and then pointed at a chat bubble.
 
     /admin/replay returns text/plain, so the wide renderer pads exercise names
-    into a 22-char column and rules sections with 74 '=' characters. Measured on
-    real-shaped data that produces lines up to 184 characters. A chat bubble is
-    about 38 wide, so every row became five ragged wrapped lines with the column
-    alignment — the only thing making it a table — destroyed.
+    into a 22-char column and rules sections with 74 '=' characters — measured
+    at up to 184 characters wide on real-shaped data. The first attempt at a fix
+    hard-wrapped to 38 columns, which was worse than useless: MarkdownText joins
+    consecutive lines with a space, so pre-wrapping only manufactured more
+    fragments to run together, and "Cable Row code 2 sets you did 1 Hammer Curl
+    code 3 sets you did 1" is not attributable to any lift.
     """
 
     def _sessions(self):
@@ -3107,23 +3180,46 @@ class ChatReplayRenderingTests(unittest.TestCase):
             return {"exercise": ex, "actual_weight_kg": w, "actual_reps": r,
                     "actual_rpe": rpe, "set_number": n, "is_warmup": False}
         prior = {"date": "2026-08-10", "mesocycle_week": 3,
-                 "sets": [st("Cable Row", 80, 8, 8), st("Cable Row", 65, 12, 7, 2)]}
+                 "sets": [st("Cable Row", 80, 8, 8), st("Cable Row", 65, 12, 7, 2),
+                          st("Hammer Curl", 16, 11, 8)]}
         today = {"date": "2026-08-28", "mesocycle_week": 1,
-                 "sets": [st("Cable Row", 82.5, 6, 8)]}
+                 "sets": [st("Cable Row", 82.5, 6, 8), st("Hammer Curl", 17, 10, 8)]}
         return [prior, today]
 
     def _chat(self, sessions=None, notes=None):
         from replay import analyse, render_chat
         return render_chat(analyse(sessions or self._sessions(), notes=notes))
 
-    def test_every_line_fits_a_phone(self):
-        from replay import CHAT_WIDTH
-        for line in self._chat().split("\n"):
-            self.assertLessEqual(len(line), CHAT_WIDTH, f"too wide: {line!r}")
+    def _rendered(self, sessions=None):
+        return _ios_blocks(self._chat(sessions))
+
+    def test_each_disagreement_survives_as_its_own_row(self):
+        """The failure this guards: every exercise run together in one blob."""
+        bullets = [b for kind, b in self._rendered() if kind == "bullet"]
+        flat = [item for group in bullets for item in group]
+        rows = [i for i in flat if "code says" in i]
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(any(i.startswith("Cable Row") for i in rows))
+        self.assertTrue(any(i.startswith("Hammer Curl") for i in rows))
+        for row in rows:
+            self.assertEqual(row.count("code says"), 1,
+                             f"two exercises ran together: {row!r}")
+
+    def test_the_verdict_counts_do_not_run_together(self):
+        """"agreed 0 disagreed 2 not logged 5" as one line is unreadable."""
+        flat = [i for kind, b in self._rendered() if kind == "bullet" for i in b]
+        for label in ("agreed", "disagreed", "not logged"):
+            self.assertTrue(any(i.startswith(label) for i in flat),
+                            f"{label} is not its own row")
+
+    def test_no_paragraph_becomes_a_wall_of_numbers(self):
+        """A paragraph carrying several exercises' numbers is the bug."""
+        for kind, val in self._rendered():
+            if kind != "paragraph":
+                continue
+            self.assertLess(val.count("code says"), 2, f"run-on: {val[:120]!r}")
 
     def test_the_verdict_comes_before_the_detail(self):
-        """A phone reader must not have to scroll a table to learn whether
-        anything disagreed."""
         out = self._chat()
         self.assertIn("VERDICT", out)
         detail = [i for i in (out.find("WHERE IT DISAGREED"),
@@ -3135,16 +3231,14 @@ class ChatReplayRenderingTests(unittest.TestCase):
         """The deferred notes cited system_prompt.txt line numbers (":350 and
         :363 call this a genuine feel-out"). Meaningful to a developer reading a
         terminal, noise in a chat bubble on a phone."""
-        out = self._chat()
-        self.assertNotRegex(out, r'(?<!\d):\d{2,4}\b')
+        self.assertNotRegex(self._chat(), r'(?<!\d):\d{2,4}\b')
 
     def test_identical_deferred_notes_are_grouped_not_repeated(self):
-        """Six exercises with no history produced the same sentence six times,
-        which is what made the raw report unreadable."""
+        """Five exercises with no history produced the same sentence five
+        times, which is what made the raw report unreadable."""
         out = self._chat()
         self.assertEqual(out.count("no opening load"), 2,
                          "one group per distinct note, not one per exercise")
-        self.assertIn("Pull-Ups, Lat Pulldown, T-Bar Row", out)
 
     def test_an_empty_history_explains_itself_in_plain_language(self):
         from replay import Replay, render_chat
@@ -3153,8 +3247,17 @@ class ChatReplayRenderingTests(unittest.TestCase):
         self.assertNotIn("Traceback", out)
 
     def test_one_session_is_not_reported_as_sessions(self):
-        out = self._chat()
-        self.assertIn("1 Pull session\n", out)
+        self.assertIn("1 Pull session ", self._chat())
+
+    def test_the_summary_records_totals_and_refuses_the_detail(self):
+        """It stands in for the report in the transcript, so it must not invite
+        the model to describe sets it was never given."""
+        from replay import analyse, render_summary
+        summary = render_summary(analyse(self._sessions()), 90)
+        self.assertIn("2 disagreed", summary)
+        self.assertIn("Cable Row", summary)
+        self.assertIn("do not describe individual sets", summary)
+        self.assertLess(len(summary), 500, "this is persisted on every request")
 
     def test_both_surfaces_agree_on_what_happened(self):
         """The wide and chat renderers go through one analyse() precisely so
@@ -3166,7 +3269,6 @@ class ChatReplayRenderingTests(unittest.TestCase):
         chat = self._chat(sessions)
         for key, label in (("match", "agreed"), ("diverge", "disagreed"),
                            ("missing", "not logged")):
-            self.assertIn(f"{label}{' ' * (12 - len(label))}"
-                          f"{replay.totals[key]:>4}", chat)
+            self.assertIn(f"- {label} {replay.totals[key]}", chat)
             self.assertIn(f"{key.replace('missing', 'not logged')} "
                           f"{replay.totals[key]}", wide)

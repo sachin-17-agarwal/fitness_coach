@@ -291,30 +291,8 @@ def build_report(sessions: list[dict], default_week: int = 1,
     return "\n".join(lines)
 
 
-# A phone chat bubble is roughly this many characters wide before it wraps.
-# The wide report runs to 184 columns, which on a phone becomes five ragged
-# wrapped lines per row with the column alignment destroyed.
-CHAT_WIDTH = 38
-
-
-def _wrap(text: str, indent: str = "", width: int = CHAT_WIDTH) -> list[str]:
-    """Greedy wrap. Long single words are left long rather than broken, since
-    the only long words here are exercise names and loads."""
-    words, lines, current = text.split(), [], indent
-    for word in words:
-        candidate = f"{current} {word}" if current.strip() else f"{indent}{word}"
-        if len(candidate) > width and current.strip():
-            lines.append(current)
-            current = f"{indent}{word}"
-        else:
-            current = candidate
-    if current.strip():
-        lines.append(current)
-    return lines
-
-
 def _short_date(iso: str) -> str:
-    """2026-08-28 -> 28 Aug. Saves ~6 columns a line and reads faster."""
+    """2026-08-28 -> 28 Aug. Saves columns and reads faster on a phone."""
     months = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
     try:
@@ -325,64 +303,74 @@ def _short_date(iso: str) -> str:
 
 
 def render_chat(replay: Replay) -> str:
-    """Render the replay for a chat bubble on a phone.
+    """Render the replay for the coach chat.
 
-    Three differences from the wide report, all of them because of who reads
-    this one. The verdict comes FIRST — a phone reader should not have to scroll
-    a table to find out whether anything disagreed. Agreements are counted, not
-    listed, because a list of things that went fine is what buries the three
-    that did not. And the deferred notes are grouped by what they say instead of
-    repeated once per exercise, which on a real history is the same sentence
-    five times in a row.
+    Written against the renderer that will actually show it. The iOS bubble goes
+    through MarkdownText (Vaux/Vaux/Components/MarkdownText.swift), whose block
+    parser trims each line and then joins every run of consecutive non-blank
+    lines with a single space — so a hand-aligned table arrives as one run-on
+    paragraph with no number attributable to any exercise. It starts a new block
+    only on a BLANK line, and gives a line of its own only to "- " bullets.
+
+    So: every row that has to stand alone is a bullet, every logical group is
+    separated by a blank line, and nothing is hard-wrapped — wrapping is the
+    renderer's job, and pre-wrapping only manufactures more fragments for it to
+    run together. That shape survives Telegram too, which is plain text and
+    wraps long lines itself.
+
+    Content-wise this leads with the verdict rather than ending on it, counts
+    agreements instead of listing them, and groups identical deferred notes —
+    on a real history the same sentence otherwise repeats once per exercise.
     """
     L: list[str] = []
     for note in replay.notes:
-        L.extend(_wrap(f"NOTE: {note}"))
-    if replay.notes:
+        L.append(f"NOTE: {note}")
         L.append("")
 
     if not replay.sessions:
-        L.extend(_wrap("Not enough Pull sessions logged yet to replay — it "
-                       "needs at least two, so it can judge one against the "
-                       "one before it."))
+        L.append("Not enough Pull sessions logged yet to replay — it needs at "
+                 "least two, so it can judge one against the one before it.")
         return "\n".join(L)
 
     t = replay.totals
     n = len(replay.sessions)
-    L.append(f"REPLAY · {n} Pull session{'' if n == 1 else 's'}")
     start, end = _short_date(replay.span[0]), _short_date(replay.span[1])
-    L.append(start if start == end else f"{start} → {end}")
+    span = start if start == end else f"{start} → {end}"
+    L.append(f"REPLAY · {n} Pull session{'' if n == 1 else 's'} · {span}")
     L.append("")
-    L.extend(_wrap("The programme written as code, run against what you "
-                   "actually logged. Each session is judged knowing only the "
-                   "session before it."))
+    L.append("The programme written as code, run against what you actually "
+             "logged. Each session is judged knowing only the session before it.")
     L.append("")
 
-    L.append("── VERDICT ──")
-    L.append(f"agreed      {t['match']:>4}")
-    L.append(f"disagreed   {t['diverge']:>4}")
-    L.append(f"not logged  {t['missing']:>4}")
+    L.append("VERDICT")
+    L.append("")
+    L.append(f"- agreed {t['match']}")
+    L.append(f"- disagreed {t['diverge']}")
+    L.append(f"- not logged {t['missing']}")
     L.append("")
 
     diverged = [(s, o) for s in replay.sessions
                 for o in s.outcomes if o.verdict == "diverge"]
     if diverged:
-        L.append("── WHERE IT DISAGREED ──")
+        L.append("WHERE IT DISAGREED")
+        L.append("")
         last_date = None
         for s, o in diverged:
             if s.date != last_date:
+                if last_date is not None:
+                    L.append("")
                 L.append(f"{_short_date(s.date)} · week {s.week} "
                          f"({s.week_source})")
+                L.append("")
                 last_date = s.date
-            L.append(f"  {o.exercise}")
-            L.append(f"    code {o.proposed} sets · you did {o.logged}")
-            if o.proposed != o.template:
-                L.append(f"    template says {o.template}")
-            L.extend(_wrap(f"code's top set {o.top}", indent="    "))
+            template = ("" if o.proposed == o.template
+                        else f", template {o.template}")
+            L.append(f"- {o.exercise} — code says {o.proposed} sets, you did "
+                     f"{o.logged}{template} · code's top set {o.top}")
         L.append("")
     else:
-        L.extend(_wrap("Nothing disagreed. Every logged exercise ran the set "
-                       "count the programme would have chosen."))
+        L.append("Nothing disagreed. Every logged exercise ran the set count "
+                 "the programme would have chosen.")
         L.append("")
 
     # Group by what the note SAYS, not which exercise it is about — the same
@@ -398,22 +386,66 @@ def render_chat(replay: Replay) -> str:
                 grouped[body].append(exercise)
 
     if grouped:
-        L.append("── THE CODE COULDN'T DECIDE ──")
-        L.extend(_wrap("These are the places the programme genuinely does not "
-                       "determine an answer, so the coach has been deciding "
-                       "them with nothing to check against."))
+        L.append("THE CODE COULDN'T DECIDE")
+        L.append("")
+        L.append("These are the places the programme genuinely does not "
+                 "determine an answer, so the coach has been deciding them "
+                 "with nothing to check against.")
         L.append("")
         for body, exercises in grouped.items():
-            L.extend(_wrap(body))
-            if exercises:
-                L.extend(_wrap(", ".join(exercises), indent="  "))
-            L.append("")
+            who = f"{', '.join(exercises)} — " if exercises else ""
+            L.append(f"- {who}{body}")
+        L.append("")
 
-    L.append("── HOW TO READ THIS ──")
-    L.extend(_wrap("A disagreement is a question, not a verdict. It means the "
-                   "programme on paper and the programme as performed differ, "
-                   "and one of the two is wrong."))
+    L.append("HOW TO READ THIS")
+    L.append("")
+    L.append("A disagreement is a question, not a verdict. It means the "
+             "programme on paper and the programme as performed differ, and "
+             "one of the two is wrong.")
     return "\n".join(L)
+
+
+def render_summary(replay: Replay, days: int) -> str:
+    """A few dozen tokens standing in for the full report in the transcript.
+
+    The report itself is deliberately not persisted — today's conversation is
+    replayed into the model's context on every later request, so a few hundred
+    lines of table would crowd out the actual session and be re-billed all day.
+    But persisting NOTHING costs two things the token argument does not cover:
+    the iOS app reloads its transcript from the conversations table whenever the
+    chat reappears (CoachChatView .task -> loadConversation), so the report
+    vanishes on a tab switch; and a follow-up question reaches the model with no
+    record that a replay ever ran, which is the exact confabulation everything
+    else here works to prevent.
+
+    So the totals are persisted, and the summary says outright that it is only
+    the totals — the model must not answer from detail it does not have.
+    """
+    if not replay.sessions:
+        return (f"Ran the replay over {days} days: not enough Pull sessions "
+                f"logged yet to compare (it needs at least two).")
+    t = replay.totals
+    diverged = sorted({o.exercise for s in replay.sessions
+                       for o in s.outcomes if o.verdict == "diverge"})
+    detail = (f" Disagreements were on: {', '.join(diverged)}."
+              if diverged else " Nothing disagreed.")
+    return (f"Ran the replay over {days} days across "
+            f"{len(replay.sessions)} Pull sessions: {t['match']} agreed, "
+            f"{t['diverge']} disagreed, {t['missing']} not logged.{detail} "
+            f"The athlete has seen the full report; only these totals are "
+            f"recorded here, so do not describe individual sets from it — ask "
+            f"him to paste the part he wants to discuss.")
+
+
+def run_chat_replay(days: int = 90, default_week: int = 1) -> tuple[str, str]:
+    """The chat report and a short summary of it, computed in one pass."""
+    days = max(1, min(int(days), MAX_DAYS))
+    sessions, notes = fetch_pull_sessions(days)
+    if len(sessions) < 2:
+        replay = Replay(sessions=[], totals={}, notes=notes, span=None)
+    else:
+        replay = analyse(sessions, default_week=default_week, notes=notes)
+    return render_chat(replay), render_summary(replay, days)
 
 
 def run_pull_replay(days: int = 90, default_week: int = 1,
