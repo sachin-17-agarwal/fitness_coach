@@ -3278,10 +3278,93 @@ class ChatReplayRenderingTests(unittest.TestCase):
         self.assertLess(out.find("VERDICT"), min(detail))
 
     def test_no_source_line_references_reach_the_athlete(self):
-        """The deferred notes cited system_prompt.txt line numbers (":350 and
-        :363 call this a genuine feel-out"). Meaningful to a developer reading a
-        terminal, noise in a chat bubble on a phone."""
-        self.assertNotRegex(self._chat(), r'(?<!\d):\d{2,4}\b')
+        """A narrow version of this test passed while fifteen citations shipped.
+
+        It rendered one fixture, which exercised one branch — the no-history
+        path — so it saw ":350" and nothing else. The first real replay came
+        back carrying ":70", ":182", ":183", ":186", ":203" and ":205" from the
+        branches the fixture never reached. The fix was to strip at a single
+        choke point instead of editing the strings a test happened to cover;
+        this sweeps every week against every shape of history to prove it.
+        """
+        import re as _re
+        from prescribe import PULL_DAY, PriorSet, prescribe_pull
+        histories = [
+            {},
+            {"load": 80.0, "reps": 5, "rpe": 7.0, "week": 3},    # below range
+            {"load": 80.0, "reps": 14, "rpe": 9.0, "week": 4},   # above range
+            {"load": 80.0, "reps": 9, "rpe": 8.0, "week": 3},    # in range
+            {"load": None, "reps": None, "rpe": None, "week": None},
+        ]
+        leaked = set()
+        for week in (1, 2, 3, 4):
+            for spec in histories:
+                hist = {} if not spec else {
+                    "".join(c for c in name.lower() if c.isalnum()):
+                        PriorSet(date="2026-08-01", **spec)
+                    for name, _, _ in PULL_DAY
+                }
+                for proposal in prescribe_pull(week, hist):
+                    for line in list(proposal.reasons) + list(proposal.deferred):
+                        leaked |= set(_re.findall(r"(?<![\w:]):\d{2,4}\b", line))
+        self.assertEqual(leaked, set(), f"citations reaching the athlete: {leaked}")
+
+    def test_real_numbers_survive_the_citation_strip(self):
+        from prescribe import strip_citations
+        self.assertEqual(strip_citations("Hold 8-12 reps at RPE 8.5, drop 20%"),
+                         "Hold 8-12 reps at RPE 8.5, drop 20%")
+        self.assertEqual(strip_citations("Volume before intensity (:182). Go."),
+                         "Volume before intensity. Go.")
+        self.assertEqual(
+            strip_citations("cannot drop 20% (:64 applied to added weight)."),
+            "cannot drop 20% (applied to added weight).")
+
+    def test_no_underscored_identifier_reaches_the_bubble(self):
+        """The iOS bubble parses inline markdown, so "_" is read as emphasis and
+        consumed: "workout_sessions" arrived as "workoutsessions" and
+        "001_workout_session_mesocycle.sql" as "001workoutsessionmesocycle.sql".
+        """
+        import re as _re
+        from replay import analyse, render_chat
+        note = ("Your sessions do not record which mesocycle week they "
+                "belonged to")
+        out = render_chat(analyse(self._sessions(), notes=[note]))
+        self.assertNotRegex(out, r"\w+_\w+")
+
+    def test_a_spelling_variant_is_not_reported_as_a_missed_exercise(self):
+        """The two logging paths do not agree on spelling — the iOS app resolves
+        through the exercises library, Telegram through find_exercise. Matching
+        raw strings turned "Pull Ups" into an exercise that never happened,
+        which is the difference between "you skipped this" and "this is filed
+        under another name"."""
+        from replay import analyse
+        def st(ex, w, r, rpe, n=1):
+            return {"exercise": ex, "actual_weight_kg": w, "actual_reps": r,
+                    "actual_rpe": rpe, "set_number": n, "is_warmup": False}
+        prior = {"date": "2026-08-10", "mesocycle_week": 3,
+                 "sets": [st("pull ups", 15, 8, 8), st("Pull-Ups", 15, 7, 8, 2)]}
+        today = {"date": "2026-08-28", "mesocycle_week": 1,
+                 "sets": [st("PULLUPS", 17, 8, 8), st("Pull Ups", 17, 7, 8, 2)]}
+        outcomes = {o.exercise: o for o in analyse([prior, today]).sessions[0].outcomes}
+        self.assertEqual(outcomes["Pull-Ups"].verdict, "match")
+        self.assertEqual(outcomes["Pull-Ups"].logged, 2)
+
+    def test_log_names_the_template_does_not_know_are_reported(self):
+        """A large "not logged" count means one of two very different things,
+        and only this distinguishes them."""
+        from replay import analyse, render_chat
+        def st(ex, w, r, rpe, n=1):
+            return {"exercise": ex, "actual_weight_kg": w, "actual_reps": r,
+                    "actual_rpe": rpe, "set_number": n, "is_warmup": False}
+        prior = {"date": "2026-08-10", "mesocycle_week": 3,
+                 "sets": [st("Cable Row", 80, 8, 8)]}
+        today = {"date": "2026-08-28", "mesocycle_week": 1,
+                 "sets": [st("Cable Row", 82.5, 6, 8), st("Face Pull", 20, 15, 7)]}
+        replay = analyse([prior, today])
+        self.assertEqual(replay.unmatched, {"Face Pull": 1})
+        out = render_chat(replay)
+        self.assertIn("Face Pull", out)
+        self.assertIn("naming mismatch", out)
 
     def test_identical_deferred_notes_are_grouped_not_repeated(self):
         """Five exercises with no history produced the same sentence five
