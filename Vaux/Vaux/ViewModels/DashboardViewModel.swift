@@ -17,10 +17,14 @@ final class DashboardViewModel {
     var weekTonnage: Double = 0
     var isLoading = true
     var errorMessage: String?
+    /// Today's coach note, when the briefing flow has already generated one.
+    /// Read from cache only — see BriefingService.cachedCoachNoteForToday.
+    var briefingNote: String?
 
     private let recoveryService = RecoveryService()
     private let mesocycleService = MesocycleService()
     private let workoutService = WorkoutService()
+    private let briefingService = BriefingService()
 
     /// Composite recovery score 0-100 combining sleep, HRV, and resting HR.
     var recoveryScore: Int {
@@ -83,6 +87,7 @@ final class DashboardViewModel {
 
             currentStreak = Self.computeStreak(recentSessions)
             weekTonnage = Self.weekTonnage(recentSessions)
+            briefingNote = briefingService.cachedCoachNoteForToday()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -110,6 +115,103 @@ final class DashboardViewModel {
         if let state = try? await mesocycleService.loadState() {
             mesocycle = state
         }
+    }
+
+    // MARK: - Home-screen derivations
+
+    /// The verdict color for a composite score, shared by the hero numeral,
+    /// the verdict line, the history strip and the mesocycle wave.
+    static func level(for score: Int?) -> RecoveryLevel {
+        guard let score else { return .unknown }
+        if score >= 75 { return .green }
+        if score >= 55 { return .yellow }
+        return .red
+    }
+
+    /// One bar per day for the 14-day strip, oldest first, each carrying the
+    /// zone it landed in so the strip reads as verdict history, not a shape.
+    var historyBars: [(score: Int, level: RecoveryLevel)] {
+        recoveryHistory
+            .reversed()
+            .suffix(14)
+            .map { rec in
+                let score = rec.compositeScore(hrv7DayAvg: hrvAvg, rhr7DayAvg: rhrAvg)
+                return (score ?? 0, Self.level(for: score))
+            }
+    }
+
+    /// Today's session if it has been finished — the home screen stops
+    /// asking to START and shows the recap instead.
+    var todayFinishedSession: WorkoutSession? {
+        let today = RecoveryService.todayString()
+        return recentSessions.first { $0.date == today && SessionStatus($0.status).isFinished }
+    }
+
+    /// Finished sessions in the trailing 7 days.
+    var sessionsThisWeek: Int {
+        let cutoff = Self.dayCutoff(daysAgo: 6)
+        return recentSessions.filter {
+            SessionStatus($0.status).isFinished && (Self.day(of: $0.date) ?? .distantPast) >= cutoff
+        }.count
+    }
+
+    /// Tonnage change vs the 7 days before this week. nil when the prior week
+    /// has no tonnage, so a fresh account doesn't read as +infinity.
+    var tonnageDeltaPct: Double? {
+        let thisStart = Self.dayCutoff(daysAgo: 6)
+        let priorStart = Self.dayCutoff(daysAgo: 13)
+        let prior = recentSessions
+            .filter { s in
+                guard let d = Self.day(of: s.date) else { return false }
+                return d >= priorStart && d < thisStart
+            }
+            .compactMap(\.tonnageKg)
+            .reduce(0, +)
+        guard prior > 0 else { return nil }
+        return (weekTonnage - prior) / prior * 100
+    }
+
+    /// Average sleep over the trailing 7 days, and the change against the 7
+    /// before that, in minutes.
+    var sleepAvgHours: Double? { Self.average(sleep(daysAgo: 0...6)) }
+    var sleepDeltaMinutes: Int? {
+        guard let now = sleepAvgHours, let prior = Self.average(sleep(daysAgo: 7...13)) else { return nil }
+        return Int(((now - prior) * 60).rounded())
+    }
+
+    /// Latest weight against the oldest reading in the 14-day window.
+    var weightDeltaKg: Double? {
+        let weights = recoveryHistory.compactMap(\.weightKg)
+        guard let latest = weights.first, let oldest = weights.last, weights.count >= 2 else { return nil }
+        return latest - oldest
+    }
+
+    private func sleep(daysAgo range: ClosedRange<Int>) -> [Double] {
+        let newest = Self.dayCutoff(daysAgo: range.lowerBound)
+        let oldest = Self.dayCutoff(daysAgo: range.upperBound)
+        return recoveryHistory.compactMap { rec in
+            guard let d = Self.day(of: rec.date), d >= oldest, d <= newest else { return nil }
+            return rec.sleepHours
+        }
+    }
+
+    private static func average(_ values: [Double]) -> Double? {
+        values.isEmpty ? nil : values.reduce(0, +) / Double(values.count)
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static func day(of string: String) -> Date? {
+        dayFormatter.date(from: string).map { Calendar.current.startOfDay(for: $0) }
+    }
+
+    private static func dayCutoff(daysAgo: Int) -> Date {
+        let d = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        return Calendar.current.startOfDay(for: d)
     }
 
     // MARK: - Streak / tonnage

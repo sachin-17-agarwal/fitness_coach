@@ -646,20 +646,3 @@ struct RestTimer: View {
         )
     }
 }
-
-// MARK: - Display face
-
-private extension Font {
-    /// The poster face: Anton when the bundled font registered, otherwise
-    /// SF Compressed Black — close enough in voice that a registration
-    /// failure degrades the look, never the layout.
-    static func display(_ size: CGFloat) -> Font {
-        if UIFont(name: "Anton-Regular", size: size) != nil {
-            return .custom("Anton-Regular", size: size)
-        }
-        if UIFont(name: "Anton", size: size) != nil {
-            return .custom("Anton", size: size)
-        }
-        return .system(size: size, weight: .black).width(.compressed)
-    }
-}

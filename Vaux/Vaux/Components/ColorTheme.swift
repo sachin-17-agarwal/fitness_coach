@@ -608,3 +608,22 @@ struct TextDot: View {
             .frame(width: 3, height: 3)
     }
 }
+
+
+// MARK: - Display face
+
+extension Font {
+    /// The poster face used for hero numerals and session titles: Anton when
+    /// the bundled font registered (Resources/Anton-Regular.ttf, UIAppFonts),
+    /// otherwise SF Compressed Black — close enough in voice that a
+    /// registration failure degrades the look, never the layout.
+    static func display(_ size: CGFloat) -> Font {
+        if UIFont(name: "Anton-Regular", size: size) != nil {
+            return .custom("Anton-Regular", size: size)
+        }
+        if UIFont(name: "Anton", size: size) != nil {
+            return .custom("Anton", size: size)
+        }
+        return .system(size: size, weight: .black).width(.compressed)
+    }
+}
