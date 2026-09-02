@@ -8,6 +8,10 @@ select.
 The falsifiable version of "the programme should be code": for each logged Pull
 session, what would prescribe_pull() have proposed knowing only what came
 before, and how does that compare to what was actually performed?
+
+History accumulates across the window rather than coming from the single prior
+session — the athlete's log skips roughly 40% of prescribed slots, so a
+one-session lookback reported lifts with months behind them as never trained.
 """
 
 import logging
@@ -260,9 +264,29 @@ def analyse(sessions: list[dict], default_week: int = 1,
     totals = {"match": 0, "diverge": 0, "deferred": 0, "missing": 0}
     out: list[SessionOutcome] = []
 
+    # History ACCUMULATES. Feeding only the immediately prior session was a
+    # harness shortcut that made the programme look far more indecisive than it
+    # is: with 40% of prescribed slots unlogged, an exercise trained a fortnight
+    # ago but skipped last time read as "no logged history", and the report
+    # answered "genuine feel-out" for a lift with months behind it. Production
+    # never had this handicap — progression.get_current_loads searches the whole
+    # log — so the replay was judging a version of the programme that does not
+    # exist.
+    running: dict[str, PriorSet] = {}
+    peak: dict[str, PriorSet] = {}
+
     for prior_session, session in zip(sessions, sessions[1:]):
-        history = top_sets(prior_session)
+        prior_top = top_sets(prior_session)
+        running.update(prior_top)
+        # Week 1 anchors to the WEEK 3 peak, not to the deload that just ran, so
+        # it is tracked separately. Without this the cycle opens from deload
+        # numbers and the wave never moves — which the programme flags as a
+        # deferral rather than guessing at.
+        if (prior_session.get("mesocycle_week") or default_week) == 3:
+            peak.update(prior_top)
+
         week = session.get("mesocycle_week") or default_week
+        history = dict(peak) if (week == 1 and peak) else dict(running)
         if session.get("mesocycle_week") and not session.get("week_inferred"):
             source = "recorded"
         elif session.get("week_inferred"):
@@ -408,7 +432,8 @@ def render_chat(replay: Replay) -> str:
     L.append(f"REPLAY · {n} Pull session{'' if n == 1 else 's'} · {span}")
     L.append("")
     L.append("The programme written as code, run against what you actually "
-             "logged. Each session is judged knowing only the session before it.")
+             "logged. Each session is judged knowing only what came before it "
+             "— never what you did on the day.")
     L.append("")
 
     L.append("VERDICT")

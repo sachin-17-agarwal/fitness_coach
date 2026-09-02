@@ -3456,6 +3456,59 @@ class ChatReplayRenderingTests(unittest.TestCase):
         self.assertIn("78.5kg", outcomes["Cable Row"].top)
         self.assertNotIn("TBD", outcomes["Cable Row"].top)
 
+    @staticmethod
+    def _sess(date, week, sets):
+        return {"date": date, "mesocycle_week": week, "sets": sets}
+
+    @staticmethod
+    def _set(ex, w, r, rpe, n=1):
+        return {"exercise": ex, "actual_weight_kg": w, "actual_reps": r,
+                "actual_rpe": rpe, "set_number": n, "is_warmup": False}
+
+    def test_history_survives_a_session_where_the_exercise_was_skipped(self):
+        """The replay fed prescribe_pull ONLY the immediately prior session.
+
+        With 40% of prescribed slots unlogged in the real data, an exercise
+        trained a fortnight ago but skipped last time read as "no logged
+        history", and the report answered "genuine feel-out — ramp in clear
+        steps" for a lift with months behind it. Production never had this
+        handicap: progression.get_current_loads searches the whole log. So the
+        replay was judging a version of the programme that does not exist, and
+        its COULDN'T DECIDE section was systematically pessimistic.
+        """
+        from replay import analyse
+        sessions = [
+            self._sess("2026-07-13", 3, [self._set("Cable Row", 78.5, 9, 9)]),
+            self._sess("2026-07-19", 4, [self._set("Hammer Curl", 18, 6, 7)]),
+            self._sess("2026-07-23", 1, [self._set("Cable Row", 78.5, 8, 8)]),
+        ]
+        last = analyse(sessions).sessions[-1]
+        row = {o.exercise: o for o in last.outcomes}["Cable Row"]
+        self.assertIn("78.5kg", row.top)
+        self.assertNotIn("TBD", row.top)
+        self.assertFalse(
+            [d for d in last.deferred
+             if d.startswith("Cable Row") and "no logged history" in d],
+            "an exercise skipped once read as never trained",
+        )
+
+    def test_week_one_anchors_to_the_peak_week_not_to_the_deload(self):
+        """Week 1 must open from the WEEK 3 peak. Anchoring it to the week 4
+        deload that just ran opens the cycle low, and the wave never moves —
+        which is the failure system_prompt.txt calls critical."""
+        from replay import analyse
+        sessions = [
+            self._sess("2026-07-13", 3, [self._set("Cable Row", 78.5, 9, 9)]),
+            self._sess("2026-07-19", 4, [self._set("Cable Row", 78.5, 6, 7)]),
+            self._sess("2026-07-23", 1, [self._set("Cable Row", 78.5, 8, 8)]),
+        ]
+        last = analyse(sessions).sessions[-1]
+        self.assertFalse(
+            [d for d in last.deferred
+             if "week 4 session" in d and d.startswith("Cable Row")],
+            "week 1 was anchored to the deload",
+        )
+
     def test_log_names_the_template_does_not_know_are_reported(self):
         """A large "not logged" count means one of two very different things,
         and only this distinguishes them."""
