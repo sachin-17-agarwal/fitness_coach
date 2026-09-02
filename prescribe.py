@@ -531,6 +531,18 @@ def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
     )
 
 
+def norm_name(name: str) -> str:
+    """Fold an exercise name to a comparison key.
+
+    The template says "Pull-Ups". The log holds whatever the resolver wrote on
+    the day, and the two logging paths do not agree — the iOS app resolves
+    through the exercises library, Telegram through find_exercise. Comparing raw
+    strings makes "Pull Ups" a different exercise from "Pull-Ups", which is the
+    difference between "no logged history" and a real opening load.
+    """
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
 def prescribe_pull(week: int, history: dict[str, PriorSet]) -> list[Proposal]:
     """The whole Pull session.
 
@@ -541,11 +553,20 @@ def prescribe_pull(week: int, history: dict[str, PriorSet]) -> list[Proposal]:
     if week not in WAVE:
         raise ValueError(f"mesocycle week must be 1-4, got {week!r}")
 
+    # Look up through norm_name rather than by raw key. Callers key this dict
+    # differently — progression.get_current_loads by whatever spelling the log
+    # holds, the replay by its own fold — and an exact-match lookup silently
+    # returns None for every near miss, which reads downstream as "this
+    # exercise has never been trained" and prescribes a feel-out instead of a
+    # load. Building the view here means no caller has to know the convention.
+    folded = {norm_name(name): prior for name, prior in history.items()}
+
     proposals = []
     muscles_warm: set[str] = set()
     for exercise, sets, kind in PULL_DAY:
         proposals.append(prescribe_exercise(
-            exercise, sets, kind, week, history.get(exercise), set(muscles_warm)
+            exercise, sets, kind, week, folded.get(norm_name(exercise)),
+            set(muscles_warm)
         ))
         muscles_warm.update(WARMS.get(exercise, ()))
     return proposals
