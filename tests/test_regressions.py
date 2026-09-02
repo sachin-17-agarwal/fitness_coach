@@ -3384,7 +3384,8 @@ class ChatReplayRenderingTests(unittest.TestCase):
 
         self.assertTrue(notes, "no note left to explain the labels")
         joined = " ".join(notes)
-        self.assertIn("3 of these 3 sessions", joined)
+        self.assertIn("Every session in this window", joined)
+        self.assertNotIn("of these", joined)  # header counts comparisons
         self.assertIn("reconstructed", joined)
         self.assertNotRegex(joined, r"\w+_\w+")
 
@@ -3409,6 +3410,51 @@ class ChatReplayRenderingTests(unittest.TestCase):
         for line in out.split("\n"):
             self.assertIsNone(name_pattern.search(line), f"exercise-block line: {line!r}")
             self.assertIsNone(loose_sets.search(line.strip()), f"set line: {line!r}")
+
+    def test_history_reaches_the_proposal_however_the_caller_keys_it(self):
+        """The test that should have existed, and did not.
+
+        Folding names for the VERDICT while prescribe_pull still looked history
+        up by raw template name meant every lookup returned None. The report
+        still counted sets correctly — so a test on the verdict passed — while
+        every load became "load TBD" and every deload, below-range and
+        week-anchoring note vanished, because all of them need a prior set. The
+        report kept its shape and lost its content.
+
+        prescribe_pull now folds both sides, so any caller's keying works:
+        progression.get_current_loads keys by whatever spelling the log holds,
+        the replay by its own fold.
+        """
+        from prescribe import PriorSet, prescribe_pull
+        peak = PriorSet(load=78.5, reps=9, rpe=9.0, date="2026-08-10", week=3)
+        for label, key in (("template name", "Cable Row"),
+                           ("log spelling", "cable row"),
+                           ("folded key", "cablerow"),
+                           ("punctuated", "Cable-Row")):
+            with self.subTest(keyed_by=label):
+                proposals = {p.exercise: p for p in prescribe_pull(4, {key: peak})}
+                top = proposals["Cable Row"].working[0]
+                self.assertIsNotNone(top.weight_kg,
+                                     f"history lost when keyed by {label}")
+                self.assertEqual(top.weight_kg, 78.5)
+                self.assertNotIn("no logged history",
+                                 " ".join(proposals["Cable Row"].deferred))
+
+    def test_a_prior_session_under_another_spelling_still_supplies_the_load(self):
+        """End to end: the prior session logged "pull ups", the template says
+        "Pull-Ups", and the deload must still hold the load and cut reps rather
+        than report a first-ever session."""
+        from replay import analyse
+        def st(ex, w, r, rpe, n=1):
+            return {"exercise": ex, "actual_weight_kg": w, "actual_reps": r,
+                    "actual_rpe": rpe, "set_number": n, "is_warmup": False}
+        prior = {"date": "2026-08-10", "mesocycle_week": 3,
+                 "sets": [st("cable row", 78.5, 9, 9)]}
+        today = {"date": "2026-08-28", "mesocycle_week": 4,
+                 "sets": [st("Cable Row", 78.5, 6, 7)]}
+        outcomes = {o.exercise: o for o in analyse([prior, today]).sessions[0].outcomes}
+        self.assertIn("78.5kg", outcomes["Cable Row"].top)
+        self.assertNotIn("TBD", outcomes["Cable Row"].top)
 
     def test_log_names_the_template_does_not_know_are_reported(self):
         """A large "not logged" count means one of two very different things,

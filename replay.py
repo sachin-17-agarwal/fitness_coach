@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 from data import get_supabase, now_local
-from prescribe import PULL_DAY, PriorSet, infer_session_weeks, prescribe_pull
+from prescribe import (PULL_DAY, PriorSet, infer_session_weeks, norm_name,
+                       prescribe_pull)
 
 log = logging.getLogger(__name__)
 
@@ -134,28 +135,27 @@ def fetch_pull_sessions(days: int) -> tuple[list[dict], list[str]]:
     if migrated:
         older = sum(1 for s in pull if s.get("week_inferred"))
         if older:
+            # Deliberately not "N of M": the header counts COMPARISONS, which
+            # is one fewer than the sessions fetched (the oldest supplies
+            # history and is never itself judged), so an "N of M" here reads as
+            # a contradiction — "19 of these 19" under a heading saying 18.
+            how_many = ("Every session" if older == len(pull)
+                        else f"{older} of the sessions")
             notes.append(
-                f"{older} of these {len(pull)} sessions were logged before "
-                f"the week started being recorded, so their week is worked "
-                f"out from the rotation and marked reconstructed. That is "
-                f"reliable while no session was skipped or swapped. Sessions "
-                f"from now on record it exactly, and this number will shrink."
+                f"{how_many} in this window was logged before the week "
+                f"started being recorded, so its week is worked out from the "
+                f"rotation and marked reconstructed. That is reliable while no "
+                f"session was skipped or swapped. Sessions from now on record "
+                f"it exactly."
+                if older == len(pull) else
+                f"{how_many} in this window were logged before the week "
+                f"started being recorded, so their week is worked out from the "
+                f"rotation and marked reconstructed. That is reliable while no "
+                f"session was skipped or swapped. Sessions from now on record "
+                f"it exactly, and this number will shrink."
             )
 
     return pull, notes
-
-
-def norm_name(name: str) -> str:
-    """Fold an exercise name to a comparison key.
-
-    The template says "Pull-Ups"; the log holds whatever the resolver wrote on
-    the day, and the two logging paths do not agree — the iOS app resolves
-    through the exercises library, Telegram through find_exercise. Matching the
-    raw strings made "Pull Ups" and "pull-ups" into exercises that were never
-    performed, which is not a small inaccuracy: it is the difference between
-    "you skipped this" and "this is filed under another name".
-    """
-    return "".join(ch for ch in name.lower() if ch.isalnum())
 
 
 def top_sets(session: dict) -> dict[str, PriorSet]:
