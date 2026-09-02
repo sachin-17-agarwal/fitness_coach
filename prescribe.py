@@ -207,7 +207,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     if prior is None or prior.load is None:
         deferred.append(
             f"{exercise}: no logged history, so no opening load can be computed. "
-            f":350 and :363 call this a genuine feel-out — ramp in clear steps and "
+            f"The programme calls this a genuine feel-out — ramp in clear steps and "
             f"find where {low}-{high} reps lands at RPE {targets['top']:g}."
         )
         return SetSpec(None, low, high, targets["top"])
@@ -246,28 +246,28 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         if prior.week is not None and prior.week != 3:
             deferred.append(
                 f"{exercise}: opening week 1 from a week {prior.week} session. "
-                f":181 anchors week 1 to the WEEK 3 peak — a deload result would "
+                f"Week 1 anchors to the WEEK 3 peak — a deload result would "
                 f"open the cycle low and the wave would never move."
             )
         elif prior.week is None:
             deferred.append(
                 f"{exercise}: opening week 1 from the most recent session, but "
-                f":181 anchors it to last cycle's WEEK 3. The log does not record "
-                f"which week a session belonged to (workout_sessions has no "
-                f"mesocycle column), so this cannot be verified."
+                f"week 1 anchors to last cycle's WEEK 3. This session has no "
+                f"recorded mesocycle week, so which week it belonged to "
+                f"cannot be verified."
             )
         if prior.reps is not None and prior.reps >= high:
             step = INCREMENT[kind]
             load = _round_load(load + step)
             reasons.append(
                 f"Week 1 opens ~{step:g}kg ABOVE last cycle: week 3 finished at "
-                f"{prior.reps} reps, at or above the top of the {low}-{high} range "
-                f"(:181). Reps reset to the bottom."
+                f"{prior.reps} reps, at or above the top of the {low}-{high} range. "
+                f"Reps reset to the bottom."
             )
         else:
             reasons.append(
                 f"Week 1 opens at last cycle's week 3 load with reps reset to the "
-                f"bottom of the {low}-{high} range (:181). Baseline means the start "
+                f"bottom of the {low}-{high} range. Baseline means the start "
                 f"of a NEW cycle, never a repeat of the last one."
             )
         return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
@@ -326,7 +326,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         if prior.week is not None and prior.week != 3:
             deferred.append(
                 f"{exercise}: deloading against a week {prior.week} session, but "
-                f":185 anchors the deload to WEEK 3. The rep subtraction is only "
+                f"a deload anchors to WEEK 3. The rep subtraction is only "
                 f"correct against a peak-week set."
             )
         elif prior.rpe is not None and prior.rpe <= targets["top"]:
@@ -350,7 +350,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         else:
             reasons.append(
                 f"Deload: same load as last session, {drop} fewer reps so the set "
-                f"lands at RPE {targets['top']:g} (:185)."
+                f"lands at RPE {targets['top']:g}."
             )
         return SetSpec(load, reps, reps, targets["top"], bodyweight=bodyweight)
 

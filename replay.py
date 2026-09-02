@@ -12,6 +12,7 @@ before, and how does that compare to what was actually performed?
 
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import timedelta
 
 from data import get_supabase, now_local
@@ -145,26 +146,54 @@ def performed_counts(session: dict) -> dict[str, int]:
     return dict(counts)
 
 
-def build_report(sessions: list[dict], default_week: int = 1,
-                 notes: list[str] | None = None) -> str:
-    """Render the replay. Pure — takes sessions, returns text."""
-    lines: list[str] = []
-    for note in notes or []:
-        lines.append(f"NOTE: {note}")
-    if notes:
-        lines.append("")
+@dataclass
+class ExerciseOutcome:
+    """One exercise on one session: what the programme proposed vs what was done."""
+    exercise: str
+    verdict: str            # "match" | "diverge" | "missing"
+    proposed: int
+    logged: int | None
+    template: int
+    top: str                # the proposed top set, rendered
 
-    if len(sessions) < 2:
-        lines.append(f"Need at least two Pull sessions to replay; found "
-                     f"{len(sessions)}.")
-        return "\n".join(lines)
 
+@dataclass
+class SessionOutcome:
+    date: str
+    prior_date: str
+    week: int
+    week_source: str        # "recorded" | "reconstructed" | "default"
+    outcomes: list
+    deferred: list
+
+
+@dataclass
+class Replay:
+    """The result of the comparison, before anything decides how to print it.
+
+    Analysis and rendering are separate because the same replay goes to two
+    surfaces that want opposite shapes: a browser hitting /admin/replay can take
+    a wide chronological table, and a chat bubble on a phone cannot — it needs
+    the verdict first and roughly 38 columns. Computing twice is how the two
+    drift apart and start disagreeing, so it is computed once.
+    """
+    sessions: list
+    totals: dict
+    notes: list
+    span: tuple | None
+
+
+def analyse(sessions: list[dict], default_week: int = 1,
+            notes: list[str] | None = None) -> Replay:
+    """Compare each logged session against what the programme would have said.
+
+    Pure — takes sessions, returns structure. Each session is judged knowing
+    only the session before it, which is the whole point: the programme gets no
+    access to what actually happened on the day it is prescribing.
+    """
     template = {name: count for name, count, _ in PULL_DAY}
     totals = {"match": 0, "diverge": 0, "deferred": 0, "missing": 0}
-
-    lines.append(f"Replaying {len(sessions) - 1} Pull sessions "
-                 f"({sessions[1]['date']} → {sessions[-1]['date']})")
-    lines.append("")
+    out: list[SessionOutcome] = []
 
     for prior_session, session in zip(sessions, sessions[1:]):
         history = top_sets(prior_session)
@@ -179,30 +208,74 @@ def build_report(sessions: list[dict], default_week: int = 1,
         proposals = prescribe_pull(week, history)
         actual = performed_counts(session)
 
-        lines.append("=" * 74)
-        lines.append(f"{session['date']}  (prior: {prior_session['date']}, "
-                     f"week {week} — {source})")
-
+        outcomes: list[ExerciseOutcome] = []
+        deferred: list[str] = []
         for proposal in proposals:
             name = proposal.exercise
             proposed = proposal.working_set_count
             done = actual.get(name)
-            top = proposal.working[0]
             if done is None:
-                totals["missing"] += 1
-                lines.append(f"  {name:22} not logged   proposed {proposed} sets")
+                verdict = "missing"
             elif done == proposed == template[name]:
-                totals["match"] += 1
-                lines.append(f"  {name:22} match        {proposed} sets · {top.render()}")
+                verdict = "match"
             else:
-                totals["diverge"] += 1
-                lines.append(f"  {name:22} DIVERGE      proposed {proposed}, "
-                             f"logged {done} (template {template[name]}) · {top.render()}")
-
-        for proposal in proposals:
+                verdict = "diverge"
+            totals[verdict] += 1
+            outcomes.append(ExerciseOutcome(
+                exercise=name, verdict=verdict, proposed=proposed, logged=done,
+                template=template[name], top=proposal.working[0].render(),
+            ))
             for note in proposal.deferred:
                 totals["deferred"] += 1
-                lines.append(f"  ! {note}")
+                deferred.append(note)
+
+        out.append(SessionOutcome(
+            date=session["date"], prior_date=prior_session["date"], week=week,
+            week_source=source, outcomes=outcomes, deferred=deferred,
+        ))
+
+    span = (out[0].date, out[-1].date) if out else None
+    return Replay(sessions=out, totals=totals, notes=list(notes or []), span=span)
+
+
+def build_report(sessions: list[dict], default_week: int = 1,
+                 notes: list[str] | None = None) -> str:
+    """Render the replay wide, for a browser or a terminal."""
+    lines: list[str] = []
+    for note in notes or []:
+        lines.append(f"NOTE: {note}")
+    if notes:
+        lines.append("")
+
+    if len(sessions) < 2:
+        lines.append(f"Need at least two Pull sessions to replay; found "
+                     f"{len(sessions)}.")
+        return "\n".join(lines)
+
+    replay = analyse(sessions, default_week=default_week)
+    totals = replay.totals
+
+    lines.append(f"Replaying {len(replay.sessions)} Pull sessions "
+                 f"({replay.span[0]} → {replay.span[1]})")
+    lines.append("")
+
+    for s in replay.sessions:
+        lines.append("=" * 74)
+        lines.append(f"{s.date}  (prior: {s.prior_date}, "
+                     f"week {s.week} — {s.week_source})")
+        for o in s.outcomes:
+            if o.verdict == "missing":
+                lines.append(f"  {o.exercise:22} not logged   "
+                             f"proposed {o.proposed} sets")
+            elif o.verdict == "match":
+                lines.append(f"  {o.exercise:22} match        "
+                             f"{o.proposed} sets · {o.top}")
+            else:
+                lines.append(f"  {o.exercise:22} DIVERGE      "
+                             f"proposed {o.proposed}, logged {o.logged} "
+                             f"(template {o.template}) · {o.top}")
+        for note in s.deferred:
+            lines.append(f"  ! {note}")
 
     lines.append("")
     lines.append("=" * 74)
@@ -218,8 +291,145 @@ def build_report(sessions: list[dict], default_week: int = 1,
     return "\n".join(lines)
 
 
-def run_pull_replay(days: int = 90, default_week: int = 1) -> str:
-    """Fetch and render in one call. Read-only; raises only on a failed fetch."""
+# A phone chat bubble is roughly this many characters wide before it wraps.
+# The wide report runs to 184 columns, which on a phone becomes five ragged
+# wrapped lines per row with the column alignment destroyed.
+CHAT_WIDTH = 38
+
+
+def _wrap(text: str, indent: str = "", width: int = CHAT_WIDTH) -> list[str]:
+    """Greedy wrap. Long single words are left long rather than broken, since
+    the only long words here are exercise names and loads."""
+    words, lines, current = text.split(), [], indent
+    for word in words:
+        candidate = f"{current} {word}" if current.strip() else f"{indent}{word}"
+        if len(candidate) > width and current.strip():
+            lines.append(current)
+            current = f"{indent}{word}"
+        else:
+            current = candidate
+    if current.strip():
+        lines.append(current)
+    return lines
+
+
+def _short_date(iso: str) -> str:
+    """2026-08-28 -> 28 Aug. Saves ~6 columns a line and reads faster."""
+    months = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    try:
+        _, month, day = iso.split("-")
+        return f"{int(day)} {months[int(month) - 1]}"
+    except (ValueError, IndexError):
+        return iso
+
+
+def render_chat(replay: Replay) -> str:
+    """Render the replay for a chat bubble on a phone.
+
+    Three differences from the wide report, all of them because of who reads
+    this one. The verdict comes FIRST — a phone reader should not have to scroll
+    a table to find out whether anything disagreed. Agreements are counted, not
+    listed, because a list of things that went fine is what buries the three
+    that did not. And the deferred notes are grouped by what they say instead of
+    repeated once per exercise, which on a real history is the same sentence
+    five times in a row.
+    """
+    L: list[str] = []
+    for note in replay.notes:
+        L.extend(_wrap(f"NOTE: {note}"))
+    if replay.notes:
+        L.append("")
+
+    if not replay.sessions:
+        L.extend(_wrap("Not enough Pull sessions logged yet to replay — it "
+                       "needs at least two, so it can judge one against the "
+                       "one before it."))
+        return "\n".join(L)
+
+    t = replay.totals
+    n = len(replay.sessions)
+    L.append(f"REPLAY · {n} Pull session{'' if n == 1 else 's'}")
+    start, end = _short_date(replay.span[0]), _short_date(replay.span[1])
+    L.append(start if start == end else f"{start} → {end}")
+    L.append("")
+    L.extend(_wrap("The programme written as code, run against what you "
+                   "actually logged. Each session is judged knowing only the "
+                   "session before it."))
+    L.append("")
+
+    L.append("── VERDICT ──")
+    L.append(f"agreed      {t['match']:>4}")
+    L.append(f"disagreed   {t['diverge']:>4}")
+    L.append(f"not logged  {t['missing']:>4}")
+    L.append("")
+
+    diverged = [(s, o) for s in replay.sessions
+                for o in s.outcomes if o.verdict == "diverge"]
+    if diverged:
+        L.append("── WHERE IT DISAGREED ──")
+        last_date = None
+        for s, o in diverged:
+            if s.date != last_date:
+                L.append(f"{_short_date(s.date)} · week {s.week} "
+                         f"({s.week_source})")
+                last_date = s.date
+            L.append(f"  {o.exercise}")
+            L.append(f"    code {o.proposed} sets · you did {o.logged}")
+            if o.proposed != o.template:
+                L.append(f"    template says {o.template}")
+            L.extend(_wrap(f"code's top set {o.top}", indent="    "))
+        L.append("")
+    else:
+        L.extend(_wrap("Nothing disagreed. Every logged exercise ran the set "
+                       "count the programme would have chosen."))
+        L.append("")
+
+    # Group by what the note SAYS, not which exercise it is about — the same
+    # sentence repeated seven times is what makes the raw report unreadable.
+    grouped: dict[str, list[str]] = {}
+    for s in replay.sessions:
+        for note in s.deferred:
+            exercise, _, body = note.partition(": ")
+            if not body:
+                exercise, body = "", note
+            grouped.setdefault(body, [])
+            if exercise and exercise not in grouped[body]:
+                grouped[body].append(exercise)
+
+    if grouped:
+        L.append("── THE CODE COULDN'T DECIDE ──")
+        L.extend(_wrap("These are the places the programme genuinely does not "
+                       "determine an answer, so the coach has been deciding "
+                       "them with nothing to check against."))
+        L.append("")
+        for body, exercises in grouped.items():
+            L.extend(_wrap(body))
+            if exercises:
+                L.extend(_wrap(", ".join(exercises), indent="  "))
+            L.append("")
+
+    L.append("── HOW TO READ THIS ──")
+    L.extend(_wrap("A disagreement is a question, not a verdict. It means the "
+                   "programme on paper and the programme as performed differ, "
+                   "and one of the two is wrong."))
+    return "\n".join(L)
+
+
+def run_pull_replay(days: int = 90, default_week: int = 1,
+                    surface: str = "wide") -> str:
+    """Fetch and render in one call. Read-only; raises only on a failed fetch.
+
+    `surface="chat"` renders for a phone; anything else renders wide for a
+    browser. Both go through the same analyse() so the two can never disagree
+    about what happened — only about how to show it.
+    """
     days = max(1, min(int(days), MAX_DAYS))
     sessions, notes = fetch_pull_sessions(days)
+    if surface == "chat":
+        if len(sessions) < 2:
+            return render_chat(Replay(sessions=[], totals={}, notes=notes,
+                                      span=None))
+        return render_chat(analyse(sessions, default_week=default_week,
+                                   notes=notes))
     return build_report(sessions, default_week=default_week, notes=notes)
