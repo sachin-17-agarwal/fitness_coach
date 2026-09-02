@@ -2713,3 +2713,111 @@ class SetComparisonTests(unittest.TestCase):
     def test_nothing_logged_yet_renders_a_plain_line(self):
         self.assertEqual(progression.format_set_comparisons([]),
                          "  Nothing logged yet today.")
+
+
+class ReplayEndpointTests(unittest.TestCase):
+    """The analysis and the database are not reachable from the same place.
+
+    The Railway server talks to Supabase all day; the environment the replay was
+    written in is refused at the egress proxy. Rather than move credentials to
+    the code, the code runs where the credentials already are — which means a
+    route, and a route means it has to be safe to expose.
+    """
+
+    def setUp(self):
+        import webhook
+        self.webhook = webhook
+        webhook.app.config["TESTING"] = True
+        self.client = webhook.app.test_client()
+        from settings import get_settings
+        self.fake = get_settings().__class__(app_api_token="secret-token")
+
+    def _get(self, path):
+        with patch.object(self.webhook, "get_settings", return_value=self.fake):
+            return self.client.get(path)
+
+    def test_no_token_is_rejected(self):
+        self.assertEqual(self._get("/admin/replay").status_code, 401)
+
+    def test_a_wrong_token_is_rejected(self):
+        self.assertEqual(self._get("/admin/replay?token=nope").status_code, 401)
+
+    def test_a_query_string_token_is_accepted_so_a_link_can_be_tapped(self):
+        """A browser will not send an Authorization header. The trade is
+        bounded by the route being read-only."""
+        r = self._get("/admin/replay?token=secret-token")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("text/plain", r.mimetype)
+
+    def test_a_header_token_still_works(self):
+        with patch.object(self.webhook, "get_settings", return_value=self.fake):
+            r = self.client.get("/admin/replay",
+                                headers={"Authorization": "Bearer secret-token"})
+        self.assertEqual(r.status_code, 200)
+
+    def test_it_is_get_only_so_nothing_can_be_written_through_it(self):
+        with patch.object(self.webhook, "get_settings", return_value=self.fake):
+            self.assertEqual(self.client.post("/admin/replay?token=secret-token")
+                             .status_code, 405)
+
+    def test_a_failure_is_reported_as_text_rather_than_a_500(self):
+        """It is a diagnostic. Why it failed is the thing worth reading, and a
+        500 page says nothing."""
+        r = self._get("/admin/replay?token=secret-token")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Replay failed", r.get_data(as_text=True))
+
+    def test_a_junk_days_parameter_does_not_raise(self):
+        r = self._get("/admin/replay?token=secret-token&days=banana")
+        self.assertEqual(r.status_code, 200)
+
+
+class ReplayReportTests(unittest.TestCase):
+    """build_report is pure — sessions in, text out — so the whole replay is
+    testable without a database."""
+
+    @staticmethod
+    def _session(date, week=None, inferred=False, sets=()):
+        row = {"id": date, "date": date, "type": "Pull", "sets": list(sets)}
+        if week is not None:
+            row["mesocycle_week"] = week
+            if inferred:
+                row["week_inferred"] = True
+        return row
+
+    @staticmethod
+    def _set(exercise, weight, reps, rpe):
+        return {"exercise": exercise, "is_warmup": False, "notes": None,
+                "actual_weight_kg": weight, "actual_reps": reps, "actual_rpe": rpe}
+
+    def test_one_session_cannot_be_replayed(self):
+        from replay import build_report
+        out = build_report([self._session("2026-08-28")])
+        self.assertIn("at least two", out)
+
+    def test_the_week_source_is_always_named(self):
+        """A reconstruction must never be mistaken for a recorded fact."""
+        from replay import build_report
+        sets = [self._set("Cable Row", 80.0, 8, 8.0)]
+        recorded = build_report([self._session("2026-08-24", week=3, sets=sets),
+                                 self._session("2026-08-28", week=4, sets=sets)])
+        guessed = build_report([self._session("2026-08-24", week=3, inferred=True, sets=sets),
+                                self._session("2026-08-28", week=4, inferred=True, sets=sets)])
+        self.assertIn("recorded", recorded)
+        self.assertIn("reconstructed", guessed)
+
+    def test_notes_are_surfaced_at_the_top(self):
+        from replay import build_report
+        out = build_report([], notes=["something worth knowing"])
+        self.assertTrue(out.startswith("NOTE: something worth knowing"))
+
+    def test_a_matching_session_reports_as_a_match(self):
+        from replay import build_report
+        prior = self._session("2026-08-24", week=3,
+                              sets=[self._set("Cable Row", 80.0, 8, 8.0)])
+        today = self._session("2026-08-28", week=1,
+                              sets=[self._set("Cable Row", 80.0, 6, 8.0),
+                                    self._set("Cable Row", 65.0, 11, 7.0)])
+        out = build_report([prior, today])
+        self.assertIn("Cable Row", out)
+        self.assertIn("match", out)

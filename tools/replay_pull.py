@@ -1,187 +1,60 @@
-"""Replay prescribe_pull() against real logged history.
+"""Command-line front end for the Pull-day replay.
 
-The falsifiable version of "the programme should be code". For every Pull
-session in the window, this asks: given only what was known BEFORE that day,
-what would the algorithm have prescribed — and how does that compare to what
-was actually performed?
+The work lives in replay.py so the web process can import it without pulling in
+a CLI script — see /admin/replay in webhook.py, which is how this runs when the
+database is only reachable from the server.
 
-It changes nothing and writes nothing. Run it with the same environment the
-backend uses:
-
-    python tools/replay_pull.py            # last 90 days
+    python tools/replay_pull.py                       # last 90 days
     python tools/replay_pull.py --days 180
+    python tools/replay_pull.py --export history.json # no credentials in the file
+    python tools/replay_pull.py --from-json history.json
 
-Read the output for three things, in order of importance:
+Read the output for three things, most valuable first:
 
-  DEFERRED   — what the programme genuinely does not determine. Every line here
-               is a decision the coach has been making invisibly, with nothing
-               to check it against. This is the most valuable column.
+  !          what the programme does not determine at all. Every line is a
+             decision the coach has been making with nothing to check it against.
 
-  DIVERGENCE — where the algorithm and the logged session disagree. A
-               divergence is NOT automatically the algorithm being wrong; it
-               may be the programme-on-paper and the programme-as-performed
-               having drifted apart. Either way it is a question worth
-               answering, and it has been unaskable until now.
+  DIVERGE    where the algorithm and the logged session disagree. A question,
+             not a verdict — it may be the programme on paper and the programme
+             as performed having drifted apart.
 
-  MATCH      — where they agree. This is the part that no longer needs a
-               language model.
+  match      where they agree. This is the part that no longer needs a language
+             model.
 """
 
 import argparse
 import json
 import os
 import sys
-from collections import defaultdict
-from datetime import timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data import get_supabase, now_local              # noqa: E402
-from prescribe import (  # noqa: E402
-    PULL_DAY, PriorSet, infer_session_weeks, prescribe_pull,
-)
-
-
-def _is_cardio_or_yoga(row: dict) -> bool:
-    return (row.get("notes") or "").lower().startswith(("cardio", "yoga"))
-
-
-def fetch_pull_sessions(days: int) -> list[dict]:
-    """Pull sessions oldest-first, each with its working sets."""
-    supabase = get_supabase()
-    if not supabase:
-        raise SystemExit(
-            "No Supabase client. Set SUPABASE_URL and SUPABASE_KEY the way the "
-            "backend does, then re-run."
-        )
-    since = (now_local().date() - timedelta(days=days)).isoformat()
-
-    def _query(columns: str):
-        # Every session type, not only Pull. The week is reconstructed by
-        # counting rotation boundaries, and filtering to one day would drop the
-        # day-4 completions the count depends on.
-        return (
-            supabase.table("workout_sessions")
-            .select(columns)
-            .gte("date", since)
-            .order("date")
-            .order("id")
-            .execute()
-        ).data or []
-
-    try:
-        sessions = _query("id, date, type, mesocycle_week, mesocycle_day")
-    except Exception:
-        # Pre-migration database. The replay still runs; it just cannot tell a
-        # deload from an under-target session, which is the whole reason the
-        # columns exist.
-        print("NOTE: workout_sessions has no mesocycle columns — falling back to "
-              "--week. Run migrations/001_workout_session_mesocycle.sql and the "
-              "week stops being a guess.\n")
-        sessions = _query("id, date, type")
-    if not sessions:
-        return []
-
-    rows = (
-        supabase.table("workout_sets")
-        .select("workout_session_id, exercise, is_warmup, notes, "
-                "actual_weight_kg, actual_reps, actual_rpe")
-        .in_("workout_session_id", [s["id"] for s in sessions])
-        .order("logged_at")
-        .order("id")
-        .execute()
-    ).data or []
-
-    by_session = defaultdict(list)
-    for row in rows:
-        if row.get("is_warmup") or _is_cardio_or_yoga(row):
-            continue
-        by_session[row["workout_session_id"]].append(row)
-
-    # Reconstruct the week for any session that does not carry one, then keep
-    # only the Pull days for the replay itself.
-    state = _load_mesocycle_state(supabase)
-    if state:
-        inferred = infer_session_weeks([s.get("type", "") for s in sessions], *state)
-        for session, week in zip(sessions, inferred):
-            if session.get("mesocycle_week") is None and week is not None:
-                session["mesocycle_week"] = week
-                session["week_inferred"] = True
-
-    for session in sessions:
-        session["sets"] = by_session.get(session["id"], [])
-    return [s for s in sessions if s.get("type") == "Pull"]
-
-
-def _load_mesocycle_state(supabase) -> tuple[int, int] | None:
-    """The (week, day) of the NEXT session, from the memory table."""
-    try:
-        rows = (
-            supabase.table("memory")
-            .select("key, value")
-            .in_("key", ["mesocycle_week", "mesocycle_day"])
-            .execute()
-        ).data or []
-        values = {r["key"]: r["value"] for r in rows}
-        return (int(values["mesocycle_week"]), int(values["mesocycle_day"]))
-    except Exception:
-        print("NOTE: could not read the mesocycle state, so the week cannot be "
-              "reconstructed. Falling back to --week.\n")
-        return None
-
-
-def top_sets(session: dict) -> dict[str, PriorSet]:
-    """The heaviest working set per exercise — what progression tracks."""
-    best: dict[str, dict] = {}
-    for row in session["sets"]:
-        name = (row.get("exercise") or "").strip()
-        if not name:
-            continue
-        weight = row.get("actual_weight_kg") or 0
-        if name not in best or weight > (best[name].get("actual_weight_kg") or 0):
-            best[name] = row
-    return {
-        name: PriorSet(
-            load=row.get("actual_weight_kg"),
-            reps=row.get("actual_reps"),
-            rpe=row.get("actual_rpe"),
-            date=session["date"],
-            week=session.get("mesocycle_week"),
-        )
-        for name, row in best.items()
-    }
-
-
-def performed_counts(session: dict) -> dict[str, int]:
-    counts: dict[str, int] = defaultdict(int)
-    for row in session["sets"]:
-        name = (row.get("exercise") or "").strip()
-        if name:
-            counts[name] += 1
-    return dict(counts)
+from replay import build_report, fetch_pull_sessions  # noqa: E402
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=90)
+    parser.add_argument("--week", type=int, default=1,
+                        help="mesocycle week to assume for sessions that neither "
+                             "record one nor can have one reconstructed")
     parser.add_argument("--export", metavar="FILE",
-                        help="dump the fetched Pull history to JSON and exit. "
-                             "Contains training data only — no credentials — so "
-                             "the file is safe to share for offline analysis.")
+                        help="dump the fetched history to JSON and exit. Training "
+                             "data only — no credentials — so it is safe to share.")
     parser.add_argument("--from-json", metavar="FILE", dest="from_json",
-                        help="replay from a file written by --export instead of "
-                             "hitting Supabase. Needs no credentials.")
-    parser.add_argument("--week", type=int, default=None,
-                        help="assume this mesocycle week for every session "
-                             "(the log does not record it)")
+                        help="replay a file written by --export. Needs no "
+                             "credentials and no database.")
     args = parser.parse_args()
 
+    notes: list[str] = []
     if args.from_json:
         with open(args.from_json, encoding="utf-8") as handle:
             sessions = json.load(handle)
-        print(f"Replaying from {args.from_json} ({len(sessions)} sessions)\n")
     else:
-        sessions = fetch_pull_sessions(args.days)
+        try:
+            sessions, notes = fetch_pull_sessions(args.days)
+        except RuntimeError as e:
+            raise SystemExit(str(e))
 
     if args.export:
         with open(args.export, "w", encoding="utf-8") as handle:
@@ -190,69 +63,7 @@ def main() -> None:
               f"No credentials are in this file.")
         return
 
-    if len(sessions) < 2:
-        raise SystemExit(
-            f"Need at least two Pull sessions to replay; found {len(sessions)} "
-            f"in {args.days} days."
-        )
-
-    template = {name: count for name, count, _ in PULL_DAY}
-    totals = {"match": 0, "diverge": 0, "deferred": 0, "missing": 0}
-
-    print(f"Replaying {len(sessions) - 1} Pull sessions "
-          f"({sessions[1]['date']} → {sessions[-1]['date']})\n")
-
-    for prior_session, session in zip(sessions, sessions[1:]):
-        history = top_sets(prior_session)
-        # The session's own recorded week beats the --week guess. Only sessions
-        # written after the migration carry one.
-        week = session.get("mesocycle_week") or args.week or 1
-        if session.get("mesocycle_week") and not session.get("week_inferred"):
-            week_source = "recorded"
-        elif session.get("week_inferred"):
-            week_source = "reconstructed"
-        else:
-            week_source = "--week" if args.week else "default"
-        proposals = prescribe_pull(week, history)
-        actual = performed_counts(session)
-
-        print("=" * 78)
-        print(f"{session['date']}  (prior: {prior_session['date']}, "
-              f"week {week} — {week_source})")
-
-        for proposal in proposals:
-            name = proposal.exercise
-            proposed = proposal.working_set_count
-            done = actual.get(name)
-            top = proposal.working[0]
-
-            if done is None:
-                totals["missing"] += 1
-                print(f"  {name:22} MISSING   proposed {proposed} sets, "
-                      f"none logged")
-                continue
-            if done == proposed == template[name]:
-                totals["match"] += 1
-                print(f"  {name:22} match     {proposed} sets · {top.render()}")
-            else:
-                totals["diverge"] += 1
-                print(f"  {name:22} DIVERGE   proposed {proposed}, "
-                      f"logged {done} (template {template[name]}) · {top.render()}")
-
-        for proposal in proposals:
-            for note in proposal.deferred:
-                totals["deferred"] += 1
-                print(f"  ! {note}")
-
-    print("\n" + "=" * 78)
-    print(f"match {totals['match']} · diverge {totals['diverge']} · "
-          f"not logged {totals['missing']} · deferred {totals['deferred']}")
-    print(
-        "\nA DIVERGE line is a question, not a verdict: it means the programme "
-        "on paper and\nthe programme as performed disagree. A ! line is "
-        "something the programme does not\ndetermine at all — the coach has "
-        "been deciding it with nothing to check it against."
-    )
+    print(build_report(sessions, default_week=args.week, notes=notes))
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import logging
 import re
 import secrets
 import traceback
-from flask import Flask, request, jsonify
+from flask import Flask, Response, request, jsonify
 
 from settings import get_settings
 
@@ -355,6 +355,53 @@ def status():
 
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
+
+@app.route("/admin/replay", methods=["GET"])
+def admin_replay():
+    """Replay the Pull-day programme against real history, as plain text.
+
+    This exists because the analysis and the database are not reachable from the
+    same place. This server talks to Supabase all day; the environment the
+    replay was written in is refused at the egress proxy. Rather than move
+    credentials to the code, the code runs where the credentials already are.
+
+    GET, and the token may travel as ?token= instead of a header, so the whole
+    thing is one tappable link from a phone. That is a deliberate, bounded
+    trade: query strings land in server logs and browser history where a header
+    would not. What limits it is that the route is READ-ONLY — it issues selects
+    and returns text — so a leaked URL exposes training data already visible on
+    the athlete's own history screen, and nothing can be written through it.
+
+        /admin/replay?token=<APP_API_TOKEN>&days=180
+
+    Auth: Authorization: Bearer <APP_API_TOKEN>, or ?token=<APP_API_TOKEN>.
+    """
+    token = (request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+             or request.args.get("token", "").strip())
+    expected_token = get_settings().app_api_token
+    if not expected_token:
+        return jsonify({"error": "APP_API_TOKEN not configured"}), 503
+    if not secrets.compare_digest(token, expected_token):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    def _int_arg(name: str, default: int) -> int:
+        try:
+            return int(request.args.get(name, default))
+        except (TypeError, ValueError):
+            return default
+
+    try:
+        from replay import run_pull_replay
+        report = run_pull_replay(days=_int_arg("days", 90),
+                                 default_week=_int_arg("week", 1))
+    except Exception as e:
+        # Never a 500. This is a diagnostic, and why it failed is the thing
+        # worth reading.
+        traceback.print_exc()
+        report = f"Replay failed: {type(e).__name__}: {e}"
+
+    return Response(report, mimetype="text/plain; charset=utf-8")
+
 
 @app.route("/admin/cleanup", methods=["POST"])
 def admin_cleanup():
