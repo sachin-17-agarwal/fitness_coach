@@ -31,6 +31,7 @@ is ambiguous or contradicts itself, the conflict is recorded on the proposal
 rather than silently resolved — see `Proposal.deferred`.
 """
 
+import re
 from dataclasses import dataclass, field
 
 # ── Exercise classification ──────────────────────────────────────────────────
@@ -148,6 +149,17 @@ class SetSpec:
         return f"{load} x{reps} RPE{self.rpe:g}"
 
 
+# " (:182)." -> "."   and   "(:64 applied to X)" -> "(applied to X)".
+# Anchored on the colon-digit form so "RPE 8" and "8-12" are untouched.
+_CITATION_RE = re.compile(r"\s*\(:\d{1,4}\)|\(:\d{1,4}\s+|(?<![\w:]):\d{1,4}\b")
+
+
+def strip_citations(text: str) -> str:
+    """Remove system_prompt.txt line references from athlete-facing text."""
+    return _CITATION_RE.sub(lambda m: "(" if m.group().startswith("(") and
+                            m.group().endswith(" ") else "", text).strip()
+
+
 @dataclass
 class Proposal:
     """What the programme says for one exercise today.
@@ -169,6 +181,10 @@ class Proposal:
     rest_seconds: int = 120
     reasons: list[str] = field(default_factory=list)
     deferred: list[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.reasons = [strip_citations(r) for r in self.reasons]
+        self.deferred = [strip_citations(d) for d in self.deferred]
 
     @property
     def working_set_count(self) -> int:
@@ -226,7 +242,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         # Flagging it there would report the protocol working as a fault.
         deferred.append(
             f"{exercise}: last session ran {prior.reps} reps against a "
-            f"{low}-{high} range — BELOW range, which :70 says is not available. "
+            f"{low}-{high} range — BELOW range, which the programme does not allow. "
             f"Bringing it back in means cutting the load; the size of that cut is "
             f"a coaching decision, not arithmetic. (If that session was a DELOAD "
             f"this is expected and not a fault — the log does not record which "

@@ -12,7 +12,7 @@ before, and how does that compare to what was actually performed?
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from data import get_supabase, now_local
@@ -74,9 +74,18 @@ def fetch_pull_sessions(days: int) -> tuple[list[dict], list[str]]:
         sessions = _query("id, date, type, mesocycle_week, mesocycle_day")
     except Exception:
         notes.append(
-            "workout_sessions has no mesocycle columns — the week is "
-            "reconstructed from the rotation instead. Running "
-            "migrations/001_workout_session_mesocycle.sql makes it exact."
+            # No underscores: the iOS bubble parses inline markdown, so
+            # "workout_sessions" and "001_workout_session_mesocycle.sql" reach
+            # the athlete as "workoutsessions" and "001workoutsessionmesocycle"
+            # — the underscores are read as emphasis and consumed. He does not
+            # need the table name or the filename anyway; he needs to know the
+            # week labels below are inferred rather than recorded.
+            "Your sessions do not record which mesocycle week they belonged "
+            "to, so every week below is worked out from the rotation rather "
+            "than read from the log. That is reliable while no session was "
+            "skipped or swapped, and it is why each one is marked "
+            "reconstructed. The database migration I wrote makes it exact — "
+            "ask me to walk you through it."
         )
         sessions = _query("id, date, type")
 
@@ -115,11 +124,28 @@ def fetch_pull_sessions(days: int) -> tuple[list[dict], list[str]]:
     return [s for s in sessions if s.get("type") == "Pull"], notes
 
 
+def norm_name(name: str) -> str:
+    """Fold an exercise name to a comparison key.
+
+    The template says "Pull-Ups"; the log holds whatever the resolver wrote on
+    the day, and the two logging paths do not agree — the iOS app resolves
+    through the exercises library, Telegram through find_exercise. Matching the
+    raw strings made "Pull Ups" and "pull-ups" into exercises that were never
+    performed, which is not a small inaccuracy: it is the difference between
+    "you skipped this" and "this is filed under another name".
+    """
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
 def top_sets(session: dict) -> dict[str, PriorSet]:
-    """The heaviest working set per exercise — what progression tracks."""
+    """The heaviest working set per exercise — what progression tracks.
+
+    Keyed by norm_name so a prior session filed under a spelling variant still
+    supplies history, rather than reading as a first-ever session.
+    """
     best: dict[str, dict] = {}
     for row in session.get("sets") or []:
-        name = (row.get("exercise") or "").strip()
+        name = norm_name((row.get("exercise") or "").strip())
         if not name:
             continue
         weight = row.get("actual_weight_kg") or 0
@@ -138,12 +164,23 @@ def top_sets(session: dict) -> dict[str, PriorSet]:
 
 
 def performed_counts(session: dict) -> dict[str, int]:
+    """Working sets per exercise, keyed by norm_name."""
     counts: dict[str, int] = defaultdict(int)
     for row in session.get("sets") or []:
-        name = (row.get("exercise") or "").strip()
+        name = norm_name((row.get("exercise") or "").strip())
         if name:
             counts[name] += 1
     return dict(counts)
+
+
+def logged_display_names(session: dict) -> dict[str, str]:
+    """norm_name -> the spelling the log actually used, for reporting back."""
+    seen: dict[str, str] = {}
+    for row in session.get("sets") or []:
+        raw = (row.get("exercise") or "").strip()
+        if raw:
+            seen.setdefault(norm_name(raw), raw)
+    return seen
 
 
 @dataclass
@@ -181,6 +218,11 @@ class Replay:
     totals: dict
     notes: list
     span: tuple | None
+    # Exercise names found in the log that no template entry claims. A high
+    # "not logged" count means one of two very different things, and only this
+    # tells them apart: work that was skipped, or work filed under a name the
+    # template does not recognise.
+    unmatched: dict = field(default_factory=dict)
 
 
 def analyse(sessions: list[dict], default_week: int = 1,
@@ -192,6 +234,8 @@ def analyse(sessions: list[dict], default_week: int = 1,
     access to what actually happened on the day it is prescribing.
     """
     template = {name: count for name, count, _ in PULL_DAY}
+    template_keys = {norm_name(name) for name in template}
+    unmatched: dict[str, int] = defaultdict(int)
     totals = {"match": 0, "diverge": 0, "deferred": 0, "missing": 0}
     out: list[SessionOutcome] = []
 
@@ -207,13 +251,16 @@ def analyse(sessions: list[dict], default_week: int = 1,
 
         proposals = prescribe_pull(week, history)
         actual = performed_counts(session)
+        for key, display in logged_display_names(session).items():
+            if key not in template_keys:
+                unmatched[display] += 1
 
         outcomes: list[ExerciseOutcome] = []
         deferred: list[str] = []
         for proposal in proposals:
             name = proposal.exercise
             proposed = proposal.working_set_count
-            done = actual.get(name)
+            done = actual.get(norm_name(name))
             if done is None:
                 verdict = "missing"
             elif done == proposed == template[name]:
@@ -235,7 +282,8 @@ def analyse(sessions: list[dict], default_week: int = 1,
         ))
 
     span = (out[0].date, out[-1].date) if out else None
-    return Replay(sessions=out, totals=totals, notes=list(notes or []), span=span)
+    return Replay(sessions=out, totals=totals, notes=list(notes or []),
+                  span=span, unmatched=dict(unmatched))
 
 
 def build_report(sessions: list[dict], default_week: int = 1,
@@ -398,6 +446,19 @@ def render_chat(replay: Replay) -> str:
                     else _short_date(dates[0]))
             L.append(f"- {exercise} — {when}")
         L.append("")
+
+        if replay.unmatched:
+            L.append("These names ARE in your log for those days, and the "
+                     "programme does not recognise any of them. If one is the "
+                     "same movement under another name, that is a naming "
+                     "mismatch and not a missed exercise — the count above is "
+                     "wrong by however many it accounts for.")
+            L.append("")
+            for name, count in sorted(replay.unmatched.items(),
+                                      key=lambda kv: -kv[1]):
+                sessions = f"{count} sessions" if count > 1 else "1 session"
+                L.append(f"- {name} — {sessions}")
+            L.append("")
 
     # Group by what the note SAYS, not which exercise it is about — the same
     # sentence repeated seven times is what makes the raw report unreadable.
