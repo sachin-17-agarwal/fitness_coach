@@ -14,7 +14,8 @@ from coach import (
     extract_exercise_from_set_message,
     load_system_prompt,
 )
-from coach_parsing import check_set_counts, parse_session_template
+from coach_parsing import (check_set_counts, enforce_set_counts,
+                           parse_session_template)
 import data
 import coach as coach_module
 import progression
@@ -1538,6 +1539,10 @@ class CachedPrefixStabilityTests(unittest.TestCase):
         "get_weekly_volume": {},
         "get_load_stalls": [],
         "get_weak_point_history": [],
+        "get_current_loads": [],
+        # Today's sets by definition — it belongs in the live half, and the
+        # test below pins it there.
+        "get_set_comparisons": [],
     }
 
     def _build(self, **overrides):
@@ -1591,6 +1596,19 @@ class CachedPrefixStabilityTests(unittest.TestCase):
             "the cached prefix moved mid-session — every later call pays write "
             "rates on ~32k tokens instead of read rates",
         )
+
+    def test_the_set_comparison_block_stays_out_of_the_cached_half(self):
+        """It is a comparison against TODAY's sets, so it moves on every logged
+        set. In the stable half it would rewrite ~32k tokens per set for a
+        reply that is identical either way."""
+        comparison = [{"exercise": "Machine Bicep Curl", "verdict": "harder",
+                       "load": 55.0, "reps": 9, "rpe": 8.0,
+                       "prev_load": 55.0, "prev_reps": 9, "prev_rpe": 7.0,
+                       "prev_date": "2026-08-28"}]
+        stable, live, _ = self._build(get_set_comparisons=comparison)
+        self.assertNotIn("TODAY vs LAST SESSION", stable)
+        self.assertIn("TODAY vs LAST SESSION", live)
+        self.assertIn("HARDER for identical work", live)
 
     def test_todays_date_never_appears_in_the_cached_block(self):
         """A blunt catch-all for the next fetch that forgets an upper bound."""
@@ -2495,3 +2513,197 @@ class SystemPromptConsistencyTests(unittest.TestCase):
         tracked which cycle he was in — so it never expired."""
         self.assertNotIn("weeks 1-2 double as the volume ramp", self.prompt)
         self.assertNotIn("Week 1 carries 2-3 of the new sets", self.prompt)
+
+
+class SetCountEnforcementTrimsTests(unittest.TestCase):
+    """Logging the divergence was not enough.
+
+    The count is computed, rendered into context as an explicit lookup, and a
+    Pull session still went out with three sets of Reverse Cable Fly against a
+    template of two — a week after the same session had correctly explained why
+    it is two. Both replies were defensible; only one was right; and from the
+    athlete's side the pair is indistinguishable from randomness, which costs
+    the correct reply its authority too.
+    """
+
+    def setUp(self):
+        self.prompt = load_system_prompt()
+
+    def test_the_reported_case_a_third_reverse_fly_set_is_removed(self):
+        reply = ("*Reverse Cable Fly*\n"
+                 "Working Set: 8kg x12 RPE7 | Tempo: 2-1-2 | Rest: 90s\n"
+                 "Back-off: 8kg x14 RPE7, 8kg x12 RPE7\n"
+                 "Form: Lead with the elbows.\n")
+        out, fixes = enforce_set_counts(reply, self.prompt, "Pull")
+        self.assertEqual(len(fixes), 1)
+        self.assertEqual(fixes[0]["dropped"], 1)
+        self.assertIn("Back-off: 8kg x14 RPE7\n", out)
+        self.assertNotIn("8kg x12 RPE7\n", out)
+        # And the result now satisfies the check that flagged it.
+        self.assertEqual(check_set_counts(out, self.prompt, "Pull")["mismatches"], [])
+
+    def test_a_correct_block_is_returned_untouched_byte_for_byte(self):
+        reply = ("*Machine Bicep Curl*\n"
+                 "Working Set: 55kg x9 RPE8 | Tempo: 3-1-1 | Rest: 90s\n"
+                 "Back-off: 45kg x12 RPE7, 45kg x10 RPE7\n"
+                 "Form: No swinging.\n")
+        out, fixes = enforce_set_counts(reply, self.prompt, "Pull")
+        self.assertEqual(fixes, [])
+        self.assertEqual(out, reply)
+
+    def test_an_under_count_is_never_filled_in(self):
+        """Adding a set means inventing a load and a rep target the coach did
+        not choose — worse than the wrong count. Report it, don't fix it."""
+        reply = ("*Machine Bicep Curl*\n"
+                 "Working Set: 55kg x9 RPE8\n"
+                 "Back-off: 45kg x12 RPE7\n")
+        out, fixes = enforce_set_counts(reply, self.prompt, "Pull")
+        self.assertEqual(fixes, [])
+        self.assertEqual(out, reply)
+        self.assertEqual(len(check_set_counts(out, self.prompt, "Pull")["mismatches"]), 1)
+
+    def test_a_revised_block_is_left_alone(self):
+        """The marker is the coach saying the structure is deliberate."""
+        reply = ("*Reverse Cable Fly*\n"
+                 "Revised: adding a set, rear delts felt fresh\n"
+                 "Working Set: 8kg x12 RPE7\n"
+                 "Back-off: 8kg x14 RPE7, 8kg x12 RPE7\n")
+        out, fixes = enforce_set_counts(reply, self.prompt, "Pull")
+        self.assertEqual(fixes, [])
+        self.assertEqual(out, reply)
+
+    def test_straight_sets_are_trimmed_on_the_working_line(self):
+        """Ab work enumerates every set on the working line and has no
+        back-off, so the surplus is there instead."""
+        reply = ("*Ab Crunch Machine*\n"
+                 "Working Set: 75kg x12, 75kg x12, 75kg x12, 75kg x12 RPE8 | Rest: 90s\n"
+                 "Form: Controlled.\n")
+        out, fixes = enforce_set_counts(reply, self.prompt, "Legs")
+        self.assertEqual(len(fixes), 1)
+        self.assertEqual(fixes[0]["phase"], "working")
+        self.assertIn("75kg x12, 75kg x12, 75kg x12 RPE8", out)
+
+    def test_a_trailing_rpe_survives_the_trim(self):
+        """The straight-set format hangs one RPE off the LAST entry. Dropping
+        the tail would take the target effort with it and leave the card with
+        no RPE at all."""
+        reply = ("*Cable Crunch*\n"
+                 "Working Set: 25kg x12, 25kg x12, 25kg x12, 25kg x12 RPE8\n")
+        out, _ = enforce_set_counts(reply, self.prompt, "Cardio+Abs")
+        self.assertIn("RPE8", out)
+        self.assertEqual(out.count("25kg x12"), 3)
+
+    def test_an_exercise_with_no_template_entry_is_untouched(self):
+        """Substitutions and weak-point slots have no template line. Trimming
+        on a guess is worse than leaving them."""
+        reply = ("*Overhead Cable Extension*\n"
+                 "Working Set: 30kg x12 RPE7\n"
+                 "Back-off: 25kg x14 RPE7, 25kg x12 RPE7\n")
+        out, fixes = enforce_set_counts(reply, self.prompt, "Cardio+Abs")
+        self.assertEqual(fixes, [])
+        self.assertEqual(out, reply)
+
+    def test_narrative_and_pipe_suffixes_survive(self):
+        """Tempo and Rest ride on the same line after a pipe and must not be
+        eaten by the trim."""
+        reply = ("Here we go.\n\n"
+                 "*Reverse Cable Fly*\n"
+                 "Back-off: 8kg x14 RPE7, 8kg x12 RPE7 | Tempo: 2-1-2 | Rest: 90s\n")
+        out, _ = enforce_set_counts(reply, self.prompt, "Pull")
+        self.assertIn("Tempo: 2-1-2", out)
+        self.assertIn("Rest: 90s", out)
+        self.assertIn("Here we go.", out)
+
+
+class SetComparisonTests(unittest.TestCase):
+    """55kg x9 @RPE8 today against 55kg x9 @RPE7 last session was reported to
+    the athlete as "one better than last session at the same RPE".
+
+    Identical reps, and the RPE had moved. So there was no improvement, and the
+    set was HARDER for the same work — the opposite of what he was told. Both
+    facts were already in his context; only the comparison between them was
+    missing, which is find_current_loads' lesson one level up.
+    """
+
+    @staticmethod
+    def _set(exercise, weight, reps, rpe, date="2026-09-02"):
+        return {"date": date, "exercise": exercise, "is_warmup": False,
+                "notes": None, "actual_weight_kg": weight, "actual_reps": reps,
+                "actual_rpe": rpe, "target_reps": None, "target_rpe": None}
+
+    @staticmethod
+    def _ref(exercise, load, reps, rpe, date="2026-08-28"):
+        return {"exercise": exercise, "date": date, "load": load, "reps": reps,
+                "rpe": rpe, "met_target": True}
+
+    def test_same_load_same_reps_higher_rpe_is_not_a_progression(self):
+        """The reported case."""
+        out = progression.find_set_comparisons(
+            [self._set("Machine Bicep Curl", 55, 9, 8.0)],
+            [self._ref("Machine Bicep Curl", 55.0, 9, 7.0)],
+        )
+        self.assertEqual(out[0]["verdict"], "harder")
+        rendered = progression.format_set_comparisons(out)
+        self.assertIn("NOT a progression", rendered)
+        self.assertIn("HARDER", rendered)
+
+    def test_the_same_numbers_at_a_lower_rpe_say_the_load_is_ready(self):
+        out = progression.find_set_comparisons(
+            [self._set("Machine Bicep Curl", 55, 9, 6.0)],
+            [self._ref("Machine Bicep Curl", 55.0, 9, 7.0)],
+        )
+        self.assertEqual(out[0]["verdict"], "easier")
+        self.assertIn("ready to move", progression.format_set_comparisons(out))
+
+    def test_identical_everything_is_flat_not_a_gain(self):
+        out = progression.find_set_comparisons(
+            [self._set("Lat Pulldown", 95, 5, 8.0)],
+            [self._ref("Lat Pulldown", 95.0, 5, 8.0)],
+        )
+        self.assertEqual(out[0]["verdict"], "matched")
+        self.assertIn("Flat, not a gain", progression.format_set_comparisons(out))
+
+    def test_an_extra_rep_at_the_same_load_is_a_progression(self):
+        out = progression.find_set_comparisons(
+            [self._set("Cable Row", 86.5, 6, 7.0)],
+            [self._ref("Cable Row", 86.5, 5, 7.0)],
+        )
+        self.assertEqual(out[0]["verdict"], "reps_up")
+        self.assertIn("Progression", progression.format_set_comparisons(out))
+
+    def test_fewer_reps_is_called_out_as_not_a_progression(self):
+        out = progression.find_set_comparisons(
+            [self._set("Cable Row", 86.5, 4, 7.0)],
+            [self._ref("Cable Row", 86.5, 5, 7.0)],
+        )
+        self.assertEqual(out[0]["verdict"], "reps_down")
+        self.assertIn("NOT a progression", progression.format_set_comparisons(out))
+
+    def test_a_load_change_reports_as_a_load_change(self):
+        up = progression.find_set_comparisons(
+            [self._set("T-Bar Row", 57.5, 5, 7.0)], [self._ref("T-Bar Row", 55.0, 5, 7.0)])
+        down = progression.find_set_comparisons(
+            [self._set("T-Bar Row", 52.5, 5, 7.0)], [self._ref("T-Bar Row", 55.0, 5, 7.0)])
+        self.assertEqual(up[0]["verdict"], "load_up")
+        self.assertEqual(down[0]["verdict"], "load_down")
+
+    def test_an_exercise_with_no_prior_session_says_so(self):
+        out = progression.find_set_comparisons(
+            [self._set("Reverse Cable Fly", 8, 12, 7.0)], [])
+        self.assertEqual(out[0]["verdict"], "no_history")
+        self.assertIn("nothing to compare", progression.format_set_comparisons(out))
+
+    def test_warmups_never_become_the_top_set(self):
+        """A 30kg warm-up must not be compared against a 55kg working set."""
+        out = progression.find_set_comparisons(
+            [dict(self._set("Machine Bicep Curl", 30, 8, 5.0), is_warmup=True),
+             self._set("Machine Bicep Curl", 55, 9, 8.0)],
+            [self._ref("Machine Bicep Curl", 55.0, 9, 7.0)],
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["load"], 55.0)
+        self.assertEqual(out[0]["verdict"], "harder")
+
+    def test_nothing_logged_yet_renders_a_plain_line(self):
+        self.assertEqual(progression.format_set_comparisons([]),
+                         "  Nothing logged yet today.")

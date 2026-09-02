@@ -304,3 +304,148 @@ def get_current_loads(days: int = 42) -> list[dict]:
     if rows is None:
         return []
     return find_current_loads(rows)
+
+
+# ── Today vs last session, per exercise ──────────────────────────────────────
+
+def find_set_comparisons(today_rows: list[dict], prior: list[dict]) -> list[dict]:
+    """Today's top set against the same exercise's previous session.
+
+    Both facts were already in context and the comparison between them still
+    came out wrong: 55kg x9 @RPE8 today against 55kg x9 @RPE7 last session was
+    reported as "one better than last session at the same RPE". Identical reps,
+    and the RPE had moved — so not only was there no improvement, the set was
+    HARDER for the same work, which is the opposite of what the athlete was
+    told.
+
+    Nothing was missing from its context. The same lesson as find_current_loads,
+    one level up: computing the facts is not enough when the coaching decision
+    depends on the DIFFERENCE between two of them.
+
+    The RPE arm is the one nothing else in the system covers. find_stalls
+    catches a load that has not moved; the iOS card catches reps at the same
+    load (RestTimer.deltaLine). Neither looks at effort, so "same load, same
+    reps, rising RPE" — the early sign that recovery is slipping — has been
+    invisible everywhere.
+
+    Pure function over rows so it is testable without a database.
+    """
+    by_exercise = _group_by_exercise_and_date(today_rows)
+    reference = {entry["exercise"].strip().lower(): entry for entry in prior}
+
+    out = []
+    for exercise, sessions in by_exercise.items():
+        latest = max(sessions.keys())
+        top = _top_set(sessions[latest])
+        if top is None:
+            continue
+        ref = reference.get(exercise.strip().lower())
+        if ref is None:
+            out.append({"exercise": exercise, "verdict": "no_history",
+                        "load": _load_key(top), "reps": _as_int(top.get("actual_reps")),
+                        "rpe": _as_float(top.get("actual_rpe"))})
+            continue
+
+        load, reps, rpe = _load_key(top), _as_int(top.get("actual_reps")), _as_float(top.get("actual_rpe"))
+        entry = {
+            "exercise": exercise, "load": load, "reps": reps, "rpe": rpe,
+            "prev_load": ref["load"], "prev_reps": ref["reps"], "prev_rpe": ref["rpe"],
+            "prev_date": ref["date"],
+        }
+
+        numeric = isinstance(load, (int, float)) and isinstance(ref["load"], (int, float))
+        if numeric and load != ref["load"]:
+            entry["verdict"] = "load_up" if load > ref["load"] else "load_down"
+        elif load != ref["load"]:
+            entry["verdict"] = "changed"
+        elif reps is None or ref["reps"] is None:
+            entry["verdict"] = "same_load"
+        elif reps > ref["reps"]:
+            entry["verdict"] = "reps_up"
+        elif reps < ref["reps"]:
+            entry["verdict"] = "reps_down"
+        elif rpe is None or ref["rpe"] is None:
+            entry["verdict"] = "matched"
+        elif rpe > ref["rpe"]:
+            entry["verdict"] = "harder"
+        elif rpe < ref["rpe"]:
+            entry["verdict"] = "easier"
+        else:
+            entry["verdict"] = "matched"
+        out.append(entry)
+
+    out.sort(key=lambda e: e["exercise"].lower())
+    return out
+
+
+def _describe(entry: dict) -> str:
+    """One sentence stating the measurement AND its single reading.
+
+    The verdict is spelled out rather than left implied. "RPE +1 at the same
+    load and reps" has exactly one meaning, and leaving the coach to infer it
+    is what produced "progressing nicely" for a set that got harder.
+    """
+    verdict = entry["verdict"]
+    if verdict == "no_history":
+        return "no previous session in the window — nothing to compare."
+    prev = (f"{entry['prev_load']:g}kg" if isinstance(entry["prev_load"], (int, float))
+            else "bodyweight")
+    prev += f" x{entry['prev_reps']}" if entry["prev_reps"] is not None else ""
+    if entry["prev_rpe"] is not None:
+        prev += f" @RPE{entry['prev_rpe']:g}"
+    prev += f" on {entry['prev_date']}"
+
+    return {
+        "load_up": f"load UP vs {prev}.",
+        "load_down": f"load DOWN vs {prev}.",
+        "changed": f"different loading to {prev}.",
+        "same_load": f"same load as {prev}; reps or RPE missing, so no verdict.",
+        "reps_up": f"+{(entry['reps'] or 0) - (entry['prev_reps'] or 0)} rep(s) at the same load vs {prev}. Progression.",
+        "reps_down": f"{(entry['reps'] or 0) - (entry['prev_reps'] or 0)} rep(s) at the same load vs {prev}. NOT a progression.",
+        "harder": (f"SAME load, SAME reps as {prev}, but RPE is "
+                   f"{entry['rpe']:g} against {entry['prev_rpe']:g} — HARDER for identical "
+                   f"work. This is NOT a progression; treat it as a fatigue or "
+                   f"recovery signal."),
+        "easier": (f"same load and reps as {prev} at a LOWER RPE "
+                   f"({entry['rpe']:g} vs {entry['prev_rpe']:g}) — easier for identical work. "
+                   f"The load is ready to move."),
+        "matched": f"matched {prev} exactly — same load, reps and RPE. Flat, not a gain.",
+    }.get(verdict, f"compared against {prev}.")
+
+
+def format_set_comparisons(entries: list[dict]) -> str:
+    """Render the comparison block, one line per exercise trained today."""
+    if not entries:
+        return "  Nothing logged yet today."
+    lines = []
+    for entry in entries:
+        load = entry["load"]
+        load_text = "bodyweight" if load == "BW" else f"{load:g}kg"
+        detail = load_text + (f" x{entry['reps']}" if entry.get("reps") is not None else "")
+        if entry.get("rpe") is not None:
+            detail += f" @RPE{entry['rpe']:g}"
+        lines.append(f"  {entry['exercise']}: {detail} today — {_describe(entry)}")
+    return "\n".join(lines)
+
+
+def get_set_comparisons(days: int = 42) -> list[dict]:
+    """Today's top sets compared against each exercise's previous session."""
+    try:
+        supabase = get_supabase()
+        if not supabase:
+            return []
+        today = now_local().date().isoformat()
+        result = (
+            supabase.table("workout_sets")
+            .select("date, exercise, is_warmup, notes, actual_weight_kg, "
+                    "actual_reps, actual_rpe, target_reps, target_rpe")
+            .eq("date", today)
+            .execute()
+        )
+        today_rows = result.data or []
+    except Exception:
+        log.exception("Set-comparison fetch failed")
+        return []
+    if not today_rows:
+        return []
+    return find_set_comparisons(today_rows, get_current_loads(days))

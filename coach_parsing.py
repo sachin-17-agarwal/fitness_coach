@@ -728,3 +728,119 @@ def check_set_counts(reply: str, prompt: str, session_type: str) -> dict:
         bucket = "deliberate" if block.get("revised") else "mismatches"
         findings[bucket].append(entry)
     return findings
+
+
+# ── Set-count enforcement ────────────────────────────────────────────────────
+
+_RPE_SUFFIX_RE = re.compile(r'(?:rpe|@)\s*\d+(?:\.\d+)?\s*$', re.IGNORECASE)
+
+
+def _trim_set_line(line: str, keep: int) -> tuple[str, int]:
+    """Drop surplus comma-separated sets from a Working Set: / Back-off: line.
+
+    Pure removal — no set is invented and no number is altered. The one subtlety
+    is the straight-set format, where a single RPE trails the LAST entry
+    ("25kg x12, 25kg x12, 25kg x12 RPE8"). Trimming the tail would take the RPE
+    with it and leave the card with no target effort, so it is carried onto the
+    new last entry.
+    """
+    prefix, sep, rest = line.partition(":")
+    if not sep:
+        return line, 0
+    segments = rest.split("|")
+    sets = [s.strip() for s in segments[0].split(",") if s.strip()]
+    if len(sets) <= keep or keep < 1:
+        return line, 0
+
+    dropped = sets[keep:]
+    kept = sets[:keep]
+    trailing_rpe = _RPE_SUFFIX_RE.search(dropped[-1])
+    if trailing_rpe and not _RPE_SUFFIX_RE.search(kept[-1]):
+        kept[-1] = f"{kept[-1]} {trailing_rpe.group(0).strip()}"
+
+    segments[0] = " " + ", ".join(kept) + (" " if len(segments) > 1 else "")
+    return (prefix + ":" + "|".join(segments)).rstrip(), len(dropped)
+
+
+def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str, list[dict]]:
+    """Trim a prescription back to the template count when it exceeds it.
+
+    Observation was not enough. The count was computed, rendered into context as
+    an explicit lookup, and a Pull session still went out with three sets of
+    Reverse Cable Fly against a template of two — a week after the same session
+    correctly explained why it is two. The athlete cannot tell which reply to
+    trust, so the correct ones stop counting too.
+
+    This removes sets; it never adds one. Adding would mean inventing a load and
+    a rep target the coach did not choose, which is the one thing worse than the
+    wrong count. An UNDER-count is therefore left alone and reported, not filled.
+
+    Safe against the app's merge by construction. A block shorter than the one on
+    screen never shrinks it — reconciledPhase overlays onto unlogged slots and
+    keeps the planned length (WorkoutViewModel.swift:1521) — so a correction is
+    inert on a mid-exercise re-send and takes effect on the first prescription of
+    an exercise, which is where the count is actually set.
+
+    Blocks carrying a `Revised:` line are never touched: that marker is the
+    coach saying the structure is deliberate.
+    """
+    pairs, _total = parse_session_template(prompt, session_type)
+    expected = {_normalise_exercise(name): count for name, count in pairs}
+    if not expected:
+        return reply, []
+
+    header = re.compile(r'^\s*\*{1,2}([^*\n]+)\*{1,2}\s*$')
+    lines = reply.split("\n")
+
+    # Block spans first: a Revised: line anywhere in a block exempts the whole
+    # block, including lines above it.
+    blocks = []
+    for i, line in enumerate(lines):
+        found = header.match(line)
+        if found:
+            blocks.append({"name": found.group(1).strip(), "start": i, "end": len(lines)})
+            if len(blocks) > 1:
+                blocks[-2]["end"] = i
+
+    corrections = []
+    for block in blocks:
+        span = range(block["start"] + 1, block["end"])
+        body = [lines[i] for i in span]
+        if any(l.strip().lower().startswith(("revised:", "revision:")) for l in body):
+            continue
+
+        key = _normalise_exercise(block["name"])
+        target = expected.get(key)
+        if target is None:
+            target = _match_template_key(key, expected)
+        if target is None:
+            continue
+
+        straight = _set_shape(block["name"], target).startswith(f"{target} straight")
+        # Straight sets enumerate every set on the working line and carry no
+        # back-off; top-set/back-off shape is one working set plus target-1.
+        limits = {"working": target, "backoff": 0} if straight else {
+            "working": 1, "backoff": target - 1
+        }
+
+        for i in span:
+            lower = lines[i].strip().lower()
+            if any(lower.startswith(p) for p in _WORKING_PREFIXES):
+                phase = "working"
+            elif any(lower.startswith(p) for p in _BACKOFF_PREFIXES):
+                phase = "backoff"
+            else:
+                continue
+            if limits[phase] < 1:
+                continue
+            trimmed, dropped = _trim_set_line(lines[i], limits[phase])
+            if dropped:
+                lines[i] = trimmed
+                corrections.append({
+                    "exercise": block["name"],
+                    "phase": phase,
+                    "dropped": dropped,
+                    "target": target,
+                })
+
+    return ("\n".join(lines), corrections) if corrections else (reply, [])
