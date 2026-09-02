@@ -91,22 +91,24 @@ struct RibbonChart: View {
     var range: ClosedRange<Double>? = nil
     var endDotRadius: CGFloat = 5
 
+    /// Fixed range when given, else fitted to the data with a little air.
+    static func bounds(range: ClosedRange<Double>?, values: [Double]) -> ClosedRange<Double> {
+        if let range { return range }
+        let mn = values.min() ?? 0, mx = values.max() ?? 1
+        let air = max((mx - mn) * 0.25, mx * 0.02, 0.5)
+        return (mn - air)...(mx + air)
+    }
+
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
             let n = max(1, values.count)
             let present = values.enumerated().compactMap { i, v in v.map { (i, $0) } }
-            let lo: Double, hi: Double
-            if let range { lo = range.lowerBound; hi = range.upperBound }
-            else {
-                let vs = present.map(\.1)
-                let mn = vs.min() ?? 0, mx = vs.max() ?? 1
-                let air = max((mx - mn) * 0.25, mx * 0.02, 0.5)
-                lo = mn - air; hi = mx + air
-            }
+            let bounds = Self.bounds(range: range, values: present.map(\.1))
+            let lo = bounds.lowerBound, hi = bounds.upperBound
             let step = n > 1 ? (w - 2 * padX) / CGFloat(n - 1) : 0
-            func x(_ i: Int) -> CGFloat { padX + CGFloat(i) * step }
-            func y(_ v: Double) -> CGFloat { padY + (1 - CGFloat((v - lo) / max(hi - lo, 0.0001))) * (h - 2 * padY) }
+            let x: (Int) -> CGFloat = { i in padX + CGFloat(i) * step }
+            let y: (Double) -> CGFloat = { v in padY + (1 - CGFloat((v - lo) / max(hi - lo, 0.0001))) * (h - 2 * padY) }
             let pts = present.map { CGPoint(x: x($0.0), y: y($0.1)) }
 
             ZStack(alignment: .topLeading) {
@@ -172,8 +174,8 @@ struct DotBandChart: View {
             let lo = range.lowerBound, hi = range.upperBound
             let plotW = w - padX - padRight
             let step = n > 1 ? plotW / CGFloat(n - 1) : 0
-            func x(_ i: Int) -> CGFloat { padX + CGFloat(i) * step }
-            func y(_ v: Double) -> CGFloat { padY + (1 - CGFloat((v - lo) / max(hi - lo, 0.0001))) * (h - 2 * padY) }
+            let x: (Int) -> CGFloat = { i in padX + CGFloat(i) * step }
+            let y: (Double) -> CGFloat = { v in padY + (1 - CGFloat((v - lo) / max(hi - lo, 0.0001))) * (h - 2 * padY) }
             ZStack(alignment: .topLeading) {
                 ForEach(Array(shadedSlots), id: \.self) { i in
                     Rectangle().fill(Editorial.wash.opacity(0.7)).frame(width: max(step, 6), height: h)
@@ -237,7 +239,7 @@ struct WeekRangeChart: View {
             let w = geo.size.width, h = geo.size.height
             let padY: CGFloat = 20, labelH: CGFloat = 18
             let plotH = h - padY - labelH
-            func y(_ v: Double) -> CGFloat { padY + (1 - CGFloat((v - range.lowerBound) / max(range.upperBound - range.lowerBound, 0.0001))) * (plotH - padY) }
+            let y: (Double) -> CGFloat = { v in padY + (1 - CGFloat((v - range.lowerBound) / max(range.upperBound - range.lowerBound, 0.0001))) * (plotH - padY) }
             let slot = (w - 2 * Editorial.gutter) / CGFloat(max(1, groups.count))
             ZStack(alignment: .topLeading) {
                 if let band {
@@ -398,8 +400,8 @@ struct SleepBarsChart: View {
             let n = max(1, hours.count)
             let plotW = w - padX - padRight
             let step = n > 1 ? plotW / CGFloat(n - 1) : 0
-            func x(_ i: Int) -> CGFloat { padX + CGFloat(i) * step }
-            func y(_ v: Double) -> CGFloat { padY + (1 - CGFloat((v - range.lowerBound) / (range.upperBound - range.lowerBound))) * (h - 2 * padY) }
+            let x: (Int) -> CGFloat = { i in padX + CGFloat(i) * step }
+            let y: (Double) -> CGFloat = { v in padY + (1 - CGFloat((v - range.lowerBound) / (range.upperBound - range.lowerBound))) * (h - 2 * padY) }
             ZStack(alignment: .topLeading) {
                 ForEach(Array(shadedSlots), id: \.self) { i in
                     Rectangle().fill(Editorial.wash.opacity(0.7)).frame(width: max(step, 6), height: h).offset(x: x(i) - max(step, 6) / 2)
@@ -449,8 +451,8 @@ struct TrendDotsChart: View {
             let padX = Editorial.gutter, padY: CGFloat = 18
             let n = max(1, values.count)
             let step = n > 1 ? (w - 2 * padX) / CGFloat(n - 1) : 0
-            func x(_ i: Int) -> CGFloat { padX + CGFloat(i) * step }
-            func y(_ v: Double) -> CGFloat { padY + (1 - CGFloat((v - range.lowerBound) / max(range.upperBound - range.lowerBound, 0.0001))) * (h - 2 * padY) }
+            let x: (Int) -> CGFloat = { i in padX + CGFloat(i) * step }
+            let y: (Double) -> CGFloat = { v in padY + (1 - CGFloat((v - range.lowerBound) / max(range.upperBound - range.lowerBound, 0.0001))) * (h - 2 * padY) }
             ZStack(alignment: .topLeading) {
                 ForEach(0..<n, id: \.self) { i in
                     if let v = values[i] {
@@ -511,7 +513,7 @@ struct BandBar: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            func px(_ v: Double) -> CGFloat { CGFloat(min(v, maxValue) / maxValue) * w }
+            let px: (Double) -> CGFloat = { v in CGFloat(min(v, maxValue) / maxValue) * w }
             ZStack(alignment: .leading) {
                 Rectangle().fill(Color.white.opacity(0.06)).frame(height: 4).offset(y: 5)
                 Rectangle().fill(Color.white.opacity(0.18))
@@ -534,7 +536,7 @@ struct BalanceBeam: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            func px(_ p: Double) -> CGFloat { CGFloat((min(max(p, 40), 160) - 40) / 120) * w }
+            let px: (Double) -> CGFloat = { p in CGFloat((min(max(p, 40), 160) - 40) / 120) * w }
             ZStack(alignment: .leading) {
                 Rectangle().fill(Color.white.opacity(0.06)).frame(height: 4).offset(y: 6)
                 Rectangle()
