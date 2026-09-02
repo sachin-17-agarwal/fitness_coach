@@ -3349,6 +3349,67 @@ class ChatReplayRenderingTests(unittest.TestCase):
         self.assertEqual(outcomes["Pull-Ups"].verdict, "match")
         self.assertEqual(outcomes["Pull-Ups"].logged, 2)
 
+    def test_the_reconstruction_note_survives_the_migration(self):
+        """The note was tied to the QUERY failing, not to the data.
+
+        Once the columns exist the query stops failing and the note stops
+        printing — but sessions logged before that keep a NULL week and are
+        still reconstructed. The labels would have read "(reconstructed)" with
+        nothing left on the page explaining why, which is worse than the state
+        it replaced.
+        """
+        from unittest.mock import MagicMock, patch
+        import replay as replay_mod
+
+        sessions = [{"id": f"s{i}", "date": f"2026-08-{10 + i:02d}",
+                     "type": "Pull", "mesocycle_week": None,
+                     "mesocycle_day": None} for i in range(3)]
+
+        client = MagicMock()
+        def table(name):
+            t = MagicMock()
+            chain = t.select.return_value
+            for attr in ("gte", "order", "in_"):
+                setattr(chain, attr, MagicMock(return_value=chain))
+            chain.execute.return_value = MagicMock(
+                data=sessions if name == "workout_sessions" else [])
+            return t
+        client.table.side_effect = table
+
+        with patch.object(replay_mod, "get_supabase", return_value=client), \
+             patch.object(replay_mod, "_load_mesocycle_state", return_value=(1, 1)), \
+             patch.object(replay_mod, "infer_session_weeks",
+                          return_value=[3, 4, 1]):
+            _, notes = replay_mod.fetch_pull_sessions(90)
+
+        self.assertTrue(notes, "no note left to explain the labels")
+        joined = " ".join(notes)
+        self.assertIn("3 of these 3 sessions", joined)
+        self.assertIn("reconstructed", joined)
+        self.assertNotRegex(joined, r"\w+_\w+")
+
+    def test_the_report_cannot_be_mistaken_for_a_prescription(self):
+        """The app treats a reply that parses as a prescription very
+        differently, and this report must never be one.
+
+        Two things key off it. CoachReply.parse renders a parsed plan as ledger
+        rows in a CoachPlanCard instead of as text, and applyAIResponse re-points
+        the live workout card when NOTHING parses but the prose names a known
+        exercise. This report names every exercise in the plan, so it sits
+        deliberately on one side of that line: no "*" markers, so
+        PrescriptionParser.parse returns nothing and the whole report renders as
+        text. The mid-session guard in coach.py covers the second hazard; this
+        covers the first, and pins the property the guard assumes.
+        """
+        import re as _re
+        out = self._chat()
+        self.assertEqual(out.count("*"), 0, "an asterisk makes this a plan card")
+        name_pattern = _re.compile(r"^[ \t]*\*{1,2}[^*\n]+\*{1,2}")
+        loose_sets = _re.compile(r"^\d+\s*(sets?|x)\b", _re.I)
+        for line in out.split("\n"):
+            self.assertIsNone(name_pattern.search(line), f"exercise-block line: {line!r}")
+            self.assertIsNone(loose_sets.search(line.strip()), f"set line: {line!r}")
+
     def test_log_names_the_template_does_not_know_are_reported(self):
         """A large "not logged" count means one of two very different things,
         and only this distinguishes them."""

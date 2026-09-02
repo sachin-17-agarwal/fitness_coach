@@ -70,16 +70,17 @@ def fetch_pull_sessions(days: int) -> tuple[list[dict], list[str]]:
             .execute()
         ).data or []
 
+    # Note text carries NO underscores: the iOS bubble parses inline markdown,
+    # so "workout_sessions" reaches the athlete as "workoutsessions" — the
+    # underscore is read as emphasis and consumed. He does not need the table
+    # name anyway; he needs to know whether the week labels below were read or
+    # inferred.
     try:
         sessions = _query("id, date, type, mesocycle_week, mesocycle_day")
+        migrated = True
     except Exception:
+        migrated = False
         notes.append(
-            # No underscores: the iOS bubble parses inline markdown, so
-            # "workout_sessions" and "001_workout_session_mesocycle.sql" reach
-            # the athlete as "workoutsessions" and "001workoutsessionmesocycle"
-            # — the underscores are read as emphasis and consumed. He does not
-            # need the table name or the filename anyway; he needs to know the
-            # week labels below are inferred rather than recorded.
             "Your sessions do not record which mesocycle week they belonged "
             "to, so every week below is worked out from the rotation rather "
             "than read from the log. That is reliable while no session was "
@@ -121,7 +122,27 @@ def fetch_pull_sessions(days: int) -> tuple[list[dict], list[str]]:
 
     for session in sessions:
         session["sets"] = by_session.get(session["id"], [])
-    return [s for s in sessions if s.get("type") == "Pull"], notes
+
+    pull = [s for s in sessions if s.get("type") == "Pull"]
+
+    # Once the columns exist the query stops failing, so the note above stops
+    # printing — but sessions logged BEFORE that keep a NULL week and are still
+    # reconstructed. Without this the labels would read "(reconstructed)" with
+    # nothing left on the page explaining why, which is worse than the state it
+    # replaced. Says how many, so the proportion visibly shrinks as new
+    # sessions are recorded.
+    if migrated:
+        older = sum(1 for s in pull if s.get("week_inferred"))
+        if older:
+            notes.append(
+                f"{older} of these {len(pull)} sessions were logged before "
+                f"the week started being recorded, so their week is worked "
+                f"out from the rotation and marked reconstructed. That is "
+                f"reliable while no session was skipped or swapped. Sessions "
+                f"from now on record it exactly, and this number will shrink."
+            )
+
+    return pull, notes
 
 
 def norm_name(name: str) -> str:
