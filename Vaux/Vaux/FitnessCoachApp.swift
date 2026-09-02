@@ -69,7 +69,7 @@ struct FitnessCoachApp: App {
             }
             .hiddenUnlessActive(selectedTab == .train)
 
-            HistoryView()
+            HistoryView(switchToChatTab: { selectedTab = .coach })
                 .hiddenUnlessActive(selectedTab == .history)
 
             SettingsView()
