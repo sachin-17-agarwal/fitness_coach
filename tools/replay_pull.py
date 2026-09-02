@@ -53,15 +53,28 @@ def fetch_pull_sessions(days: int) -> list[dict]:
             "backend does, then re-run."
         )
     since = (now_local().date() - timedelta(days=days)).isoformat()
-    sessions = (
-        supabase.table("workout_sessions")
-        .select("id, date, type")
-        .eq("type", "Pull")
-        .gte("date", since)
-        .order("date")
-        .order("id")
-        .execute()
-    ).data or []
+
+    def _query(columns: str):
+        return (
+            supabase.table("workout_sessions")
+            .select(columns)
+            .eq("type", "Pull")
+            .gte("date", since)
+            .order("date")
+            .order("id")
+            .execute()
+        ).data or []
+
+    try:
+        sessions = _query("id, date, type, mesocycle_week, mesocycle_day")
+    except Exception:
+        # Pre-migration database. The replay still runs; it just cannot tell a
+        # deload from an under-target session, which is the whole reason the
+        # columns exist.
+        print("NOTE: workout_sessions has no mesocycle columns — falling back to "
+              "--week. Run migrations/001_workout_session_mesocycle.sql and the "
+              "week stops being a guess.\n")
+        sessions = _query("id, date, type")
     if not sessions:
         return []
 
@@ -102,6 +115,7 @@ def top_sets(session: dict) -> dict[str, PriorSet]:
             reps=row.get("actual_reps"),
             rpe=row.get("actual_rpe"),
             date=session["date"],
+            week=session.get("mesocycle_week"),
         )
         for name, row in best.items()
     }
@@ -159,13 +173,17 @@ def main() -> None:
 
     for prior_session, session in zip(sessions, sessions[1:]):
         history = top_sets(prior_session)
-        week = args.week or 1
+        # The session's own recorded week beats the --week guess. Only sessions
+        # written after the migration carry one.
+        week = session.get("mesocycle_week") or args.week or 1
+        week_source = ("recorded" if session.get("mesocycle_week")
+                       else ("--week" if args.week else "default"))
         proposals = prescribe_pull(week, history)
         actual = performed_counts(session)
 
         print("=" * 78)
         print(f"{session['date']}  (prior: {prior_session['date']}, "
-              f"assumed week {week})")
+              f"week {week} — {week_source})")
 
         for proposal in proposals:
             name = proposal.exercise

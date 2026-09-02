@@ -59,7 +59,19 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
     status       TEXT NOT NULL DEFAULT 'active',
     start_time   TIMESTAMPTZ,
     end_time     TIMESTAMPTZ,
-    tonnage_kg   NUMERIC
+    tonnage_kg   NUMERIC,
+    -- Which point of the 4-week wave this session belonged to, stamped at
+    -- creation. The legacy `sessions` table carried both columns and they were
+    -- dropped when this table replaced it, which made a whole class of question
+    -- unanswerable: a deload holds week-3 loads and cuts reps, so a 5-rep set at
+    -- RPE 7 is either the protocol working exactly as designed or a session run
+    -- a full point under target, and NOTHING in the log distinguishes them.
+    -- The system prompt tells the coach to "check which week he is in before
+    -- judging effort" and then gives it no way to.
+    -- Nullable because rows written before this existed cannot be backfilled —
+    -- the mesocycle position at the time was never recorded anywhere.
+    mesocycle_week INTEGER,
+    mesocycle_day  INTEGER
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────

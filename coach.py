@@ -452,7 +452,11 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                 break
         if session_type == expected_session_type:
             session_type = infer_session_type_from_recent(conversation_history, expected_session_type)
-        start_session(session_type)
+        start_session(
+            session_type,
+            mesocycle_week=_safe_int(memory.get("mesocycle_week", 1)),
+            mesocycle_day=mesocycle_day,
+        )
 
     # ── Log set if workout is active and message contains set data ────────────
     state = get_workout_state()
@@ -472,7 +476,11 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
         should_implicit_start = bool(parsed_preview) and not has_session_for_today()
         if should_implicit_start:
             implicit_type = infer_session_type_from_recent(conversation_history, expected_session_type)
-            session_id = start_session(implicit_type)
+            session_id = start_session(
+                implicit_type,
+                mesocycle_week=_safe_int(memory.get("mesocycle_week", 1)),
+                mesocycle_day=mesocycle_day,
+            )
             if session_id:
                 state = get_workout_state()
                 workout_active = state.get("workout_mode") == "active"

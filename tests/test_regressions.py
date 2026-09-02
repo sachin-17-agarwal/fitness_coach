@@ -478,7 +478,13 @@ class RegressionTests(unittest.TestCase):
              patch("coach.send_telegram_message"):
             handle_incoming_message("100 x 8", memory)
 
-        start_mock.assert_called_once_with("Push")
+        # The session type is what this test was written for. The mesocycle
+        # position rides along now because it cannot be reconstructed later —
+        # a deload and an under-target session look identical in the log
+        # without it.
+        start_mock.assert_called_once_with(
+            "Push", mesocycle_week=1, mesocycle_day=2
+        )
         log_set_mock.assert_called_once()
 
     def test_set_log_does_not_implicit_start_when_today_has_session(self):

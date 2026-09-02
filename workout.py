@@ -72,8 +72,22 @@ def has_session_for_today() -> bool:
         log.exception("has_session_for_today failed")
         return False
 
-def start_session(session_type: str) -> str:
-    """Create a new workout session and activate workout mode."""
+def start_session(session_type: str, mesocycle_week: int | None = None,
+                  mesocycle_day: int | None = None) -> str:
+    """Create a new workout session and activate workout mode.
+
+    The mesocycle position is stamped at creation because it cannot be
+    reconstructed later. A deload holds week-3 loads and cuts reps, so a 5-rep
+    set at RPE 7 is either the protocol working exactly as designed or a session
+    run a full point under target — and with no week on the row, nothing can
+    tell those apart. The prompt instructs the coach to check which week he is
+    in before judging effort; this is what makes that possible.
+
+    Both arguments are optional and the insert degrades rather than fails: a
+    database that has not run migrations/001_workout_session_mesocycle.sql yet
+    rejects the unknown columns, and starting a workout must never depend on a
+    migration having been applied. The retry drops them and logs once.
+    """
     try:
         existing_state = get_workout_state()
         existing_session_id = existing_state.get("current_session_id", "")
@@ -82,12 +96,30 @@ def start_session(session_type: str) -> str:
             return existing_session_id
 
         supabase = get_supabase()
-        result = supabase.table("workout_sessions").insert({
+        row = {
             "date": today_local_str(),
             "type": session_type,
             "status": SESSION_STATUS_OPEN,
-            "start_time": now_local().isoformat()
-        }).execute()
+            "start_time": now_local().isoformat(),
+        }
+        if mesocycle_week is not None:
+            row["mesocycle_week"] = mesocycle_week
+        if mesocycle_day is not None:
+            row["mesocycle_day"] = mesocycle_day
+
+        try:
+            result = supabase.table("workout_sessions").insert(row).execute()
+        except Exception:
+            if "mesocycle_week" not in row and "mesocycle_day" not in row:
+                raise
+            log.warning(
+                "Session insert rejected the mesocycle columns — retrying "
+                "without them. Run migrations/001_workout_session_mesocycle.sql "
+                "so sessions record which week they belonged to."
+            )
+            row.pop("mesocycle_week", None)
+            row.pop("mesocycle_day", None)
+            result = supabase.table("workout_sessions").insert(row).execute()
         if not result.data:
             print("Failed to start session: insert returned no data")
             return ""
