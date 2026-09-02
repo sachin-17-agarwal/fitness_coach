@@ -47,6 +47,7 @@ final class WorkoutViewModel {
     /// it was previously only visible in Settings, which is how the week
     /// counter drifted to "6 of 4" unnoticed for an entire cycle.
     var mesocycleWeek: Int?
+    /// Rotation position, carried only so a new session row can record it.
 
     /// Week name and RPE targets, mirroring the coach's mesocycle protocol.
     var mesocyclePhaseLabel: String? {
@@ -894,7 +895,8 @@ final class WorkoutViewModel {
     /// Best-effort: the week is context, never a blocker, so a failed read
     /// just leaves the chip hidden rather than surfacing an error.
     private func loadMesocycleWeek() async {
-        mesocycleWeek = (try? await mesocycleService.loadState())?.week
+        let state = try? await mesocycleService.loadState()
+        mesocycleWeek = state?.week
     }
 
     func startRestTimer(seconds: Int) {

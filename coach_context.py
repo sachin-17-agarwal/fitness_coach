@@ -13,8 +13,9 @@ from data import (
     next_session_type_for, now_local, session_type_for,
 )
 from progression import (format_current_loads, format_peak_week_loads,
-                         format_stalls, get_current_loads, get_load_stalls,
-                         get_peak_week_loads)
+                         format_set_comparisons, format_stalls,
+                         get_current_loads, get_load_stalls,
+                         get_peak_week_loads, get_set_comparisons)
 from volume import (format_weak_point_history, format_weekly_volume,
                     get_weak_point_history, get_weekly_volume)
 from workout import get_substitution_history, get_workout_context, get_workout_state
@@ -305,11 +306,12 @@ def build_context_block(memory: dict, athlete_name: str,
     next_session = next_session_type_for(mesocycle_day, override=session_override)
 
     # One worker per fetch, counting the conditional recovery fetch below —
-    # eleven, not ten. Fewer would queue the tail behind the head while each
-    # still counts against its own 10s timeout. Keep this in step when a fetch
-    # is added; it went briefly out of step when the progression fetch landed
-    # alongside another branch's changes.
-    with ThreadPoolExecutor(max_workers=11) as executor:
+    # twelve: the eleven submitted unconditionally plus that one. Fewer would
+    # queue the tail behind the head while each still counts against its own 10s
+    # timeout. Keep this in step when a fetch is added — it has now drifted
+    # three times, most recently when the peak-week and set-comparison fetches
+    # landed on separate branches and each bumped the count to eleven.
+    with ThreadPoolExecutor(max_workers=12) as executor:
         futures = {
             executor.submit(get_full_session_history, 30): "session_history",
             executor.submit(get_recovery_history, 30): "recovery_history",
@@ -321,6 +323,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(get_current_loads): "current_loads",
             executor.submit(get_peak_week_loads): "peak_week_loads",
             executor.submit(get_weak_point_history): "weak_point",
+            executor.submit(get_set_comparisons): "set_comparisons",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
         # its own authoritative snapshot.
@@ -403,6 +406,7 @@ def build_context_block(memory: dict, athlete_name: str,
     current_loads = format_current_loads(results.get("current_loads") or [])
     peak_week_loads = format_peak_week_loads(results.get("peak_week_loads") or [])
     weak_point = format_weak_point_history(results.get("weak_point") or [])
+    set_comparisons = format_set_comparisons(results.get("set_comparisons") or [])
 
     # Split by volatility, not by topic. Everything that only changes once a
     # day goes in the first block so a cache breakpoint can sit between them;
@@ -456,6 +460,10 @@ Body weight: {data.get('weight_kg', 'N/A')}kg | Body fat: {data.get('body_fat_pc
 
 TODAY'S SESSIONS SO FAR:
 {today_sessions}
+
+TODAY vs LAST SESSION — computed per exercise. Read the verdict; do not
+re-derive it from the log:
+{set_comparisons}
 
 TODAY'S APPLE WATCH WORKOUTS:
 {apple_workouts_today}

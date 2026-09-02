@@ -120,8 +120,27 @@ def start_session(session_type: str) -> str:
             "status": SESSION_STATUS_OPEN,
             "start_time": now_local().isoformat(),
         }
+        # Stamped via main's helper, which reads the memory state itself so no
+        # caller has to thread it through.
         row.update(current_mesocycle_stamp())
-        result = supabase.table("workout_sessions").insert(row).execute()
+
+        # The insert degrades rather than fails. A database that has not run
+        # migrations/001_workout_session_mesocycle.sql rejects the unknown
+        # columns, and starting a workout must never depend on a migration
+        # having been applied — the session row matters more than the stamp.
+        try:
+            result = supabase.table("workout_sessions").insert(row).execute()
+        except Exception:
+            if "mesocycle_week" not in row and "mesocycle_day" not in row:
+                raise
+            log.warning(
+                "Session insert rejected the mesocycle columns — retrying "
+                "without them. Run migrations/001_workout_session_mesocycle.sql "
+                "so sessions record which week they belonged to."
+            )
+            row.pop("mesocycle_week", None)
+            row.pop("mesocycle_day", None)
+            result = supabase.table("workout_sessions").insert(row).execute()
         if not result.data:
             print("Failed to start session: insert returned no data")
             return ""

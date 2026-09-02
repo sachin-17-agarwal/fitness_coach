@@ -98,6 +98,20 @@ final class WorkoutService: Sendable {
 
     /// Creates a new workout session, marks it `in_progress`, and updates the
     /// workout state in the `memory` table.
+    /// - Parameters:
+    ///   - mesocycleWeek: which week of the 4-week wave this session belongs to
+    ///   - mesocycleDay: the rotation position (1-4)
+    ///
+    /// The mesocycle position is stamped at creation because it cannot be
+    /// reconstructed afterwards. A deload holds week-3 loads and cuts reps, so
+    /// a 5-rep set at RPE 7 is either the protocol working exactly as designed
+    /// or a session run a full point under target — and with no week on the
+    /// row, nothing distinguishes them. The coach is told to check which week
+    /// he is in before judging effort, and until now had no way to.
+    ///
+    /// The insert retries without the two columns if the database rejects
+    /// them, so an app build that ships ahead of
+    /// migrations/001_workout_session_mesocycle.sql still starts workouts.
     func startSession(type: String) async throws -> WorkoutSession {
         let sessionId = UUID()
         let today = Self.todayString()
@@ -110,7 +124,6 @@ final class WorkoutService: Sendable {
             "status": SessionStatus.openStored,
             "start_time": now,
         ]
-
         // Stamp the mesocycle position onto the session. It has to be recorded
         // here because it cannot be recovered afterwards: the week advances on
         // completion of a full rotation, not per calendar week, and yoga days
@@ -126,9 +139,22 @@ final class WorkoutService: Sendable {
             body["mesocycle_day"] = state.day
         }
 
-        let session: WorkoutSession = try await client.insertAndDecode(
-            "workout_sessions", body: body
-        )
+        // The insert degrades rather than fails. A database that has not run
+        // migrations/001_workout_session_mesocycle.sql rejects the unknown
+        // columns, and an app build must never be undeployable because a
+        // migration has not been applied yet — the session row matters more
+        // than the stamp on it.
+        let session: WorkoutSession
+        do {
+            session = try await client.insertAndDecode("workout_sessions", body: body)
+        } catch {
+            guard body["mesocycle_week"] != nil || body["mesocycle_day"] != nil else {
+                throw error
+            }
+            body.removeValue(forKey: "mesocycle_week")
+            body.removeValue(forKey: "mesocycle_day")
+            session = try await client.insertAndDecode("workout_sessions", body: body)
+        }
 
         // Best-effort: persist workout state to memory table.
         // Session row is already created above — don't lose it if state fails.
