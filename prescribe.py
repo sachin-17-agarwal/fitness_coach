@@ -215,6 +215,104 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     load = prior.load
     bodyweight = exercise in BODYWEIGHT
 
+    if prior.reps is not None and prior.reps < low and week != 4:
+        # :70 "That flexibility runs UPWARD only ... drifting BELOW an
+        # exercise's range is not." Reported rather than silently corrected:
+        # bringing the reps back in means dropping the load, and how far is a
+        # judgement about this athlete, not arithmetic.
+        #
+        # Week 4 is excluded because a deload is SUPPOSED to sit below the
+        # range — :74 gives "Cable Row 78.5kg x8 becomes 78.5kg x6" as correct.
+        # Flagging it there would report the protocol working as a fault.
+        deferred.append(
+            f"{exercise}: last session ran {prior.reps} reps against a "
+            f"{low}-{high} range — BELOW range, which :70 says is not available. "
+            f"Bringing it back in means cutting the load; the size of that cut is "
+            f"a coaching decision, not arithmetic. (If that session was a DELOAD "
+            f"this is expected and not a fault — the log does not record which "
+            f"week it was.)"
+        )
+
+    if week == 1:
+        # :181 — Week 1 anchors to LAST CYCLE'S WEEK 3, not to the most recent
+        # session, and it never repeats last cycle's numbers. "Take what he
+        # achieved in Week 3 (the peak week, not the deload) and open Week 1 at
+        # that load with reps reset to the BOTTOM of the range; where Week 3
+        # finished at or above the top of the range, open at the next increment
+        # up instead."
+        #
+        # Without this, weeks 2-4 progress from a Week 1 that simply repeated
+        # the last cycle, and the wave loops forever without moving.
+        if prior.week is not None and prior.week != 3:
+            deferred.append(
+                f"{exercise}: opening week 1 from a week {prior.week} session. "
+                f":181 anchors week 1 to the WEEK 3 peak — a deload result would "
+                f"open the cycle low and the wave would never move."
+            )
+        elif prior.week is None:
+            deferred.append(
+                f"{exercise}: opening week 1 from the most recent session, but "
+                f":181 anchors it to last cycle's WEEK 3. The log does not record "
+                f"which week a session belonged to (workout_sessions has no "
+                f"mesocycle column), so this cannot be verified."
+            )
+        if prior.reps is not None and prior.reps >= high:
+            step = INCREMENT[kind]
+            load = _round_load(load + step)
+            reasons.append(
+                f"Week 1 opens ~{step:g}kg ABOVE last cycle: week 3 finished at "
+                f"{prior.reps} reps, at or above the top of the {low}-{high} range "
+                f"(:181). Reps reset to the bottom."
+            )
+        else:
+            reasons.append(
+                f"Week 1 opens at last cycle's week 3 load with reps reset to the "
+                f"bottom of the {low}-{high} range (:181). Baseline means the start "
+                f"of a NEW cycle, never a repeat of the last one."
+            )
+        return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
+
+    if week == 2:
+        # :182 — "Keep the Week 1 weight and reach RPE 8 by adding reps toward
+        # the top of the range. If last week already hit the top of the range at
+        # RPE <=8, add 2.5-5kg instead and reset reps to the bottom."
+        if _met_top_of_range(prior, kind, targets["top"]):
+            step = INCREMENT[kind]
+            load = _round_load(load + step)
+            reasons.append(
+                f"Week 2 adds ~{step:g}kg: week 1 already reached the top of the "
+                f"{low}-{high} range at RPE {prior.rpe:g}, so reps have nowhere left "
+                f"to go (:182). Reps reset to the bottom."
+            )
+            return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
+        target_low = max(low, min((prior.reps or low) + 1, high))
+        reasons.append(
+            f"Week 2 holds the week 1 load and adds reps toward the top of the "
+            f"{low}-{high} range (:182). Volume before intensity."
+        )
+        return SetSpec(load, target_low, high, targets["top"], bodyweight=bodyweight)
+
+    if week == 3:
+        # :183 — "Reach it by adding load (preferred when reps are already at the
+        # top of the range) OR by grinding 1-2 more reps at the same weight.
+        # State which lever you used and why."
+        if prior.reps is not None and prior.reps >= high:
+            step = INCREMENT[kind]
+            load = _round_load(load + step)
+            reasons.append(
+                f"Week 3 peak via LOAD, ~{step:g}kg up: week 2 finished at "
+                f"{prior.reps} reps, already at the top of the range, so load is the "
+                f"preferred lever (:183)."
+            )
+            return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
+        target_low = max(low, min((prior.reps or low) + 1, high))
+        reasons.append(
+            f"Week 3 peak via REPS: same load, 1-2 more reps than week 2 to reach "
+            f"RPE {targets['top']:g} (:183)."
+        )
+        return SetSpec(load, target_low, min(target_low + 1, high),
+                       targets["top"], bodyweight=bodyweight)
+
     if week == 4:
         # :185 "Same exercises and same weights as Week 3, but deliberately
         # STOP SHORT so the set lands at RPE 7." RPE is reps-in-reserve, so at a
@@ -279,18 +377,6 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             f"the bottom of the range."
         )
         return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
-
-    if prior.reps is not None and prior.reps < low:
-        # :70 "That flexibility runs UPWARD only ... drifting BELOW an
-        # exercise's range is not." Reported rather than silently corrected:
-        # bringing the reps back into range means dropping the load, and by how
-        # much is a judgement about this athlete, not arithmetic.
-        deferred.append(
-            f"{exercise}: last session ran {prior.reps} reps against a "
-            f"{low}-{high} range — BELOW range, which :70 says is not available. "
-            f"Bringing it back in means cutting the load; the size of that cut is "
-            f"a coaching decision, not arithmetic."
-        )
 
     # :201 rep progression first — same load, aim further up the range.
     # Clamp to the range: a prior session below the floor must not drag the

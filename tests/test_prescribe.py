@@ -83,17 +83,58 @@ class LoadProgressionTests(unittest.TestCase):
                                PriorSet(80.0, 10, 9.0), set())
         self.assertGreater(p.working[0].weight_kg, 80.0)
 
-    def test_the_same_session_in_week_one_does_not_trigger(self):
-        """RPE 9 is above week 1's target of 8, so rep progression continues."""
+    def test_week_one_ignores_rpe_and_reads_only_the_week_three_reps(self):
+        """:181 states week 1's rule purely in reps against last cycle's week 3
+        — 'where Week 3 finished at or above the top of the range, open at the
+        next increment up'. RPE is not part of it, so an RPE 9 week-3 set at the
+        top of the range still opens the new cycle higher."""
         p = prescribe_exercise("Cable Row", 2, COMPOUND, 1,
-                               PriorSet(80.0, 10, 9.0), set())
+                               PriorSet(80.0, 10, 9.0, week=3), set())
+        self.assertEqual(p.working[0].weight_kg, 82.5)
+        self.assertEqual(p.working[0].reps_low, 6)   # reset to the bottom
+
+    def test_week_one_below_the_top_of_range_holds_the_load(self):
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 1,
+                               PriorSet(80.0, 8, 9.0, week=3), set())
         self.assertEqual(p.working[0].weight_kg, 80.0)
+        self.assertEqual(p.working[0].reps_low, 6)
+
+    def test_week_one_never_repeats_last_cycle(self):
+        """:181 'Without this the wave loops forever.' Either the load moves or
+        the reps reset to the bottom — never the same prescription back."""
+        prior = PriorSet(80.0, 8, 8.0, week=3)
+        top = prescribe_exercise("Cable Row", 2, COMPOUND, 1, prior, set()).working[0]
+        self.assertNotEqual((top.weight_kg, top.reps_low), (prior.load, prior.reps))
+
+    def test_week_one_flags_an_anchor_that_is_not_week_three(self):
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 1,
+                               PriorSet(80.0, 6, 7.0, week=4), set())
+        self.assertTrue(any("WEEK 3" in d for d in p.deferred))
+
+    def test_week_two_holds_the_load_and_adds_reps(self):
+        """:182 volume before intensity."""
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 2,
+                               PriorSet(80.0, 7, 8.0), set())
+        self.assertEqual(p.working[0].weight_kg, 80.0)
+        self.assertGreater(p.working[0].reps_low, 7)
+
+    def test_week_three_names_the_lever_it_used(self):
+        """:183 'State which lever you used and why.'"""
+        by_load = prescribe_exercise("Cable Row", 2, COMPOUND, 3,
+                                     PriorSet(80.0, 10, 8.0), set())
+        by_reps = prescribe_exercise("Cable Row", 2, COMPOUND, 3,
+                                     PriorSet(80.0, 7, 8.0), set())
+        self.assertTrue(any("via LOAD" in r for r in by_load.reasons))
+        self.assertGreater(by_load.working[0].weight_kg, 80.0)
+        self.assertTrue(any("via REPS" in r for r in by_reps.reasons))
+        self.assertEqual(by_reps.working[0].weight_kg, 80.0)
 
     def test_reps_above_the_range_are_a_backlog(self):
-        p = prescribe_exercise("Cable Row", 2, COMPOUND, 1,
+        """:205. Week 2 is where the generic trigger lives; week 1 covers the
+        same case through its own 'at or above the top' clause."""
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 2,
                                PriorSet(80.0, 14, 8.0), set())
         self.assertGreater(p.working[0].weight_kg, 80.0)
-        self.assertTrue(any("OVERDUE" in r for r in p.reasons))
 
     def test_isolations_take_the_smaller_increment(self):
         p = prescribe_exercise("Hammer Curl", 3, ISOLATION, 1,
@@ -101,9 +142,11 @@ class LoadProgressionTests(unittest.TestCase):
         self.assertLessEqual(p.working[0].weight_kg - 20.0, 2.5)
 
     def test_a_missing_rep_or_rpe_never_reads_as_a_pass(self):
+        """Week 2, because that is where the trigger consults RPE at all —
+        week 1's rule is rep-only by design (:181)."""
         for prior in (PriorSet(80.0, None, 8.0), PriorSet(80.0, 10, None)):
             with self.subTest(prior=prior):
-                p = prescribe_exercise("Cable Row", 2, COMPOUND, 1, prior, set())
+                p = prescribe_exercise("Cable Row", 2, COMPOUND, 2, prior, set())
                 self.assertEqual(p.working[0].weight_kg, 80.0)
 
 
@@ -150,6 +193,14 @@ class RepRangeTests(unittest.TestCase):
         p = prescribe_exercise("Cable Row", 2, COMPOUND, 1,
                                PriorSet(86.5, 5, 7.0), set())
         self.assertTrue(any("BELOW range" in d for d in p.deferred))
+
+    def test_a_deload_below_range_is_not_reported_as_a_fault(self):
+        """:74 gives 'Cable Row 78.5kg x8 becomes 78.5kg x6' as the deload
+        working correctly. Flagging that would report the protocol as a bug —
+        which is the mistake I made reading the 28 August session."""
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 4,
+                               PriorSet(86.5, 5, 7.0, week=3), set())
+        self.assertFalse(any("BELOW range" in d for d in p.deferred))
 
 
 class WarmupTests(unittest.TestCase):
