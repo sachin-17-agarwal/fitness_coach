@@ -61,7 +61,7 @@ struct FitnessCoachApp: App {
             DashboardView(switchToChatTab: { selectedTab = .coach })
                 .hiddenUnlessActive(selectedTab == .home)
 
-            CoachChatView()
+            CoachChatView(switchToTrainTab: { selectedTab = .train })
                 .hiddenUnlessActive(selectedTab == .coach)
 
             NavigationStack {

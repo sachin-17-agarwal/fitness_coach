@@ -11,7 +11,58 @@ final class ChatViewModel {
     var isLoading = false
     var errorMessage: String?
 
+    /// What the coach is looking at today, shown under the header so the
+    /// athlete sees the same context the coach reasons from.
+    var mesocycle: MesocycleState?
+    var readinessScore: Int?
+
     private let chatService = ChatService()
+    private let mesocycleService = MesocycleService()
+    private let recoveryService = RecoveryService()
+
+    /// "TUESDAY · PULL · WEEK 1 BASELINE" — the day always renders; the
+    /// session and block appear once the mesocycle state has loaded.
+    var contextLine: String {
+        var parts = [Date().formatted(.dateTime.weekday(.wide))]
+        if let mesocycle {
+            parts.append(mesocycle.sessionType)
+            var block = "Week \(mesocycle.week)"
+            if let phase = Self.phaseLabel(week: mesocycle.week) { block += " \(phase)" }
+            parts.append(block)
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    var readinessLabel: String? {
+        readinessScore.map { "Ready \($0)%" }
+    }
+
+    private static func phaseLabel(week: Int) -> String? {
+        switch week {
+        case 1: return "Baseline"
+        case 2: return "Volume"
+        case 3: return "Peak"
+        case 4: return "Deload"
+        default: return nil
+        }
+    }
+
+    /// Loads the header context. Failures leave the line at the day alone —
+    /// this is decoration on a chat screen, never a reason to show an error.
+    func loadContext() async {
+        async let state = mesocycleService.loadState()
+        async let latest = recoveryService.fetchLatest()
+        async let averages = recoveryService.fetch7DayAverages()
+
+        if let loaded = try? await state {
+            mesocycle = loaded
+        }
+        let recovery = (try? await latest) ?? nil
+        let avgs = try? await averages
+        if let recovery {
+            readinessScore = recovery.compositeScore(hrv7DayAvg: avgs?.hrvAvg, rhr7DayAvg: avgs?.rhrAvg)
+        }
+    }
 
     func loadConversation() async {
         do {
