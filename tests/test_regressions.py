@@ -3058,6 +3058,32 @@ class ReplayCommandTests(unittest.TestCase):
         self.assertIn("nothing about your training is affected", out)
         self.assertEqual(sent, [out])
 
+    def test_a_stale_session_is_still_closed_when_the_command_runs(self):
+        """The command returns early, so where it sits in the function matters.
+
+        A session left workout_mode=active from a previous day has to be closed
+        and the mesocycle advanced whatever today's first message happens to be
+        — otherwise later sets pile onto the old session_id and the mesocycle
+        never advances. Returning ahead of that guard would defer a correctness
+        fix, not just skip some formatting.
+        """
+        from unittest.mock import patch
+        memory = {"mesocycle_day": 1, "mesocycle_week": 1}
+        stale = {"workout_mode": "active",
+                 "current_session_id": "old-session",
+                 "session_start_time": "2020-01-01T10:00:00"}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="LLM"), \
+             patch("coach.get_workout_state", return_value=stale), \
+             patch("coach.send_telegram_message"), \
+             patch("coach.end_session") as end, \
+             patch("coach.advance_mesocycle") as advance, \
+             patch("replay.run_pull_replay", return_value="R"):
+            out = handle_incoming_message("replay", memory)
+        self.assertEqual(out, "R")
+        end.assert_called_once_with("old-session")
+        advance.assert_called_once()
+
     def test_telegram_gets_the_report_and_ios_does_not_double_send(self):
         """send_reply=False is the iOS path — /api/chat returns the body itself."""
         _, _, _, sent_tg, _ = self._run("replay", report="R", send_reply=True)
