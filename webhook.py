@@ -339,6 +339,7 @@ def api_chat():
 # under the original private names so existing callers and tests are unchanged.
 
 from coach_parsing import (  # noqa: E402
+    _canonicalise_phase_label,
     _parse_block,
     _parse_loose_sets,
     _parse_prescription,

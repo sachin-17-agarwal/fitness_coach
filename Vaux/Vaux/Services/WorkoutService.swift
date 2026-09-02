@@ -112,11 +112,7 @@ final class WorkoutService: Sendable {
     /// The insert retries without the two columns if the database rejects
     /// them, so an app build that ships ahead of
     /// migrations/001_workout_session_mesocycle.sql still starts workouts.
-    func startSession(
-        type: String,
-        mesocycleWeek: Int? = nil,
-        mesocycleDay: Int? = nil
-    ) async throws -> WorkoutSession {
+    func startSession(type: String) async throws -> WorkoutSession {
         let sessionId = UUID()
         let today = Self.todayString()
         let now = ISO8601DateFormatter().string(from: Date())
@@ -128,9 +124,26 @@ final class WorkoutService: Sendable {
             "status": SessionStatus.openStored,
             "start_time": now,
         ]
-        if let mesocycleWeek { body["mesocycle_week"] = mesocycleWeek }
-        if let mesocycleDay { body["mesocycle_day"] = mesocycleDay }
+        // Stamp the mesocycle position onto the session. It has to be recorded
+        // here because it cannot be recovered afterwards: the week advances on
+        // completion of a full rotation, not per calendar week, and yoga days
+        // and session swaps deliberately don't advance it — so a session's week
+        // is not a function of its date. The coach's PEAK WEEK REFERENCE LOADS
+        // block reads this to answer "what did he lift in week 3", which is what
+        // a deload holds and what the next cycle opens above.
+        //
+        // Best-effort: a failed read must not block starting a workout, so the
+        // stamp is omitted and the backend treats the week as unknown.
+        if let state = try? await MesocycleService(client: client).loadState() {
+            body["mesocycle_week"] = state.week
+            body["mesocycle_day"] = state.day
+        }
 
+        // The insert degrades rather than fails. A database that has not run
+        // migrations/001_workout_session_mesocycle.sql rejects the unknown
+        // columns, and an app build must never be undeployable because a
+        // migration has not been applied yet — the session row matters more
+        // than the stamp on it.
         let session: WorkoutSession
         do {
             session = try await client.insertAndDecode("workout_sessions", body: body)

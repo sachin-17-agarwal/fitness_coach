@@ -48,7 +48,6 @@ final class WorkoutViewModel {
     /// counter drifted to "6 of 4" unnoticed for an entire cycle.
     var mesocycleWeek: Int?
     /// Rotation position, carried only so a new session row can record it.
-    private var mesocycleDay: Int?
 
     /// Week name and RPE targets, mirroring the coach's mesocycle protocol.
     var mesocyclePhaseLabel: String? {
@@ -197,11 +196,7 @@ final class WorkoutViewModel {
         var issues: [String] = []
 
         do {
-            currentSession = try await workoutService.startSession(
-                type: type,
-                mesocycleWeek: mesocycleWeek,
-                mesocycleDay: mesocycleDay
-            )
+            currentSession = try await workoutService.startSession(type: type)
         } catch {
             issues.append("Couldn't save the session (\(error.localizedDescription)). You'll see today's plan, but logged sets won't persist until you retry.")
         }
@@ -902,7 +897,6 @@ final class WorkoutViewModel {
     private func loadMesocycleWeek() async {
         let state = try? await mesocycleService.loadState()
         mesocycleWeek = state?.week
-        mesocycleDay = state?.day
     }
 
     func startRestTimer(seconds: Int) {
@@ -939,6 +933,12 @@ final class WorkoutViewModel {
     /// first — the strength sparkline on the rest screen.
     var strengthHistory: [E1RMPoint] = []
 
+    /// This lift's measured rest requirement — how short a rest has
+    /// historically cost reps — computed from the same 180-day history fetch
+    /// the sparkline uses. nil until the evidence clears RestCalibration's
+    /// bar, and the rest screen then simply makes no claim.
+    var restCalibration: RestCalibration?
+
     /// Best e1RM among today's working sets on the current exercise, so the
     /// sparkline can show the point being created right now.
     var todayE1RM: Double? {
@@ -960,6 +960,7 @@ final class WorkoutViewModel {
         lastSessionSets = []
         lastSessionSetsLoaded = false
         strengthHistory = []
+        restCalibration = nil
         // `before:` excludes today, otherwise the most recent session
         // containing this exercise is the one currently in progress and the
         // card would show the athlete the sets they logged minutes ago.
@@ -980,6 +981,7 @@ final class WorkoutViewModel {
             )) ?? []
             guard lastSessionSetsExercise == exercise else { return }
             strengthHistory = Self.bestE1RMPerSession(history, excluding: today)
+            restCalibration = RestCalibration.compute(from: history)
         }
     }
 

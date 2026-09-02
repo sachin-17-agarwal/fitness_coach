@@ -12,9 +12,10 @@ from data import (
     SESSION_OVERRIDE_KEY, get_athlete_context, get_supabase,
     next_session_type_for, now_local, session_type_for,
 )
-from progression import (format_current_loads, format_set_comparisons,
-                         format_stalls, get_current_loads, get_load_stalls,
-                         get_set_comparisons)
+from progression import (format_current_loads, format_peak_week_loads,
+                         format_set_comparisons, format_stalls,
+                         get_current_loads, get_load_stalls,
+                         get_peak_week_loads, get_set_comparisons)
 from volume import (format_weak_point_history, format_weekly_volume,
                     get_weak_point_history, get_weekly_volume)
 from workout import get_substitution_history, get_workout_context, get_workout_state
@@ -305,12 +306,12 @@ def build_context_block(memory: dict, athlete_name: str,
     next_session = next_session_type_for(mesocycle_day, override=session_override)
 
     # One worker per fetch, counting the conditional recovery fetch below —
-    # eleven: the ten submitted unconditionally plus that one. Fewer would queue
-    # the tail behind the head while each still counts against its own 10s
-    # timeout. Keep this in step when a fetch is added; it has now drifted twice,
-    # once when the progression fetch landed alongside another branch's changes
-    # and again when it still read "eight" against ten futures.
-    with ThreadPoolExecutor(max_workers=11) as executor:
+    # twelve: the eleven submitted unconditionally plus that one. Fewer would
+    # queue the tail behind the head while each still counts against its own 10s
+    # timeout. Keep this in step when a fetch is added — it has now drifted
+    # three times, most recently when the peak-week and set-comparison fetches
+    # landed on separate branches and each bumped the count to eleven.
+    with ThreadPoolExecutor(max_workers=12) as executor:
         futures = {
             executor.submit(get_full_session_history, 30): "session_history",
             executor.submit(get_recovery_history, 30): "recovery_history",
@@ -320,6 +321,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(get_weekly_volume): "weekly_volume",
             executor.submit(get_load_stalls): "load_stalls",
             executor.submit(get_current_loads): "current_loads",
+            executor.submit(get_peak_week_loads): "peak_week_loads",
             executor.submit(get_weak_point_history): "weak_point",
             executor.submit(get_set_comparisons): "set_comparisons",
         }
@@ -402,6 +404,7 @@ def build_context_block(memory: dict, athlete_name: str,
     weekly_volume = format_weekly_volume(results.get("weekly_volume") or {})
     load_stalls = format_stalls(results.get("load_stalls") or [])
     current_loads = format_current_loads(results.get("current_loads") or [])
+    peak_week_loads = format_peak_week_loads(results.get("peak_week_loads") or [])
     weak_point = format_weak_point_history(results.get("weak_point") or [])
     set_comparisons = format_set_comparisons(results.get("set_comparisons") or [])
 
@@ -432,6 +435,11 @@ APPLE WATCH WORKOUTS (last 30 days, before today):
 
 CURRENT WORKING LOADS — the load each lift is ON, to progress FROM (today excluded):
 {current_loads}
+
+PEAK WEEK REFERENCE LOADS — top set of the most recent WEEK 3 session per lift.
+This is what a week 4 deload holds and what week 1 of the next cycle opens above.
+Read it here; never from a load written into the prompt or one you remember:
+{peak_week_loads}
 
 PROGRESSION WATCH — top-set load unchanged across 3+ sessions (today excluded):
 {load_stalls}

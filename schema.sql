@@ -52,14 +52,21 @@ CREATE TABLE IF NOT EXISTS recovery (
 -- ─────────────────────────────────────────────────────────────────────────────
 -- workout_sessions: the current sessions table the iOS app + coach write to.
 -- ─────────────────────────────────────────────────────────────────────────────
+-- mesocycle_week / mesocycle_day are stamped at session creation from the
+-- `memory` pointer. They must be recorded per session, not derived later: the
+-- week advances on completion of a full 4-day rotation (memory.advance_mesocycle),
+-- yoga days and session swaps do not advance it, and rest days are arbitrary —
+-- so a session's mesocycle week is NOT recoverable from its calendar date.
+-- Without this stamp there is no way to ask "which sessions were the peak week",
+-- which is what deload holds and next-cycle openings are anchored to.
 CREATE TABLE IF NOT EXISTS workout_sessions (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    date         DATE NOT NULL,
-    type         TEXT NOT NULL,
-    status       TEXT NOT NULL DEFAULT 'active',
-    start_time   TIMESTAMPTZ,
-    end_time     TIMESTAMPTZ,
-    tonnage_kg   NUMERIC,
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    date           DATE NOT NULL,
+    type           TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'active',
+    start_time     TIMESTAMPTZ,
+    end_time       TIMESTAMPTZ,
+    tonnage_kg     NUMERIC,
     -- Which point of the 4-week wave this session belonged to, stamped at
     -- creation. The legacy `sessions` table carried both columns and they were
     -- dropped when this table replaced it, which made a whole class of question
@@ -73,6 +80,11 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
     mesocycle_week INTEGER,
     mesocycle_day  INTEGER
 );
+
+-- Existing deployments: CREATE TABLE IF NOT EXISTS above is a no-op once the
+-- table exists, so the columns are added explicitly. Safe to re-run.
+ALTER TABLE workout_sessions ADD COLUMN IF NOT EXISTS mesocycle_week INTEGER;
+ALTER TABLE workout_sessions ADD COLUMN IF NOT EXISTS mesocycle_day  INTEGER;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- workout_sets: each logged set inside a workout_session.

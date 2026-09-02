@@ -1,51 +1,49 @@
 // RestTimer.swift
 // Vaux
 //
-// Full-screen rest countdown ring with skip + add-15s controls.
+// The rest screen as a poster, not a cockpit. One accent color doing one job
+// (signal lime = the clock and the act of going), enormous flat numerals,
+// hierarchy by type size and hairlines — no cards, no carousel, no glow.
 //
-// The countdown is driven by an absolute `endDate`, not a per-second
-// integer tick. A `TimelineView(.animation)` re-renders the ring and
-// readout from the real elapsed time every frame, so the sweep is smooth
-// and the displayed seconds stay locked to wall-clock — even if the run
-// loop is briefly busy. Completion fires once from a single `.task` that
-// sleeps until the deadline.
+// What earned its place and what didn't:
+// - The countdown IS the screen. Time is the only honest proxy anyone has for
+//   between-set muscle recovery (phosphocreatine resynthesis is invisible to
+//   every consumer signal), so the clock stops apologizing for itself.
+// - The receipt line under the bar is RestCalibration's finding — this lift's
+//   rest requirement measured from the athlete's own logged outcomes. It only
+//   renders when the evidence clears the bar; no calibration, no claim.
+// - Heart rate is a one-line telltale (current bpm + drop from the post-set
+//   peak). The old zone bar answered a cardio question during a strength
+//   rest and is gone; zones still make sense mid-cardio, not here.
+// - The coach keeps its seat: the note panel and the composer survive
+//   unchanged in behavior — rest is the one stretch of a session with time
+//   to read, and a question asked here travels the same path as the inline
+//   chat below the set list.
+// - Time-up flips the whole screen to a lime GO poster, readable from across
+//   the gym with the phone flat on a bench. The view holds on GO until the
+//   athlete starts the set or buys 30 more seconds; the heart-rate recovery
+//   record is still written at the moment the rest actually ended.
 
 import SwiftUI
-import Charts
 
-/// One session's best estimated 1RM for an exercise — a point on the
-/// strength sparkline. Identified by date so re-renders don't re-diff
-/// the whole chart.
 struct E1RMPoint: Identifiable {
     var date: String
     var value: Double
     var id: String { date }
 }
 
-/// Snapshot of the numbers worth glancing at mid-rest, assembled by
-/// WorkoutModeView from the view model. A struct rather than the view model
-/// itself so RestTimer stays a dumb view with explicit inputs.
+/// A snapshot of the session the timer can render without reaching back into
+/// the view model.
 struct RestStats {
     var exerciseName: String
     var tonnage: Double
     var setsDone: Int
     var duration: TimeInterval
-    /// The monitor itself rather than a captured Int, for two reasons: it is
-    /// @Observable so the session card's BPM stays live, and the recovery
-    /// card's sampling task holds the class reference across view re-renders
-    /// — a copied value would freeze at whatever it was when the task began.
     var heartRate: HeartRateMonitor?
-    /// Sets logged against the current exercise this session.
     var todaySets: [WorkoutSet]
-    /// The previous session's sets for the same exercise.
     var lastSets: [WorkoutSet]
-    /// Distinguishes "no history" (first time doing this exercise — worth
-    /// saying) from "still fetching" (worth a spinner, not a claim).
     var lastLoaded: Bool
-    /// Best e1RM per past session for this exercise, oldest first.
     var strengthHistory: [E1RMPoint]
-    /// Best e1RM among today's working sets, appended to the sparkline as
-    /// its live final point.
     var todayE1RM: Double?
 }
 
@@ -58,15 +56,14 @@ struct RestTimer: View {
     /// Both end the rest; only this one means it was actually served, and the
     /// heart-rate recovery recorded for it is only comparable if the rest ran.
     let onFinished: () -> Void
-    /// Extending has to go through the view model so the ring's total grows
-    /// with the deadline; mutating `endDate` alone left the ring pinned full.
+    /// Extending has to go through the view model so the bar's total grows
+    /// with the deadline; mutating `endDate` alone left the bar pinned full.
     var onExtend: (Int) -> Void = { _ in }
     /// The set this rest leads into, shown so the countdown doesn't hide
     /// the target it is counting down to.
     var nextSet: String?
     /// The coach's latest feedback. Rest is the only point in a session
-    /// with time to actually read it, and it was previously hidden behind
-    /// the full-screen timer.
+    /// with time to actually read it.
     var coachNote: String?
     var isCoachThinking: Bool = false
     /// Composer state, bound to the same view-model fields the inline chat
@@ -75,93 +72,28 @@ struct RestTimer: View {
     /// right above the composer.
     var chatText: Binding<String> = .constant("")
     var onSend: () -> Void = {}
-    /// Rest is dead time; these cards fill it with the numbers that inform
-    /// the next set — last session's performance on this exercise above all.
     var stats: RestStats? = nil
+    /// Session type for the header eyebrow ("SET 3 OF 3 · PULL").
+    var sessionType: String = ""
+    /// This lift's measured rest requirement, when the log supports one.
+    var calibration: RestCalibration? = nil
 
-    @State private var pulse: Bool = false
-    /// Stable anchor for the heart-rate card's one-second schedule. Deriving
-    /// it from `.now` inside the body would re-anchor the schedule on every
-    /// re-render instead of leaving it running.
-    @State private var tickEpoch = Date()
-    @State private var showChat: Bool = false
+    @State private var goState = false
+    @State private var showChat = false
     @FocusState private var chatFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// The ring gives up most of its size while composing — with the keyboard
-    /// up there isn't room for both, and the thing being looked at is the
-    /// coach's reply, not the countdown.
-    private var ringScale: CGFloat { chatFocused ? 0.55 : 1.0 }
 
     var body: some View {
-        ZStack {
-            Color.ink0.opacity(0.88)
-                .background(.ultraThinMaterial)
-                .ignoresSafeArea()
-
-            // GeometryReader + minHeight keeps the old centred layout when
-            // everything fits, and only starts scrolling once the keyboard
-            // shrinks the container past the content. A bare ScrollView would
-            // top-align the ring even with the keyboard down.
-            GeometryReader { proxy in
-                ScrollView {
-                    VStack(spacing: 22) {
-                        HStack(spacing: 8) {
-                            GlowDot(color: .mint, size: 5)
-                            Text("REST")
-                                .font(.eyebrow)
-                                .kerning(2.5)
-                                .foregroundStyle(Color.fg2)
-                        }
-
-                        // 20 Hz rather than `.animation`'s every-frame redraw.
-                        // The sweep covers a 220pt ring over minutes, so at
-                        // this rate it still advances sub-pixel per tick and
-                        // reads as continuous — while doing a third of the work
-                        // of a 60 Hz display and a sixth of a 120 Hz one, for
-                        // the whole of every rest period.
-                        TimelineView(.periodic(from: .now, by: 1.0 / 20.0)) { context in
-                            let remaining = remaining(at: context.date)
-                            ringView(remaining: remaining)
-                        }
-                        .frame(width: 220, height: 220)
-                        .scaleEffect(pulse && !reduceMotion ? 1.02 : 1.0)
-                        .animation(
-                            reduceMotion ? nil : .easeInOut(duration: 1.4).repeatForever(autoreverses: true),
-                            value: pulse
-                        )
-                        // Scale visually but also give back the layout height,
-                        // so the composer and note rise into the freed space
-                        // instead of being pushed under the keyboard.
-                        .scaleEffect(ringScale)
-                        .frame(height: 220 * ringScale)
-
-                        if let nextSet, !chatFocused { upNext(nextSet) }
-
-                        if !chatFocused { controls }
-
-                        if let stats, !chatFocused { statStrip(stats) }
-
-                        coachNotePanel
-
-                        chatBar
-                    }
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: .infinity, minHeight: proxy.size.height)
-                    .animation(Motion.smooth, value: chatFocused)
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .scrollDismissesKeyboard(.interactively)
+        Group {
+            if goState {
+                goView
+            } else {
+                restingView
             }
         }
         .onAppear {
-            pulse = true
             // The timer takes the screen over from the set logger, whose
-            // weight field may still hold first responder. Its "Done" button
-            // only clears that view's own @FocusState, which by then has
-            // already been reset — so the button did nothing and the keyboard
-            // sat there over the countdown. Resigning app-wide clears whatever
-            // is actually focused, regardless of which view owns it.
+            // weight field may still hold first responder. Resigning
+            // app-wide clears whatever is actually focused.
             dismissKeyboard()
         }
         .task(id: endDate) {
@@ -172,134 +104,214 @@ struct RestTimer: View {
             }
             guard !Task.isCancelled else { return }
             Haptic.warning()
-            isActive = false
-            // Reaching this line means the app was alive to run the timer out
-            // on screen, so the scheduled fallback has nothing left to tell
-            // anyone. Clearing it also removes the banner iOS delivered at the
-            // same instant while the app was frontmost.
+            // The rest is over NOW, whatever the athlete does next — record
+            // the recovery and settle the system surfaces at this moment, so
+            // holding on the GO poster can't skew the HRR window or leave a
+            // stale notification pending.
             RestNotifier.shared.cancel()
-            // `complete` rather than `cancel`: the island holds "Go" for a few
-            // seconds on the way out. When the app was suspended instead this
-            // line never runs, and the widget falls back to its staleDate to
-            // show the same thing.
             RestActivityController.shared.complete()
             onFinished()
+            withAnimation(Motion.smooth) { goState = true }
         }
     }
 
-    private func dismissKeyboard() {
-        UIApplication.shared.sendAction(
-            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
-        )
+    // MARK: - Resting
+
+    private var restingView: some View {
+        ZStack {
+            Color.ink0.ignoresSafeArea()
+
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        header(
+                            left: "REST",
+                            right: headerDetail,
+                            tint: Color.fg2, detailTint: Color.fg3
+                        )
+
+                        TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                            let remaining = remaining(at: context.date)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(timeText(remaining))
+                                    .font(.display(chatFocused ? 96 : 190))
+                                    .foregroundStyle(Color.signal)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.3)
+                                    .padding(.top, chatFocused ? 4 : 10)
+                                    .accessibilityLabel("\(spokenRemaining(remaining)) remaining")
+                                    .animation(Motion.smooth, value: chatFocused)
+
+                                progressBar(remaining: remaining)
+                                    .padding(.top, 14)
+                            }
+                        }
+
+                        receiptLines
+                            .padding(.top, 10)
+
+                        if !chatFocused {
+                            hairline.padding(.top, 24)
+                            upNextBlock.padding(.top, 20)
+                            hairline.padding(.top, 22)
+                        }
+
+                        coachPanel
+                            .padding(.top, chatFocused ? 12 : 16)
+
+                        Spacer(minLength: 18)
+
+                        if !chatFocused {
+                            telltaleRow.padding(.bottom, 10)
+                            controlsRow.padding(.bottom, 10)
+                        }
+
+                        chatBar
+                    }
+                    .padding(.horizontal, 22)
+                    .padding(.top, 18)
+                    .padding(.bottom, 14)
+                    .frame(minHeight: proxy.size.height, alignment: .top)
+                    .animation(Motion.smooth, value: chatFocused)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .scrollDismissesKeyboard(.interactively)
+            }
+        }
     }
 
-    // MARK: - Ring
+    private var headerDetail: String {
+        let position = parsedNext.position.uppercased()
+        let type = sessionType.uppercased()
+        switch (position.isEmpty, type.isEmpty) {
+        case (false, false): return "\(position) · \(type)"
+        case (false, true): return position
+        case (true, false): return type
+        case (true, true): return ""
+        }
+    }
 
-    private func ringView(remaining: Double) -> some View {
-        let color = ringColor(remaining)
-        return ZStack {
-            // Watch-dial tick marks — majors every 5 ticks
-            ForEach(0..<60, id: \.self) { i in
-                let isMajor = i % 5 == 0
+    private func header(left: String, right: String, tint: Color, detailTint: Color) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(left)
+                .font(.system(size: 11, weight: .semibold))
+                .kerning(3)
+                .foregroundStyle(tint)
+            Spacer()
+            Text(right)
+                .font(.system(size: 11, weight: .medium))
+                .kerning(2)
+                .foregroundStyle(detailTint)
+        }
+    }
+
+    private func progressBar(remaining: Double) -> some View {
+        let fraction = totalSeconds > 0
+            ? max(0, min(1, remaining / Double(totalSeconds)))
+            : 0
+        return GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Color.ink3)
                 Rectangle()
-                    .fill(Color.white.opacity(isMajor ? 0.22 : 0.08))
-                    .frame(width: 1.5, height: isMajor ? 9 : 5)
-                    .offset(y: -88)
-                    .rotationEffect(.degrees(Double(i) * 6))
-            }
-
-            Circle()
-                .stroke(color.opacity(0.18), lineWidth: 10)
-
-            Circle()
-                .trim(from: 0, to: progress(remaining))
-                .stroke(color, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .shadow(color: color.opacity(0.6), radius: 14, x: 0, y: 0)
-
-            VStack(spacing: 4) {
-                Text(timeString(remaining))
-                    .font(.scaled(56, weight: .light, design: .serif, relativeTo: .largeTitle, cap: 76).monospacedDigit())
-                    .foregroundStyle(Color.fg0)
-                Text(statusText(remaining))
-                    .font(.eyebrowSmall)
-                    .kerning(1.4)
-                    .foregroundStyle(color)
+                    .fill(Color.signal)
+                    .frame(width: geo.size.width * fraction)
+                    .animation(.linear(duration: 1), value: fraction)
             }
         }
-        // Announced as a countdown rather than as two loose strings, and
-        // marked as updating so VoiceOver re-reads it as time runs down
-        // instead of leaving a stale figure on the last focus.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Rest remaining")
-        .accessibilityValue(spokenRemaining(remaining))
-        .accessibilityAddTraits(.updatesFrequently)
+        .frame(height: 6)
     }
 
-    /// "1 minute 30 seconds", rather than the display's "1:30" — which
-    /// VoiceOver reads as a ratio.
-    private func spokenRemaining(_ remaining: Double) -> String {
-        let total = max(0, Int(remaining.rounded()))
-        let minutes = total / 60
-        let seconds = total % 60
-        switch (minutes, seconds) {
-        case (0, let s):
-            return "\(s) second\(s == 1 ? "" : "s")"
-        case (let m, 0):
-            return "\(m) minute\(m == 1 ? "" : "s")"
-        case (let m, let s):
-            return "\(m) minute\(m == 1 ? "" : "s") \(s) second\(s == 1 ? "" : "s")"
+    @ViewBuilder
+    private var receiptLines: some View {
+        let total = timeText(Double(totalSeconds))
+        VStack(alignment: .leading, spacing: 4) {
+            Text(calibration == nil ? "OF \(total)" : "OF \(total) — CALIBRATED TO YOU")
+                .font(.system(size: 11, weight: .semibold))
+                .kerning(2)
+                .foregroundStyle(Color.fg2)
+            if let calibration {
+                Text(calibration.receiptLine)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .kerning(1.2)
+                    .foregroundStyle(Color.fg3)
+            }
         }
+    }
+
+    private var hairline: some View {
+        Rectangle().fill(Color.line).frame(height: 1)
     }
 
     // MARK: - Up next
 
-    /// Borderless on purpose. The previous version was a full-width bordered
-    /// box that carried the same visual weight as the ring and fought it for
-    /// attention; here the type hierarchy does the work — a quiet eyebrow for
-    /// position, the exercise in the app's serif, and the numbers he actually
-    /// acts on rendered large in mono.
-    private func upNext(_ text: String) -> some View {
+    private var parsedNext: (position: String, exercise: String, load: String, loadIsNumbers: Bool) {
+        guard let text = nextSet else { return ("", "", "", false) }
         let parts = text.split(separator: "\n", maxSplits: 1).map(String.init)
         let exercise = parts.first ?? text
-        // "Working set 2 of 3 · BW × 10 @ RPE 7" -> position, then the load.
         let detail = parts.count > 1 ? parts[1] : ""
         let split = detail.components(separatedBy: " · ")
         let position = split.count > 1 ? split[0] : ""
         let load = split.count > 1 ? split.dropFirst().joined(separator: " · ") : detail
-
-        return VStack(spacing: 6) {
-            Text(position.isEmpty ? "UP NEXT" : "UP NEXT · \(position.uppercased())")
-                .font(.eyebrowSmall)
-                .kerning(1.6)
-                .foregroundStyle(Color.fg2)
-
-            Text(exercise)
-                .font(.serifSM)
-                .foregroundStyle(Color.fg0)
-                .multilineTextAlignment(.center)
-
-            if !load.isEmpty {
-                // A load line always arrives as "position · numbers". Without
-                // the separator the detail is prose (the handoff message while
-                // the coach writes the next block), which must not be rendered
-                // in the big mono treatment reserved for weights.
-                let isLoad = split.count > 1
-                Text(load)
-                    .font(isLoad ? .numMD : .system(size: 13))
-                    .foregroundStyle(isLoad ? Color.mint : Color.fg2)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .padding(.horizontal, 20)
+        // A load line always arrives as "position · numbers"; without the
+        // separator the detail is prose (the handoff message while the coach
+        // writes the next block) and must not get the display treatment.
+        return (position, exercise, load, split.count > 1)
     }
 
-    // MARK: - Coach note
+    @ViewBuilder
+    private var upNextBlock: some View {
+        let next = parsedNext
+        if !next.exercise.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(next.position.isEmpty ? "UP NEXT" : "UP NEXT · \(next.position.uppercased())")
+                    .font(.system(size: 10, weight: .semibold))
+                    .kerning(3)
+                    .foregroundStyle(Color.fg2)
+
+                Text(next.exercise.uppercased())
+                    .font(.display(42))
+                    .foregroundStyle(Color.fg0)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.6)
+
+                if !next.load.isEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(next.load.uppercased())
+                            .font(next.loadIsNumbers ? .display(22) : .system(size: 13))
+                            .foregroundStyle(next.loadIsNumbers ? Color.fg0 : Color.fg2)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        if let last = lastTimeLine {
+                            Text(last)
+                                .font(.system(size: 12, weight: .medium))
+                                .kerning(1)
+                                .foregroundStyle(Color.fg3)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// "LAST TIME 40 × 15" from the previous session's top working set —
+    /// the number being chased, inline where the target is read.
+    private var lastTimeLine: String? {
+        guard let stats else { return nil }
+        let working = stats.lastSets.filter { $0.isWarmup != true }
+        guard let top = working.max(by: {
+            ($0.actualWeightKg ?? 0) < ($1.actualWeightKg ?? 0)
+        }), let reps = top.actualReps else { return nil }
+        let weight = top.actualWeightKg ?? 0
+        let load = weight > 0 ? shortWeight(weight) : "BW"
+        return "LAST TIME \(load) × \(reps)"
+    }
+
+    // MARK: - Coach
 
     /// Rest is the only stretch of a session with time to read. Capped and
     /// scrollable so a long note can't push the controls off screen.
     @ViewBuilder
-    private var coachNotePanel: some View {
+    private var coachPanel: some View {
         if isCoachThinking {
             HStack(spacing: 8) {
                 ProgressView().tint(Color.fg2).scaleEffect(0.7)
@@ -307,626 +319,95 @@ struct RestTimer: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.fg2)
             }
-            .padding(.top, 2)
-        } else if let coachNote, !coachNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+        } else if let coachNote,
+                  !coachNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
                 Text("COACH")
-                    .font(.eyebrowSmall)
-                    .kerning(1.6)
+                    .font(.system(size: 10, weight: .semibold))
+                    .kerning(3)
                     .foregroundStyle(Color.fg2)
 
                 ScrollView(showsIndicators: false) {
                     Text(coachNote)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.fg0.opacity(0.92))
-                        .lineSpacing(3)
+                        .font(.system(size: 15.5))
+                        .foregroundStyle(Color.fg1)
+                        .lineSpacing(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 // Tighter while composing so a long reply can't push the
-                // field it's being answered in off the top of the screen.
-                .frame(maxHeight: chatFocused ? 96 : 150)
-            }
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.ink2.opacity(0.75))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.line, lineWidth: 1)
-            )
-            .padding(.horizontal, 22)
-        }
-    }
-
-    // MARK: - Stat cards
-
-    /// Sideways-scrolling cards, one insight each, snapping a card at a time.
-    /// The 0.78 width leaves a peek of the next card so the scrollability is
-    /// visible without a page-dot row.
-    private func statStrip(_ stats: RestStats) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                if !stats.exerciseName.isEmpty {
-                    lastTimeCard(stats)
-                    strengthCard(stats)
-                    todayCard(stats)
-                }
-                recoveryCard(stats)
-                sessionCard(stats)
-            }
-            .scrollTargetLayout()
-        }
-        .contentMargins(.horizontal, 22, for: .scrollContent)
-        .scrollTargetBehavior(.viewAligned)
-    }
-
-    private func statCard<Content: View>(
-        _ title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.eyebrowSmall)
-                .kerning(1.4)
-                .foregroundStyle(Color.fg2)
-                .lineLimit(1)
-                .allowsTightening(true)
-
-            content()
-
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .frame(height: 148, alignment: .top)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.ink2.opacity(0.75))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
-        .containerRelativeFrame(.horizontal) { length, _ in length * 0.78 }
-    }
-
-    /// What this exercise looked like last session — the number the athlete
-    /// is actually trying to beat, previously only available by leaving the
-    /// timer and digging through History mid-rest.
-    private func lastTimeCard(_ stats: RestStats) -> some View {
-        statCard("LAST TIME · \(stats.exerciseName.uppercased())") {
-            let rows = workingOnly(stats.lastSets)
-            if !stats.lastLoaded {
-                HStack(spacing: 8) {
-                    ProgressView().tint(Color.fg2).scaleEffect(0.7)
-                    Text("Checking history…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.fg2)
-                }
-            } else if rows.isEmpty {
-                Text("First session — today sets the baseline.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.fg1)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                setRows(rows, exercise: stats.exerciseName)
-                if let delta = deltaLine(stats) {
-                    Text(delta)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.mint)
-                        .lineLimit(1)
-                        .allowsTightening(true)
-                }
+                // field it is being answered in off the top of the screen.
+                .frame(maxHeight: chatFocused ? 96 : 168)
             }
         }
     }
 
-    private func todayCard(_ stats: RestStats) -> some View {
-        let rows = workingOnly(stats.todaySets)
-        return statCard("TODAY · \(stats.exerciseName.uppercased())") {
-            if rows.isEmpty {
-                Text("Working sets land here as you log them.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.fg1)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                setRows(rows, exercise: stats.exerciseName)
+    // MARK: - Telltale + controls
+
+    private var telltaleRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(heartLine)
+                .font(.system(size: 11, weight: .medium))
+                .kerning(1.5)
+                .foregroundStyle(Color.fg3)
+            Spacer()
+            if let stats {
+                Text("\(shortTonnage(stats.tonnage)) · \(stats.setsDone) SETS · \(shortDuration(stats.duration))")
+                    .font(.system(size: 11, weight: .medium))
+                    .kerning(1.5)
+                    .foregroundStyle(Color.fg3)
             }
         }
     }
 
-    // MARK: - Strength sparkline
+    /// "HEART 117 ▾42": the live reading plus the measured drop from the
+    /// post-set peak. Numbers only — no verdict words, because heart rate
+    /// cannot testify about muscle recovery and shouldn't pretend to.
+    private var heartLine: String {
+        guard let monitor = stats?.heartRate,
+              let bpm = monitor.currentBPM,
+              !monitor.hasStalled() else { return "HEART —" }
+        if let drop = monitor.dropFromPeak(inLast: 300), drop > 0 {
+            return "HEART \(bpm) ▾\(drop)"
+        }
+        return "HEART \(bpm)"
+    }
 
-    /// Estimated 1RM per session for the current lift, with today appended
-    /// live as the final point. Change-over-time, one series — so a line, no
-    /// legend (the title names it), and only the endpoint labelled rather
-    /// than a number on every point.
-    private func strengthCard(_ stats: RestStats) -> some View {
-        let points = sparklinePoints(stats)
-        return statCard("STRENGTH · \(stats.exerciseName.uppercased())") {
-            if points.count < 2 {
-                Text("Two sessions needed before a trend means anything.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.fg1)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    // Trend sits on the headline row, not under the plot. It
-                    // used to follow the chart, where the area fill rose
-                    // behind it and the text became unreadable against it.
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\(Int(points.last?.value ?? 0))kg")
-                            .font(.numMD)
-                            .foregroundStyle(Color.fg0)
-                            .monospacedDigit()
-                        Text("est. 1RM")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.fg2)
-                    }
-
-                    if let trend = trendLine(points) {
-                        Text(trend)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.mint)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-
-                    sparkline(points)
-                        .frame(height: 44)
-                        // Keeps the stroke off the card's rounded edge; a line
-                        // running flush to the corner read as a rendering bug.
-                        .padding(.top, 2)
-                }
+    private var controlsRow: some View {
+        HStack(spacing: 10) {
+            Button {
+                Haptic.light()
+                onExtend(15)
+            } label: {
+                Text("+15")
+                    .font(.display(19))
+                    .foregroundStyle(Color.fg0)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 58)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.ink3))
             }
-        }
-    }
+            .buttonStyle(PressScaleStyle())
+            .accessibilityLabel("Add 15 seconds")
 
-    /// History plus today's best, so the athlete watches the point they are
-    /// currently creating land on the curve.
-    private func sparklinePoints(_ stats: RestStats) -> [E1RMPoint] {
-        var points = stats.strengthHistory
-        if let today = stats.todayE1RM, today > 0 {
-            points.append(E1RMPoint(date: "today", value: today))
-        }
-        return points
-    }
-
-    private func sparkline(_ points: [E1RMPoint]) -> some View {
-        // Indexed rather than date-scaled: sessions are what matter here, and
-        // an unevenly spaced x-axis would make a missed week read as a slump.
-        let indexed = Array(points.enumerated())
-        let values = points.map(\.value)
-        let lo = (values.min() ?? 0)
-        let hi = (values.max() ?? 1)
-        // Pad the domain so a flat series doesn't collapse to a zero-height
-        // band and a rising one doesn't touch the card edges.
-        let pad = max((hi - lo) * 0.18, 1.5)
-
-        return Chart {
-            ForEach(indexed, id: \.offset) { i, point in
-                AreaMark(
-                    x: .value("Session", i),
-                    y: .value("e1RM", point.value)
-                )
-                // Mint, not signal. `signal` is #CFFF3E — at any fill opacity
-                // over the dark card it renders as a solid olive slab rather
-                // than a recessive wash, and the plot is only ~44pt tall so
-                // the gradient has almost no distance to fade over. Mint is
-                // also the ring colour on this screen, so the card reads as
-                // part of it. Opacity is halved for the same reason: the fill
-                // is context for the line, not a second mark competing with it.
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Color.mint.opacity(0.16), Color.mint.opacity(0.0)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .interpolationMethod(.catmullRom)
-
-                LineMark(
-                    x: .value("Session", i),
-                    y: .value("e1RM", point.value)
-                )
-                .foregroundStyle(Color.mint)
-                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
-                .interpolationMethod(.catmullRom)
+            Button {
+                Haptic.light()
+                onSkip()
+            } label: {
+                Text("SKIP REST")
+                    .font(.display(19))
+                    .kerning(2)
+                    .foregroundStyle(Color.ink0)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 58)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.fg0))
             }
-
-            // Endpoint only — a marker on every session would clutter a
-            // 52pt-tall plot, and the last point is the one being acted on.
-            if let last = indexed.last {
-                PointMark(
-                    x: .value("Session", last.offset),
-                    y: .value("e1RM", last.element.value)
-                )
-                .foregroundStyle(Color.mint)
-                .symbolSize(54)
-
-                PointMark(
-                    x: .value("Session", last.offset),
-                    y: .value("e1RM", last.element.value)
-                )
-                .foregroundStyle(Color.ink2)
-                .symbolSize(16)
-            }
-        }
-        .chartYScale(domain: (lo - pad)...(hi + pad))
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .chartLegend(.hidden)
-        // Without an explicit inset Charts runs the plot to the frame edge,
-        // so the endpoint marker was half-clipped by the card's rounded corner.
-        .chartPlotStyle { plot in
-            plot.padding(.vertical, 6)
+            .buttonStyle(PressScaleStyle())
+            .frame(maxWidth: .infinity)
+            .layoutPriority(1)
         }
     }
 
-    private func trendLine(_ points: [E1RMPoint]) -> String? {
-        guard let first = points.first?.value, let last = points.last?.value,
-              first > 0, points.count >= 2 else { return nil }
-        let delta = last - first
-        guard abs(delta) >= 0.5 else { return "Holding steady across \(points.count) sessions" }
-        let pct = delta / first * 100
-        let arrow = delta > 0 ? "↑" : "↓"
-        return "\(arrow) \(abs(delta).wholeOrOne)kg (\(abs(pct).wholeOrOne)%) over \(points.count) sessions"
-    }
+    // MARK: - Chat
 
-    // MARK: - Recovery
-
-    /// Heart rate falling in real time is the one number that is genuinely
-    /// *happening* during rest — everything else on this screen is static.
-    /// Which makes it the one number that must never pretend: a value the
-    /// Watch recorded eight minutes ago is not the current heart rate, and
-    /// this card used to present the two identically.
-    private func recoveryCard(_ stats: RestStats) -> some View {
-        statCard("HEART RATE") {
-            if let monitor = stats.heartRate, let bpm = monitor.currentBPM {
-                // Ticks so the age of the reading stays honest while the
-                // card sits on screen. The ring's TimelineView doesn't
-                // extend down here, and nothing else re-renders per second.
-                TimelineView(.periodic(from: tickEpoch, by: 1)) { context in
-                    let lagging = monitor.isLagging(at: context.date)
-                    let stalled = monitor.hasStalled(at: context.date)
-                    // Layout note. Everything here is on the shared type scale
-                    // — the card used to set raw .system(size: 11) point sizes,
-                    // which is why it read as though it belonged to a different
-                    // app than the one around it. And the trace was drawn in
-                    // ember, which in this palette means a load that failed;
-                    // a heart rate permanently in the alarm colour looks like
-                    // something is wrong when nothing is. It now takes the same
-                    // mint / amber / ember ladder the header BPM uses, so the
-                    // two agree and the colour carries meaning again.
-                    let tint = heartRateTint(bpm)
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(alignment: .firstTextBaseline, spacing: 5) {
-                            Text("\(bpm)")
-                                .font(.numLG)
-                                .foregroundStyle(lagging ? Color.fg2 : tint)
-                                .contentTransition(.numericText())
-                            Text("BPM")
-                                .font(.eyebrowSmall)
-                                .kerning(1.0)
-                                .foregroundStyle(Color.fg3)
-                            Spacer(minLength: 0)
-                            // A training zone is a claim about right now. On
-                            // a stalled feed that claim is unsupported, so
-                            // report the age of the reading instead.
-                            // Behind-real-time is normal on a batching bridge, so
-                            // the age reads as neutral information. Only a feed
-                            // that has actually stopped gets the alarm colour.
-                            Text(lagging ? ageLabel(monitor, now: context.date)
-                                         : monitor.zoneLabel(for: bpm))
-                                .font(.eyebrow)
-                                .kerning(0.8)
-                                .foregroundStyle(stalled ? Color.ember : Color.fg3)
-                        }
-
-                        zoneBar(bpm: bpm, tint: lagging ? Color.fg3 : tint)
-
-                        hrFootnote(monitor, now: context.date,
-                                   lagging: lagging, stalled: stalled)
-                    }
-                }
-            } else {
-                Text("No heart-rate signal — needs the Watch on and streaming.")
-                    .font(.uiBody)
-                    .foregroundStyle(Color.fg1)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func ageLabel(_ monitor: HeartRateMonitor, now: Date) -> String {
-        guard let age = monitor.sampleAge(at: now) else { return "no signal" }
-        if age < 90 { return "\(Int(age))s ago" }
-        return "\(Int(age / 60))m ago"
-    }
-
-    /// What the athlete is actually asking during a rest: is it coming down.
-    ///
-    /// The previous version answered a different question — "290 samples ·
-    /// last 1s ago" is instrumentation, written while the feed was broken and
-    /// the only thing worth knowing was whether data was arriving at all. It
-    /// stopped earning its place the moment the feed was fixed.
-    ///
-    /// The diagnostics are not deleted, only demoted: they still say exactly
-    /// what they used to, but now only when the feed is behind or stopped,
-    /// which is when the distinction between a delivery problem and a heart
-    /// problem matters. A healthy feed spends that line on recovery instead.
-    @ViewBuilder
-    private func hrFootnote(_ monitor: HeartRateMonitor, now: Date,
-                            lagging: Bool, stalled: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            if lagging || stalled {
-                if let lo = monitor.minBPM, let hi = monitor.maxBPM {
-                    Text(hi > lo
-                         ? "Session \(lo)–\(hi) bpm · \(rateSummary(monitor, now: now))"
-                         : "Session flat at \(lo) bpm · \(rateSummary(monitor, now: now))")
-                        .font(.uiSmall)
-                        .foregroundStyle(Color.fg2)
-                }
-            } else {
-                recoveryLine(monitor, now: now)
-            }
-            if stalled {
-                // No instruction to start a Watch workout: this fires while one
-                // is running, and telling the athlete to do what he has already
-                // done is how the card lost its credibility the first time.
-                Text("No new readings for a few minutes — the Watch has stopped sending.")
-                    .font(.uiSmall)
-                    .foregroundStyle(Color.ember)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    /// Sample count, plus how long since the last batch landed.
-    ///
-    /// Deliberately NOT a session-average cadence. That average was the same
-    /// mistake in a new place: 112 samples over seventeen minutes reads as
-    /// "one every 9s" and looks perfectly healthy, while in fact every one of
-    /// them arrived in the first six minutes and nothing has come since. Time
-    /// since the last delivery cannot be flattered that way.
-    private func rateSummary(_ monitor: HeartRateMonitor, now: Date) -> String {
-        let count = "\(monitor.sampleCount) samples"
-        guard let gap = monitor.deliveryAge(at: now) else { return count }
-        if gap < 90 { return "\(count) · last \(Int(gap))s ago" }
-        return "\(count) · last \(Int(gap / 60))m ago"
-    }
-
-    /// Window the trace and the recovery figure both read from.
-    ///
-    /// Three minutes holds the working set's peak and the descent after it, so
-    /// the line reads as a recovery curve. The whole session was the wrong
-    /// window: thirty minutes of climbs and falls compressed into one card is
-    /// a texture, not a signal, and it told the athlete nothing he could act on.
-    private static let hrWindow: TimeInterval = 180
-
-    /// How far the heart rate has fallen from the peak of the last set.
-    ///
-    /// This is the number that answers "am I ready for the next set" — the
-    /// same quantity as clinical heart-rate recovery, which is one of the
-    /// better-validated fitness markers there is. A rate that is not falling
-    /// is worth saying out loud rather than leaving as an absence.
-    @ViewBuilder
-    private func recoveryLine(_ monitor: HeartRateMonitor, now: Date) -> some View {
-        if let peak = monitor.peak(inLast: Self.hrWindow, at: now),
-           let drop = monitor.dropFromPeak(inLast: Self.hrWindow, at: now) {
-            // Two states, not three. The peak is the maximum of the same
-            // window the current reading sits in, so the drop cannot come out
-            // negative — a "still climbing" branch would never have run.
-            // Being within a few bpm of the peak IS still climbing, and says
-            // so without pretending to measure a rise it cannot see.
-            if drop >= 3 {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(rateText(monitor, drop: drop, now: now))
-                        .font(.uiSmall)
-                        .foregroundStyle(Color.fg2)
-                    // The comparison is the point. A raw drop answers nothing
-                    // on its own — 35 bpm is good or bad depending entirely on
-                    // how long it took and what this athlete usually does. Held
-                    // back until two rests are on record, because "faster than
-                    // usual" against a sample of one is noise wearing a verdict.
-                    if let verdict = recoveryVerdict(monitor, drop: drop, now: now) {
-                        Text(verdict.text)
-                            .font(.uiSmall)
-                            .foregroundStyle(verdict.tint)
-                    }
-                }
-            } else {
-                Text("At \(peak) — hasn't started dropping")
-                    .font(.uiSmall)
-                    .foregroundStyle(Color.amber)
-            }
-        }
-    }
-
-    /// "−35 bpm" while recovering, becoming "−35 in 60s" once there is a real
-    /// HRR60 behind it. Terse because this card sits in a horizontal strip and
-    /// the earlier wording was already being clipped.
-    private func rateText(_ monitor: HeartRateMonitor, drop: Int, now: Date) -> String {
-        monitor.liveRecoveryDrop(at: now) != nil
-            ? "−\(drop) in 60s"
-            : "−\(drop) bpm"
-    }
-
-    /// Compares this rest's HRR60 against the session's own median HRR60.
-    ///
-    /// Two things this deliberately is not. It is not a rate: heart-rate
-    /// recovery is biexponential, so dividing by however long the rest lasted
-    /// measures rest length rather than recovery — see
-    /// `HeartRateMonitor.recoveryWindow`. And it is not compared to a
-    /// population norm or a clinical band, which describe resting-state
-    /// autonomic function under controlled conditions rather than a lifter
-    /// between sets with a phone in one hand. The only honest reference is
-    /// what this athlete has done in the last hour.
-    ///
-    /// Even so this compares across different exercises and set intensities,
-    /// which are real confounders it cannot remove. Treat a single reading as
-    /// weak and a trend across a session as suggestive, not diagnostic.
-    private func recoveryVerdict(
-        _ monitor: HeartRateMonitor, drop: Int, now: Date
-    ) -> (text: String, tint: Color)? {
-        guard let live = monitor.liveRecoveryDrop(at: now),
-              let typical = monitor.typicalRecoveryDrop,
-              typical > 0 else { return nil }
-        let value = Double(live)
-        // A 15% band either side. Tighter than that and the label flickers
-        // between rests for no reason the athlete can act on.
-        if value > typical * 1.15 { return ("recovering faster than usual", .mint) }
-        if value < typical * 0.85 { return ("slower than usual — fatigue building", .amber) }
-        return ("in line with today", .fg2)
-    }
-
-    @ViewBuilder
-    /// Same ladder the header BPM uses, so the two never disagree about what
-    /// colour a given heart rate is.
-    private func heartRateTint(_ bpm: Int) -> Color {
-        switch bpm {
-        case ..<100: return .mint
-        case ..<140: return .amber
-        default:     return .ember
-        }
-    }
-
-    /// Where the current rate sits across the zones, as a bar rather than a
-    /// line chart.
-    ///
-    /// The chart this replaces was the wrong form for the signal. Between sets
-    /// the heart rate barely moves, so a line plotted against an axis with a
-    /// 15 bpm floor sat flat along the bottom of the card under a slab of
-    /// gradient fill, with two-thirds of the space empty — a lot of ink for
-    /// "it is roughly the same as it was". Position across the zones is the
-    /// thing that is actually legible at a glance, and it reads instantly:
-    /// how far along the bar you are, and how far back the fill has moved
-    /// since the peak.
-    ///
-    /// Ticks sit at the zone boundaries the monitor uses — 50/60/70/80/90% of
-    /// 220-age — so the bar and the "Zone 3" label can never tell different
-    /// stories.
-    private func zoneBar(bpm: Int, tint: Color) -> some View {
-        let maxHR = 190.0   // 220 - 30, matching HeartRateMonitor.zoneLabel
-        let fraction = min(1.0, max(0.0, Double(bpm) / maxHR))
-        return GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.ink3.opacity(0.9))
-
-                Capsule()
-                    .fill(tint.opacity(0.9))
-                    .frame(width: max(3, geo.size.width * fraction))
-
-                ForEach([0.5, 0.6, 0.7, 0.8, 0.9], id: \.self) { boundary in
-                    Rectangle()
-                        .fill(Color.ink0.opacity(0.85))
-                        .frame(width: 1)
-                        .offset(x: geo.size.width * boundary)
-                }
-            }
-        }
-        .frame(height: 6)
-        .animation(Motion.smooth, value: bpm)
-        .accessibilityLabel("Heart rate zone position")
-        .accessibilityValue("\(bpm) beats per minute")
-    }
-
-    /// The live-stats bar exists at the top of the workout screen, but this
-    /// overlay covers it — so during rest, the session totals were invisible.
-    private func sessionCard(_ stats: RestStats) -> some View {
-        statCard("SESSION") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    sessionCell(value: formatTonnage(stats.tonnage), label: "TONNAGE")
-                    sessionCell(value: "\(stats.setsDone)", label: "SETS")
-                }
-                HStack(spacing: 8) {
-                    sessionCell(value: formatDuration(stats.duration), label: "TIME")
-                    sessionCell(value: stats.heartRate?.currentBPM.map { "\($0)" } ?? "—", label: "BPM")
-                }
-            }
-        }
-    }
-
-    private func sessionCell(value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.numMD)
-                .foregroundStyle(Color.fg0)
-                .monospacedDigit()
-            Text(label)
-                .font(.eyebrowSmall)
-                .kerning(1.0)
-                .foregroundStyle(Color.fg2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func workingOnly(_ rows: [WorkoutSet]) -> [WorkoutSet] {
-        rows.filter { $0.isWarmup != true }
-    }
-
-    private func setRows(_ rows: [WorkoutSet], exercise: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(rows.prefix(4)) { row in
-                HStack(spacing: 6) {
-                    Text("\(ExerciseCatalog.setWeightLabel(row.actualWeightKg ?? 0, exercise: exercise)) × \(row.actualReps ?? 0)")
-                        .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
-                        .foregroundStyle(Color.fg0)
-                    if let rpe = row.actualRpe {
-                        Text("@\(rpe.wholeOrOne)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.fg2)
-                    }
-                }
-            }
-            if rows.count > 4 {
-                Text("+\(rows.count - 4) more")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.fg2)
-            }
-        }
-    }
-
-    /// Positive-or-silent by design: on a deload the top set is BELOW last
-    /// time on purpose, and a red "−17kg" mid-rest would read as a scolding
-    /// for correct execution. The rows themselves carry the comparison.
-    private func deltaLine(_ stats: RestStats) -> String? {
-        let today = workingOnly(stats.todaySets)
-        let last = workingOnly(stats.lastSets)
-        guard
-            let t = today.max(by: { ($0.actualWeightKg ?? 0) < ($1.actualWeightKg ?? 0) }),
-            let l = last.max(by: { ($0.actualWeightKg ?? 0) < ($1.actualWeightKg ?? 0) })
-        else { return nil }
-        let tw = t.actualWeightKg ?? 0
-        let lw = l.actualWeightKg ?? 0
-        if tw > lw {
-            return "Top set +\((tw - lw).wholeOrOne)kg vs last time"
-        }
-        if tw == lw, let tr = t.actualReps, let lr = l.actualReps {
-            if tr > lr {
-                return "+\(tr - lr) rep\(tr - lr == 1 ? "" : "s") at \(ExerciseCatalog.setWeightLabel(tw, exercise: stats.exerciseName))"
-            }
-            if tr == lr { return "Matched last time's top set" }
-        }
-        return nil
-    }
-
-    private func formatTonnage(_ value: Double) -> String {
-        value >= 1000 ? String(format: "%.1ft", value / 1000) : "\(Int(value))kg"
-    }
-
-    private func formatDuration(_ value: TimeInterval) -> String {
-        String(format: "%d:%02d", Int(value) / 60, Int(value) % 60)
-    }
-
-    // MARK: - Composer
-
-    /// Asking something mid-rest previously meant skipping the timer to reach
-    /// the inline chat underneath. Collapsed to a single row so it costs no
-    /// attention until it's wanted.
     @ViewBuilder
     private var chatBar: some View {
         if showChat {
@@ -939,11 +420,11 @@ struct RestTimer: View {
                     .foregroundStyle(Color.fg0)
                     .padding(10)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(Color.ink2)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .stroke(chatFocused ? Color.signal.opacity(0.35) : Color.line,
                                     lineWidth: 1)
                     )
@@ -963,24 +444,32 @@ struct RestTimer: View {
                 .disabled(!canSend)
                 .accessibilityLabel("Send message to coach")
             }
-            .padding(.horizontal, 22)
         } else {
             Button {
                 Haptic.light()
                 showChat = true
                 chatFocused = true
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: 9) {
                     Image(systemName: "message.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.signal)
                     Text("Ask coach")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundStyle(Color.fg2)
+                    Spacer()
                 }
-                .foregroundStyle(Color.fg1)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .background(Capsule().fill(Color.ink3))
-                .overlay(Capsule().stroke(Color.line2, lineWidth: 1))
+                .padding(.horizontal, 16)
+                .frame(height: 46)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.ink2.opacity(0.6))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.line, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             .buttonStyle(PressScaleStyle())
         }
@@ -999,73 +488,161 @@ struct RestTimer: View {
         chatFocused = false
     }
 
-    // MARK: - Controls
+    // MARK: - GO
 
-    private var controls: some View {
-        HStack(spacing: 10) {
-            Button {
-                Haptic.light()
-                onExtend(15)
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus")
-                    Text("+15s")
-                }
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.fg0)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Capsule().fill(Color.ink3))
-                .overlay(Capsule().stroke(Color.line2, lineWidth: 1))
-            }
-            .buttonStyle(PressScaleStyle())
+    private var goView: some View {
+        ZStack {
+            Color.signal.ignoresSafeArea()
 
-            Button {
-                Haptic.medium()
-                onSkip()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "forward.fill")
-                    Text("Skip")
+            VStack(alignment: .leading, spacing: 0) {
+                header(
+                    left: "REST OVER",
+                    right: parsedNext.position.uppercased(),
+                    tint: Color.ink0,
+                    detailTint: Color.ink0.opacity(0.55)
+                )
+
+                Text("GO")
+                    .font(.display(300))
+                    .foregroundStyle(Color.ink0)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+                    .padding(.top, 8)
+                    .accessibilityLabel("Rest over. Start your set.")
+
+                Rectangle().fill(Color.ink0).frame(height: 6)
+                    .padding(.top, 14)
+
+                Spacer(minLength: 12)
+
+                let next = parsedNext
+                if !next.exercise.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(next.position.isEmpty ? "UP NEXT" : next.position.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .kerning(3)
+                            .foregroundStyle(Color.ink0.opacity(0.55))
+                        Text(next.exercise.uppercased())
+                            .font(.display(46))
+                            .foregroundStyle(Color.ink0)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.6)
+                        if next.loadIsNumbers {
+                            Text(next.load.uppercased())
+                                .font(.display(24))
+                                .foregroundStyle(Color.ink0)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                    }
                 }
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.signalInk)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .background(Capsule().fill(Color.signal))
+
+                Text(goDetailLine)
+                    .font(.system(size: 12, weight: .semibold))
+                    .kerning(1.5)
+                    .foregroundStyle(Color.ink0.opacity(0.6))
+                    .padding(.top, 16)
+
+                HStack(spacing: 10) {
+                    Button {
+                        Haptic.light()
+                        // The original deadline is in the past; re-anchor it
+                        // to now so the extension buys a real 30 seconds
+                        // instead of an already-expired one.
+                        endDate = Date()
+                        onExtend(30)
+                        withAnimation(Motion.smooth) { goState = false }
+                    } label: {
+                        Text("+30")
+                            .font(.display(19))
+                            .foregroundStyle(Color.ink0)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 58)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(Color.ink0, lineWidth: 2)
+                            )
+                    }
+                    .buttonStyle(PressScaleStyle())
+                    .accessibilityLabel("Rest 30 more seconds")
+
+                    Button {
+                        Haptic.light()
+                        isActive = false
+                    } label: {
+                        Text("START SET")
+                            .font(.display(19))
+                            .kerning(2)
+                            .foregroundStyle(Color.signal)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 58)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.ink0))
+                    }
+                    .buttonStyle(PressScaleStyle())
+                    .layoutPriority(1)
+                }
+                .padding(.top, 20)
             }
-            .buttonStyle(PressScaleStyle())
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
+            .padding(.bottom, 14)
         }
     }
 
-    // MARK: - Derived values
+    private var goDetailLine: String {
+        var parts = ["RESTED \(timeText(Double(totalSeconds)))"]
+        if let monitor = stats?.heartRate, let bpm = monitor.currentBPM,
+           !monitor.hasStalled() {
+            parts.append("HEART \(bpm)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: - Helpers
 
     private func remaining(at date: Date) -> Double {
-        guard let endDate else { return 0 }
+        guard let endDate else { return Double(totalSeconds) }
         return max(0, endDate.timeIntervalSince(date))
     }
 
-    private func progress(_ remaining: Double) -> Double {
-        guard totalSeconds > 0 else { return 0 }
-        return min(1, max(0, remaining / Double(totalSeconds)))
+    private func timeText(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    private func ringColor(_ remaining: Double) -> Color {
-        if remaining <= 10 { return .ember }
-        if remaining <= 30 { return .amber }
-        return .mint
+    private func spokenRemaining(_ remaining: Double) -> String {
+        let total = max(0, Int(remaining.rounded()))
+        let minutes = total / 60
+        let seconds = total % 60
+        switch (minutes, seconds) {
+        case (0, let s):
+            return "\(s) second\(s == 1 ? "" : "s")"
+        case (let m, 0):
+            return "\(m) minute\(m == 1 ? "" : "s")"
+        case (let m, let s):
+            return "\(m) minute\(m == 1 ? "" : "s") \(s) second\(s == 1 ? "" : "s")"
+        }
     }
 
-    private func statusText(_ remaining: Double) -> String {
-        if remaining <= 10 { return "ALMOST" }
-        if remaining <= 30 { return "GET READY" }
-        return "RECOVER"
+    private func shortWeight(_ value: Double) -> String {
+        value.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(value))" : String(format: "%.1f", value)
     }
 
-    private func timeString(_ remaining: Double) -> String {
-        // Round up so the readout shows "1:00" for the final whole second
-        // rather than flicking to "0:00" while time is still left.
-        let secs = Int(remaining.rounded(.up))
-        return String(format: "%d:%02d", secs / 60, secs % 60)
+    private func shortTonnage(_ value: Double) -> String {
+        value >= 1000
+            ? String(format: "%.1fT", value / 1000)
+            : "\(Int(value))KG"
+    }
+
+    private func shortDuration(_ value: TimeInterval) -> String {
+        let total = Int(value)
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+        )
     }
 }

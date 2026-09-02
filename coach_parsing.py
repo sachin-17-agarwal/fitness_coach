@@ -450,6 +450,19 @@ _LOOSE_SET_PATTERN = re.compile(
 )
 
 
+# "Back-off 2 of 2:" -> "back-off:". The iOS app tells the coach "Next: back-off
+# 2 of 2 on <exercise>" and the coach echoes that phrasing onto the prescription
+# line, which neither the strict prefixes nor the loose "N sets:" fallback match
+# — so a revised set was silently dropped and the card kept the old target.
+# Anchored on a leading word-run so "3 sets: 90kg x12" and "Tempo: 3-1-2" are
+# untouched.
+_NUMBERED_PHASE_RE = re.compile(r'^([a-z][a-z \-]*?)\s+\d+(?:\s*of\s*\d+)?\s*:')
+
+
+def _canonicalise_phase_label(lower: str) -> str:
+    return _NUMBERED_PHASE_RE.sub(r'\1:', lower, count=1)
+
+
 def _parse_block(name: str, block: str) -> dict | None:
     """Parse a single exercise block into structured data."""
     result = {"exercise": name}
@@ -463,7 +476,7 @@ def _parse_block(name: str, block: str) -> dict | None:
 
     for line in block.split("\n"):
         line = line.strip()
-        lower = line.lower()
+        lower = _canonicalise_phase_label(line.lower())
 
         if any(lower.startswith(p) for p in _WARMUP_PREFIXES):
             content = line.split(":", 1)[1].strip()

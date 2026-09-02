@@ -72,22 +72,40 @@ def has_session_for_today() -> bool:
         log.exception("has_session_for_today failed")
         return False
 
-def start_session(session_type: str, mesocycle_week: int | None = None,
-                  mesocycle_day: int | None = None) -> str:
-    """Create a new workout session and activate workout mode.
+def current_mesocycle_stamp() -> dict:
+    """The mesocycle position to record on a new session.
 
-    The mesocycle position is stamped at creation because it cannot be
-    reconstructed later. A deload holds week-3 loads and cuts reps, so a 5-rep
-    set at RPE 7 is either the protocol working exactly as designed or a session
-    run a full point under target — and with no week on the row, nothing can
-    tell those apart. The prompt instructs the coach to check which week he is
-    in before judging effort; this is what makes that possible.
+    Stamped at creation because the week is a rotation counter, not a calendar
+    fact: advance_mesocycle only bumps it once a full 4-day rotation completes,
+    and yoga days and session swaps deliberately don't advance it. A session's
+    week is therefore not recoverable from its date afterwards, so it has to be
+    written down while it is still known. Everything anchored to "the peak week"
+    — deload holds, next-cycle openings — depends on this.
 
-    Both arguments are optional and the insert degrades rather than fails: a
-    database that has not run migrations/001_workout_session_mesocycle.sql yet
-    rejects the unknown columns, and starting a workout must never depend on a
-    migration having been applied. The retry drops them and logs once.
+    Goes through load_memory so the stored value gets the same self-healing the
+    coach sees (a leftover week 6 wraps to week 2). Best-effort by design: a
+    session must still be created if the memory read fails, so a failure stamps
+    nothing and consumers treat the absence as "unknown", never as week 1.
     """
+    try:
+        from memory import load_memory  # local: keeps module import order flat
+
+        memory = load_memory()
+        stamp = {}
+        week = memory.get("mesocycle_week")
+        day = memory.get("mesocycle_day")
+        if isinstance(week, int):
+            stamp["mesocycle_week"] = week
+        if isinstance(day, int):
+            stamp["mesocycle_day"] = day
+        return stamp
+    except Exception:
+        log.exception("Could not read mesocycle position for session stamp")
+        return {}
+
+
+def start_session(session_type: str) -> str:
+    """Create a new workout session and activate workout mode."""
     try:
         existing_state = get_workout_state()
         existing_session_id = existing_state.get("current_session_id", "")
@@ -102,11 +120,14 @@ def start_session(session_type: str, mesocycle_week: int | None = None,
             "status": SESSION_STATUS_OPEN,
             "start_time": now_local().isoformat(),
         }
-        if mesocycle_week is not None:
-            row["mesocycle_week"] = mesocycle_week
-        if mesocycle_day is not None:
-            row["mesocycle_day"] = mesocycle_day
+        # Stamped via main's helper, which reads the memory state itself so no
+        # caller has to thread it through.
+        row.update(current_mesocycle_stamp())
 
+        # The insert degrades rather than fails. A database that has not run
+        # migrations/001_workout_session_mesocycle.sql rejects the unknown
+        # columns, and starting a workout must never depend on a migration
+        # having been applied — the session row matters more than the stamp.
         try:
             result = supabase.table("workout_sessions").insert(row).execute()
         except Exception:

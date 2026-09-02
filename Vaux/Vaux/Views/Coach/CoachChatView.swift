@@ -9,6 +9,8 @@ import Combine
 
 struct CoachChatView: View {
     @State private var viewModel = ChatViewModel()
+    /// "Ask the coach about this" from other tabs lands here.
+    private let handoff = ChatHandoff.shared
     @FocusState private var inputFocused: Bool
 
     private let suggestions: [String] = [
@@ -61,6 +63,8 @@ struct CoachChatView: View {
                 .animation(Motion.smooth, value: inputFocused)
             }
             .navigationBarHidden(true)
+            .onAppear { adoptHandoff() }
+            .onChange(of: handoff.pendingPrompt) { _, _ in adoptHandoff() }
             .task { await viewModel.loadConversation() }
         }
     }
@@ -157,6 +161,13 @@ struct CoachChatView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Places a question handed over from another tab into the composer.
+    /// The athlete reviews and sends it; it is never sent automatically.
+    private func adoptHandoff() {
+        guard let prompt = handoff.consume(), !prompt.isEmpty else { return }
+        viewModel.inputText = prompt
     }
 
     // MARK: - Suggestion chips

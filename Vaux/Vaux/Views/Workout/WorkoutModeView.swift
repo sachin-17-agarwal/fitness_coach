@@ -102,7 +102,9 @@ struct WorkoutModeView: View {
                         lastLoaded: viewModel.lastSessionSetsLoaded,
                         strengthHistory: viewModel.strengthHistory,
                         todayE1RM: viewModel.todayE1RM
-                    )
+                    ),
+                    sessionType: effectiveSessionType,
+                    calibration: viewModel.restCalibration
                 )
                 .transition(.opacity)
             }

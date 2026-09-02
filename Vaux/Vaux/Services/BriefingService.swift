@@ -70,6 +70,14 @@ final class BriefingService: Sendable {
         )
     }
 
+    /// Today's coach note if one has already been generated, else nil. Never
+    /// asks Claude — the dashboard reads this on every appearance, and a home
+    /// screen must not spend a model call to fill a caption. The briefing flow
+    /// still owns generation; this only surfaces what it already produced.
+    func cachedCoachNoteForToday() -> String? {
+        cached(for: RecoveryService.todayString())?.coachNote
+    }
+
     /// Whether the briefing for today has already been shown to the user.
     /// Used by the app shell to auto-present once per day.
     func hasBeenShownToday() -> Bool {

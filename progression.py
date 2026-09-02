@@ -41,6 +41,19 @@ DEFAULT_MIN_SESSIONS = 3
 # produced the flag rather than trusting the flag alone.
 _RECENT_SETS_SHOWN = 4
 
+# Week 3 of the 4-week wave is peak intensity; week 4 deloads by holding week
+# 3's load and cutting reps. "What did he lift in the peak week" is therefore
+# the anchor for both the deload and the next cycle's opening loads.
+PEAK_WEEK = 3
+
+# The peak-week lookup needs a longer window than the stall/current-load ones.
+# A mesocycle is four completed rotations, and a rotation takes 4-7 calendar
+# days depending on rest days, so a cycle spans roughly 16-28 days. Ten weeks
+# reliably contains the most recent peak week even on a slow rotation; since
+# the lookup takes the most RECENT qualifying session, a longer window can only
+# help it, never drag in something staler.
+PEAK_WINDOW_DAYS = 70
+
 
 def _is_cardio_or_yoga(row: dict) -> bool:
     note = (row.get("notes") or "").lower()
@@ -172,6 +185,50 @@ def format_current_loads(loads: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def find_peak_week_loads(rows: list[dict], peak_week: int = PEAK_WEEK) -> list[dict]:
+    """Top set per exercise from the most recent PEAK-week (week 3) session.
+
+    Deload holds week 3's load, and week 1 of the next cycle opens above what
+    week 3 achieved — so "what did he do in the peak week" is a question the
+    programme asks twice per cycle. It used to be answered by a list of loads
+    typed into the system prompt, which was stale the moment he trained: on a
+    week 4 deload the coach anchored to reference loads frozen three weeks
+    earlier, and only found the real numbers when told to look again.
+
+    CURRENT WORKING LOADS cannot answer it on its own. Going INTO a deload it
+    happens to coincide (the previous session of a lift is one mesocycle week
+    back), but once the deload is logged the most recent session is the deload
+    itself — same load, deliberately fewer reps — so anchoring next cycle's
+    opening to it would under-open every lift.
+
+    Requires `mesocycle_week` on each row, stamped onto the session at creation.
+    Rows without it are skipped rather than guessed at: a session's week cannot
+    be recovered from its date, because the week advances per completed rotation,
+    not per calendar week.
+    """
+    peak_rows = [r for r in rows if _as_int(r.get("mesocycle_week")) == peak_week]
+    return find_current_loads(peak_rows)
+
+
+def format_peak_week_loads(loads: list[dict], peak_week: int = PEAK_WEEK) -> str:
+    """Render the peak-week block.
+
+    The empty case is load-bearing, not cosmetic. Sessions are only stamped with
+    their mesocycle week from the point that shipped, so this block is empty
+    until a peak week has been recorded — and an unexplained empty heading is
+    exactly the sort of gap that gets filled with a remembered number. It says
+    what to use instead.
+    """
+    if not loads:
+        return (
+            f"  No week-{peak_week} session recorded yet — sessions carry their mesocycle\n"
+            f"  week from this cycle onward. Until one appears, anchor to "
+            f"CURRENT WORKING LOADS\n"
+            f"  and say that is what you used. Do NOT substitute a load you remember."
+        )
+    return format_current_loads(loads)
+
+
 def find_stalls(rows: list[dict], min_sessions: int = DEFAULT_MIN_SESSIONS) -> list[dict]:
     """Exercises whose top-set load has not moved for `min_sessions` sessions.
 
@@ -277,8 +334,9 @@ def _fetch_sets_before_today(days: int) -> list[dict] | None:
         since = (today - timedelta(days=days)).isoformat()
         result = (
             supabase.table("workout_sets")
-            .select("date, exercise, is_warmup, notes, actual_weight_kg, "
-                    "actual_reps, actual_rpe, target_reps, target_rpe")
+            .select("date, exercise, workout_session_id, is_warmup, notes, "
+                    "actual_weight_kg, actual_reps, actual_rpe, target_reps, "
+                    "target_rpe")
             .gte("date", since)
             .lt("date", today.isoformat())
             .execute()
@@ -287,6 +345,40 @@ def _fetch_sets_before_today(days: int) -> list[dict] | None:
     except Exception:
         log.exception("Progression fetch failed")
         return None
+
+
+def _fetch_session_weeks(days: int) -> dict[str, int]:
+    """session id -> mesocycle_week for sessions in the window.
+
+    Read separately and joined in Python rather than through a PostgREST embed:
+    the embed depends on a declared foreign key between workout_sets and
+    workout_sessions, and the sets table only carries the id as a plain column.
+    A failure here returns {}, which leaves every row unstamped and renders the
+    peak-week block as its empty case — the same outcome as having no peak week
+    recorded, which is the safe direction.
+    """
+    try:
+        supabase = get_supabase()
+        if not supabase:
+            return {}
+        today = now_local().date()
+        since = (today - timedelta(days=days)).isoformat()
+        result = (
+            supabase.table("workout_sessions")
+            .select("id, mesocycle_week")
+            .gte("date", since)
+            .execute()
+        )
+        weeks = {}
+        for row in result.data or []:
+            week = _as_int(row.get("mesocycle_week"))
+            session_id = row.get("id")
+            if week is not None and session_id:
+                weeks[str(session_id)] = week
+        return weeks
+    except Exception:
+        log.exception("Session mesocycle-week fetch failed")
+        return {}
 
 
 def get_load_stalls(days: int = 42, min_sessions: int = DEFAULT_MIN_SESSIONS) -> list[dict]:
@@ -304,6 +396,27 @@ def get_current_loads(days: int = 42) -> list[dict]:
     if rows is None:
         return []
     return find_current_loads(rows)
+
+
+def get_peak_week_loads(days: int = PEAK_WINDOW_DAYS, peak_week: int = PEAK_WEEK) -> list[dict]:
+    """Top set per exercise from the most recent peak-week session.
+
+    [] when the data can't be read or nothing is stamped yet; the formatter
+    renders that as an explicit "no peak week recorded" rather than silence.
+    """
+    rows = _fetch_sets_before_today(days)
+    if rows is None:
+        return []
+    weeks = _fetch_session_weeks(days)
+    if not weeks:
+        return []
+    for row in rows:
+        session_id = row.get("workout_session_id")
+        if session_id is not None:
+            week = weeks.get(str(session_id))
+            if week is not None:
+                row["mesocycle_week"] = week
+    return find_peak_week_loads(rows, peak_week=peak_week)
 
 
 # ── Today vs last session, per exercise ──────────────────────────────────────
