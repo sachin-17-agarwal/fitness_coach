@@ -1,8 +1,9 @@
 // CoachChatView.swift
 // Vaux
 //
-// Chat UI with avatar bubbles, suggested prompt chips, typing indicator,
-// and markdown-rendered coach responses.
+// The coach conversation as an editorial transcript, not a messenger: speakers
+// are labelled with eyebrows and set as full-width text, plans render as
+// ledger rows, and the header carries what the coach is looking at today.
 
 import SwiftUI
 import Combine
@@ -12,71 +13,102 @@ struct CoachChatView: View {
     /// "Ask the coach about this" from other tabs lands here.
     private let handoff = ChatHandoff.shared
     @FocusState private var inputFocused: Bool
+    /// "Start session →" on a plan card switches to the Train tab.
+    var switchToTrainTab: (() -> Void)? = nil
 
     private let suggestions: [String] = [
-        "Give me today's briefing",
-        "How's my recovery looking?",
-        "Should I train hard today?",
+        "Today's briefing",
+        "How's my recovery?",
+        "Train hard today?",
         "Plan my deload week"
     ]
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                TechBackground(accent: .signal)
+        ZStack {
+            Color.ink0.ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    ScreenHeader(
-                        eyebrow: "Vaux Coach · Online",
-                        title: "Coach",
-                        showsLiveDot: true,
-                        accessory: AnyView(briefingButton)
-                    )
-                    .padding(.horizontal, 22)
-                    .padding(.top, 8)
-                    .padding(.bottom, 10)
+            VStack(spacing: 0) {
+                header
 
-                    if viewModel.messages.isEmpty && !viewModel.isLoading {
-                        emptyState
-                    } else {
-                        messageList
-                    }
-
-                    // Kept available mid-conversation, not just on an empty
-                    // screen: "how's my recovery looking?" is at least as
-                    // useful after a few exchanges as before the first one.
-                    // Hidden only while composing, where the row would sit
-                    // between the field and the keyboard, and while a reply is
-                    // in flight, so a second request can't be queued on top.
-                    if !inputFocused && !viewModel.isLoading {
-                        suggestionsRow
-                            .padding(.horizontal, 14)
-                            .padding(.bottom, 6)
-                            .transition(.opacity)
-                    }
-
-                    inputBar
+                if viewModel.messages.isEmpty && !viewModel.isLoading {
+                    emptyState
+                } else {
+                    transcript
                 }
-                // On the container, not on the row: a transition only animates
-                // when the change that inserts the view is itself animated, so
-                // attaching this to the row being inserted would do nothing.
-                .animation(Motion.smooth, value: inputFocused)
+
+                // Kept available mid-conversation, not just on an empty screen.
+                // Hidden while composing, where the row would sit between the
+                // field and the keyboard, and while a reply is in flight.
+                if !inputFocused && !viewModel.isLoading {
+                    suggestionsRow
+                        .padding(.bottom, 4)
+                        .transition(.opacity)
+                }
+
+                composer
             }
-            .navigationBarHidden(true)
-            .onAppear { adoptHandoff() }
-            .onChange(of: handoff.pendingPrompt) { _, _ in adoptHandoff() }
-            .task { await viewModel.loadConversation() }
+            .animation(Motion.smooth, value: inputFocused)
+        }
+        .onAppear { adoptHandoff() }
+        .onChange(of: handoff.pendingPrompt) { _, _ in adoptHandoff() }
+        .task {
+            await viewModel.loadConversation()
+            await viewModel.loadContext()
         }
     }
 
-    // MARK: - Messages
+    // MARK: - Header
 
-    private var messageList: some View {
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                HStack(spacing: 8) {
+                    GlowDot(color: .signal, size: 7)
+                    EditorialEyebrow(text: "Coach · Online")
+                }
+                Spacer()
+                Button {
+                    Haptic.medium()
+                    Task { await viewModel.sendMorningBriefing() }
+                } label: {
+                    Text("BRIEFING →")
+                        .font(.system(size: 10, weight: .bold))
+                        .kerning(2.5)
+                        .foregroundStyle(Color.signal)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isLoading)
+                .accessibilityLabel("Request morning briefing")
+            }
+            .frame(height: 44)
+
+            HStack {
+                EditorialEyebrow(text: viewModel.contextLine, color: Editorial.muted, size: 9.5, kerning: 1.8)
+                Spacer()
+                if let readiness = viewModel.readinessLabel {
+                    EditorialEyebrow(text: readiness, color: .mint, size: 9.5, kerning: 1.8)
+                }
+            }
+            .padding(.top, 4)
+
+            Rectangle().fill(Color.line).frame(height: 1)
+                .padding(.top, 12)
+        }
+        .padding(.horizontal, Editorial.gutter)
+        .padding(.top, 4)
+    }
+
+    // MARK: - Transcript
+
+    private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    dayDivider("Today")
+
                     ForEach(Array(viewModel.messages.enumerated()), id: \.offset) { index, msg in
-                        MessageBubble(message: msg)
+                        TranscriptTurn(message: msg, onStartSession: switchToTrainTab)
                             .id(index)
                             .transition(.asymmetric(
                                 insertion: .move(edge: .bottom).combined(with: .opacity),
@@ -90,27 +122,16 @@ struct CoachChatView: View {
                     }
 
                     if let error = viewModel.errorMessage {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 11, weight: .bold))
-                            Text(error)
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundStyle(Color.ember)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.ember.opacity(0.08))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.ember.opacity(0.22), lineWidth: 1)
-                        )
+                        Text(error)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.ember)
+                            .padding(.top, 16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
+                .padding(.horizontal, Editorial.gutter)
+                .padding(.top, 14)
+                .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: viewModel.messages.count) {
@@ -128,39 +149,30 @@ struct CoachChatView: View {
         }
     }
 
+    private func dayDivider(_ label: String) -> some View {
+        HStack(spacing: 12) {
+            EditorialEyebrow(text: label, color: Editorial.muted, size: 9.5, kerning: 2.5)
+            Rectangle().fill(Color.line).frame(height: 1)
+        }
+        .padding(.top, 2)
+        .accessibilityHidden(true)
+    }
+
     // MARK: - Empty state
 
     private var emptyState: some View {
-        VStack(spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             Spacer()
-
-            ZStack {
-                Circle()
-                    .stroke(Color.signal.opacity(0.10), lineWidth: 1)
-                    .frame(width: 132, height: 132)
-                Circle()
-                    .stroke(Color.signal.opacity(0.20), lineWidth: 1)
-                    .frame(width: 96, height: 96)
-                Circle()
-                    .fill(Color.signal.opacity(0.06))
-                    .frame(width: 96, height: 96)
-                VauxLogo(size: 40, color: .signal)
-                    .shadow(color: Color.signal.opacity(0.6), radius: 14)
-            }
-
-            VStack(spacing: 8) {
-                Text("Ask your coach")
-                    .font(.serifMD)
-                    .foregroundStyle(Color.fg0)
-                Text("PROGRAMMING · FORM · RECOVERY")
-                    .font(.eyebrowSmall)
-                    .kerning(1.6)
-                    .foregroundStyle(Color.fg2)
-            }
-
+            VauxLogo(size: 34, color: .signal)
+                .shadow(color: Color.signal.opacity(0.5), radius: 12)
+            Text("ASK YOUR COACH")
+                .font(.display(34))
+                .foregroundStyle(Color.fg0)
+            EditorialEyebrow(text: "Programming · Form · Recovery", color: Editorial.muted, size: 10, kerning: 2.2)
             Spacer()
         }
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, Editorial.gutter)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Places a question handed over from another tab into the composer.
@@ -181,106 +193,62 @@ struct CoachChatView: View {
                         viewModel.inputText = prompt
                         Task { await viewModel.sendMessage() }
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.up.right")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(Color.signal)
-                            Text(prompt)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.fg1)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(Color.ink2.opacity(0.94))
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [Color.white.opacity(0.08), Color.line2],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ),
-                                    lineWidth: 1
-                                )
-                        )
-                        .frame(minHeight: 44)
-                        .contentShape(Capsule())
+                        Text(prompt)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Color.fg1)
+                            .padding(.horizontal, 14)
+                            .frame(height: 34)
+                            .overlay(Capsule().stroke(Color.line, lineWidth: 1))
+                            .frame(minHeight: 44)
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Sends this question to your coach")
                 }
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, Editorial.gutter)
         }
     }
 
-    // MARK: - Input bar
+    // MARK: - Composer
 
-    private var inputBar: some View {
+    private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 6) {
                 TextField("Message your coach…", text: $viewModel.inputText, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15))
+                    .font(.system(size: 14.5))
                     .foregroundStyle(Color.fg0)
                     .focused($inputFocused)
                     .lineLimit(1...5)
-                    .padding(.vertical, 10)
-                    .padding(.leading, 14)
+                    .padding(.vertical, 14)
+                    .padding(.leading, 16)
 
                 if !viewModel.inputText.isEmpty {
                     Button {
                         viewModel.inputText = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(Color.textTertiary)
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.fg3)
                             .frame(width: 44, height: 44)
                             .contentShape(Circle())
                     }
                     .accessibilityLabel("Clear message")
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.ink2.opacity(0.9))
-                    .background(
-                        .ultraThinMaterial.opacity(0.5),
-                        in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    )
-            )
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.ink2))
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(
-                        inputFocused ? Color.signal.opacity(0.40) : Color.line,
-                        lineWidth: 1
-                    )
-            )
-            .shadow(
-                color: inputFocused ? Color.signal.opacity(0.12) : .clear,
-                radius: 12
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(inputFocused ? Color.signal.opacity(0.5) : Color.line, lineWidth: 1)
             )
             .animation(Motion.snappy, value: inputFocused)
 
             sendButton
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Editorial.gutter)
         .padding(.top, 8)
         .padding(.bottom, 10)
-        .background(
-            Color.ink0.opacity(0.85)
-                .background(.ultraThinMaterial.opacity(0.4))
-                .overlay(
-                    Rectangle()
-                        .fill(Color.line.opacity(0.6))
-                        .frame(height: 1),
-                    alignment: .top
-                )
-                .ignoresSafeArea(edges: .bottom)
-        )
     }
 
     private var sendButton: some View {
@@ -290,45 +258,19 @@ struct CoachChatView: View {
             Task { await viewModel.sendMessage() }
         } label: {
             Image(systemName: "arrow.up")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(canSend ? Color.signalInk : Color.fg2)
-                .frame(width: 40, height: 40)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(canSend ? Color.signalInk : Color.fg3)
+                .frame(width: 48, height: 48)
                 .background(
-                    Circle()
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(canSend ? Color.signal : Color.ink3)
                 )
-                .shadow(color: canSend ? Color.signal.opacity(0.40) : .clear, radius: 10, x: 0, y: 4)
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .disabled(!canSend)
         .buttonStyle(PressScaleStyle(scale: 0.92))
         .animation(Motion.snappy, value: canSend)
         .accessibilityLabel("Send")
-    }
-
-    private var briefingButton: some View {
-        Button {
-            Haptic.medium()
-            Task { await viewModel.sendMorningBriefing() }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 10, weight: .semibold))
-                Text("BRIEFING")
-                    .font(.eyebrowSmall)
-                    .kerning(1.2)
-            }
-            .foregroundStyle(Color.signal)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Capsule().fill(Color.signal.opacity(0.08)))
-            .overlay(Capsule().stroke(Color.signal.opacity(0.22), lineWidth: 1))
-            .frame(minHeight: 44)
-            .contentShape(Capsule())
-        }
-        .disabled(viewModel.isLoading)
-        .accessibilityLabel("Request morning briefing")
     }
 }
 
@@ -339,54 +281,26 @@ struct TypingIndicator: View {
     private let timer = Timer.publish(every: 0.35, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            CoachAvatar()
-
-            HStack(spacing: 5) {
+        VStack(alignment: .leading, spacing: 12) {
+            EditorialEyebrow(text: "Coach", color: .mint, size: 10, kerning: 2.5)
+            HStack(spacing: 6) {
                 ForEach(0..<3) { i in
                     Circle()
-                        .fill(Color.signal)
-                        .frame(width: 7, height: 7)
+                        .fill(Color.mint)
+                        .frame(width: 6, height: 6)
                         .opacity(phase == i ? 1 : 0.3)
-                        .offset(y: phase == i ? -4 : 0)
-                        .scaleEffect(phase == i ? 1.15 : 0.85)
+                        .offset(y: phase == i ? -3 : 0)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.cardBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.cardBorder, lineWidth: 0.5)
-            )
-
-            Spacer(minLength: 40)
         }
+        .padding(.top, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onReceive(timer) { _ in
             withAnimation(.easeInOut(duration: 0.3)) {
                 phase = (phase + 1) % 3
             }
         }
-    }
-}
-
-// MARK: - Coach avatar
-
-struct CoachAvatar: View {
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.ink3)
-            Circle()
-                .stroke(Color.line2, lineWidth: 1)
-            Image(systemName: "sparkles")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.signal)
-        }
-        .frame(width: 30, height: 30)
+        .accessibilityLabel("Coach is typing")
     }
 }
 
