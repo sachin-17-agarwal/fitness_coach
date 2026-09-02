@@ -37,7 +37,9 @@ from datetime import timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data import get_supabase, now_local              # noqa: E402
-from prescribe import PULL_DAY, PriorSet, prescribe_pull  # noqa: E402
+from prescribe import (  # noqa: E402
+    PULL_DAY, PriorSet, infer_session_weeks, prescribe_pull,
+)
 
 
 def _is_cardio_or_yoga(row: dict) -> bool:
@@ -55,10 +57,12 @@ def fetch_pull_sessions(days: int) -> list[dict]:
     since = (now_local().date() - timedelta(days=days)).isoformat()
 
     def _query(columns: str):
+        # Every session type, not only Pull. The week is reconstructed by
+        # counting rotation boundaries, and filtering to one day would drop the
+        # day-4 completions the count depends on.
         return (
             supabase.table("workout_sessions")
             .select(columns)
-            .eq("type", "Pull")
             .gte("date", since)
             .order("date")
             .order("id")
@@ -94,9 +98,36 @@ def fetch_pull_sessions(days: int) -> list[dict]:
             continue
         by_session[row["workout_session_id"]].append(row)
 
+    # Reconstruct the week for any session that does not carry one, then keep
+    # only the Pull days for the replay itself.
+    state = _load_mesocycle_state(supabase)
+    if state:
+        inferred = infer_session_weeks([s.get("type", "") for s in sessions], *state)
+        for session, week in zip(sessions, inferred):
+            if session.get("mesocycle_week") is None and week is not None:
+                session["mesocycle_week"] = week
+                session["week_inferred"] = True
+
     for session in sessions:
         session["sets"] = by_session.get(session["id"], [])
-    return sessions
+    return [s for s in sessions if s.get("type") == "Pull"]
+
+
+def _load_mesocycle_state(supabase) -> tuple[int, int] | None:
+    """The (week, day) of the NEXT session, from the memory table."""
+    try:
+        rows = (
+            supabase.table("memory")
+            .select("key, value")
+            .in_("key", ["mesocycle_week", "mesocycle_day"])
+            .execute()
+        ).data or []
+        values = {r["key"]: r["value"] for r in rows}
+        return (int(values["mesocycle_week"]), int(values["mesocycle_day"]))
+    except Exception:
+        print("NOTE: could not read the mesocycle state, so the week cannot be "
+              "reconstructed. Falling back to --week.\n")
+        return None
 
 
 def top_sets(session: dict) -> dict[str, PriorSet]:
@@ -176,8 +207,12 @@ def main() -> None:
         # The session's own recorded week beats the --week guess. Only sessions
         # written after the migration carry one.
         week = session.get("mesocycle_week") or args.week or 1
-        week_source = ("recorded" if session.get("mesocycle_week")
-                       else ("--week" if args.week else "default"))
+        if session.get("mesocycle_week") and not session.get("week_inferred"):
+            week_source = "recorded"
+        elif session.get("week_inferred"):
+            week_source = "reconstructed"
+        else:
+            week_source = "--week" if args.week else "default"
         proposals = prescribe_pull(week, history)
         actual = performed_counts(session)
 

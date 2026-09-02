@@ -550,3 +550,66 @@ def render(proposals: list[Proposal]) -> str:
         if p.backoff:
             out.append("Back-off: " + ", ".join(s.render() for s in p.backoff))
     return "\n".join(out)
+
+
+# ── Reconstructing the mesocycle week from the session log ───────────────────
+
+MESOCYCLE_WEEKS = 4
+
+
+def infer_session_weeks(session_types: list[str], next_week: int,
+                        next_day: int) -> list[int | None]:
+    """Which mesocycle week each past session belonged to, worked out backwards.
+
+    `workout_sessions` does not store the week (the legacy `sessions` table did;
+    it was dropped when the table was replaced), and rows written before the
+    migration never will. Without it a deload and a session run under target are
+    indistinguishable, which is the difference between the protocol working and
+    the protocol failing.
+
+    It does not have to be stored to be known. Two facts recover it:
+
+      THE DAY IS THE TYPE. The rotation is a bijection — Pull is day 1, Push 2,
+      Legs 3, Cardio+Abs 4 — so a session's rotation position is readable
+      directly off the row rather than counted. That makes the reconstruction
+      immune to missed days, which is what would break a naive step-by-step walk.
+
+      THE WEEK TURNS ON DAY 4. Completing day 4 advances the week, so walking
+      backwards the week decrements exactly when a day-1 session is passed.
+
+    Anchored to the CURRENT memory state, which is the week and day of the NEXT
+    session rather than the last one — so if the next session is day 1, the last
+    completed one was day 4 of the previous week.
+
+    Yoga is not a rotation position and never advances anything (data.py:45), so
+    it yields None and is skipped when stepping.
+
+    Returns one entry per input session, in the same order. This is a RECONSTRUCTION,
+    not a record: an override that swapped a day, or a session logged under the
+    wrong type, will shift it. Sessions written after the migration carry the real
+    value and should be preferred over this every time.
+    """
+    from data import CYCLE, YOGA_SESSION_TYPE
+
+    days: list[int | None] = []
+    for name in session_types:
+        clean = (name or "").strip()
+        if clean == YOGA_SESSION_TYPE or clean not in CYCLE:
+            days.append(None)
+        else:
+            days.append(CYCLE.index(clean) + 1)
+
+    def _wrap(week: int) -> int:
+        return ((week - 1) % MESOCYCLE_WEEKS) + 1
+
+    # The most recent completed session sits one step behind the stored state.
+    week = _wrap(next_week - 1) if next_day == 1 else _wrap(next_week)
+
+    out: list[int | None] = [None] * len(days)
+    for i in range(len(days) - 1, -1, -1):
+        if days[i] is None:
+            continue                      # yoga consumes no rotation slot
+        out[i] = week
+        if days[i] == 1:
+            week = _wrap(week - 1)        # stepping back past day 1 crosses a week
+    return out

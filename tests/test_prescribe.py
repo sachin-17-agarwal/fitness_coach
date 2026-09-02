@@ -8,8 +8,9 @@ now a function with one right answer, and these are the answers.
 import unittest
 
 from prescribe import (
-    COMPOUND, ISOLATION, PriorSet, SetSpec, backoff_sets, next_top_set,
-    prescribe_exercise, prescribe_pull, render, warmup_ramp,
+    COMPOUND, ISOLATION, PriorSet, SetSpec, backoff_sets,
+    infer_session_weeks, next_top_set, prescribe_exercise, prescribe_pull,
+    render, warmup_ramp,
 )
 
 
@@ -297,3 +298,65 @@ class PullSessionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MesocycleWeekReconstructionTests(unittest.TestCase):
+    """The week is recoverable without being stored.
+
+    `workout_sessions` has no mesocycle column (the legacy `sessions` table did;
+    it was dropped when the table replaced it), and rows written before the
+    migration never will. Without the week, a deload and a session run under
+    target are indistinguishable — and the migration is not something the
+    athlete can run. So it is reconstructed instead.
+    """
+
+    def test_the_rotation_is_read_off_the_type_not_counted(self):
+        """Pull=1, Push=2, Legs=3, Cardio+Abs=4 is a bijection, which is what
+        makes this immune to a missed day."""
+        weeks = infer_session_weeks(
+            ["Pull", "Push", "Legs", "Cardio+Abs"], next_week=2, next_day=1)
+        self.assertEqual(weeks, [1, 1, 1, 1])
+
+    def test_the_week_rolls_at_each_day_four(self):
+        types = ["Pull", "Push", "Legs", "Cardio+Abs"] * 2
+        weeks = infer_session_weeks(types, next_week=3, next_day=1)
+        self.assertEqual(weeks, [1, 1, 1, 1, 2, 2, 2, 2])
+
+    def test_yoga_consumes_no_rotation_slot(self):
+        """data.py:45 — yoga overrides the rotation without advancing it."""
+        types = ["Pull", "Push", "Yoga", "Legs", "Cardio+Abs"]
+        weeks = infer_session_weeks(types, next_week=2, next_day=1)
+        self.assertIsNone(weeks[2])
+        self.assertEqual([weeks[0], weeks[1], weeks[3], weeks[4]], [1, 1, 1, 1])
+
+    def test_a_missed_day_does_not_shift_the_reconstruction(self):
+        """A step-by-step walk would drift here; reading the day off the type
+        does not. Legs is skipped entirely and Cardio+Abs is still day 4."""
+        types = ["Pull", "Push", "Cardio+Abs", "Pull"]
+        weeks = infer_session_weeks(types, next_week=2, next_day=2)
+        self.assertEqual(weeks, [1, 1, 1, 2])
+
+    def test_the_anchor_accounts_for_the_stored_state_being_the_NEXT_session(self):
+        """memory holds the week and day of the session still to come. If that
+        is day 1, the last completed session was day 4 of the week before."""
+        ending_on_day_four = infer_session_weeks(
+            ["Pull", "Push", "Legs", "Cardio+Abs"], next_week=2, next_day=1)
+        mid_week = infer_session_weeks(
+            ["Pull", "Push", "Legs"], next_week=1, next_day=4)
+        self.assertEqual(ending_on_day_four[-1], 1)   # day 4 of week 1
+        self.assertEqual(mid_week[-1], 1)             # still inside week 1
+
+    def test_the_week_wraps_at_four(self):
+        types = ["Cardio+Abs", "Pull"]
+        weeks = infer_session_weeks(types, next_week=1, next_day=2)
+        self.assertEqual(weeks, [4, 1])
+
+    def test_an_unknown_session_type_yields_none_rather_than_a_guess(self):
+        weeks = infer_session_weeks(["Pull", "Mobility", "Push"],
+                                    next_week=1, next_day=3)
+        self.assertIsNone(weeks[1])
+
+    def test_it_reproduces_a_full_four_week_mesocycle(self):
+        types = ["Pull", "Push", "Legs", "Cardio+Abs"] * 4
+        weeks = infer_session_weeks(types, next_week=1, next_day=1)
+        self.assertEqual(weeks, [1]*4 + [2]*4 + [3]*4 + [4]*4)
