@@ -28,6 +28,7 @@ Read the output for three things, in order of importance:
 """
 
 import argparse
+import json
 import os
 import sys
 from collections import defaultdict
@@ -118,12 +119,32 @@ def performed_counts(session: dict) -> dict[str, int]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=90)
+    parser.add_argument("--export", metavar="FILE",
+                        help="dump the fetched Pull history to JSON and exit. "
+                             "Contains training data only — no credentials — so "
+                             "the file is safe to share for offline analysis.")
+    parser.add_argument("--from-json", metavar="FILE", dest="from_json",
+                        help="replay from a file written by --export instead of "
+                             "hitting Supabase. Needs no credentials.")
     parser.add_argument("--week", type=int, default=None,
                         help="assume this mesocycle week for every session "
                              "(the log does not record it)")
     args = parser.parse_args()
 
-    sessions = fetch_pull_sessions(args.days)
+    if args.from_json:
+        with open(args.from_json, encoding="utf-8") as handle:
+            sessions = json.load(handle)
+        print(f"Replaying from {args.from_json} ({len(sessions)} sessions)\n")
+    else:
+        sessions = fetch_pull_sessions(args.days)
+
+    if args.export:
+        with open(args.export, "w", encoding="utf-8") as handle:
+            json.dump(sessions, handle, indent=2, default=str)
+        print(f"Wrote {len(sessions)} Pull sessions to {args.export}. "
+              f"No credentials are in this file.")
+        return
+
     if len(sessions) < 2:
         raise SystemExit(
             f"Need at least two Pull sessions to replay; found {len(sessions)} "
