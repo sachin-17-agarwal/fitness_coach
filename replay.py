@@ -351,6 +351,12 @@ def render_chat(replay: Replay) -> str:
 
     diverged = [(s, o) for s in replay.sessions
                 for o in s.outcomes if o.verdict == "diverge"]
+    missing: dict[str, list[str]] = {}
+    for s in replay.sessions:
+        for o in s.outcomes:
+            if o.verdict == "missing":
+                missing.setdefault(o.exercise, []).append(s.date)
+
     if diverged:
         L.append("WHERE IT DISAGREED")
         L.append("")
@@ -368,9 +374,29 @@ def render_chat(replay: Replay) -> str:
             L.append(f"- {o.exercise} — code says {o.proposed} sets, you did "
                      f"{o.logged}{template} · code's top set {o.top}")
         L.append("")
+    elif not missing:
+        L.append("Nothing disagreed. Every exercise ran the set count the "
+                 "programme would have chosen.")
+        L.append("")
     else:
-        L.append("Nothing disagreed. Every logged exercise ran the set count "
-                 "the programme would have chosen.")
+        L.append("Nothing that you logged disagreed — every exercise you did "
+                 "ran the set count the programme would have chosen.")
+        L.append("")
+
+    # The count alone reads as an accusation with no subject. An exercise with
+    # history that simply was not logged is counted here and named nowhere else
+    # in the report — the deferred notes only pick up exercises with NO history.
+    if missing:
+        L.append("WHAT THE PROGRAMME EXPECTED AND DIDN'T FIND")
+        L.append("")
+        L.append("Prescribed on the day but not logged. A swap, a machine in "
+                 "use, or a set that went unrecorded all look the same here — "
+                 "the log cannot tell them apart.")
+        L.append("")
+        for exercise, dates in missing.items():
+            when = (f"{len(dates)} sessions" if len(dates) > 1
+                    else _short_date(dates[0]))
+            L.append(f"- {exercise} — {when}")
         L.append("")
 
     # Group by what the note SAYS, not which exercise it is about — the same
@@ -429,12 +455,18 @@ def render_summary(replay: Replay, days: int) -> str:
                        for o in s.outcomes if o.verdict == "diverge"})
     detail = (f" Disagreements were on: {', '.join(diverged)}."
               if diverged else " Nothing disagreed.")
+    # Written to the ATHLETE, in the second person. It is stored as an ordinary
+    # assistant row and the app renders every assistant row as a coach bubble,
+    # so anything addressed to the model would be read by him instead — the
+    # coach appearing to discuss him in the third person and issue itself
+    # orders. What the model must know about this row (that it holds totals
+    # only) belongs in the system prompt, not in the transcript.
+    n = len(replay.sessions)
     return (f"Ran the replay over {days} days across "
-            f"{len(replay.sessions)} Pull sessions: {t['match']} agreed, "
+            f"{n} Pull session{'' if n == 1 else 's'}: {t['match']} agreed, "
             f"{t['diverge']} disagreed, {t['missing']} not logged.{detail} "
-            f"The athlete has seen the full report; only these totals are "
-            f"recorded here, so do not describe individual sets from it — ask "
-            f"him to paste the part he wants to discuss.")
+            f"Only these totals are kept here — paste the part of the report "
+            f"you want to dig into.")
 
 
 def run_chat_replay(days: int = 90, default_week: int = 1) -> tuple[str, str]:

@@ -2987,6 +2987,13 @@ class ReplayReportTests(unittest.TestCase):
         self.assertIn("match", out)
 
 
+def now_local_iso_today() -> str:
+    """A session start-time of today, so the stale-session guard does not close
+    it before the test gets to the thing it is actually testing."""
+    from data import now_local
+    return now_local().isoformat()
+
+
 class ReplayCommandTests(unittest.TestCase):
     """`replay` had to become a chat command, not a URL.
 
@@ -3080,6 +3087,49 @@ class ReplayCommandTests(unittest.TestCase):
         self.assertIn("No Supabase client configured", out)
         self.assertIn("nothing about your training is affected", out)
         self.assertEqual(sent, [out])
+
+    def test_the_report_is_held_back_during_a_live_session_on_the_app(self):
+        """A read-only diagnostic must not be able to move the workout card.
+
+        The in-workout composer feeds every /api/chat reply through
+        applyAIResponse. This report contains no "*" markers, so
+        PrescriptionParser.parse returns [] and control falls through to
+        detectExerciseTransition — a bare substring scan over the whole reply
+        (PrescriptionParser.swift:301). The report names every exercise in the
+        day's plan, so it matches the first in plan order, jumps the card off
+        the lift he is mid-way through, and permanently reorders what is next.
+        """
+        from unittest.mock import patch
+        active = {"workout_mode": "active", "current_session_id": "s1",
+                  "session_start_time": now_local_iso_today()}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="LLM"), \
+             patch("coach.get_workout_state", return_value=active), \
+             patch("coach.save_conversation_message"), \
+             patch("replay.run_chat_replay") as run:
+            out = handle_incoming_message("replay", {"mesocycle_day": 1},
+                                          send_reply=False)
+        run.assert_not_called()
+        self.assertIn("mid-session", out)
+        from prescribe import PULL_DAY
+        for name, _, _ in PULL_DAY:
+            self.assertNotIn(name, out, "names a plan exercise, so it would "
+                                        "still trip the transition detector")
+
+    def test_telegram_still_gets_the_report_during_a_live_session(self):
+        """Telegram drives no workout card, so the hazard does not apply."""
+        from unittest.mock import patch
+        active = {"workout_mode": "active", "current_session_id": "s1",
+                  "session_start_time": now_local_iso_today()}
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="LLM"), \
+             patch("coach.get_workout_state", return_value=active), \
+             patch("coach.save_conversation_message"), \
+             patch("coach.send_telegram_message"), \
+             patch("replay.run_chat_replay", return_value=("REPORT", "S")):
+            out = handle_incoming_message("replay", {"mesocycle_day": 1},
+                                          send_reply=True)
+        self.assertEqual(out, "REPORT")
 
     def test_a_stale_session_is_still_closed_when_the_command_runs(self):
         """The command returns early, so where it sits in the function matters.
@@ -3249,15 +3299,63 @@ class ChatReplayRenderingTests(unittest.TestCase):
     def test_one_session_is_not_reported_as_sessions(self):
         self.assertIn("1 Pull session ", self._chat())
 
-    def test_the_summary_records_totals_and_refuses_the_detail(self):
-        """It stands in for the report in the transcript, so it must not invite
-        the model to describe sets it was never given."""
+    def test_the_summary_is_addressed_to_the_athlete_not_the_model(self):
+        """It is stored as an ordinary assistant row, and MessageBubble renders
+        every assistant row as a coach bubble. So an instruction written at the
+        model is read by HIM — the coach discussing him in the third person and
+        issuing itself orders. What the model needs to know about this row lives
+        in the system prompt instead."""
         from replay import analyse, render_summary
         summary = render_summary(analyse(self._sessions()), 90)
         self.assertIn("2 disagreed", summary)
         self.assertIn("Cable Row", summary)
-        self.assertIn("do not describe individual sets", summary)
         self.assertLess(len(summary), 500, "this is persisted on every request")
+        import re as _re
+        for third_person in (r"the athlete", r"\bdo not\b", r"\bhe\b",
+                             r"\bhis\b", r"\bhim\b"):
+            self.assertIsNone(_re.search(third_person, summary, _re.I),
+                              f"written at the model, not to him: {summary!r}")
+
+    def test_the_summary_is_not_reported_as_sessions_when_there_is_one(self):
+        from replay import analyse, render_summary
+        self.assertIn("1 Pull session:", render_summary(analyse(self._sessions()), 90))
+
+    def test_the_prompt_tells_the_coach_the_summary_is_only_totals(self):
+        """The instruction had to move somewhere, or the coach answers a
+        follow-up from detail it was never given."""
+        prompt = load_system_prompt()
+        self.assertIn("NOTHING about individual sets", prompt)
+        self.assertIn("ask him to paste that section", prompt)
+
+    def _missing_case(self):
+        """T-Bar Row has history and is simply not logged on the later day."""
+        def st(ex, w, r, rpe, n=1):
+            return {"exercise": ex, "actual_weight_kg": w, "actual_reps": r,
+                    "actual_rpe": rpe, "set_number": n, "is_warmup": False}
+        prior = {"date": "2026-08-10", "mesocycle_week": 3,
+                 "sets": [st("Cable Row", 80, 8, 8), st("Cable Row", 65, 12, 7, 2),
+                          st("T-Bar Row", 60, 8, 8), st("T-Bar Row", 50, 12, 7, 2)]}
+        today = {"date": "2026-08-28", "mesocycle_week": 1,
+                 "sets": [st("Cable Row", 82.5, 6, 8), st("Cable Row", 66, 11, 7, 2)]}
+        return [prior, today]
+
+    def test_the_not_logged_count_names_its_exercises(self):
+        """"not logged 6" alone is an accusation with no subject.
+
+        The deferred notes only pick up exercises with NO history at all, so an
+        exercise that has history and simply was not logged that day was counted
+        in the total and named nowhere in the report.
+        """
+        out = self._chat(self._missing_case())
+        self.assertIn("T-Bar Row", out)
+        self.assertIn("WHAT THE PROGRAMME EXPECTED AND DIDN'T FIND", out)
+        self.assertIn("the log cannot tell them apart", out,
+                      "a swap and a missed set must not be reported as the same")
+
+    def test_nothing_disagreed_is_not_claimed_over_an_unexplained_count(self):
+        out = self._chat(self._missing_case())
+        self.assertNotIn("Every exercise ran the set count", out)
+        self.assertIn("Nothing that you logged disagreed", out)
 
     def test_both_surfaces_agree_on_what_happened(self):
         """The wide and chat renderers go through one analyse() precisely so
