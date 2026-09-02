@@ -471,6 +471,27 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     replay_match = re.match(r'^/?replay(?:\s+(\d+))?$', normalised_text)
     if replay_match:
         days = int(replay_match.group(1) or DEFAULT_REPLAY_DAYS)
+        # Never into a live session on the app's own path. The in-workout
+        # composer feeds every /api/chat reply through applyAIResponse, which —
+        # when nothing parses as a prescription, and this report has no "*"
+        # markers so nothing does — falls through to detectExerciseTransition.
+        # That is a bare substring scan over the whole reply
+        # (PrescriptionParser.swift:301), and the report names every exercise in
+        # the day's plan, so it matches the first one in plan order and jumps
+        # the card off the lift he is mid-way through, permanently reordering
+        # what is up next. A read-only diagnostic must not be able to do that.
+        #
+        # Telegram (send_reply=True) drives no card and is unaffected, so it
+        # still gets the report mid-session.
+        if not send_reply and get_workout_state().get("workout_mode") == "active":
+            message = ("You're mid-session, so I'm holding the replay — it "
+                       "names every exercise in today's plan, and posting that "
+                       "into the workout chat would move your card off the lift "
+                       "you're on. Finish the session and run `replay` again.")
+            save_conversation_message("user", incoming_text)
+            save_conversation_message("assistant", message)
+            return message
+
         try:
             from replay import run_chat_replay  # local: keeps import order flat
             report, summary = run_chat_replay(days)
