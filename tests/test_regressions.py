@@ -2985,3 +2985,162 @@ class ReplayReportTests(unittest.TestCase):
         out = build_report([prior, today])
         self.assertIn("Cable Row", out)
         self.assertIn("match", out)
+
+
+class ReplayCommandTests(unittest.TestCase):
+    """`replay` had to become a chat command, not a URL.
+
+    The report already existed behind GET /admin/replay, which needs the
+    APP_API_TOKEN pasted into a browser. The athlete does not have that token to
+    hand and has said plainly that running things himself is too complicated —
+    so the report existed and was never once read, which makes it worth nothing.
+
+    Both chat surfaces funnel into handle_incoming_message: the iOS app posts to
+    /api/chat and Telegram posts to /webhook. Intercepting the command there
+    reaches both with no token, no URL and no app release.
+    """
+
+    def _run(self, text, report="REPORT BODY", raises=None, send_reply=True):
+        from unittest.mock import patch
+        memory = {"mesocycle_day": 1, "mesocycle_week": 1}
+        sent = []
+        run_mock = patch(
+            "replay.run_pull_replay",
+            side_effect=raises if raises else None,
+            return_value=None if raises else report,
+        )
+        with patch("coach.load_today_conversation", return_value=[]), \
+             patch("coach.chat_with_coach", return_value="LLM WAS CALLED") as llm, \
+             patch("coach.save_conversation_message") as save, \
+             patch("coach.get_workout_state", return_value={}), \
+             patch("coach.send_telegram_message", side_effect=lambda t: sent.append(t)), \
+             run_mock as run:
+            out = handle_incoming_message(text, memory, send_reply=send_reply)
+        return out, llm, save, sent, run
+
+    def test_the_report_comes_back_verbatim(self):
+        """The whole point of computing it is that a model never retells it."""
+        out, llm, _, _, _ = self._run("replay", report="Cable Row: match")
+        self.assertEqual(out, "Cable Row: match")
+        llm.assert_not_called()
+
+    def test_the_command_works_with_a_slash_and_with_a_window(self):
+        for text, expected_days in (("replay", 90), ("/replay", 90),
+                                    ("replay 180", 180), ("/replay 30", 30)):
+            with self.subTest(text=text):
+                out, _, _, _, run = self._run(text, report="ok")
+                self.assertEqual(out, "ok")
+                run.assert_called_once_with(expected_days, surface="chat")
+
+    def test_ordinary_chat_containing_the_word_is_not_hijacked(self):
+        """"can you replay it" is a question for the coach, not a command."""
+        for text in ("replay the session", "can you replay it", "replaying",
+                     "what does replay mean"):
+            with self.subTest(text=text):
+                out, llm, _, _, run = self._run(text)
+                run.assert_not_called()
+                self.assertEqual(out, "LLM WAS CALLED")
+
+    def test_the_report_is_not_persisted_into_the_conversation(self):
+        """Today's conversation is replayed into the model's context on every
+        later request. A few hundred lines of table would crowd out the actual
+        session and be re-billed on every message for the rest of the day."""
+        _, _, save, _, _ = self._run("replay", report="X\n" * 400)
+        save.assert_not_called()
+
+    def test_a_failed_replay_reads_as_a_failed_replay(self):
+        """It must never surface as a 500 in the app or as silence in Telegram."""
+        out, _, _, sent, _ = self._run(
+            "replay", raises=RuntimeError("No Supabase client configured.")
+        )
+        self.assertIn("Replay failed", out)
+        self.assertIn("No Supabase client configured", out)
+        self.assertIn("nothing about your training is affected", out)
+        self.assertEqual(sent, [out])
+
+    def test_telegram_gets_the_report_and_ios_does_not_double_send(self):
+        """send_reply=False is the iOS path — /api/chat returns the body itself."""
+        _, _, _, sent_tg, _ = self._run("replay", report="R", send_reply=True)
+        self.assertEqual(sent_tg, ["R"])
+        _, _, _, sent_ios, _ = self._run("replay", report="R", send_reply=False)
+        self.assertEqual(sent_ios, [])
+
+
+class ChatReplayRenderingTests(unittest.TestCase):
+    """The report was built for a browser and then pointed at a phone.
+
+    /admin/replay returns text/plain, so the wide renderer pads exercise names
+    into a 22-char column and rules sections with 74 '=' characters. Measured on
+    real-shaped data that produces lines up to 184 characters. A chat bubble is
+    about 38 wide, so every row became five ragged wrapped lines with the column
+    alignment — the only thing making it a table — destroyed.
+    """
+
+    def _sessions(self):
+        def st(ex, w, r, rpe, n=1):
+            return {"exercise": ex, "actual_weight_kg": w, "actual_reps": r,
+                    "actual_rpe": rpe, "set_number": n, "is_warmup": False}
+        prior = {"date": "2026-08-10", "mesocycle_week": 3,
+                 "sets": [st("Cable Row", 80, 8, 8), st("Cable Row", 65, 12, 7, 2)]}
+        today = {"date": "2026-08-28", "mesocycle_week": 1,
+                 "sets": [st("Cable Row", 82.5, 6, 8)]}
+        return [prior, today]
+
+    def _chat(self, sessions=None, notes=None):
+        from replay import analyse, render_chat
+        return render_chat(analyse(sessions or self._sessions(), notes=notes))
+
+    def test_every_line_fits_a_phone(self):
+        from replay import CHAT_WIDTH
+        for line in self._chat().split("\n"):
+            self.assertLessEqual(len(line), CHAT_WIDTH, f"too wide: {line!r}")
+
+    def test_the_verdict_comes_before_the_detail(self):
+        """A phone reader must not have to scroll a table to learn whether
+        anything disagreed."""
+        out = self._chat()
+        self.assertIn("VERDICT", out)
+        detail = [i for i in (out.find("WHERE IT DISAGREED"),
+                              out.find("COULDN'T DECIDE")) if i != -1]
+        self.assertTrue(detail)
+        self.assertLess(out.find("VERDICT"), min(detail))
+
+    def test_no_source_line_references_reach_the_athlete(self):
+        """The deferred notes cited system_prompt.txt line numbers (":350 and
+        :363 call this a genuine feel-out"). Meaningful to a developer reading a
+        terminal, noise in a chat bubble on a phone."""
+        out = self._chat()
+        self.assertNotRegex(out, r'(?<!\d):\d{2,4}\b')
+
+    def test_identical_deferred_notes_are_grouped_not_repeated(self):
+        """Six exercises with no history produced the same sentence six times,
+        which is what made the raw report unreadable."""
+        out = self._chat()
+        self.assertEqual(out.count("no opening load"), 2,
+                         "one group per distinct note, not one per exercise")
+        self.assertIn("Pull-Ups, Lat Pulldown, T-Bar Row", out)
+
+    def test_an_empty_history_explains_itself_in_plain_language(self):
+        from replay import Replay, render_chat
+        out = render_chat(Replay(sessions=[], totals={}, notes=[], span=None))
+        self.assertIn("at least two", out)
+        self.assertNotIn("Traceback", out)
+
+    def test_one_session_is_not_reported_as_sessions(self):
+        out = self._chat()
+        self.assertIn("1 Pull session\n", out)
+
+    def test_both_surfaces_agree_on_what_happened(self):
+        """The wide and chat renderers go through one analyse() precisely so
+        they can never disagree about the numbers."""
+        from replay import analyse, build_report
+        sessions = self._sessions()
+        replay = analyse(sessions)
+        wide = build_report(sessions)
+        chat = self._chat(sessions)
+        for key, label in (("match", "agreed"), ("diverge", "disagreed"),
+                           ("missing", "not logged")):
+            self.assertIn(f"{label}{' ' * (12 - len(label))}"
+                          f"{replay.totals[key]:>4}", chat)
+            self.assertIn(f"{key.replace('missing', 'not logged')} "
+                          f"{replay.totals[key]}", wide)

@@ -107,6 +107,11 @@ def load_system_prompt() -> str:
 # it — only a rewrite of the cached prefix itself.
 _PREFIX_REWRITE_ALARM_TOKENS = 10_000
 
+# How far back the "replay" command looks when no window is given. Long enough
+# to span several mesocycles (a 4-day rotation plus rest runs ~18-19 days per
+# wave), so the report covers whole cycles rather than a slice of one.
+DEFAULT_REPLAY_DAYS = 90
+
 
 def _log_cache_usage(response) -> None:
     """Record what the prompt cache actually did on this call.
@@ -398,6 +403,42 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     expected_session_type = get_session_type_for_day(
         mesocycle_day, memory.get(SESSION_OVERRIDE_KEY)
     )
+
+    # ── "replay" command ──────────────────────────────────────────────────────
+    # Replays prescribe.py (the programme as code) against real logged history
+    # and returns the comparison verbatim — no model call, so the numbers are
+    # computed rather than narrated.
+    #
+    # It lives here, ahead of everything else, because this is the one code path
+    # both surfaces share: the iOS coach chat posts to /api/chat and Telegram
+    # posts to /webhook, and both land in this function. That makes "replay" a
+    # command the athlete can run by typing one word into the app he already
+    # uses — no admin URL, no API token to look up, no app release. The
+    # /admin/replay route still exists and is unchanged; this is the same report
+    # reachable without a browser.
+    #
+    # Returning here deliberately skips save_conversation_message: the report is
+    # a diagnostic, and today's conversation is replayed into the model's context
+    # on every subsequent request, so persisting a few hundred lines of table
+    # would crowd out the actual session and cost tokens on every later message.
+    replay_match = re.match(r'^/?replay(?:\s+(\d+))?$', normalised_text)
+    if replay_match:
+        days = int(replay_match.group(1) or DEFAULT_REPLAY_DAYS)
+        try:
+            from replay import run_pull_replay  # local: keeps import order flat
+            # surface="chat": this reply lands in a phone-width bubble, not
+            # a browser. /admin/replay keeps the wide rendering.
+            report = run_pull_replay(days, surface="chat")
+        except Exception as exc:
+            # Never raise at the athlete: a failed replay must read as a failed
+            # replay, not as a 500 in the app or silence in Telegram.
+            log.exception("Replay command failed")
+            report = (f"Replay failed: {exc}\n\n"
+                      f"This is a diagnostic, so nothing about your training is "
+                      f"affected.")
+        if send_reply:
+            send_telegram_message(report)
+        return report
 
     # ── "add exercise [name]" command ─────────────────────────────────────────
     add_match = re.match(
