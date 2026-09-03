@@ -202,7 +202,78 @@ final class ChatService: Sendable {
     /// `conversations` table, so the client does not save them here (doing
     /// so would double-insert every message).
     func sendMessage(_ text: String) async throws -> ChatResponse {
-        return try await callBackend(text)
+        do {
+            return try await callBackend(text)
+        } catch let error where Self.deliveryUnknown(error) {
+            // Backgrounding the app while the coach is thinking kills the
+            // connection, and the athlete sees "The network connection was
+            // lost". But the backend does not stop: handle_incoming_message
+            // persists BOTH turns to `conversations` before it answers, so by
+            // the time this fires the reply usually exists and only its
+            // delivery was lost.
+            //
+            // Retrying is not the fix and was already tried — an identical
+            // second POST made the coach see its own message twice. Recover
+            // the reply that is already there instead.
+            if let recovered = await recoverReply(to: text) {
+                return recovered
+            }
+            throw error
+        }
+    }
+
+    /// Whether a failure says nothing about whether the server acted.
+    ///
+    /// The write may have been delivered and completed, so this is exactly the
+    /// class that must not be retried — and exactly the class worth recovering.
+    private static func deliveryUnknown(_ error: Error) -> Bool {
+        // Cast before matching: a case pattern cannot be applied to an `Error`
+        // existential directly.
+        if let retryError = error as? RetryableRequestError,
+           case .allAttemptsFailed(let underlying) = retryError {
+            return deliveryUnknown(underlying)
+        }
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .timedOut, .networkConnectionLost, .resourceUnavailable,
+             .cancelled, .backgroundSessionWasDisconnected:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Poll today's conversation for the answer to `text`.
+    ///
+    /// A long prompt can take Claude 30-50s, so the reply may not be written
+    /// yet when the connection drops. Backs off rather than giving up on the
+    /// first look; returns nil if nothing arrives, and the caller then surfaces
+    /// the original error rather than inventing a reply.
+    private func recoverReply(to text: String) async -> ChatResponse? {
+        let sent = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for delaySeconds in [2.0, 4.0, 8.0, 16.0] {
+            try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            guard let messages = try? await loadTodayConversation() else { continue }
+            // The reply is the first assistant turn AFTER the message just
+            // sent. Matching on the text rather than the tail of the list so a
+            // reply to some earlier message is never mistaken for this one.
+            guard let sentIndex = messages.lastIndex(where: {
+                $0.isUser &&
+                $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == sent
+            }) else { continue }
+            let reply = messages[messages.index(after: sentIndex)...]
+                .first { $0.role == "assistant" }
+            if let reply {
+                return ChatResponse(
+                    response: reply.content,
+                    mesocycleDay: nil,
+                    mesocycleWeek: nil,
+                    prescription: nil,
+                    prs: nil
+                )
+            }
+        }
+        return nil
     }
 
     /// Trigger the backend's morning briefing using the user's saved
