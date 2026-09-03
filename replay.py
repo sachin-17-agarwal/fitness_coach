@@ -286,7 +286,20 @@ def analyse(sessions: list[dict], default_week: int = 1,
             peak.update(prior_top)
 
         week = session.get("mesocycle_week") or default_week
-        history = dict(peak) if (week == 1 and peak) else dict(running)
+        # Weeks 1 and 4 BOTH anchor to week 3: the deload holds the peak's load
+        # and cuts reps, and the next cycle opens above what the peak achieved.
+        # prescribe.py says so outright — "the reference is WEEK 3 specifically,
+        # not simply the last session" — and flags a deferral when handed
+        # anything else, which is what surfaced this.
+        #
+        # Merged rather than substituted: peak wins where it has the exercise,
+        # the running history fills the gaps. Passing `peak` alone would report
+        # any lift missing from that one week-3 session as never trained, which
+        # is the mistake this whole area keeps making.
+        if week in (1, 4) and peak:
+            history = {**running, **peak}
+        else:
+            history = dict(running)
         if session.get("mesocycle_week") and not session.get("week_inferred"):
             source = "recorded"
         elif session.get("week_inferred"):

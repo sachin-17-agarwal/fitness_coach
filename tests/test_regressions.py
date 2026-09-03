@@ -3509,6 +3509,64 @@ class ChatReplayRenderingTests(unittest.TestCase):
             "week 1 was anchored to the deload",
         )
 
+    def test_the_deload_anchors_to_the_peak_week_too(self):
+        """Weeks 1 and 4 BOTH anchor to week 3, and only week 1 was handled.
+
+        prescribe.py is explicit: the deload reference "is WEEK 3 specifically,
+        not simply the last session", because a deload holds the peak's load and
+        cuts reps — subtract against a lighter week and the subtraction silently
+        yields nothing, so the "deload" repeats an ordinary session. Production
+        already works this way: get_peak_week_loads returns the top set of the
+        most recent WEEK 3 session per lift, and the prompt sends the coach
+        there for both week 1 and the deload. The replay was modelling a
+        different programme.
+
+        The distinguishing case is a lift the CURRENT cycle's week 3 skipped: the
+        most recent set is then an ordinary week, while a real peak-week set
+        exists further back. A fixture where week 3 is simply the previous
+        session cannot tell the two behaviours apart — the first version of this
+        test was exactly that and passed against the bug.
+        """
+        from replay import analyse
+        sessions = [
+            self._sess("2026-06-10", 3, [self._set("Cable Row", 78.5, 9, 9)]),
+            self._sess("2026-06-17", 4, [self._set("Cable Row", 78.5, 6, 7)]),
+            self._sess("2026-06-24", 1, [self._set("Cable Row", 70, 8, 8)]),
+            self._sess("2026-07-01", 2, [self._set("Cable Row", 70, 10, 8)]),
+            self._sess("2026-07-08", 3, [self._set("Hammer Curl", 18, 9, 9)]),
+            self._sess("2026-07-15", 4, [self._set("Cable Row", 70, 6, 7)]),
+        ]
+        last = analyse(sessions).sessions[-1]
+        rows = {o.exercise: o for o in last.outcomes}
+        self.assertIn("78.5kg", rows["Cable Row"].top,
+                      "the deload anchored to an ordinary week, not the peak")
+        self.assertFalse(
+            [d for d in last.deferred if d.startswith("Cable Row")
+             and "deloading against a week" in d])
+
+    def test_the_peak_week_is_merged_over_history_not_substituted_for_it(self):
+        """A lift missing from that one week-3 session must not read as never
+        trained — substituting the peak wholesale is the same mistake this area
+        keeps making. Peak wins where it has the exercise; the running history
+        fills the gaps, and the honest deferral is kept for the gap."""
+        from replay import analyse
+        sessions = [
+            self._sess("2026-07-01", 2, [self._set("Cable Row", 70, 10, 8),
+                                         self._set("Lat Pulldown", 60, 10, 8)]),
+            self._sess("2026-07-08", 3, [self._set("Cable Row", 78.5, 9, 9)]),
+            self._sess("2026-07-15", 4, [self._set("Cable Row", 78.5, 6, 7),
+                                         self._set("Lat Pulldown", 60, 6, 7)]),
+        ]
+        last = analyse(sessions).sessions[-1]
+        rows = {o.exercise: o for o in last.outcomes}
+        self.assertIn("60kg", rows["Lat Pulldown"].top)
+        self.assertNotIn("TBD", rows["Lat Pulldown"].top)
+        self.assertTrue(
+            [d for d in last.deferred if d.startswith("Lat Pulldown")
+             and "deloading against a week 2" in d],
+            "a genuine peak-week gap must still be flagged, not papered over",
+        )
+
     def test_log_names_the_template_does_not_know_are_reported(self):
         """A large "not logged" count means one of two very different things,
         and only this distinguishes them."""
