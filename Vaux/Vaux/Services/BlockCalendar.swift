@@ -159,6 +159,25 @@ struct BlockCalendar: Sendable {
         self.orderedDates = dateMap.keys.sorted()
     }
 
+    /// First and last training dates placed in `block`, as "yyyy-MM-dd".
+    /// nil when no session in the window landed in that block.
+    func dateRange(ofBlock block: Int) -> (start: String, end: String)? {
+        let dates = byDate.filter { $0.value.block == block }.keys.sorted()
+        guard let first = dates.first, let last = dates.last else { return nil }
+        return (first, last)
+    }
+
+    /// "12 MAY – 8 JUN" (or "12 – 30 MAY" within one month) for a block range.
+    static func shortRange(_ range: (start: String, end: String)) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX")
+        guard let a = f.date(from: range.start), let b = f.date(from: range.end) else { return "" }
+        let day = Date.FormatStyle().day()
+        let dayMonth = Date.FormatStyle().day().month(.abbreviated)
+        let sameMonth = Calendar.current.isDate(a, equalTo: b, toGranularity: .month)
+        let text = sameMonth ? "\(a.formatted(day)) – \(b.formatted(dayMonth))" : "\(a.formatted(dayMonth)) – \(b.formatted(dayMonth))"
+        return text.uppercased()
+    }
+
     func position(of session: WorkoutSession) -> BlockPosition? {
         if let id = session.id, let p = bySession[id] { return p }
         return byDate[session.date]

@@ -92,6 +92,8 @@ struct BlockSnapshot: Identifiable, Hashable {
     let lifts: [LiftReport]
     let muscles: [MuscleReport]
     let medianGainPct: Double?
+    /// "12 MAY – 8 JUN": the training dates this block covered.
+    var dateRange: String? = nil
     var id: Int { judged.block }
 
     var upCount: Int { lifts.filter { $0.state == .pr || $0.state == .up }.count }
@@ -191,14 +193,16 @@ final class StrengthViewModel {
             guard lifts.contains(where: { $0.state != StrengthState.none }) else { continue }
             let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: setsPerMuscle, currentBlock: b == calendar.current.block)
             let deltas = lifts.compactMap { $0.state == StrengthState.none ? nil : $0.deltaPct }
-            snaps.append(BlockSnapshot(judged: BlockPosition(block: b, week: Config.peakWeek), lifts: lifts, muscles: muscles, medianGainPct: ChartMath.median(deltas)))
+            snaps.append(BlockSnapshot(judged: BlockPosition(block: b, week: Config.peakWeek), lifts: lifts, muscles: muscles, medianGainPct: ChartMath.median(deltas),
+                                       dateRange: calendar.dateRange(ofBlock: b).map(BlockCalendar.shortRange)))
         }
         // Always offer the current block even when it cannot be judged yet,
         // so the muscle map still shows volume and the grey states.
         if snaps.last?.judged.block != calendar.current.block {
             let lifts = weekly.map { name, byPos in Self.judge(name: name, byPos: byPos, block: calendar.current.block, sessionType: liftSession[name]) }
             let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: setsPerMuscle, currentBlock: true)
-            snaps.append(BlockSnapshot(judged: BlockPosition(block: calendar.current.block, week: calendar.current.week), lifts: lifts, muscles: muscles, medianGainPct: nil))
+            snaps.append(BlockSnapshot(judged: BlockPosition(block: calendar.current.block, week: calendar.current.week), lifts: lifts, muscles: muscles, medianGainPct: nil,
+                                       dateRange: calendar.dateRange(ofBlock: calendar.current.block).map(BlockCalendar.shortRange)))
         }
         snapshots = snaps
         shownIndex = max(0, snaps.count - 1)
