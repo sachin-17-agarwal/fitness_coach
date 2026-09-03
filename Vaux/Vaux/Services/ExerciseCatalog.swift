@@ -141,6 +141,19 @@ final class ExerciseCatalog {
         "chest press":    ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
         "incline press":  ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
         "incline bench":  ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        // The qualifier sits BETWEEN the two words, so "incline press" does not
+        // match "Incline Barbell Press" as a substring — the same trap already
+        // documented for builtinGroups below, where every variant is spelled
+        // out. It was not spelled out here, so the template's "Incline Press"
+        // got its synergists and the name the athlete actually logs under fell
+        // through to Chest alone, losing Shoulders 0.5 and Triceps 0.5 on every
+        // set and understating two muscles in the volume the weak-point block
+        // picks its targets from.
+        "incline barbell press":  ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "incline dumbbell press": ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "incline db press":       ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "incline machine press":  ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "incline chest press":    ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
         "decline press":  ["Chest": 1.0, "Triceps": 0.5],
         // "dips", not "dip": the substring matcher ignores keys under four
         // characters, so a 3-char key can only ever hit on an exact match and
