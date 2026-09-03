@@ -43,7 +43,9 @@ struct HistoryView: View {
                             TrainingTabView(vm: viewModel.training, strength: viewModel.strength, recovery: viewModel.recovery,
                                             tab: $selectedTab, askCoach: askCoach)
                         case .strength:
-                            StrengthTabView(vm: viewModel.strength, calendar: viewModel.calendar, tab: $selectedTab, askCoach: askCoach)
+                            StrengthTabView(vm: viewModel.strength, calendar: viewModel.calendar, tab: $selectedTab, askCoach: askCoach,
+                                            canLoadEarlier: viewModel.canLoadEarlier, isLoadingEarlier: viewModel.isLoadingEarlier,
+                                            loadEarlier: { Task { await viewModel.loadEarlier() } })
                         case .volume:
                             VolumeTabView(vm: viewModel.weeklyVolume, calendar: viewModel.calendar, tab: $selectedTab, askCoach: askCoach)
                         case .recovery:
