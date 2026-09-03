@@ -117,6 +117,53 @@ final class WorkoutService: Sendable {
         let today = Self.todayString()
         let now = ISO8601DateFormatter().string(from: Date())
 
+        // One training day is one row. Starting the same day's session again —
+        // after an END tap, a back-swipe, or the app closing the workout and the
+        // athlete carrying on — reuses the row that is already there instead of
+        // minting a second one.
+        //
+        // cleanupStaleSessions already knew about this ("an accidental
+        // back-swipe used to mint a fresh session on every re-entry") but swept
+        // up afterwards rather than preventing it, and its sweep FINALISES a
+        // duplicate that holds sets rather than deleting it — so the row
+        // survives. 21 of the athlete's sessions were one training day written
+        // twice, which splits the day's work in half (each row then reads as
+        // missing most of the template) and, because the mesocycle week is
+        // reconstructed by counting rotation positions, shifts the recorded week
+        // of every earlier session by one.
+        //
+        // Deliberately matches on date and type WITHOUT filtering on status:
+        // the open-only lookup the view model uses is exactly what stopped
+        // finding the session once it had been closed, which is when the
+        // duplicate got created.
+        if let rows: [WorkoutSession] = try? await client.fetch(
+            "workout_sessions",
+            query: ["date": "eq.\(today)", "type": "eq.\(type)"],
+            order: "start_time.desc",
+            limit: 1
+        ), var existing = rows.first, let existingId = existing.id {
+            // Reopen a closed row so logging continues into it. Best-effort:
+            // failing to flip the status must not stop the athlete training,
+            // and the row is still the right one to log against either way.
+            if !SessionStatus.openRawValues.contains(existing.status) {
+                try? await client.update(
+                    "workout_sessions",
+                    body: ["status": SessionStatus.openStored],
+                    match: ["id": existingId.uuidString]
+                )
+                existing.status = SessionStatus.openStored
+            }
+            let resumedState = WorkoutState(
+                workoutMode: "active",
+                currentSessionId: existingId.uuidString,
+                currentSetNumber: 1,
+                currentExerciseName: "",
+                sessionStartTime: existing.startTime ?? now
+            )
+            try? await setWorkoutState(resumedState)
+            return existing
+        }
+
         var body: [String: Any] = [
             "id": sessionId.uuidString,
             "date": today,
@@ -173,6 +220,20 @@ final class WorkoutService: Sendable {
     /// Ends a session: calculates tonnage, marks it `completed`, checks PRs,
     /// resets workout state, and returns a summary.
     @discardableResult
+    /// Flip a finished session back to open so logging continues into it.
+    ///
+    /// Needed because the athlete's "continue the workout" is the app's "start
+    /// a second session": once a row is `completed`, the open-only resume
+    /// lookup stops finding it and a duplicate row gets created for the same
+    /// training day.
+    func reopenSession(id: UUID) async throws {
+        _ = try await client.update(
+            "workout_sessions",
+            body: ["status": SessionStatus.openStored],
+            match: ["id": id.uuidString]
+        )
+    }
+
     func endSession(id: UUID) async throws -> WorkoutSummary {
         let sets = try await fetchSets(sessionId: id)
         let now = ISO8601DateFormatter().string(from: Date())

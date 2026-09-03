@@ -3969,3 +3969,107 @@ class DuplicateSessionRowTests(unittest.TestCase):
         self.assertNotIn("[", out)
         self.assertNotIn("]", out)
         self.assertIn("Seen after 13 Jun (week 4)", out)
+
+
+class OneRowPerTrainingDayTests(unittest.TestCase):
+    """Starting the same day's session again must not mint a second row.
+
+    The athlete's log held 21 training days written as two rows. The app knew
+    about the failure — cleanupStaleSessions' own docstring says "an accidental
+    back-swipe used to mint a fresh session on every re-entry" — but swept up
+    afterwards instead of preventing it, and its sweep FINALISES a duplicate
+    that holds sets rather than deleting it, so the row survives.
+
+    The cause is that every resume lookup filtered on an open status. Once a
+    session was closed — an END tap, or the app closing the workout while the
+    athlete carried on — nothing found it and the next start inserted a new row.
+    So the guard here deliberately matches on date and type ONLY.
+
+    Two rows for one day split the day's work in half, so each reads as missing
+    most of the template, and because the mesocycle week is reconstructed by
+    counting rotation positions it shifts the recorded week of every earlier
+    session by one.
+    """
+
+    def _supabase(self, existing_rows):
+        from unittest.mock import MagicMock
+        client = MagicMock()
+        self.inserted = []
+        self.updated = []
+
+        def table(name):
+            t = MagicMock()
+            sel = t.select.return_value
+            for attr in ("eq", "order", "limit"):
+                setattr(sel, attr, MagicMock(return_value=sel))
+            sel.execute.return_value = MagicMock(data=existing_rows)
+
+            def insert(row):
+                self.inserted.append(row)
+                r = MagicMock()
+                r.execute.return_value = MagicMock(data=[{"id": "new-session"}])
+                return r
+            t.insert.side_effect = insert
+
+            def update(body):
+                self.updated.append(body)
+                u = MagicMock()
+                u.eq.return_value = u
+                u.execute.return_value = MagicMock(data=[])
+                return u
+            t.update.side_effect = update
+            return t
+
+        client.table.side_effect = table
+        return client
+
+    def _start(self, existing_rows, state=None):
+        from unittest.mock import patch
+        import workout
+        client = self._supabase(existing_rows)
+        with patch.object(workout, "get_supabase", return_value=client), \
+             patch.object(workout, "get_workout_state", return_value=state or {}), \
+             patch.object(workout, "set_workout_state"):
+            return workout.start_session("Pull")
+
+    def test_a_closed_session_from_today_is_reused_not_duplicated(self):
+        sid = self._start([{"id": "existing-session"}])
+        self.assertEqual(sid, "existing-session")
+        self.assertEqual(self.inserted, [], "inserted a second row for one day")
+
+    def test_the_reused_session_is_reopened_so_logging_continues(self):
+        self._start([{"id": "existing-session"}])
+        from workout import SESSION_STATUS_OPEN
+        self.assertIn({"status": SESSION_STATUS_OPEN}, self.updated)
+
+    def test_a_day_with_no_session_yet_still_creates_one(self):
+        """The guard must not stop the athlete starting a workout."""
+        sid = self._start([])
+        self.assertEqual(sid, "new-session")
+        self.assertEqual(len(self.inserted), 1)
+        self.assertEqual(self.inserted[0]["type"], "Pull")
+
+    def test_an_active_session_short_circuits_before_any_query(self):
+        """The pre-existing in-memory guard still wins, unchanged."""
+        sid = self._start([], state={"workout_mode": "active",
+                                     "current_session_id": "live-session"})
+        self.assertEqual(sid, "live-session")
+        self.assertEqual(self.inserted, [])
+
+    def test_a_failed_lookup_degrades_to_creating_a_session(self):
+        """Never block training on a diagnostic query."""
+        from unittest.mock import MagicMock, patch
+        import workout
+        client = self._supabase([])
+        broken = client.table.side_effect
+
+        def table(name):
+            t = broken(name)
+            t.select.return_value.execute.side_effect = RuntimeError("supabase down")
+            return t
+        client.table.side_effect = table
+        with patch.object(workout, "get_supabase", return_value=client), \
+             patch.object(workout, "get_workout_state", return_value={}), \
+             patch.object(workout, "set_workout_state"):
+            sid = workout.start_session("Pull")
+        self.assertEqual(sid, "new-session")
