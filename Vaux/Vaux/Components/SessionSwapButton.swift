@@ -33,20 +33,16 @@ struct SessionSwapButton: View {
             Haptic.light()
             showingPicker = true
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                 Text(isOverridden ? "CHANGED" : "CHANGE")
-                    .font(.eyebrowSmall)
-                    .kerning(1.2)
+                    .font(.system(size: 10, weight: .bold))
+                    .kerning(2)
             }
             .foregroundStyle(tint)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(tint.opacity(0.10)))
-            .overlay(Capsule().stroke(tint.opacity(0.25), lineWidth: 1))
             .frame(minHeight: 44)
-            .contentShape(Capsule())
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Change today's session")

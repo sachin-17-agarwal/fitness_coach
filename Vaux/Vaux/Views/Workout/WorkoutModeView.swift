@@ -32,6 +32,10 @@ struct WorkoutModeView: View {
     @State private var swappedSessionType: String?
     /// Whether today's session is a manual choice rather than the schedule's.
     @State private var isOverridden = false
+    @State private var blockWeek: Int?
+    @State private var blockDay: Int?
+    @State private var lastSameSession: WorkoutSession?
+    @State private var sessionsThisWeek = 0
 
     private var effectiveSessionType: String {
         if let swappedSessionType { return swappedSessionType }
@@ -48,6 +52,8 @@ struct WorkoutModeView: View {
             swappedSessionType = state.todayType
             resolvedSessionType = state.todayType
             isOverridden = state.isOverridden
+            blockWeek = state.week
+            blockDay = state.day
         }
     }
 
@@ -127,6 +133,8 @@ struct WorkoutModeView: View {
                 didResolveType = true
                 if let state = try? await MesocycleService().loadState() {
                     isOverridden = state.isOverridden
+                    blockWeek = state.week
+                    blockDay = state.day
                     if sessionType.isEmpty {
                         resolvedSessionType = state.todayType
                     }
@@ -173,6 +181,8 @@ struct WorkoutModeView: View {
             Task {
                 if let state = try? await MesocycleService().loadState() {
                     resolvedSessionType = state.todayType
+                    blockWeek = state.week
+                    blockDay = state.day
                 }
             }
         }
@@ -259,32 +269,45 @@ struct WorkoutModeView: View {
 
     // MARK: - Start screen — session brief
 
+    /// The Dashboard's session block, on the Train tab: the block position,
+    /// the session name in the display face, its muscles, three facts from
+    /// history, and START SESSION. Facts load once; the screen never waits.
     private var startView: some View {
         let type = effectiveSessionType.isEmpty ? "Session" : effectiveSessionType
-        let accent = Color.forSession(type)
-        return VStack(spacing: 0) {
-            Spacer()
-
-            IconBadge(systemName: iconForType(type), accent: accent, size: 120)
-                .padding(.bottom, 28)
-
-            VStack(spacing: 10) {
-                Eyebrow(text: "Session brief")
-
-                Text(effectiveSessionType.isEmpty ? "Start workout" : "\(effectiveSessionType) Day")
-                    .font(.serifLG)
-                    .foregroundStyle(Color.fg0)
-
-                Text(focusForType(type).uppercased())
-                    .font(.eyebrowSmall)
-                    .kerning(1.6)
-                    .foregroundStyle(Color.fg2)
-                    .padding(.top, 2)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                EditorialEyebrow(text: "Train · Today")
+                Spacer()
+                SessionSwapButton(
+                    currentType: effectiveSessionType,
+                    isOverridden: isOverridden,
+                    onChange: changeTodaySession
+                )
             }
+            .frame(height: 44)
+            .padding(.horizontal, Editorial.gutter)
+            .padding(.top, 4)
 
-            briefStrip(accent: accent)
-                .padding(.horizontal, 24)
-                .padding(.top, 28)
+            Spacer(minLength: 24)
+
+            VStack(alignment: .leading, spacing: 0) {
+                if let blockLine {
+                    EditorialEyebrow(text: blockLine, color: .mint, size: 10, kerning: 2.5)
+                }
+                Text(effectiveSessionType.isEmpty ? "START" : effectiveSessionType.uppercased())
+                    .font(.display(88))
+                    .foregroundStyle(Color.fg0)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .padding(.top, 14)
+                EditorialEyebrow(text: focusForType(type), color: Editorial.mid, size: 10.5, kerning: 2.5)
+                    .padding(.top, 18)
+            }
+            .padding(.horizontal, Editorial.gutter)
+
+            startFacts
+                .padding(.horizontal, Editorial.gutter)
+                .padding(.top, 36)
 
             Spacer()
 
@@ -292,53 +315,123 @@ struct WorkoutModeView: View {
                 Haptic.medium()
                 Task { await viewModel.startOrResumeWorkout(type: effectiveSessionType) }
             } label: {
-                CTALabel(
-                    text: "Begin session",
-                    icon: "play.fill",
-                    busy: viewModel.isLoading
-                )
+                HStack(spacing: 12) {
+                    if viewModel.isLoading {
+                        ProgressView().tint(Color.signalInk)
+                    } else {
+                        Text("START SESSION")
+                            .font(.display(24))
+                            .kerning(0.6)
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                }
+                .foregroundStyle(Color.signalInk)
+                .frame(maxWidth: .infinity)
+                .frame(height: 60)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.signal))
             }
             .buttonStyle(PressScaleStyle())
             .disabled(viewModel.isLoading)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 32)
+            .padding(.horizontal, Editorial.gutter)
+            .padding(.bottom, 16)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: effectiveSessionType) { await loadStartFacts() }
+    }
+
+    /// "WEEK 1 · DAY 3 · BASELINE"
+    private var blockLine: String? {
+        guard let blockWeek else { return nil }
+        var parts = ["Week \(blockWeek)"]
+        if let blockDay { parts.append("Day \(blockDay)") }
+        if let phase = Self.phaseName(week: blockWeek) { parts.append(phase) }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func phaseName(week: Int) -> String? {
+        switch week {
+        case 1: return "Baseline"
+        case 2: return "Volume"
+        case 3: return "Peak"
+        case 4: return "Deload"
+        default: return nil
         }
     }
 
-    /// Mono data strip under the session title: coach mode, live tracking,
-    /// and progression — quiet reassurance that the system is armed.
-    private func briefStrip(accent: Color) -> some View {
-        HStack(spacing: 0) {
-            briefCell(label: "Coach", value: "ARMED")
-            Rectangle().fill(Color.line).frame(width: 1, height: 30)
-            briefCell(label: "Tracking", value: "LIVE")
-            Rectangle().fill(Color.line).frame(width: 1, height: 30)
-            briefCell(label: "Plan", value: "ADAPTIVE")
+    private static func rpeTargets(week: Int?) -> (top: String, backoff: String) {
+        switch week {
+        case 3: return ("9", "Back-off 8")
+        case 4: return ("7", "Back-off 6")
+        default: return ("8", "Back-off 7")
         }
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.ink1.opacity(0.75))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.line, lineWidth: 1)
-        )
     }
 
-    private func briefCell(label: String, value: String) -> some View {
-        VStack(spacing: 4) {
-            Text(label.uppercased())
-                .font(.eyebrowSmall)
-                .kerning(1.2)
-                .foregroundStyle(Color.fg3)
+    /// Three facts: the last session of this type, this week's sessions, and
+    /// the RPE targets the block week calls for.
+    private var startFacts: some View {
+        let targets = Self.rpeTargets(week: blockWeek)
+        let type = effectiveSessionType.isEmpty ? "session" : effectiveSessionType
+        return HStack(alignment: .top, spacing: 0) {
+            startFact(
+                label: "Last \(type)",
+                value: lastSameSession.map { tonnageString($0.tonnageKg ?? 0) } ?? "—",
+                sub: lastSameSession.map { Self.shortDate($0.date) } ?? "No history yet",
+                first: true
+            )
+            startFact(
+                label: "This week",
+                value: "\(sessionsThisWeek)",
+                sub: sessionsThisWeek == 1 ? "session done" : "sessions done",
+                first: false
+            )
+            startFact(label: "Top set RPE", value: targets.top, sub: targets.backoff, first: false)
+        }
+        .padding(.top, 16)
+        .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
+    }
+
+    private func startFact(label: String, value: String, sub: String, first: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            EditorialEyebrow(text: label, color: Editorial.muted, size: 9, kerning: 1.8)
             Text(value)
-                .font(.eyebrow)
-                .kerning(1.2)
+                .font(.display(22))
                 .foregroundStyle(Color.fg0)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            EditorialEyebrow(text: sub, color: Editorial.muted, size: 8.5, kerning: 1.2)
         }
-        .frame(maxWidth: .infinity)
+        .padding(.leading, first ? 0 : 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .leading) {
+            if !first { Rectangle().fill(Color.line).frame(width: 1) }
+        }
+    }
+
+    private func loadStartFacts() async {
+        let service = WorkoutService()
+        guard let sessions = try? await service.fetchSessionHistory(days: 60) else { return }
+        let completed = sessions.filter { $0.status == "completed" }
+        lastSameSession = completed
+            .filter { $0.type == effectiveSessionType }
+            .max { $0.date < $1.date }
+        let cal = Calendar.current
+        let weekStart = cal.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
+        let key = Self.dayFormatter.string(from: weekStart)
+        sessionsThisWeek = completed.filter { $0.date >= key }.count
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    /// "Sep 1" from a "yyyy-MM-dd" key.
+    private static func shortDate(_ key: String) -> String {
+        guard let date = dayFormatter.date(from: String(key.prefix(10))) else { return key }
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 
     // MARK: - Active workout
