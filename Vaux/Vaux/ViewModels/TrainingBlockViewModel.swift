@@ -35,8 +35,8 @@ struct SessionEntry: Identifiable {
 
     /// "1h 22" from the earliest start to the latest end.
     var durationLine: String? {
-        let starts = sessions.compactMap { $0.startTime.flatMap(SessionEntry.parse) }
-        let ends = sessions.compactMap { $0.endTime.flatMap(SessionEntry.parse) }
+        let starts = sessions.compactMap { $0.startTime.flatMap({ SessionEntry.parse($0) }) }
+        let ends = sessions.compactMap { $0.endTime.flatMap({ SessionEntry.parse($0) }) }
         guard let s = starts.min(), let e = ends.max(), e > s else { return nil }
         let mins = Int(e.timeIntervalSince(s) / 60)
         if mins < 60 { return "\(mins) min" }

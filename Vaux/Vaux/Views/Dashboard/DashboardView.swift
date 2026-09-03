@@ -250,7 +250,7 @@ struct DashboardView: View {
         VStack(alignment: .trailing, spacing: 7) {
             metricLine("HRV", value: viewModel.recovery?.hrv.map { "\(Int($0))" },
                        delta: hrvDelta, badWhenPositive: false)
-            metricLine("SLEEP", value: viewModel.recovery?.sleepHours.map(Self.clock), delta: nil, badWhenPositive: false)
+            metricLine("SLEEP", value: viewModel.recovery?.sleepHours.map({ Self.clock($0) }), delta: nil, badWhenPositive: false)
             metricLine("RHR", value: viewModel.recovery?.restingHr.map { "\(Int($0))" },
                        delta: rhrDelta, badWhenPositive: true)
         }
@@ -548,7 +548,7 @@ struct DashboardView: View {
             ledgerDivider
             ledgerColumn(
                 "SLEEP",
-                value: viewModel.sleepAvgHours.map(Self.clock) ?? "—",
+                value: viewModel.sleepAvgHours.map({ Self.clock($0) }) ?? "—",
                 delta: sleepDeltaText
             )
             ledgerDivider
