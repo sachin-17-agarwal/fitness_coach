@@ -264,8 +264,9 @@ struct DashboardView: View {
         if let delta, delta != 0 {
             let isBad = badWhenPositive ? delta > 0 : delta < 0
             let arrow = delta > 0 ? "▴" : "▾"
-            text = text + Text(" \(arrow)\(abs(delta))")
+            let deltaText = Text(" \(arrow)\(abs(delta))")
                 .foregroundColor(isBad && level != .green ? stateColor : Color.fg3)
+            text = Text("\(text)\(deltaText)")
         }
         return text
     }
