@@ -146,7 +146,7 @@ final class WorkoutService: Sendable {
             // failing to flip the status must not stop the athlete training,
             // and the row is still the right one to log against either way.
             if !SessionStatus.openRawValues.contains(existing.status) {
-                try? await client.update(
+                _ = try? await client.update(
                     "workout_sessions",
                     body: ["status": SessionStatus.openStored],
                     match: ["id": existingId.uuidString]
