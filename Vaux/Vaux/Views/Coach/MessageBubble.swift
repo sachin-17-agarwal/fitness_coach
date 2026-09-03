@@ -36,7 +36,7 @@ struct TranscriptTurn: View {
             .accessibilityLabel(
                 "\(message.isUser ? "You" : "Coach") said: \(MarkdownText.plainText(message.content))"
             )
-            .accessibilityValue(message.createdAt.map(Self.formatTime) ?? "")
+            .accessibilityValue(message.createdAt.map({ Self.formatTime($0) }) ?? "")
         }
     }
 
@@ -48,7 +48,7 @@ struct TranscriptTurn: View {
                 size: 10, kerning: 2.5
             )
             Spacer()
-            if let time = message.createdAt.map(Self.formatTime), !time.isEmpty {
+            if let time = message.createdAt.map({ Self.formatTime($0) }), !time.isEmpty {
                 Text(time)
                     .font(.system(size: 9.5, weight: .semibold))
                     .kerning(1.2)
