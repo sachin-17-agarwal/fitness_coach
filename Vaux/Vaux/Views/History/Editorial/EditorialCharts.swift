@@ -223,7 +223,7 @@ struct DotBandChart: View {
 
 struct WeekRangeChart: View {
     struct Group: Identifiable {
-        let id = UUID()
+        var id: String { label }
         let label: String
         let values: [Double]
         var highlight = false
@@ -281,7 +281,7 @@ struct WeekRangeChart: View {
 
 struct WaveBarsChart: View {
     struct Bar: Identifiable {
-        let id = UUID()
+        var id: String { label }
         let label: String
         let phase: String
         let value: Double
@@ -342,7 +342,7 @@ struct WaveBarsChart: View {
 
 struct DayBarsChart: View {
     struct Day: Identifiable {
-        let id = UUID()
+        var id: String { label }
         let label: String
         let value: Double
         var highlight = false
