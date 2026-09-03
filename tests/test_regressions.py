@@ -4073,3 +4073,96 @@ class OneRowPerTrainingDayTests(unittest.TestCase):
              patch.object(workout, "set_workout_state"):
             sid = workout.start_session("Pull")
         self.assertEqual(sid, "new-session")
+
+
+class NoExpiringFactsInThePromptTests(unittest.TestCase):
+    """The prompt must not assert anything that time can falsify.
+
+    "Incline Press is NEW (added August 2026) and has no logged history" was
+    true the week it was written. A fortnight later the athlete had trained it
+    three times — 08-18, 08-25, 08-29 — and the coach opened his session by
+    telling him it was a brand new movement with no history, then said it again
+    after he corrected it. Challenged a third time it read the log and recited
+    all three sessions with loads. It was never missing the data; it was
+    reading a stale sentence and believing it over the injected context.
+
+    This is the SECOND time the same shape has shipped. The prompt's own
+    progression section already records the first — hardcoded week-3 reference
+    loads that outlived their cycle and prescribed month-old numbers on a
+    deload — and the fix both times was to point at a block recomputed per
+    request instead of writing the answer down.
+
+    Whether a lift has history is exactly the kind of claim only the log can
+    answer, so the document is not allowed to answer it.
+    """
+
+    # Phrases that assert a fact about the ATHLETE'S LOG, which only the
+    # injected context can know. Deliberately narrow: the prompt is allowed to
+    # say an exercise was added in August, because that stays true.
+    FORBIDDEN = (
+        "has no logged history",
+        "no history exists",
+        "brand new movement",
+        "no logged history exists",
+    )
+
+    # The progression section recounts the failure on purpose, as the record of
+    # why this rule exists. Those sentences are about the mistake, not claims
+    # about a lift, so they are exempted by their surrounding words rather than
+    # by loosening the search.
+    NARRATION = (
+        "described here as having NO LOGGED HISTORY",
+        "was a brand new movement while three sessions of it sat in the log",
+    )
+
+    def test_the_prompt_never_claims_a_lift_has_no_history(self):
+        prompt = load_system_prompt()
+        stripped = prompt
+        for sentence in self.NARRATION:
+            self.assertIn(sentence, prompt,
+                          "the record of why this rule exists was removed")
+            stripped = stripped.replace(sentence, "")
+        lowered = stripped.lower()
+        for phrase in self.FORBIDDEN:
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(
+                    phrase, lowered,
+                    f"the prompt asserts {phrase!r}, which only the log can know",
+                )
+
+    def test_the_rule_against_it_is_still_written_down(self):
+        prompt = load_system_prompt()
+        self.assertIn("NOTHING in this document can tell you whether a lift has "
+                      "history", prompt)
+        self.assertIn("CURRENT WORKING LOADS", prompt)
+
+
+class InclineVariantVolumeTests(unittest.TestCase):
+    """The template's name and the athlete's logged name must attribute alike.
+
+    The Push template says "Incline Press"; his log says "Incline Barbell
+    Press". Only the template name had a contribution split, so the name he
+    actually trains under fell through to the {primary: 1.0} fallback and lost
+    Shoulders 0.5 and Triceps 0.5 on every set — understating two muscles in
+    the weekly volume the weak-point block picks its two targets from.
+
+    Found because the coach called Incline Press a new movement; the log name it
+    quoted back was the variant, which is what exposed the divergence.
+    """
+
+    def test_every_incline_press_variant_carries_the_same_synergists(self):
+        import volume
+        expected = {"Chest": 1.0, "Shoulders": 0.5, "Triceps": 0.5}
+        for name in ("Incline Press", "Incline Barbell Press",
+                     "Incline Dumbbell Press", "Incline Machine Press",
+                     "Incline Bench", "Incline Chest Press", "Incline DB Press"):
+            with self.subTest(exercise=name):
+                self.assertEqual(volume.resolve_contributions(name), expected)
+
+    def test_a_press_variant_never_falls_through_to_chest_alone(self):
+        """The fallback is silent, so the shape of the bug is invisible."""
+        import volume
+        for name in ("Incline Barbell Press", "Incline Dumbbell Press"):
+            with self.subTest(exercise=name):
+                self.assertNotEqual(volume.resolve_contributions(name),
+                                    {"Chest": 1.0})
