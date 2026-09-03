@@ -43,6 +43,57 @@ from dataclasses import dataclass, field
 COMPOUND = "compound"
 ISOLATION = "isolation"
 
+def _contributions(exercise: str) -> dict:
+    """Muscle shares for an exercise. Imported locally so this module keeps its
+    dependency-free import: the caller supplies the plan, and only this one
+    lookup reaches for the shared catalog."""
+    from volume import resolve_contributions  # local: keeps import order flat
+    return resolve_contributions(exercise) or {}
+
+
+def classify(exercise: str) -> str:
+    """COMPOUND if the movement has synergists, ISOLATION if it does not.
+
+    Derived rather than listed. A hand-written table is a second place for the
+    same fact to live, and every divergence between two such places has cost
+    this programme something today — the template saying "Incline Press" while
+    the log says "Incline Barbell Press" silently dropped two muscles' credit.
+    Verified to reproduce the original hand-written Pull classifications
+    exactly, for all seven exercises.
+    """
+    return COMPOUND if len(_contributions(exercise)) > 1 else ISOLATION
+
+
+def warms(exercise: str) -> tuple:
+    """Muscles this movement leaves warm enough to skip a ramp for."""
+    return tuple(sorted(_contributions(exercise)))
+
+
+def primary_muscle(exercise: str) -> str:
+    """The muscle carrying the full share; "" when the catalog knows nothing."""
+    shares = _contributions(exercise)
+    return max(shares, key=lambda m: shares[m]) if shares else ""
+
+
+def day_plan(entries) -> tuple:
+    """(exercise, sets) pairs from a session template -> (exercise, sets, kind).
+
+    The exercise list and its set counts come from the programme document via
+    coach_parsing.parse_session_template, so the code cannot disagree with the
+    prompt about what a day contains. Only the arithmetic lives here.
+
+    Entries the catalog does not recognise are dropped: the Cardio+Abs template
+    carries two "Weak-Point Exercise" placeholder slots that are filled with a
+    real movement at prescription time and have no loads of their own.
+    """
+    plan = []
+    for exercise, sets in entries:
+        if not _contributions(exercise):
+            continue
+        plan.append((exercise, sets, classify(exercise)))
+    return tuple(plan)
+
+
 PULL_DAY = (
     # (exercise, working sets, kind)   — counts from the template line at :357
     ("Pull-Ups", 2, COMPOUND),
@@ -563,8 +614,9 @@ def norm_name(name: str) -> str:
     return "".join(ch for ch in name.lower() if ch.isalnum())
 
 
-def prescribe_pull(week: int, history: dict[str, PriorSet]) -> list[Proposal]:
-    """The whole Pull session.
+def prescribe_session(plan, week: int,
+                      history: dict[str, PriorSet]) -> list[Proposal]:
+    """Every exercise in `plan`, for this week, given this history.
 
     `history` maps exercise name to its most recent top working set — the same
     thing progression.get_current_loads already returns, so this consumes a
@@ -583,13 +635,22 @@ def prescribe_pull(week: int, history: dict[str, PriorSet]) -> list[Proposal]:
 
     proposals = []
     muscles_warm: set[str] = set()
-    for exercise, sets, kind in PULL_DAY:
+    for exercise, sets, kind in plan:
         proposals.append(prescribe_exercise(
             exercise, sets, kind, week, folded.get(norm_name(exercise)),
             set(muscles_warm)
         ))
-        muscles_warm.update(WARMS.get(exercise, ()))
+        muscles_warm.update(warms(exercise))
     return proposals
+
+
+def prescribe_pull(week: int, history: dict) -> list:
+    """The Pull day, from the plan compiled into this module.
+
+    Kept because the replay calls it, and because PULL_DAY is the one plan
+    written down here rather than read from the prompt.
+    """
+    return prescribe_session(PULL_DAY, week, history)
 
 
 def render(proposals: list[Proposal]) -> str:

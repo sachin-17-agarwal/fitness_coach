@@ -4166,3 +4166,128 @@ class InclineVariantVolumeTests(unittest.TestCase):
             with self.subTest(exercise=name):
                 self.assertNotEqual(volume.resolve_contributions(name),
                                     {"Chest": 1.0})
+
+
+class ProgrammeProposalTests(unittest.TestCase):
+    """The programme finally prescribes instead of only marking the homework.
+
+    prescribe.py could compute a whole session from the day it was written.
+    Nothing asked it to: it was imported by replay.py and by nothing else, so it
+    could tell you AFTERWARDS whether the coach had agreed with the programme
+    and had no way to tell the coach what the programme said. Every load and set
+    count was still derived in prose, which is where the same input produces two
+    different answers — the complaint that opened this whole audit.
+    """
+
+    PROMPT = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.PROMPT = load_system_prompt()
+
+    def _loads(self, **overrides):
+        row = {"exercise": "Machine Chest Press", "date": "2026-08-29",
+               "load": 100.0, "reps": 9, "rpe": 8.0, "met_target": True}
+        row.update(overrides)
+        return [row]
+
+    def test_every_session_type_gets_a_proposal(self):
+        """It was Pull-only, which is three quarters of his training uncovered —
+        and the Incline Press failure happened on Push."""
+        from programme import build_proposal
+        for day in ("Push", "Pull", "Legs", "Cardio+Abs"):
+            with self.subTest(day=day):
+                proposals, _, _ = build_proposal(self.PROMPT, day, 1, self._loads())
+                self.assertTrue(proposals, f"no proposal for {day}")
+
+    def test_the_proposal_carries_a_back_off_for_a_two_set_exercise(self):
+        """"It just skipped a back off for no reason." Enforcement could not
+        restore it — "adding would mean inventing a load and a rep target the
+        coach did not choose". These are computed, not invented."""
+        from programme import build_proposal
+        proposals, _, _ = build_proposal(self.PROMPT, "Push", 1, self._loads())
+        press = {p.exercise: p for p in proposals}["Machine Chest Press"]
+        self.assertEqual(press.working_set_count, 2)
+        self.assertTrue(press.backoff, "no back-off computed")
+        self.assertIsNotNone(press.backoff[0].weight_kg)
+        self.assertLess(press.backoff[0].weight_kg, press.working[0].weight_kg)
+
+    def test_a_template_name_resolves_to_the_name_he_logs_under(self):
+        """The template says "Incline Press"; the log says "Incline Barbell
+        Press". Folding case and punctuation cannot bridge a whole word, so the
+        coach was told the lift had no history while three sessions of it sat in
+        the log — and said so to him twice in one session."""
+        from programme import build_proposal
+        loads = self._loads(exercise="Incline Barbell Press", load=65.0, reps=6, rpe=7.0)
+        proposals, renamed, ambiguous = build_proposal(self.PROMPT, "Push", 1, loads)
+        incline = {p.exercise: p for p in proposals}["Incline Press"]
+        self.assertEqual(incline.working[0].weight_kg, 65.0,
+                         "history did not carry across the name difference")
+        self.assertEqual(renamed.get("Incline Press"), "Incline Barbell Press")
+        self.assertFalse(ambiguous)
+        self.assertFalse([d for d in incline.deferred if "no logged history" in d])
+
+    def test_two_variants_of_one_template_name_are_never_guessed_between(self):
+        """"Barbell and dumbbell incline are separate exercises for progression
+        ... a barbell number never carries over to dumbbells or back." Picking
+        one would fabricate a progression across two movements."""
+        from programme import match_logged_names
+        matches, ambiguous = match_logged_names(
+            ["Incline Press"], ["Incline Barbell Press", "Incline Dumbbell Press"])
+        self.assertEqual(matches, {})
+        self.assertEqual(ambiguous["Incline Press"],
+                         ["Incline Barbell Press", "Incline Dumbbell Press"])
+
+    def test_a_specific_template_name_keeps_its_own_logged_name(self):
+        """"Leg Press" is a word-subset of "Single Leg Sumo Press", which is its
+        own template entry. Exact matches claim first, so the general name
+        cannot steal the specific one's history."""
+        from programme import match_logged_names
+        matches, _ = match_logged_names(
+            ["Leg Press", "Single Leg Sumo Press"], ["Single Leg Sumo Press"])
+        self.assertEqual(matches, {"Single Leg Sumo Press": "Single Leg Sumo Press"})
+        self.assertNotIn("Leg Press", matches)
+
+    def test_the_proposal_reaches_the_coach_and_stays_out_of_the_cached_half(self):
+        """It depends on the session type and the mesocycle week, both of which
+        move, so it belongs in the live block. Putting it in the stable one
+        would break the cache breakpoint that stops ~4k tokens being re-billed
+        on every logged set."""
+        from unittest.mock import patch
+        import coach_context
+        with patch.object(coach_context, "get_current_loads",
+                          lambda *a, **k: self._loads()):
+            stable, live = coach_context.build_context_block(
+                {"mesocycle_week": 1, "mesocycle_day": 2},
+                "Athlete", 80, 75, logging.getLogger("test"),
+                system_prompt=self.PROMPT,
+            )
+        self.assertIn("PROGRAMME PROPOSAL", live)
+        self.assertNotIn("PROGRAMME PROPOSAL", stable)
+
+    def test_a_missing_prompt_degrades_instead_of_breaking_the_session(self):
+        """A proposal is an aid, never a precondition."""
+        from unittest.mock import patch
+        import coach_context
+        with patch.object(coach_context, "get_current_loads",
+                          lambda *a, **k: self._loads()):
+            _stable, live = coach_context.build_context_block(
+                {"mesocycle_week": 1, "mesocycle_day": 2},
+                "Athlete", 80, 75, logging.getLogger("test"),
+            )
+        self.assertIn("unavailable for this session", live)
+
+    def test_a_failure_inside_the_programme_never_takes_the_session_down(self):
+        from unittest.mock import patch
+        import programme
+        with patch.object(programme, "day_plan", side_effect=RuntimeError("boom")):
+            proposals, renamed, ambiguous = programme.build_proposal(
+                self.PROMPT, "Push", 1, self._loads())
+        self.assertEqual((proposals, renamed, ambiguous), ([], {}, {}))
+
+    def test_the_prompt_tells_the_coach_the_block_is_computed_not_advisory_prose(self):
+        prompt = load_system_prompt()
+        self.assertIn("PROGRAMME PROPOSAL is today's session already worked out",
+                      prompt)
+        self.assertIn("Departing from it silently", prompt.replace(
+            "departing SILENTLY", "Departing from it silently"))

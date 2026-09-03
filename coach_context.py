@@ -294,7 +294,11 @@ def _recovery_from_override(payload: dict) -> dict:
 def build_context_block(memory: dict, athlete_name: str,
                         athlete_current_weight_kg: int,
                         athlete_goal_weight_kg: int,
-                        log, recovery_override: dict | None = None) -> str:
+                        log, recovery_override: dict | None = None,
+                        system_prompt: str = "") -> str:
+    """`system_prompt` is passed in rather than loaded here: coach.py imports
+    this module, so importing load_system_prompt back would be a cycle. Absent,
+    the programme proposal is skipped and every other block is unaffected."""
     today = now_local().strftime("%A %d %B %Y")
     today_iso = now_local().strftime("%Y-%m-%d")
     mesocycle_week = memory.get("mesocycle_week", 1)
@@ -408,6 +412,24 @@ def build_context_block(memory: dict, athlete_name: str,
     weak_point = format_weak_point_history(results.get("weak_point") or [])
     set_comparisons = format_set_comparisons(results.get("set_comparisons") or [])
 
+    # The programme, computed. prescribe.py could always do this; until now
+    # nothing asked it to, so the coach derived every load and set count in
+    # prose and the module existed only to judge the result afterwards.
+    #
+    # Built from the same rows CURRENT WORKING LOADS is rendered from, so the
+    # two cannot disagree about what he is lifting. Deliberately placed in the
+    # LIVE half rather than the stable half: it depends on the session type and
+    # the mesocycle week, both of which move.
+    from programme import build_proposal, format_proposal  # local: import order
+    _proposals, _renamed, _ambiguous = ([], {}, {}) if not system_prompt else build_proposal(
+        system_prompt, today_session, _safe_int(mesocycle_week),
+        results.get("current_loads") or [],
+    )
+    programme_proposal = format_proposal(
+        _proposals, today_session, _safe_int(mesocycle_week),
+        _renamed, _ambiguous,
+    )
+
     # Split by volatility, not by topic. Everything that only changes once a
     # day goes in the first block so a cache breakpoint can sit between them;
     # everything that moves as sets are logged goes in the second. During a
@@ -464,6 +486,8 @@ TODAY'S SESSIONS SO FAR:
 TODAY vs LAST SESSION — computed per exercise. Read the verdict; do not
 re-derive it from the log:
 {set_comparisons}
+
+{programme_proposal}
 
 TODAY'S APPLE WATCH WORKOUTS:
 {apple_workouts_today}
