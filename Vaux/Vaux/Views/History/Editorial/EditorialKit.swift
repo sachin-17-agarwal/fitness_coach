@@ -7,6 +7,7 @@
 // has one job; the body-map scale lives in `StrengthState`.
 
 import SwiftUI
+import UIKit
 
 enum Editorial {
     static let bg = Color(hex: "06080B")
@@ -110,10 +111,21 @@ struct HeroPanel<Content: View>: View {
     }
 }
 
-/// Deterministic film grain — a scatter of faint specks drawn once per size.
+/// Deterministic film grain, rendered once into a tile and drawn as an image.
+///
+/// This was a Canvas of ~3,000 specks redrawn asynchronously on every layout;
+/// on a fast scroll the async frames landed late and the hero flickered. A
+/// tiled image costs one draw and never changes.
 struct GrainOverlay: View {
-    var body: some View {
-        Canvas(opaque: false, rendersAsynchronously: true) { ctx, size in
+    private static let tile: UIImage = {
+        let size = CGSize(width: 256, height: 256)
+        let renderer = UIGraphicsImageRenderer(size: size, format: {
+            let f = UIGraphicsImageRendererFormat()
+            f.scale = 2
+            f.opaque = false
+            return f
+        }())
+        return renderer.image { ctx in
             var seed: UInt32 = 0x9E37_79B9
             func next() -> CGFloat {
                 seed = seed &* 1_664_525 &+ 1_013_904_223
@@ -124,11 +136,17 @@ struct GrainOverlay: View {
                 let x = next() * size.width
                 let y = next() * size.height
                 let a = 0.03 + next() * 0.07
-                ctx.fill(Path(CGRect(x: x, y: y, width: 1.2, height: 1.2)), with: .color(.white.opacity(a)))
+                ctx.cgContext.setFillColor(UIColor.white.withAlphaComponent(a).cgColor)
+                ctx.cgContext.fill(CGRect(x: x, y: y, width: 1.2, height: 1.2))
             }
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+    }()
+
+    var body: some View {
+        Image(uiImage: Self.tile)
+            .resizable(resizingMode: .tile)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
