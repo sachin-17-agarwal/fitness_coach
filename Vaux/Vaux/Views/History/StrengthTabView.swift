@@ -12,6 +12,10 @@ struct StrengthTabView: View {
     let calendar: BlockCalendar
     @Binding var tab: HistoryView.Tab
     let askCoach: (String) -> Void
+    /// Stepping back past the earliest loaded block asks History for more.
+    var canLoadEarlier: Bool = false
+    var isLoadingEarlier: Bool = false
+    var loadEarlier: (() -> Void)? = nil
 
     @State private var focus: BodyMuscle? = nil
     @State private var showAllLifts = false
@@ -93,19 +97,30 @@ struct StrengthTabView: View {
 
     private var scrubber: some View {
         HStack {
-            Button { step(-1) } label: { Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold)).frame(width: 34, height: 34) }
-                .disabled(vm.shownIndex <= 0)
+            Button {
+                if vm.shownIndex <= 0 { loadEarlier?() } else { step(-1) }
+            } label: {
+                Group {
+                    if isLoadingEarlier { ProgressView().tint(Editorial.mid).scaleEffect(0.7) }
+                    else { Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold)) }
+                }
+                .frame(width: 34, height: 34)
+            }
+            .disabled(vm.shownIndex <= 0 && !canLoadEarlier)
+            .accessibilityLabel(vm.shownIndex <= 0 ? "Load earlier blocks" : "Previous block")
             Spacer()
             VStack(spacing: 5) {
                 EditorialEyebrow(text: snap.map { s in s.dateRange.map { "\(s.judged.blockLabel) · \($0)" } ?? s.judged.blockLabel } ?? "", size: 10, kerning: 2)
-                EditorialEyebrow(text: snap == nil ? "" : "JUDGED AT PEAK WEEK", color: Editorial.muted, size: 8.5, kerning: 1.5)
+                EditorialEyebrow(
+                    text: snap == nil ? "" : (vm.shownIndex <= 0 && canLoadEarlier ? "◂ LOAD EARLIER BLOCKS" : "JUDGED AT PEAK WEEK"),
+                    color: vm.shownIndex <= 0 && canLoadEarlier ? Editorial.lime : Editorial.muted, size: 8.5, kerning: 1.5)
             }
             Spacer()
             Button { step(1) } label: { Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).frame(width: 34, height: 34) }
                 .disabled(vm.shownIndex >= vm.snapshots.count - 1)
         }
         .foregroundStyle(Editorial.mid)
-        .opacity(vm.snapshots.count > 1 ? 1 : 0.35)
+        .opacity(vm.snapshots.count > 1 || canLoadEarlier ? 1 : 0.35)
     }
 
     private func step(_ d: Int) {

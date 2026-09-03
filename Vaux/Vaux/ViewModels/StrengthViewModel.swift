@@ -122,6 +122,11 @@ final class StrengthViewModel {
     }
     var latest: BlockSnapshot? { snapshots.last }
 
+    /// Points the hero at `block` if a snapshot for it exists.
+    func show(block: Int) {
+        if let i = snapshots.firstIndex(where: { $0.judged.block == block }) { shownIndex = i }
+    }
+
     // Thresholds. One rep at 8–12 moves an Epley e1RM ~3%, and machine
     // stacks differ between gyms, so anything inside ±1% is "holding" and a
     // drop has to clear 5% before it is called one.
