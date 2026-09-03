@@ -33,12 +33,10 @@ struct FitnessCoachApp: App {
 
                 tabContent
                     // Reserve room at the bottom so content never sits
-                    // underneath the floating capsule tab bar.
+                    // underneath the tab bar.
                     .padding(.bottom, CapsuleTabBar.reservedHeight)
 
                 CapsuleTabBar(selected: $selectedTab)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
             }
             .preferredColorScheme(.dark)
         }
@@ -160,49 +158,34 @@ private extension View {
     }
 }
 
-// MARK: - Capsule tab bar
+// MARK: - Tab bar
 //
-// Floating instrument-panel bar: blurred ink surface with a machined
-// top-highlight border. Every tab shows its icon plus a small mono label;
-// the active tab glows signal-lime with a matched-geometry highlight that
-// slides between items.
+// Flat bar on the ink ground with a hairline top edge: outline icon and an
+// eyebrow label per tab, the active one in signal lime. No pill, no blur —
+// the same bar that sits under every screen in the scheme.
 
 struct CapsuleTabBar: View {
     @Binding var selected: FitnessCoachApp.Tab
-    @Namespace private var indicator
 
-    /// Outer space (bar height + bottom inset) the tab bar occupies — used
-    /// by the app root to leave room below scrolling content.
-    static let reservedHeight: CGFloat = 80
+    /// Height the bar occupies above the home indicator — used by the app
+    /// root to leave room below scrolling content.
+    static let reservedHeight: CGFloat = 62
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             ForEach(FitnessCoachApp.Tab.allCases, id: \.self) { tab in
                 tabItem(tab)
             }
         }
-        .padding(6)
+        .padding(.horizontal, 8)
+        .padding(.top, 10)
         .frame(maxWidth: .infinity)
+        .frame(height: Self.reservedHeight, alignment: .top)
         .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .fill(Color.ink1.opacity(0.86))
-                    .background(
-                        .ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    )
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.10), Color.line],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
-            }
+            Color.ink0
+                .overlay(Rectangle().fill(Color.line).frame(height: 1), alignment: .top)
+                .ignoresSafeArea(edges: .bottom)
         )
-        .shadow(color: Color.black.opacity(0.55), radius: 22, x: 0, y: 12)
     }
 
     private func tabItem(_ tab: FitnessCoachApp.Tab) -> some View {
@@ -210,39 +193,27 @@ struct CapsuleTabBar: View {
         return Button {
             guard selected != tab else { return }
             Haptic.light()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { selected = tab }
+            withAnimation(Motion.snappy) { selected = tab }
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 Image(systemName: tab.icon)
-                    .font(.system(size: 17, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(isSelected ? Color.signal : Color.fg2)
-                    .shadow(color: isSelected ? Color.signal.opacity(0.6) : .clear, radius: 7)
+                    .frame(height: 20)
 
-                // Was 8pt on fg3 — under any reasonable reading size, and at
-                // 2.3:1 the dimmest text in the app sat on the one control
-                // present on every screen. 10pt on fg2 clears 5.7:1 and still
-                // reads as chrome beside the icon.
+                // fg2 (~5.7:1 on ink0) for the inactive label — fg3 sits
+                // under 4.5:1 at this size. The active tab is lime, the one
+                // colour on the bar.
                 Text(tab.title.uppercased())
-                    .font(.scaled(10, weight: .semibold, design: .monospaced, relativeTo: .caption2, cap: 14))
-                    .kerning(0.8)
+                    .font(.system(size: 8.5, weight: .bold))
+                    .kerning(1.5)
                     .foregroundStyle(isSelected ? Color.signal : Color.fg2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
-            .frame(minHeight: 52)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.signal.opacity(0.09))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(Color.signal.opacity(0.18), lineWidth: 1)
-                        )
-                        .matchedGeometryEffect(id: "activeTab", in: indicator)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         // The lime fill and glow are the only thing marking the current tab;
