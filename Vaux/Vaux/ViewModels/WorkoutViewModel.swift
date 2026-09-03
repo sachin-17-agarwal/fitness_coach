@@ -240,9 +240,43 @@ final class WorkoutViewModel {
         await RestNotifier.shared.requestAuthorizationIfNeeded()
         if let existing = await fetchInProgressSession(type: type) {
             await resume(session: existing)
-        } else {
-            await startWorkout(type: type)
+            return
         }
+        // Nothing open — but an explicit start tap on a day that ALREADY has a
+        // session of this type means "carry on", not "begin a second workout".
+        // That is the duplicate: END (or a back-swipe the app treats as one)
+        // closes the row, the open-only lookup above stops finding it, and the
+        // next tap mints a fresh session for the same training day.
+        //
+        // Reopened and resumed rather than started, so the set counters hydrate
+        // from what is already logged. Starting fresh against a row that
+        // already holds sets would restart set numbering at 1 and collide with
+        // the (session, exercise, set_number, is_warmup) key those sets are
+        // deduplicated on.
+        //
+        // resumeIfInProgress deliberately does NOT do this: an automatic remount
+        // must not resurrect a workout the athlete finished on purpose. Only a
+        // deliberate tap counts as carrying on.
+        if let finished = await fetchTodaysSession(type: type), let id = finished.id {
+            try? await workoutService.reopenSession(id: id)
+            var reopened = finished
+            reopened.status = SessionStatus.openStored
+            await resume(session: reopened)
+            return
+        }
+        await startWorkout(type: type)
+    }
+
+    /// Today's most recent session of `type`, whatever its status.
+    private func fetchTodaysSession(type: String) async -> WorkoutSession? {
+        let today = Self.todayString()
+        let sessions: [WorkoutSession]? = try? await SupabaseClient.shared.fetch(
+            "workout_sessions",
+            query: ["date": "eq.\(today)", "type": "eq.\(type)"],
+            order: "start_time.desc",
+            limit: 1
+        )
+        return sessions?.first
     }
 
     /// Resume-only variant used when the view remounts (e.g. after an

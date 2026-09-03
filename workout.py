@@ -114,6 +114,52 @@ def start_session(session_type: str) -> str:
             return existing_session_id
 
         supabase = get_supabase()
+
+        # One training day is one row. The guard above only catches a session
+        # that is still ACTIVE in memory; once it has been ended — the athlete
+        # finishing and carrying on, or the app closing the workout — this path
+        # inserted a second row for the same training day. That splits the day's
+        # work in half, so each row reads as missing most of the template, and
+        # because the mesocycle week is reconstructed by counting rotation
+        # positions it shifts the recorded week of every earlier session by one.
+        #
+        # Matches on date and type without filtering on status, for the same
+        # reason: a status filter is exactly what stopped finding the session
+        # once it was closed.
+        try:
+            same_day = (
+                supabase.table("workout_sessions")
+                .select("id")
+                .eq("date", today_local_str())
+                .eq("type", session_type)
+                .order("start_time", desc=True)
+                .limit(1)
+                .execute()
+            ).data or []
+        except Exception:
+            log.exception("Could not check for an existing session today")
+            same_day = []
+        if same_day:
+            session_id = same_day[0]["id"]
+            try:
+                supabase.table("workout_sessions").update(
+                    {"status": SESSION_STATUS_OPEN}
+                ).eq("id", session_id).execute()
+            except Exception:
+                # Best-effort: logging into the right row matters more than the
+                # status flag on it.
+                log.exception("Could not reopen session %s", session_id)
+            set_workout_state({
+                "workout_mode": "active",
+                "current_session_id": session_id,
+                "current_exercise_index": "0",
+                "current_set_number": "0",
+                "current_exercise_name": "",
+                "session_start_time": now_local().isoformat(),
+            })
+            print(f"Reusing today's {session_type} session {session_id}")
+            return session_id
+
         row = {
             "date": today_local_str(),
             "type": session_type,
