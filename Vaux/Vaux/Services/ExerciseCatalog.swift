@@ -154,6 +154,16 @@ final class ExerciseCatalog {
         "incline db press":       ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
         "incline machine press":  ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
         "incline chest press":    ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        // Same trap on the other side of the bench. "Flat Dumbbell Press"
+        // contains neither "bench press" nor "chest press", so it resolved to
+        // NO muscle at all and the History tab said so outright: "Not counted
+        // toward any muscle: Flat Dumbbell Press". "Flat Bench Press" and
+        // "Flat Chest Press" already work — they carry a matching pair.
+        "flat press":            ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "flat barbell press":    ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "flat dumbbell press":   ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "flat db press":         ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
+        "flat machine press":    ["Chest": 1.0, "Triceps": 0.5, "Shoulders": 0.5],
         "decline press":  ["Chest": 1.0, "Triceps": 0.5],
         // "dips", not "dip": the substring matcher ignores keys under four
         // characters, so a 3-char key can only ever hit on an exact match and
@@ -276,6 +286,12 @@ final class ExerciseCatalog {
         "incline db press": "Chest",
         "incline barbell press": "Chest",
         "incline chest press": "Chest",
+        // The flat variants, for the same reason as the incline ones above.
+        "flat press": "Chest",
+        "flat barbell press": "Chest",
+        "flat dumbbell press": "Chest",
+        "flat db press": "Chest",
+        "flat machine press": "Chest",
         "decline press": "Chest",
         "chest press": "Chest",
         "chest fly": "Chest",
