@@ -1,7 +1,7 @@
 // HistoryViewModel.swift
 // Vaux
 //
-// Loads the raw rows once — sessions and sets across a 16-week window, the
+// Loads the raw rows once — sessions and sets across a twelve-block window, the
 // mesocycle position, recovery — places them on the block calendar, and hands
 // the same placed data to each tab's reader. One fetch, four readings.
 
@@ -22,7 +22,10 @@ final class HistoryViewModel {
     let recovery = RecoveryInsightsViewModel()
     let weeklyVolume = WeeklyVolumeViewModel()
 
-    static let windowDays = 16 * 7
+    /// Twelve four-week blocks. The sets fetch carries its own row limit, so
+    /// this is one request either way; the block judgement only gets better
+    /// with more history behind it.
+    static let windowDays = 12 * Config.weeksPerBlock * 7
 
     private let workoutService = WorkoutService()
     private let mesocycleService = MesocycleService()

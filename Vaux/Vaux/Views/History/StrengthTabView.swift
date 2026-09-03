@@ -96,7 +96,10 @@ struct StrengthTabView: View {
             Button { step(-1) } label: { Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold)).frame(width: 34, height: 34) }
                 .disabled(vm.shownIndex <= 0)
             Spacer()
-            EditorialEyebrow(text: snap.map { "\($0.judged.blockLabel) · JUDGED AT PEAK WEEK" } ?? "", size: 10, kerning: 2)
+            VStack(spacing: 5) {
+                EditorialEyebrow(text: snap.map { s in s.dateRange.map { "\(s.judged.blockLabel) · \($0)" } ?? s.judged.blockLabel } ?? "", size: 10, kerning: 2)
+                EditorialEyebrow(text: snap == nil ? "" : "JUDGED AT PEAK WEEK", color: Editorial.muted, size: 8.5, kerning: 1.5)
+            }
             Spacer()
             Button { step(1) } label: { Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).frame(width: 34, height: 34) }
                 .disabled(vm.shownIndex >= vm.snapshots.count - 1)
