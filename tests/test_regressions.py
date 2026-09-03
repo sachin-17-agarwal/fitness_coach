@@ -3811,3 +3811,68 @@ class LoadIncrementRoundingTests(unittest.TestCase):
         curl = {p.exercise: p for p in
                 prescribe_pull(1, {"Machine Bicep Curl": peak})}["Machine Bicep Curl"]
         self.assertEqual(curl.working[0].weight_kg, 55.0)
+
+
+class DeferredNoteAttributionTests(unittest.TestCase):
+    """The report stated a fault and withheld the fact that judges it.
+
+    "Last session ran 4 reps against a 6-10 range — BELOW range" is either the
+    deload working exactly as designed or a load too heavy for the range, and
+    the note itself said the log cannot tell them apart. It can: the week
+    separates them, and the report was already carrying it — grouping the notes
+    by their text threw the date away before rendering. On the athlete's real
+    replay this left six such lines, every one unanswerable, which is the
+    failure the whole report exists to stop.
+    """
+
+    @staticmethod
+    def _set(ex, w, r, rpe, n=1):
+        return {"exercise": ex, "actual_weight_kg": w, "actual_reps": r,
+                "actual_rpe": rpe, "set_number": n, "is_warmup": False}
+
+    def _sessions(self, heavy_week):
+        """Cable Row drops to 4 reps after a session in `heavy_week`."""
+        return [
+            {"date": "2026-07-08", "mesocycle_week": 3,
+             "sets": [self._set("Cable Row", 78.5, 9, 9)]},
+            {"date": "2026-07-15", "mesocycle_week": heavy_week,
+             "sets": [self._set("Cable Row", 85, 4, 9)]},
+            {"date": "2026-07-22", "mesocycle_week": 3,
+             "sets": [self._set("Cable Row", 85, 6, 9)]},
+        ]
+
+    def _below_line(self, heavy_week):
+        from replay import analyse, render_chat
+        for line in render_chat(analyse(self._sessions(heavy_week))).split("\n"):
+            if "BELOW range" in line:
+                return line
+        return ""
+
+    def test_a_below_range_set_after_a_deload_week_is_called_the_protocol(self):
+        line = self._below_line(4)
+        self.assertIn("15 Jul (week 4)", line)
+        self.assertIn("deload week, so this is the protocol working", line)
+
+    def test_a_below_range_set_outside_a_deload_is_called_too_heavy(self):
+        line = self._below_line(2)
+        self.assertIn("15 Jul (week 2)", line)
+        self.assertIn("too heavy for the range", line)
+
+    def test_the_deload_verdict_is_not_attached_to_unrelated_notes(self):
+        """On a "no logged history" note it is noise dressed as a finding."""
+        from replay import analyse, render_chat
+        out = render_chat(analyse(self._sessions(2)))
+        for line in out.split("\n"):
+            if "no logged history" in line:
+                self.assertNotIn("deload week", line)
+                self.assertIn("[after ", line, "attribution still belongs here")
+
+    def test_the_attribution_survives_the_ios_renderer(self):
+        """It rides inside the bullet rather than on its own line, because
+        MarkdownText joins consecutive non-bullet lines into one paragraph."""
+        from replay import analyse, render_chat
+        out = render_chat(analyse(self._sessions(2)))
+        for line in out.split("\n"):
+            if "[after " in line:
+                self.assertTrue(line.startswith("- "),
+                                f"attribution escaped its bullet: {line[:60]!r}")
