@@ -149,7 +149,7 @@ struct HeroTopBar: View {
 /// Three right-aligned facts beside the hero figure.
 struct StatStack: View {
     struct Line: Identifiable {
-        let id = UUID()
+        var id: String { text }
         let text: String
         var color: Color = Editorial.mid
     }
