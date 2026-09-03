@@ -929,6 +929,44 @@ final class WorkoutViewModel {
     var lastSessionSetsLoaded = false
     private var lastSessionSetsExercise: String?
 
+    /// The top working set of this exercise from the same week of the
+    /// previous block, for the comparison beside the working chip. Looked up
+    /// by date: the block is four weeks, so the same week last block sits 21
+    /// to 35 days back — never last week, which is a different phase.
+    var lastBlockReference: LastBlockReference?
+
+    /// Every set the plan calls for: logged so far plus what is still to come
+    /// on the current exercise and the upcoming ones.
+    var plannedSetTotal: Int {
+        var remaining = 0
+        if let rx = currentPrescription {
+            let done = exerciseSetsForCurrentExercise.count
+            remaining += max(0, rx.warmupSets.count + rx.workingSets.count + rx.backoffSets.count - done)
+        }
+        for rx in upcomingPrescriptions {
+            remaining += rx.warmupSets.count + rx.workingSets.count + rx.backoffSets.count
+        }
+        return setCount + warmupCount + remaining
+    }
+
+    /// One word for the heart rate, in place of a colour: what the number
+    /// means between sets.
+    var heartStateLabel: String? {
+        guard !heartRateMonitor.hasStalled(), let bpm = heartRateMonitor.currentBPM else { return nil }
+        switch bpm {
+        case ..<100: return "Settling"
+        case ..<140: return "Working"
+        default: return "High"
+        }
+    }
+
+    /// 1-based position of the current exercise among the session's plan.
+    var currentExerciseIndex: Int? {
+        guard let rx = currentPrescription else { return nil }
+        if let i = allPrescriptions.firstIndex(where: { $0.exerciseName == rx.exerciseName }) { return i + 1 }
+        return nil
+    }
+
     /// Best estimated 1RM per past session for the current exercise, oldest
     /// first — the strength sparkline on the rest screen.
     var strengthHistory: [E1RMPoint] = []
@@ -953,7 +991,7 @@ final class WorkoutViewModel {
 
     /// Fetched once per exercise, on the first rest inside it, rather than on
     /// every rest — the previous session's numbers don't change mid-workout.
-    private func loadLastSessionSetsIfNeeded() {
+    func loadLastSessionSetsIfNeeded() {
         guard let exercise = currentPrescription?.exerciseName, !exercise.isEmpty else { return }
         guard exercise != lastSessionSetsExercise else { return }
         lastSessionSetsExercise = exercise
@@ -961,6 +999,7 @@ final class WorkoutViewModel {
         lastSessionSetsLoaded = false
         strengthHistory = []
         restCalibration = nil
+        lastBlockReference = nil
         // `before:` excludes today, otherwise the most recent session
         // containing this exercise is the one currently in progress and the
         // card would show the athlete the sets they logged minutes ago.
@@ -982,7 +1021,32 @@ final class WorkoutViewModel {
             guard lastSessionSetsExercise == exercise else { return }
             strengthHistory = Self.bestE1RMPerSession(history, excluding: today)
             restCalibration = RestCalibration.compute(from: history)
+            lastBlockReference = Self.lastBlockReference(from: history, week: mesocycleWeek)
         }
+    }
+
+    /// The top working set from the session 21–35 days back — the same week
+    /// of the previous four-week block. The most recent session in that
+    /// window wins; the heaviest non-warm-up set in it is the reference.
+    static func lastBlockReference(from history: [WorkoutSet], week: Int?) -> LastBlockReference? {
+        let cal = Calendar.current
+        guard let lower = cal.date(byAdding: .day, value: -35, to: Date()),
+              let upper = cal.date(byAdding: .day, value: -21, to: Date()) else { return nil }
+        let lowerKey = dateFormatter.string(from: lower)
+        let upperKey = dateFormatter.string(from: upper)
+        let inWindow = history.filter { set in
+            guard set.isWarmup != true, let date = set.date else { return false }
+            return date >= lowerKey && date <= upperKey
+        }
+        guard let sessionDate = inWindow.compactMap(\.date).max() else { return nil }
+        let candidates = inWindow.filter { $0.date == sessionDate }
+        guard let top = candidates.max(by: { a, b in
+            let wa = a.actualWeightKg ?? 0, wb = b.actualWeightKg ?? 0
+            if wa != wb { return wa < wb }
+            return (a.actualReps ?? 0) < (b.actualReps ?? 0)
+        }), let weight = top.actualWeightKg, let reps = top.actualReps else { return nil }
+        let label = week.map { "Wk \($0)" } ?? "Same week"
+        return LastBlockReference(weight: weight, reps: reps, rpe: top.actualRpe, weekLabel: label)
     }
 
     /// Collapses a flat set list into one point per training day — the best
