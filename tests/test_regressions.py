@@ -3746,3 +3746,68 @@ class VolumeAttributionBaselineTests(unittest.TestCase):
         for exercise in programmed:
             self.assertTrue(volume.resolve_contributions(exercise),
                             f"{exercise} contributes to no muscle at all")
+
+
+class LoadIncrementRoundingTests(unittest.TestCase):
+    """A prescribed increase must actually change the prescribed load.
+
+    _round_load snapped to the nearest 2.5kg while the isolation increment is
+    1.0kg, so 55 + 1 rounded straight back to 55. The increase was computed,
+    announced in the reason string — "Week 1 opens ~1kg ABOVE last cycle: week 3
+    finished at 12 reps" — and then silently discarded. On 8 of 11 realistic
+    loads it vanished entirely; on two it came out inflated to 2x. A load that
+    moves sometimes and not others, with a confident explanation attached
+    either way, is exactly the complaint that started this audit.
+
+    278 tests passed over that code. None of them applied an increment and
+    checked the load afterwards, which is the only thing that catches it.
+
+    The function's docstring cited the programme's increment guidance as the
+    reason for a 2.5kg grid. That passage says the opposite: "never present a
+    prescribed load as an exact must-hit number on a clean 2.5kg grid", and
+    "Machines, cables, and fixed dumbbells: round to the nearest available step,
+    never assume 2.5kg".
+    """
+
+    LOADS = (10.0, 12.5, 15.0, 16.0, 17.5, 18.0, 20.0, 32.0, 40.0, 55.0, 70.0,
+             78.5, 101.0, 133.0, 205.0)
+
+    def test_every_increment_survives_rounding(self):
+        from prescribe import INCREMENT, _round_load
+        for kind, step in INCREMENT.items():
+            for load in self.LOADS:
+                with self.subTest(kind=kind, load=load):
+                    self.assertAlmostEqual(
+                        _round_load(load + step) - load, step, places=6,
+                        msg=f"{kind} {step}kg increase from {load}kg was "
+                            f"rounded to {_round_load(load + step) - load:+.1f}",
+                    )
+
+    def test_the_grid_divides_every_increment_the_programme_uses(self):
+        """The property that makes the above hold for increments added later."""
+        from prescribe import INCREMENT, _LOAD_GRID
+        for kind, step in INCREMENT.items():
+            with self.subTest(kind=kind):
+                self.assertAlmostEqual(step / _LOAD_GRID,
+                                       round(step / _LOAD_GRID), places=6,
+                                       msg=f"{kind} step {step} is not a "
+                                           f"multiple of the {_LOAD_GRID} grid")
+
+    def test_a_peak_week_at_the_top_of_the_range_actually_opens_heavier(self):
+        """End to end through the programme, not just the helper. This is the
+        rule the whole wave depends on: hit the top of the range in week 3 and
+        the next cycle opens one increment up."""
+        from prescribe import PriorSet, prescribe_pull
+        peak = PriorSet(load=55.0, reps=12, rpe=8.0, date="2026-07-13", week=3)
+        curl = {p.exercise: p for p in
+                prescribe_pull(1, {"Machine Bicep Curl": peak})}["Machine Bicep Curl"]
+        self.assertEqual(curl.working[0].weight_kg, 56.0,
+                         "week 3 hit the top of the range and the load did not move")
+
+    def test_a_peak_week_below_the_range_top_holds_the_load(self):
+        """The other half of the rule, so the fix cannot be a blanket increase."""
+        from prescribe import PriorSet, prescribe_pull
+        peak = PriorSet(load=55.0, reps=8, rpe=9.0, date="2026-07-13", week=3)
+        curl = {p.exercise: p for p in
+                prescribe_pull(1, {"Machine Bicep Curl": peak})}["Machine Bicep Curl"]
+        self.assertEqual(curl.working[0].weight_kg, 55.0)
