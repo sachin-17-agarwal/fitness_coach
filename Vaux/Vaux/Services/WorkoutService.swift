@@ -378,9 +378,48 @@ final class WorkoutService: Sendable {
             body["target_rpe"] = targetRpe
         }
 
-        let logged: WorkoutSet = try await client.insertAndDecode(
-            "workout_sets", body: body
-        )
+        // Retried here rather than through withRetry, because this operation is
+        // idempotent in a way the generic helper cannot see and the insert body
+        // is a [String: Any] that cannot cross a @Sendable boundary.
+        //
+        // The helper classes networkConnectionLost as "delivery unknown" and so
+        // refuses to retry a write — correct in general, and wrong here. A set
+        // is identified by (session, exercise, set_number, is_warmup) and the
+        // guard at the top of this function already returns the existing row
+        // rather than inserting a second. So re-checking that guard before each
+        // retry makes the whole operation safe to repeat: if the first attempt
+        // did land and only its response was lost, the re-check finds the row
+        // and returns it instead of duplicating.
+        //
+        // Without this a dropped connection mid-workout simply lost the set —
+        // the athlete saw "The network connection was lost", the row was never
+        // written, and it later read as an exercise he had skipped.
+        var logged: WorkoutSet?
+        var lastNetworkError: Error?
+        for attempt in 1...3 {
+            do {
+                logged = try await client.insertAndDecode("workout_sets", body: body)
+                break
+            } catch let urlError as URLError {
+                lastNetworkError = urlError
+                if attempt == 3 { break }
+                try? await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt - 1)) * 1_000_000_000))
+                // The attempt may have been delivered and committed. Ask.
+                if let existing = try? await fetchExistingSet(
+                    sessionId: sessionId,
+                    exercise: exercise,
+                    setNumber: setNumber,
+                    isWarmup: isWarmup
+                ) {
+                    logged = existing
+                    lastNetworkError = nil
+                    break
+                }
+            }
+        }
+        guard let logged else {
+            throw lastNetworkError ?? URLError(.unknown)
+        }
 
         // Best-effort: advance set counter and exercise name in memory.
         // The set is already persisted above — don't lose it if state update fails.
