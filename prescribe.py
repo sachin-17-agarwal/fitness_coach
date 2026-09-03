@@ -191,12 +191,32 @@ class Proposal:
         return len(self.working) + len(self.backoff)
 
 
+# Fine enough to survive the smallest increment the programme applies. It was
+# 2.5kg, which silently ate every isolation increase: the isolation step is
+# 1.0kg, so 55 + 1 rounded straight back to 55. The increase was computed, named
+# in the reason string ("opens ~1kg ABOVE last cycle"), and then discarded — on
+# 8 of 11 realistic loads it vanished entirely and on two it came out inflated
+# to 2x. That is a load that moves sometimes and not others for no reason the
+# athlete can see.
+#
+# The old docstring cited the programme's own increment guidance as the reason
+# for a 2.5kg grid, and that passage says the opposite: "never present a
+# prescribed load as an exact must-hit number on a clean 2.5kg grid" and
+# "Machines, cables, and fixed dumbbells: round to the nearest available step,
+# never assume 2.5kg". The number here is a starting point the coach phrases as
+# approximate, so it must not assert a grid it cannot know.
+_LOAD_GRID = 0.5
+
+
 def _round_load(value: float) -> float:
-    """Nearest 2.5kg — the smallest increment common to plate-loaded and stack
-    machines. :246 warns never to present a load as an exact must-hit number,
-    so this is a starting point for the coach to phrase as approximate, not a
-    claim about the athlete's gym."""
-    return round(value / 2.5) * 2.5
+    """Round to the nearest half-kilo.
+
+    Half a kilo divides every increment the programme uses (1.0kg isolation,
+    2.5kg compound), so an increase can never be rounded away. Percentage
+    results — back-off drops, deload drops, warm-up ramps — land on a tidy
+    number without pretending to know the athlete's equipment.
+    """
+    return round(value / _LOAD_GRID) * _LOAD_GRID
 
 
 def _met_top_of_range(prior: PriorSet, kind: str, target_rpe: float) -> bool:
