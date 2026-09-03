@@ -25,11 +25,31 @@ struct SVGPath: Shape {
 
     static let boxW: CGFloat = 160, boxH: CGFloat = 364
 
+    /// Parsed once per path string in the 160×364 box, then only transformed
+    /// per layout. Parsing ~50 muscle outlines with Scanner on every layout
+    /// pass was the cost that made the Strength hero stutter on a fast scroll.
+    private static var cache: [String: Path] = [:]
+    private static let lock = NSLock()
+
     func path(in rect: CGRect) -> Path {
-        let sx = rect.width / Self.boxW, sy = rect.height / Self.boxH
+        let unit = Self.unitPath(for: d, mirrored: mirrored)
+        let transform = CGAffineTransform(translationX: rect.minX, y: rect.minY)
+            .scaledBy(x: rect.width / Self.boxW, y: rect.height / Self.boxH)
+        return unit.applying(transform)
+    }
+
+    private static func unitPath(for d: String, mirrored: Bool) -> Path {
+        let key = (mirrored ? "m|" : "n|") + d
+        lock.lock(); defer { lock.unlock() }
+        if let cached = cache[key] { return cached }
+        let parsed = parse(d, mirrored: mirrored)
+        cache[key] = parsed
+        return parsed
+    }
+
+    private static func parse(_ d: String, mirrored: Bool) -> Path {
         func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            let mx = mirrored ? Self.boxW - x : x
-            return CGPoint(x: rect.minX + mx * sx, y: rect.minY + y * sy)
+            CGPoint(x: mirrored ? boxW - x : x, y: y)
         }
         var p = Path()
         let scanner = Scanner(string: d)
@@ -127,6 +147,10 @@ struct BodyFigure: View {
             }
             .frame(width: rect.width, height: rect.height)
             .animation(Motion.smooth, value: states)
+            // One offscreen layer for the whole figure. The muscles carry
+            // glows, and fifty separate shadowed shapes re-composited on every
+            // scrolled frame; flattened, they cost one blit until a state changes.
+            .drawingGroup()
         }
         .aspectRatio(SVGPath.boxW / SVGPath.boxH, contentMode: .fit)
     }
