@@ -205,6 +205,11 @@ final class StrengthViewModel {
 
         // Balance ratios use the newest peak available for each lift.
         balance = Self.balancePairs.map { pair in
+            // Isolated explicitly: a local func does not inherit the enclosing
+            // closure's MainActor isolation under SWIFT_DEFAULT_ACTOR_ISOLATION,
+            // and BlockPosition's Hashable conformance is MainActor-isolated by
+            // that same setting, so keying a dictionary by it needs the actor.
+            @MainActor
             func find(_ keys: [String]) -> (String, Double)? {
                 for (name, byPos) in weekly {
                     let lower = name.lowercased()
