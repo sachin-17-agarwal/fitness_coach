@@ -3613,3 +3613,78 @@ class ChatReplayRenderingTests(unittest.TestCase):
             self.assertIn(f"- {label} {replay.totals[key]}", chat)
             self.assertIn(f"{key.replace('missing', 'not logged')} "
                           f"{replay.totals[key]}", wide)
+
+
+class VolumeAttributionBaselineTests(unittest.TestCase):
+    """Locks in what every programmed exercise currently contributes.
+
+    An adversarial hunt for silent exercise-name mismatches returned 25
+    findings against progression.py, volume.py and muscle_map.py — a name that
+    misses its entry never raises, it just quietly drops a muscle's share or
+    splits one lift into two. Checked directly, every exercise in the four
+    session templates resolves correctly TODAY, so those findings are latent
+    rather than active and refactoring the lookup would have risked the blocks
+    the coach prescribes from for no present gain.
+
+    What was missing was any way to notice if that stopped being true. This
+    test is that: it is a characterisation of live behaviour, not a
+    specification. If a future change to muscle_map or the resolver alters what
+    a programmed exercise contributes, this fails and names the exercise —
+    including the case the hunt cared about, where a hyphen or spacing change
+    silently costs a muscle its synergist credit.
+
+    Regenerate deliberately if the programme itself changes; do not "fix" a
+    failure by editing the expectation without knowing why it moved.
+    """
+
+    EXPECTED = {
+    # Generated from the live behaviour on 25 template exercises.
+    'Ab Crunch Machine': {'Abs': 1.0},
+    'Ab Wheel Rollout': {'Abs': 1.0},
+    'Cable Chest Fly': {'Chest': 1.0},
+    'Cable Crunch': {'Abs': 1.0},
+    'Cable Lateral Raise': {'Shoulders': 1.0},
+    'Cable Row': {'Back': 1.0, 'Biceps': 0.5, 'Rear Delts': 0.5},
+    'Dips': {'Chest': 1.0, 'Triceps': 0.5},
+    'Face Pulls': {'Rear Delts': 1.0},
+    'Hammer Curl': {'Biceps': 1.0},
+    'Hanging Leg Raises': {'Abs': 1.0},
+    'Incline Press': {'Chest': 1.0, 'Shoulders': 0.5, 'Triceps': 0.5},
+    'Lat Pulldown': {'Back': 1.0, 'Biceps': 0.5},
+    'Leg Extension': {'Quads': 1.0},
+    'Leg Press': {'Hamstrings': 0.25, 'Quads': 1.0},
+    'Machine Bicep Curl': {'Biceps': 1.0},
+    'Machine Calf Raise': {'Calves': 1.0},
+    'Machine Chest Press': {'Chest': 1.0, 'Shoulders': 0.5, 'Triceps': 0.5},
+    'Machine Shoulder Press': {'Shoulders': 1.0, 'Triceps': 0.5},
+    'Pallof Press': {'Abs': 1.0},
+    'Pull-Ups': {'Back': 1.0, 'Biceps': 0.5},
+    'Reverse Cable Fly': {'Rear Delts': 1.0},
+    'Seated Leg Curl': {'Hamstrings': 1.0},
+    'Single Leg Sumo Press': {'Hamstrings': 0.25, 'Quads': 1.0},
+    'T-Bar Row': {'Back': 1.0, 'Biceps': 0.5, 'Rear Delts': 0.5},
+    'Tricep Pushdown': {'Triceps': 1.0},
+    }
+
+    def test_every_programmed_exercise_still_attributes_as_it_does_today(self):
+        import volume
+        for exercise, expected in sorted(self.EXPECTED.items()):
+            with self.subTest(exercise=exercise):
+                self.assertEqual(volume.resolve_contributions(exercise), expected)
+
+    def test_the_templates_and_the_baseline_have_not_drifted_apart(self):
+        """A new exercise added to a template with no volume entry contributes
+        nothing to any muscle, which understates that muscle silently and can
+        move which two the weak-point block picks."""
+        from coach_parsing import parse_session_template
+        import volume
+        prompt = load_system_prompt()
+        programmed = set()
+        for day in ("PUSH", "PULL", "LEGS", "CARDIO+ABS"):
+            entries, _ = parse_session_template(prompt, day)
+            programmed |= {n for n, _ in entries if not n.startswith("Weak-Point")}
+        self.assertEqual(programmed, set(self.EXPECTED),
+                         "a template exercise gained or lost a volume baseline")
+        for exercise in programmed:
+            self.assertTrue(volume.resolve_contributions(exercise),
+                            f"{exercise} contributes to no muscle at all")
