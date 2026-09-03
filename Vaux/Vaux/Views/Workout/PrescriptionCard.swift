@@ -1,93 +1,96 @@
 // PrescriptionCard.swift
 // Vaux
+//
+// The current exercise as the coach prescribed it: position and rest in the
+// eyebrow, the name in the display face, the sets grouped by phase as chips
+// (the working chip is the target; last block's same-week set sits beside
+// it), tempo as digits with direction, and the cue. Same completion logic
+// as before — done chips show what was actually logged and open the editor.
 
 import SwiftUI
 
+/// The same working set from the same week of the previous block, so the
+/// comparison never crosses a phase (a volume week is never judged against a
+/// peak week). nil when the lift has no history a block back.
+struct LastBlockReference: Equatable {
+    let weight: Double
+    let reps: Int
+    let rpe: Double?
+    /// "Wk 1" — the week both sets belong to.
+    let weekLabel: String
+}
+
 struct PrescriptionCard: View {
     let prescription: ExercisePrescription
-    var exerciseSetIndex: Int = 0
-    var loggedSets: [WorkoutSet] = []
-    var currentPhase: SetPhase = .working
-    var phaseSetIndex: Int = 0
-    /// Tapping a checked-off chip opens it for correction. Defaults to a no-op
-    /// so previews and any other caller keep working untouched.
-    var onEditSet: (WorkoutSet) -> Void = { _ in }
+    let exerciseSetIndex: Int
+    let loggedSets: [WorkoutSet]
+    let currentPhase: SetPhase
+    let phaseSetIndex: Int
+    /// 1-based position of this exercise in the session, and the session's
+    /// exercise count. Either nil hides the position eyebrow.
+    var exerciseIndex: Int? = nil
+    var exerciseCount: Int? = nil
+    var lastBlock: LastBlockReference? = nil
+    let onEditSet: (WorkoutSet) -> Void
 
-    /// Drives the soft glow pulse on the chip for the set that's up next.
     @State private var pulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             exerciseHeader
 
-            if !prescription.warmupSets.isEmpty {
-                setSection(
-                    label: "WARM-UP",
-                    color: .fg1,
-                    icon: "flame",
-                    sets: prescription.warmupSets.enumerated().map { i, s in
-                        SetTarget(weight: s.weight, reps: s.reps, repsHigh: nil, rpe: nil, kind: .warmup, index: i)
-                    }
-                )
+            VStack(alignment: .leading, spacing: 0) {
+                if !prescription.warmupSets.isEmpty {
+                    setSection(
+                        label: "Warm-up", color: .fg2, first: true,
+                        sets: prescription.warmupSets.enumerated().map { i, s in
+                            SetTarget(weight: s.weight, reps: s.reps, repsHigh: nil, rpe: nil, kind: .warmup, index: i)
+                        },
+                        trailing: nil
+                    )
+                }
+                if !prescription.workingSets.isEmpty {
+                    setSection(
+                        label: "Working", color: .mint, first: prescription.warmupSets.isEmpty,
+                        sets: prescription.workingSets.enumerated().map { i, s in
+                            SetTarget(weight: s.weight, reps: s.reps, repsHigh: s.repsHigh, rpe: s.rpe, kind: .working, index: i)
+                        },
+                        trailing: lastBlock
+                    )
+                }
+                if !prescription.backoffSets.isEmpty {
+                    setSection(
+                        label: "Back-off", color: .amber,
+                        first: prescription.warmupSets.isEmpty && prescription.workingSets.isEmpty,
+                        sets: prescription.backoffSets.enumerated().map { i, s in
+                            SetTarget(weight: s.weight, reps: s.reps, repsHigh: s.repsHigh, rpe: s.rpe, kind: .backoff, index: i)
+                        },
+                        trailing: nil
+                    )
+                }
             }
-
-            if !prescription.workingSets.isEmpty {
-                setSection(
-                    label: "WORKING",
-                    color: .mint,
-                    icon: "bolt.fill",
-                    sets: prescription.workingSets.enumerated().map { i, s in
-                        SetTarget(weight: s.weight, reps: s.reps, repsHigh: s.repsHigh, rpe: s.rpe, kind: .working, index: i)
-                    }
-                )
-            }
-
-            if !prescription.backoffSets.isEmpty {
-                setSection(
-                    label: "BACK-OFF",
-                    color: .amber,
-                    icon: "arrow.down.right",
-                    sets: prescription.backoffSets.enumerated().map { i, s in
-                        SetTarget(weight: s.weight, reps: s.reps, repsHigh: s.repsHigh, rpe: s.rpe, kind: .backoff, index: i)
-                    }
-                )
-            }
+            .padding(.top, 8)
 
             if prescription.tempo != nil || prescription.formCue != nil {
                 cuesSection
             }
 
-            if let rest = prescription.restSeconds {
-                restPill(rest)
-            }
-
-            // Current target indicator — hidden once all prescribed sets are done
             if !isExerciseFullyLogged {
-                currentTargetLabel
+                HStack {
+                    Spacer()
+                    currentTargetLabel
+                }
+                .padding(.top, 12)
+                .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
+                .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.ink2.opacity(0.94))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.10), Color.signal.opacity(0.25), Color.line],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
-                )
-        )
-        .shadow(color: .black.opacity(0.45), radius: 18, x: 0, y: 10)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.ink2.opacity(0.94)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.line, lineWidth: 1))
         .onAppear {
-            // Settle at the pulsed end state under Reduce Motion, so the card
-            // still looks "live" without breathing continuously.
             guard !reduceMotion else {
                 pulse = true
                 return
@@ -101,76 +104,26 @@ struct PrescriptionCard: View {
     // MARK: - Exercise header
 
     private var exerciseHeader: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.signal.opacity(0.12))
-                    .frame(width: 42, height: 42)
-                Image(systemName: "dumbbell.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.signal)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                if exerciseSetIndex > 0 {
-                    Text("SET \(exerciseSetIndex) COMPLETE")
-                        .font(.eyebrowSmall)
-                        .kerning(1.0)
-                        .foregroundStyle(Color.mint)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if let exerciseIndex, let exerciseCount {
+                    EditorialEyebrow(text: "Exercise \(exerciseIndex) of \(exerciseCount)", color: Editorial.muted, size: 9.5, kerning: 2)
+                } else if exerciseSetIndex > 0 {
+                    EditorialEyebrow(text: "Set \(exerciseSetIndex) complete", color: .mint, size: 9.5, kerning: 2)
                 } else {
-                    Eyebrow(text: "Current exercise")
+                    EditorialEyebrow(text: "Current exercise", color: Editorial.muted, size: 9.5, kerning: 2)
                 }
-                Text(prescription.exerciseName)
-                    .font(.serifMD)
-                    .foregroundStyle(Color.fg0)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                Spacer()
+                if let rest = prescription.restSeconds {
+                    EditorialEyebrow(text: "Rest \(rest / 60):\(String(format: "%02d", rest % 60))", color: Editorial.muted, size: 9.5, kerning: 2)
+                }
             }
-
-            Spacer(minLength: 0)
-
-            if let w = prescription.targetWeightKg, let r = prescription.targetReps {
-                // Wins the squeeze against the exercise name. Without this the
-                // HStack divided the width evenly, and a long name next to a
-                // rep range broke "117kg × 10-12" across two lines mid-
-                // expression. The name is the side that can absorb it — it
-                // already wraps to two lines and scales down.
-                targetBadge(weight: w, reps: r, repsHigh: prescription.targetRepsHigh, rpe: prescription.targetRpe)
-                    .layoutPriority(1)
-            }
-        }
-    }
-
-    private func targetBadge(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?) -> some View {
-        let repsText: String = {
-            if let high = repsHigh, high > reps { return "\(reps)-\(high)" }
-            return "\(reps)"
-        }()
-        return VStack(spacing: 2) {
-            // "117kg × 10-12" is one quantity and has to read as one line.
-            // Shrinking it slightly is fine; splitting it after the × is not.
-            Text("\(formatWeight(weight)) × \(repsText)")
-                .font(.numSM)
+            Text(prescription.exerciseName.uppercased())
+                .font(.display(36))
                 .foregroundStyle(Color.fg0)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            if let rpe {
-                Text("RPE \(formatRPE(rpe))")
-                    .font(.eyebrowSmall)
-                    .foregroundStyle(Color.mint)
-                    .lineLimit(1)
-            }
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.mint.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.mint.opacity(0.25), lineWidth: 1)
-        )
     }
 
     // MARK: - Set sections
@@ -178,8 +131,6 @@ struct PrescriptionCard: View {
     private struct SetTarget {
         let weight: Double
         let reps: Int
-        /// Top of a prescribed rep range ("6-8" → reps 6, repsHigh 8), used to
-        /// render the range on the chip. nil for single-rep targets.
         let repsHigh: Int?
         let rpe: Double?
         let kind: Kind
@@ -187,106 +138,114 @@ struct PrescriptionCard: View {
         enum Kind { case warmup, working, backoff }
     }
 
-    private func setSection(label: String, color: Color, icon: String, sets: [SetTarget]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(color)
-                Text(label)
-                    .font(.eyebrow)
-                    .kerning(1.2)
-                    .foregroundStyle(color)
+    private func setSection(
+        label: String, color: Color, first: Bool, sets: [SetTarget], trailing: LastBlockReference?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Circle().fill(color).frame(width: 6, height: 6)
+                EditorialEyebrow(text: label, color: color, size: 10, kerning: 2.2)
             }
-
-            ChipFlow(spacing: 6) {
-                ForEach(Array(sets.enumerated()), id: \.offset) { _, target in
-                    setChip(target: target, color: color)
+            HStack(alignment: .center, spacing: 8) {
+                ChipFlow(spacing: 8) {
+                    ForEach(Array(sets.enumerated()), id: \.offset) { _, target in
+                        setChip(target: target, color: color)
+                    }
+                }
+                if let trailing {
+                    lastBlockStack(trailing, against: sets.first)
                 }
             }
         }
+        .padding(.top, 14)
+        .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(color.opacity(0.06))
-        )
+        .overlay(alignment: .top) {
+            if !first { Rectangle().fill(Color.line).frame(height: 1) }
+        }
+    }
+
+    /// The same-week set from the previous block, ruled off beside the
+    /// working chip, with the change in load.
+    private func lastBlockStack(_ ref: LastBlockReference, against target: SetTarget?) -> some View {
+        let delta = target.map { $0.weight - ref.weight } ?? 0
+        let load = ExerciseCatalog.setWeightLabel(ref.weight, exercise: prescription.exerciseName)
+        return HStack(spacing: 14) {
+            Rectangle().fill(Color.line).frame(width: 1, height: 40)
+            VStack(alignment: .leading, spacing: 5) {
+                EditorialEyebrow(text: "Last block · \(ref.weekLabel)", color: Editorial.muted, size: 8.5, kerning: 1.5)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(load) × \(ref.reps)")
+                        .font(.display(18))
+                        .foregroundStyle(Color.fg2)
+                    if let rpe = ref.rpe {
+                        EditorialEyebrow(text: "@\(rpe.wholeOrOne)", color: Editorial.muted, size: 9, kerning: 1)
+                    }
+                    if delta != 0 {
+                        Text("\(delta > 0 ? "▲" : "▼") \(abs(delta).wholeOrOne)")
+                            .font(.display(14))
+                            .foregroundStyle(delta > 0 ? Color.mint : Color.amber)
+                    }
+                }
+            }
+        }
+        .padding(.leading, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Last block, \(ref.weekLabel): \(load) by \(ref.reps)")
     }
 
     private func setChip(target: SetTarget, color: Color) -> some View {
         let isCompleted = isSetCompleted(target)
         let isCurrent = isCurrentTarget(target)
         let logged = isCompleted ? loggedSetFor(target) : nil
-        // For completed chips, show what the athlete actually logged
-        // rather than the prescribed target — otherwise a warm-up logged
-        // at 90 × 6 against a prescribed 60 × 10 still reads "60 × 10"
-        // with a checkmark, which looks like the wrong set got recorded.
         let displayWeight = logged?.actualWeightKg ?? target.weight
         let displayReps = logged?.actualReps ?? target.reps
         let displayRpe = logged?.actualRpe ?? target.rpe
-        // Show the prescribed range ("6-8") until the set is logged; once it's
-        // completed, show the single rep count the athlete actually hit.
         let repsText: String = {
             if !isCompleted, let high = target.repsHigh, high > target.reps {
-                return "\(target.reps)-\(high)"
+                return "\(target.reps)–\(high)"
             }
             return "\(displayReps)"
         }()
+        let load = ExerciseCatalog.setWeightLabel(displayWeight, exercise: prescription.exerciseName)
         return VStack(spacing: 3) {
-            Text("\(formatWeight(displayWeight)) × \(repsText)")
-                .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
+            Text("\(load) × \(repsText)")
+                .font(.display(17))
                 .foregroundStyle(isCompleted ? color : isCurrent ? Color.fg0 : Color.fg1)
                 .lineLimit(1)
             if let rpe = displayRpe {
-                Text("@\(formatRPE(rpe))")
-                    .font(.eyebrowSmall)
-                    .foregroundStyle(isCompleted ? color.opacity(0.7) : Color.fg2)
-                    .lineLimit(1)
+                EditorialEyebrow(text: "@\(rpe.wholeOrOne)", color: isCompleted ? color.opacity(0.8) : isCurrent ? Color.fg1 : Color.fg3, size: 9, kerning: 1)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isCompleted ? color.opacity(0.12) : isCurrent ? color.opacity(0.18) : Color.ink3)
+                .fill(isCompleted ? color.opacity(0.14) : isCurrent ? color.opacity(0.16) : Color.ink3)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(
-                    isCompleted ? color.opacity(0.3) : isCurrent ? color.opacity(0.6) : Color.clear,
-                    lineWidth: isCurrent ? 1.5 : 0.5
-                )
+                .stroke(isCompleted ? color.opacity(0.35) : isCurrent ? color : Color.clear, lineWidth: isCurrent ? 1.5 : 1)
         )
-        .shadow(
-            color: isCurrent ? color.opacity(pulse ? 0.45 : 0.10) : .clear,
-            radius: isCurrent ? (pulse ? 9 : 3) : 0
-        )
+        .shadow(color: isCurrent ? color.opacity(pulse ? 0.4 : 0.1) : .clear, radius: isCurrent ? (pulse ? 10 : 3) : 0)
         .overlay(alignment: .topTrailing) {
             if isCompleted {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(color)
-                    .offset(x: 3, y: -3)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 8, weight: .black))
+                    .foregroundStyle(Color.signalInk)
+                    .frame(width: 14, height: 14)
+                    .background(Circle().fill(color))
+                    .offset(x: 5, y: -5)
             }
         }
-        // Only completed chips are tappable — there is nothing to correct on a
-        // set that hasn't happened, and making pending chips respond would
-        // invite taps that look like a way to log out of order.
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onTapGesture {
-            // A set with no id came from somewhere other than a successful
-            // insert and can't be addressed in the database — opening an
-            // editor whose Save could only no-op would be worse than nothing.
             guard let logged, logged.id != nil else { return }
             Haptic.light()
             onEditSet(logged)
         }
     }
 
-    /// Looks up the persisted set that corresponds to a target chip so the
-    /// chip can render the athlete's actual numbers once it's checked off.
-    /// Warm-ups index into the warmup queue; working / back-off share the
-    /// non-warmup queue with the first N entries being working sets.
     private func loggedSetFor(_ target: SetTarget) -> WorkoutSet? {
         let warmups = loggedSets.filter { $0.isWarmup == true }
         let nonWarmups = loggedSets.filter { $0.isWarmup != true }
@@ -313,22 +272,13 @@ struct PrescriptionCard: View {
     }
 
     private func isSetCompleted(_ target: SetTarget) -> Bool {
-        // Use the stored is_warmup flag on each logged set so the card stays
-        // in sync with the phase the user actually logged, not the order the
-        // chips are laid out. Warm-up chips check against warm-up logs;
-        // working and back-off chips share the non-warmup queue, with the
-        // first N entries being working sets and the rest back-offs.
         let warmupsDone = loggedSets.filter { $0.isWarmup == true }.count
         let nonWarmupsDone = loggedSets.count - warmupsDone
         let workingPrescribed = prescription.workingSets.count
-
         switch target.kind {
-        case .warmup:
-            return warmupsDone > target.index
-        case .working:
-            return nonWarmupsDone > target.index
-        case .backoff:
-            return nonWarmupsDone > workingPrescribed + target.index
+        case .warmup: return warmupsDone > target.index
+        case .working: return nonWarmupsDone > target.index
+        case .backoff: return nonWarmupsDone > workingPrescribed + target.index
         }
     }
 
@@ -342,142 +292,126 @@ struct PrescriptionCard: View {
     // MARK: - Current target label
 
     private var currentTargetLabel: some View {
-        let phaseLabel: String
-        let phaseColor: Color
+        let label: String
+        let color: Color
         switch currentPhase {
         case .warmup:
-            phaseLabel = "NEXT: WARM-UP \(phaseSetIndex + 1) OF \(prescription.warmupSets.count)"
-            phaseColor = .fg1
+            label = "Next · warm-up \(phaseSetIndex + 1) of \(prescription.warmupSets.count)"
+            color = .fg2
         case .working:
-            phaseLabel = "NEXT: WORKING SET \(phaseSetIndex + 1) OF \(prescription.workingSets.count)"
-            phaseColor = .mint
+            label = "Next · working set \(phaseSetIndex + 1) of \(prescription.workingSets.count)"
+            color = .mint
         case .backoff:
-            phaseLabel = "NEXT: BACK-OFF \(phaseSetIndex + 1)"
-            phaseColor = .amber
+            label = "Next · back-off \(phaseSetIndex + 1) of \(max(prescription.backoffSets.count, 1))"
+            color = .amber
         }
-
-        return HStack(spacing: 6) {
-            Image(systemName: "arrow.right.circle.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(phaseColor)
-            Text(phaseLabel)
-                .font(.eyebrowSmall)
-                .kerning(0.8)
-                .foregroundStyle(phaseColor)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(
-            Capsule().fill(phaseColor.opacity(0.08))
-        )
-        .overlay(
-            Capsule().stroke(phaseColor.opacity(0.22), lineWidth: 1)
-        )
+        return EditorialEyebrow(text: label, color: color, size: 10, kerning: 2)
     }
 
-    // MARK: - Tempo + form cue
+    // MARK: - Tempo + cue
 
     private var cuesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             if let tempo = prescription.tempo, !tempo.isEmpty {
-                HStack(spacing: 8) {
-                    Image(systemName: "metronome.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.mint)
-                    Text("Tempo: \(tempo)")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.fg0)
-
-                    if let desc = tempoDescription(tempo) {
-                        Text(desc)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.fg1)
+                HStack(alignment: .center, spacing: 16) {
+                    EditorialEyebrow(text: "Tempo", color: Editorial.muted, size: 9.5, kerning: 2)
+                    tempoDigits(tempo)
+                    Spacer()
+                    if let total = tempoTotal(tempo) {
+                        EditorialEyebrow(text: "\(total) s per rep", color: Editorial.muted, size: 9, kerning: 1.4)
                     }
                 }
+                .frame(height: 48)
             }
-
             if let cue = prescription.formCue, !cue.isEmpty {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "lightbulb.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.amber)
+                HStack(alignment: .top, spacing: 16) {
+                    EditorialEyebrow(text: "Cue", color: Editorial.muted, size: 9.5, kerning: 2)
+                        .padding(.top, 2)
                     Text(cue)
-                        .font(.system(size: 13).italic())
-                        .foregroundStyle(Color.fg0.opacity(0.85))
+                        .font(.system(size: 13.5))
+                        .lineSpacing(3)
+                        .foregroundStyle(Color.fg1)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 12)
+                .overlay(alignment: .top) {
+                    if prescription.tempo != nil { Rectangle().fill(Color.line).frame(height: 1) }
                 }
             }
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.ink1)
-        )
+        .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
     }
 
-    private func tempoDescription(_ tempo: String) -> String? {
-        let parts = tempo.components(separatedBy: "-").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-        guard parts.count >= 3 else { return nil }
-        return "\(parts[0])s down · \(parts[1])s pause · \(parts[2])s up"
-    }
-
-    private func restPill(_ seconds: Int) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: "timer")
-                .font(.system(size: 10, weight: .semibold))
-            Text("REST \(seconds / 60):\(String(format: "%02d", seconds % 60))")
-                .font(.eyebrowSmall)
-                .kerning(1.0)
+    /// "3-1-1" → 3↓ 1■ 1↑: the digits carry their own direction.
+    private func tempoDigits(_ tempo: String) -> some View {
+        let parts = tempoParts(tempo)
+        let marks: [(String, Color)] = [("↓", .mint), ("■", .fg2), ("↑", .signal)]
+        return HStack(alignment: .firstTextBaseline, spacing: 18) {
+            if parts.count >= 3 {
+                ForEach(0..<3, id: \.self) { i in
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(parts[i])")
+                            .font(.display(22))
+                            .foregroundStyle(Color.fg0)
+                        Text(marks[i].0)
+                            .font(.system(size: i == 1 ? 10 : 12, weight: .bold))
+                            .foregroundStyle(marks[i].1)
+                    }
+                }
+            } else {
+                Text(tempo)
+                    .font(.display(22))
+                    .foregroundStyle(Color.fg0)
+            }
         }
-        .foregroundStyle(Color.fg1)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(Color.ink3))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tempoSpoken(tempo))
     }
 
-    // MARK: - Formatting
-
-    private func formatWeight(_ w: Double) -> String {
-        // Bodyweight prescriptions parse to weight 0 (Pull-ups, dips, etc.) —
-        // render "BW", and a positive load on those movements as "BW+10kg"
-        // since it is weight ADDED, not the total.
-        ExerciseCatalog.setWeightLabel(w, exercise: prescription.exerciseName)
+    private func tempoParts(_ tempo: String) -> [Int] {
+        tempo.components(separatedBy: "-").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
     }
 
-    private func formatRPE(_ r: Double) -> String {
-        r.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(r))" : String(format: "%.1f", r)
+    private func tempoTotal(_ tempo: String) -> Int? {
+        let parts = tempoParts(tempo)
+        return parts.count >= 3 ? parts.reduce(0, +) : nil
+    }
+
+    private func tempoSpoken(_ tempo: String) -> String {
+        let parts = tempoParts(tempo)
+        guard parts.count >= 3 else { return "Tempo \(tempo)" }
+        return "Tempo: \(parts[0]) seconds down, \(parts[1]) pause, \(parts[2]) up"
     }
 }
 
-/// Lays out set chips left-to-right and wraps onto additional rows when a
-/// section prescribes more sets than fit the card width — straight-set ab
-/// work runs 3-4 working sets, which overflows a fixed HStack on smaller
-/// screens.
+// MARK: - Chip flow layout
+
 private struct ChipFlow: Layout {
-    var spacing: CGFloat = 6
+    var spacing: CGFloat = 8
 
     private struct Row {
-        var sizes: [CGSize] = []
+        var indices: [Int] = []
         var width: CGFloat = 0
         var height: CGFloat = 0
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let rows = computeRows(maxWidth: proposal.width ?? .infinity, subviews: subviews)
-        let width = proposal.width ?? rows.map(\.width).max() ?? 0
-        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(0, rows.count - 1))
-        return CGSize(width: width, height: height)
+        let maxWidth = proposal.width ?? .infinity
+        let rows = computeRows(maxWidth: maxWidth, subviews: subviews)
+        let height = rows.reduce(0) { $0 + $1.height } + CGFloat(max(0, rows.count - 1)) * spacing
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? width, height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var index = 0
+        let rows = computeRows(maxWidth: bounds.width, subviews: subviews)
         var y = bounds.minY
-        for row in computeRows(maxWidth: bounds.width, subviews: subviews) {
+        for row in rows {
             var x = bounds.minX
-            for size in row.sizes {
-                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            for i in row.indices {
+                let size = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
                 x += size.width + spacing
-                index += 1
             }
             y += row.height + spacing
         }
@@ -486,24 +420,18 @@ private struct ChipFlow: Layout {
     private func computeRows(maxWidth: CGFloat, subviews: Subviews) -> [Row] {
         var rows: [Row] = []
         var current = Row()
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            let widthIfAdded = current.sizes.isEmpty
-                ? size.width
-                : current.width + spacing + size.width
-            if !current.sizes.isEmpty, widthIfAdded > maxWidth {
+        for (i, view) in subviews.enumerated() {
+            let size = view.sizeThatFits(.unspecified)
+            let needed = current.indices.isEmpty ? size.width : current.width + spacing + size.width
+            if needed > maxWidth, !current.indices.isEmpty {
                 rows.append(current)
                 current = Row()
-                current.width = size.width
-            } else {
-                current.width = widthIfAdded
             }
-            current.sizes.append(size)
+            current.indices.append(i)
+            current.width = current.indices.count == 1 ? size.width : current.width + spacing + size.width
             current.height = max(current.height, size.height)
         }
-        if !current.sizes.isEmpty {
-            rows.append(current)
-        }
+        if !current.indices.isEmpty { rows.append(current) }
         return rows
     }
 }

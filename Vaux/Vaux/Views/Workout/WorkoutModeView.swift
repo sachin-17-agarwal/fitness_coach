@@ -189,29 +189,9 @@ struct WorkoutModeView: View {
         }
         .navigationTitle(viewModel.isActive ? viewModel.sessionType : (effectiveSessionType.isEmpty ? "Workout" : effectiveSessionType))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if viewModel.isActive {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Haptic.warning()
-                        Task { await viewModel.endWorkout() }
-                    } label: {
-                        Text("END")
-                            .font(.eyebrowSmall)
-                            .kerning(1.2)
-                            .foregroundStyle(Color.ember)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(Color.ember.opacity(0.08)))
-                            .overlay(Capsule().stroke(Color.ember.opacity(0.22), lineWidth: 1))
-                            .frame(minHeight: 44)
-                            .contentShape(Capsule())
-                    }
-                    .accessibilityLabel("End workout")
-                    .accessibilityHint("Finishes this session and shows your summary")
-                }
-            }
-        }
+        // While a session runs the page carries its own header (name, week,
+        // END), so the navigation bar steps aside.
+        .toolbar(viewModel.isActive ? .hidden : .visible, for: .navigationBar)
         .sheet(isPresented: $viewModel.showSummary) {
             if let summary = viewModel.summary {
                 WorkoutSummaryView(summary: summary) {
@@ -365,112 +345,200 @@ struct WorkoutModeView: View {
 
     private var activeWorkoutView: some View {
         VStack(spacing: 0) {
-            LiveStatsBar(
-                tonnage: viewModel.totalTonnage,
-                setCount: viewModel.setCount,
-                duration: viewModel.sessionDuration,
-                // Blanked only when the feed has actually STOPPED, not merely
-                // when it is running behind. The bridge delivers in batches,
-                // so a healthy feed's newest reading is routinely a couple of
-                // minutes old — hiding the number for that would blank the bar
-                // through most of a normal session.
-                heartRate: viewModel.heartRateMonitor.hasStalled()
-                    ? nil
-                    : viewModel.heartRateMonitor.currentBPM
-            )
-
-            if let week = viewModel.mesocycleWeek,
-               let phase = viewModel.mesocyclePhaseLabel,
-               let rpe = viewModel.mesocycleRPETarget {
-                mesocycleStrip(week: week, phase: phase, rpe: rpe)
-            }
-
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 12) {
-                    // Compact coach feedback strip
+                VStack(alignment: .leading, spacing: 0) {
+                    sessionHeader
+                    sessionStatRow
+
                     if viewModel.isCoachThinking {
                         coachThinkingStrip
+                            .padding(.horizontal, Editorial.gutter)
+                            .padding(.top, 18)
                     } else if let note = viewModel.coachNote {
                         CoachNoteStrip(note: note)
+                            .padding(.horizontal, Editorial.gutter)
+                            .padding(.top, 18)
                     }
 
-                    // Error display
                     if let error = viewModel.errorMessage {
                         errorStrip(error)
+                            .padding(.horizontal, Editorial.gutter)
+                            .padding(.top, 12)
                     }
 
-                    // Prescription card — the star
-                    if viewModel.isLoading && viewModel.currentPrescription == nil {
-                        prescriptionPlaceholder
-                    } else if let rx = viewModel.currentPrescription {
-                        PrescriptionCard(
-                            prescription: rx,
-                            exerciseSetIndex: viewModel.exerciseSetIndex,
-                            loggedSets: viewModel.exerciseSetsForCurrentExercise,
-                            currentPhase: viewModel.currentPhase,
-                            phaseSetIndex: viewModel.phaseSetIndex,
-                            onEditSet: { editingSet = $0 }
-                        )
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity),
-                            removal: .move(edge: .leading).combined(with: .opacity)
-                        ))
-
-                        // Shown only once every prescribed set is logged. The
-                        // automatic advance depends on the coach naming the
-                        // next exercise in a matchable way, or on the plan
-                        // holding a further entry; when neither holds, this is
-                        // the way off a finished card.
-                        if viewModel.isCurrentExerciseComplete() {
-                            nextExerciseButton
-                        }
-
-                        if viewModel.upcomingPrescriptions.count > 0 {
-                            UpcomingExercisesCard(names: viewModel.upcomingPrescriptions.map(\.exerciseName))
-                        }
-                    } else {
-                        emptyPrescriptionCard
-                    }
-
-                    // Set log input — only meaningful when we actually
-                    // have a prescription to log against. If a network
-                    // error left `currentPrescription` nil on resume, the
-                    // input form rendered below the "No plan yet" card
-                    // anyway, offering "Log warm-up: 0kg × 8" with no
-                    // target. Suppress it until the coach replies again.
-                    if viewModel.currentPrescription != nil {
-                        SetLogInput(
-                            weight: $viewModel.inputWeight,
-                            reps: $viewModel.inputReps,
-                            rpe: $viewModel.inputRPE,
-                            onLog: {
-                                Haptic.medium()
-                                Task { await viewModel.logSet() }
-                            },
-                            isLoading: viewModel.isLoggingSet,
-                            phase: viewModel.currentPhase,
-                            isBodyweight: ExerciseCatalog.isBodyweight(
-                                viewModel.currentPrescription?.exerciseName ?? ""
+                    Group {
+                        if viewModel.isLoading && viewModel.currentPrescription == nil {
+                            prescriptionPlaceholder
+                        } else if let rx = viewModel.currentPrescription {
+                            PrescriptionCard(
+                                prescription: rx,
+                                exerciseSetIndex: viewModel.exerciseSetIndex,
+                                loggedSets: viewModel.exerciseSetsForCurrentExercise,
+                                currentPhase: viewModel.currentPhase,
+                                phaseSetIndex: viewModel.phaseSetIndex,
+                                exerciseIndex: viewModel.currentExerciseIndex,
+                                exerciseCount: viewModel.allPrescriptions.isEmpty ? nil : viewModel.allPrescriptions.count,
+                                lastBlock: viewModel.lastBlockReference,
+                                onEditSet: { editingSet = $0 }
                             )
-                        )
-                    }
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
 
-                    // Logged sets progress
+                            if viewModel.isCurrentExerciseComplete() {
+                                nextExerciseButton
+                                    .padding(.top, 12)
+                            }
+
+                            if viewModel.upcomingPrescriptions.count > 0 {
+                                UpcomingExercisesCard(names: viewModel.upcomingPrescriptions.map(\.exerciseName))
+                                    .padding(.top, 12)
+                            }
+                        } else {
+                            emptyPrescriptionCard
+                        }
+                    }
+                    .padding(.horizontal, Editorial.gutter)
+                    .padding(.top, 16)
+
                     if !viewModel.exerciseSetsForCurrentExercise.isEmpty {
-                        SetProgressRow(sets: viewModel.exerciseSetsForCurrentExercise)
+                        SetProgressRow(sets: viewModel.exerciseSetsForCurrentExercise, onEdit: { editingSet = $0 })
+                            .padding(.horizontal, Editorial.gutter)
+                            .padding(.top, 12)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.bottom, 24)
             }
 
-            InlineChatInput(
-                text: $viewModel.inlineChatText,
-                isExpanded: $viewModel.showInlineChat,
-                onSend: { Task { await viewModel.sendInlineMessage() } },
-                isLoading: viewModel.isCoachThinking
-            )
+            // The composer only appears when asked for; the dock's round
+            // button toggles it, so the collapsed "Ask coach" bar is gone.
+            if viewModel.showInlineChat {
+                InlineChatInput(
+                    text: $viewModel.inlineChatText,
+                    isExpanded: $viewModel.showInlineChat,
+                    onSend: { Task { await viewModel.sendInlineMessage() } },
+                    isLoading: viewModel.isCoachThinking
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // Pinned: a set is always loggable without scrolling. Suppressed
+            // when there is no prescription to log against.
+            if viewModel.currentPrescription != nil {
+                WorkoutDock(
+                    weight: $viewModel.inputWeight,
+                    reps: $viewModel.inputReps,
+                    rpe: $viewModel.inputRPE,
+                    phase: viewModel.currentPhase,
+                    setLabel: dockSetLabel,
+                    isBodyweight: ExerciseCatalog.isBodyweight(viewModel.currentPrescription?.exerciseName ?? ""),
+                    isLoading: viewModel.isLoggingSet,
+                    onLog: { Task { await viewModel.logSet() } },
+                    onAskCoach: { withAnimation(Motion.smooth) { viewModel.showInlineChat.toggle() } }
+                )
+            }
         }
+        .animation(Motion.smooth, value: viewModel.showInlineChat)
+        .onChange(of: viewModel.currentPrescription?.exerciseName) { _, _ in
+            viewModel.loadLastSessionSetsIfNeeded()
+        }
+        .onAppear { viewModel.loadLastSessionSetsIfNeeded() }
+    }
+
+    /// "WORKING SET 2 OF 2" for the dock's eyebrow.
+    private var dockSetLabel: String {
+        guard let rx = viewModel.currentPrescription else { return viewModel.currentPhase.rawValue }
+        let i = viewModel.phaseSetIndex + 1
+        switch viewModel.currentPhase {
+        case .warmup: return "Warm-up \(i) of \(max(rx.warmupSets.count, i))"
+        case .working: return "Working set \(i) of \(max(rx.workingSets.count, i))"
+        case .backoff: return "Back-off \(i) of \(max(rx.backoffSets.count, i))"
+        }
+    }
+
+    // MARK: - Header and stat row
+
+    /// Session name in the display face with the block week beside it, and
+    /// END as a quiet ember-tinted button. Replaces the navigation bar while
+    /// a session is running.
+    private var sessionHeader: some View {
+        HStack(alignment: .center) {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                Text(viewModel.sessionType.uppercased())
+                    .font(.display(44))
+                    .foregroundStyle(Color.fg0)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                if let week = viewModel.mesocycleWeek, let phase = viewModel.mesocyclePhaseLabel {
+                    EditorialEyebrow(text: "Week \(week) · \(phase)", color: .mint, size: 10, kerning: 2.2)
+                }
+            }
+            Spacer(minLength: 12)
+            Button {
+                Haptic.warning()
+                Task { await viewModel.endWorkout() }
+            } label: {
+                Text("END")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .kerning(2.5)
+                    .foregroundStyle(Color.ember)
+                    .padding(.horizontal, 16)
+                    .frame(height: 36)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.ember.opacity(0.14)))
+                    .frame(minHeight: 44)
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(PressScaleStyle(scale: 0.95))
+            .accessibilityLabel("End workout")
+            .accessibilityHint("Finishes this session and shows your summary")
+        }
+        .padding(.horizontal, Editorial.gutter)
+        .padding(.top, 8)
+    }
+
+    /// Time with sets done, tonnage, heart rate with its state.
+    private var sessionStatRow: some View {
+        let bpm = viewModel.heartRateMonitor.hasStalled() ? nil : viewModel.heartRateMonitor.currentBPM
+        let planned = viewModel.plannedSetTotal
+        let done = viewModel.setCount + viewModel.warmupCount
+        return HStack(alignment: .top, spacing: 0) {
+            statCell(label: "Time", value: viewModel.formattedDuration,
+                     sub: planned > done ? "\(done) of \(planned) sets" : "\(done) sets", subColor: Editorial.muted, first: true)
+            statCell(label: "Tonnage", value: tonnageString(viewModel.totalTonnage),
+                     sub: "This session", subColor: Editorial.muted, first: false)
+            statCell(label: "Heart", value: bpm.map { "\($0)" } ?? "—",
+                     sub: viewModel.heartStateLabel ?? "No signal", subColor: Editorial.muted, first: false)
+        }
+        .padding(.horizontal, Editorial.gutter)
+        .padding(.top, 20)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.line).frame(height: 1).padding(.horizontal, Editorial.gutter)
+        }
+    }
+
+    private func statCell(label: String, value: String, sub: String, subColor: Color, first: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            EditorialEyebrow(text: label, color: Editorial.muted, size: 9, kerning: 1.8)
+            Text(value)
+                .font(.display(28))
+                .foregroundStyle(Color.fg0)
+                .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            EditorialEyebrow(text: sub, color: subColor, size: 9, kerning: 1.2)
+        }
+        .padding(.leading, first ? 0 : 12)
+        .padding(.top, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .leading) {
+            if !first { Rectangle().fill(Color.line).frame(width: 1).padding(.top, 16) }
+        }
+    }
+
+    private func tonnageString(_ t: Double) -> String {
+        if t >= 1000 { return String(format: "%.1fT", t / 1000) }
+        return "\(Int(t)) kg"
     }
 
     // MARK: - Coach feedback strips
@@ -673,62 +741,66 @@ struct WorkoutModeView: View {
     }
 }
 
-// MARK: - Coach note strip
+// MARK: - Coach note (pull quote)
 
+/// The coach's latest line as a pull quote: a lime mark, the text, COACH and
+/// the time beneath. Long replies show three lines with READ MORE and expand
+/// in place.
 struct CoachNoteStrip: View {
     let note: String
     @State private var expanded = false
 
+    private var isLong: Bool { note.count > 140 }
+
     var body: some View {
         Button {
+            guard isLong else { return }
+            Haptic.selection()
             withAnimation(Motion.smooth) { expanded.toggle() }
         } label: {
-            HStack(alignment: .top, spacing: 8) {
-                CoachAvatar()
-
-                Text(note)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.fg0.opacity(0.9))
-                    .lineLimit(expanded ? nil : 2)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color.fg2)
-                    .padding(.top, 4)
+            HStack(alignment: .top, spacing: 14) {
+                Text("“")
+                    .font(.display(52))
+                    .foregroundStyle(Color.signal)
+                    .frame(height: 30, alignment: .top)
+                    .offset(y: -4)
+                VStack(alignment: .leading, spacing: 8) {
+                    MarkdownText(content: note)
+                        .font(.system(size: 14))
+                        .lineSpacing(3)
+                        .foregroundStyle(Color.bone)
+                        .lineLimit(expanded ? nil : 3)
+                        .multilineTextAlignment(.leading)
+                    HStack {
+                        EditorialEyebrow(text: "Coach", color: Editorial.muted, size: 9.5, kerning: 1.8)
+                        Spacer()
+                        if isLong {
+                            EditorialEyebrow(text: expanded ? "Show less" : "Read more ⌄", color: Editorial.mid, size: 9.5, kerning: 1.8)
+                        }
+                    }
+                }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.ink3)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.line, lineWidth: 1)
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Coach said: \(MarkdownText.plainText(note))")
     }
 }
 
-// MARK: - Set progress row
+// MARK: - Logged sets
 
 struct SetProgressRow: View {
     let sets: [WorkoutSet]
+    var onEdit: ((WorkoutSet) -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Eyebrow(text: "Logged")
+                EditorialEyebrow(text: "Logged", color: Editorial.muted, size: 9.5, kerning: 2)
                 Spacer()
-                Text("\(sets.count) set\(sets.count == 1 ? "" : "s")".uppercased())
-                    .font(.eyebrowSmall)
-                    .kerning(1.0)
-                    .foregroundStyle(Color.fg2)
+                EditorialEyebrow(text: "\(sets.count) set\(sets.count == 1 ? "" : "s")", color: Editorial.muted, size: 9.5, kerning: 1.5)
             }
-
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(Array(sets.enumerated()), id: \.offset) { idx, set in
@@ -737,44 +809,37 @@ struct SetProgressRow: View {
                 }
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.cardBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.cardBorder, lineWidth: 0.5)
-        )
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.ink2.opacity(0.94)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.line, lineWidth: 1))
     }
 
     private func setChip(index: Int, set: WorkoutSet) -> some View {
         let weight = set.actualWeightKg ?? set.targetWeightKg ?? 0
         let reps = set.actualReps ?? set.targetReps ?? 0
         let rpe = set.actualRpe ?? set.targetRpe
-        // Bodyweight prescriptions log a 0 weight — render "BW" instead of
-        // "0×N" so a logged pull-up reads as "BW×5", not a zero lift, and a
-        // weighted one as "BW+10kg×6" rather than an ambiguous "10×6".
         let weightLabel = ExerciseCatalog.setWeightLabel(weight, exercise: set.exercise)
-        return VStack(spacing: 3) {
-            Text("SET \(index)")
-                .font(.eyebrowSmall)
-                .foregroundStyle(Color.fg2)
-            Text("\(weightLabel)×\(reps)")
-                .font(.system(size: 13, weight: .medium, design: .monospaced).monospacedDigit())
-                .foregroundStyle(Color.fg0)
-            if let rpe {
-                Text("RPE \(rpe.oneDecimal)")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color.mint)
+        return Button {
+            guard let onEdit, set.id != nil else { return }
+            Haptic.light()
+            onEdit(set)
+        } label: {
+            VStack(spacing: 3) {
+                EditorialEyebrow(text: "Set \(index)", color: Editorial.muted, size: 8.5, kerning: 1.2)
+                Text("\(weightLabel) × \(reps)")
+                    .font(.display(15))
+                    .foregroundStyle(Color.fg0)
+                if let rpe {
+                    EditorialEyebrow(text: "RPE \(rpe.wholeOrOne)", color: .mint, size: 9, kerning: 1)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.ink3))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.ink3)
-        )
+        .buttonStyle(.plain)
+        .accessibilityLabel("Set \(index): \(weightLabel) by \(reps)")
+        .accessibilityHint("Opens this set to correct it")
     }
 }
 
@@ -784,40 +849,36 @@ struct UpcomingExercisesCard: View {
     let names: [String]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Eyebrow(text: "Up next")
+                EditorialEyebrow(text: "Up next", color: Editorial.muted, size: 9.5, kerning: 2)
                 Spacer()
-                Text("\(names.count)")
-                    .font(.eyebrowSmall)
-                    .foregroundStyle(Color.fg2)
+                EditorialEyebrow(text: "\(names.count)", color: Editorial.muted, size: 9.5, kerning: 1.5)
             }
+            .padding(.bottom, 6)
 
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(names.enumerated()), id: \.offset) { idx, name in
-                    HStack(spacing: 10) {
-                        Text("\(idx + 2).")
-                            .font(.system(size: 12, weight: .medium, design: .monospaced).monospacedDigit())
-                            .foregroundStyle(Color.fg2)
-                            .frame(width: 22, alignment: .leading)
-                        Text(name)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.fg1)
-                            .lineLimit(1)
-                        Spacer()
-                    }
+            ForEach(Array(names.enumerated()), id: \.offset) { idx, name in
+                HStack(spacing: 14) {
+                    Text("\(idx + 2)")
+                        .font(.display(13))
+                        .foregroundStyle(Color.fg3)
+                        .frame(width: 12, alignment: .leading)
+                    Text(name.uppercased())
+                        .font(.display(19))
+                        .foregroundStyle(idx == 0 ? Color.fg0 : Color.fg1)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer()
+                }
+                .frame(height: 40)
+                .overlay(alignment: .top) {
+                    if idx > 0 { Rectangle().fill(Color.line).frame(height: 1) }
                 }
             }
         }
-        .padding(14)
+        .padding(EdgeInsets(top: 14, leading: 16, bottom: 6, trailing: 16))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.cardBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.cardBorder, lineWidth: 0.5)
-        )
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.ink2.opacity(0.94)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.line, lineWidth: 1))
     }
 }
