@@ -4168,6 +4168,52 @@ class InclineVariantVolumeTests(unittest.TestCase):
                                     {"Chest": 1.0})
 
 
+
+class FlatPressVariantVolumeTests(unittest.TestCase):
+    """The flat variants had the trap the incline ones were fixed for.
+
+    The History tab said it outright, which is how this surfaced: "Not counted
+    toward any muscle: Flat Dumbbell Press (2). Add them to the exercise
+    library to include them." Not understated — absent. Two logged sets of
+    chest pressing contributed nothing to Chest, Shoulders or Triceps, so the
+    weak-point block picked its targets from a week that looked lighter on
+    chest than it was.
+
+    The matcher works on substrings, and the qualifier sits BETWEEN the words:
+    "Flat Dumbbell Press" contains neither "bench press" nor "chest press".
+    "Flat Bench Press" and "Flat Chest Press" always worked, which is exactly
+    what made the gap easy to miss.
+    """
+
+    def test_every_flat_press_variant_carries_the_same_synergists(self):
+        import volume
+        expected = {"Chest": 1.0, "Shoulders": 0.5, "Triceps": 0.5}
+        for name in ("Flat Press", "Flat Barbell Press", "Flat Dumbbell Press",
+                     "Flat DB Press", "Flat Machine Press", "Flat Bench Press",
+                     "Flat Chest Press"):
+            with self.subTest(exercise=name):
+                self.assertEqual(volume.resolve_contributions(name), expected)
+
+    def test_a_flat_variant_is_never_counted_toward_nothing(self):
+        """An empty split is the failure the athlete actually saw."""
+        import volume
+        for name in ("Flat Dumbbell Press", "Flat DB Press",
+                     "Flat Barbell Press", "Flat Machine Press"):
+            with self.subTest(exercise=name):
+                self.assertTrue(volume.resolve_contributions(name),
+                                f"{name} contributes to no muscle at all")
+
+    def test_pressing_that_is_not_chest_is_untouched(self):
+        """The new keys must not swallow a leg or shoulder press."""
+        import volume
+        self.assertEqual(volume.resolve_contributions("Leg Press"),
+                         {"Quads": 1.0, "Hamstrings": 0.25})
+        self.assertEqual(volume.resolve_contributions("Shoulder Press"),
+                         {"Shoulders": 1.0, "Triceps": 0.5})
+        self.assertEqual(volume.resolve_contributions("Decline Press"),
+                         {"Chest": 1.0, "Triceps": 0.5})
+
+
 class ProgrammeProposalTests(unittest.TestCase):
     """The programme finally prescribes instead of only marking the homework.
 

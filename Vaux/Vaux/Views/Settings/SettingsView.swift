@@ -7,6 +7,7 @@
 // layout is kept — name, mesocycle position, briefing style, exercise
 // library, HealthKit sync, backend config, about.
 
+import Foundation
 import SwiftUI
 
 struct SettingsView: View {
@@ -351,18 +352,27 @@ struct SettingsView: View {
 
     // MARK: - About
 
+    /// Read from the bundle rather than restated here. The literal this
+    /// replaces said "1.0.0" while the project's MARKETING_VERSION said 1.0 —
+    /// already drifted, in the one place a reader would trust it, which is the
+    /// argument against keeping a second copy of a number Xcode already owns.
+    private static let appVersion: String =
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("About")
             ledgerRow(first: true, height: 46) {
                 rowLabel("Version")
                 Spacer()
-                rowValue("1.0.0")
+                rowValue(Self.appVersion)
             }
             ledgerRow(height: 46) {
                 rowLabel("Coach")
                 Spacer()
-                rowValue("Claude Sonnet 4.6")
+                // Restated, not derived: the model is chosen server-side in
+                // coach.py, which the app never sees. Change both together.
+                rowValue("Claude Sonnet 5")
             }
         }
     }
