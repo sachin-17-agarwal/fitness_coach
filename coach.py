@@ -158,6 +158,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         ATHLETE_GOAL_WEIGHT_KG,
         log,
         recovery_override=recovery_override,
+        system_prompt=system_prompt,
     )
 
     # Appended to the LIVE half deliberately. It is derived from the prompt
