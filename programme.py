@@ -150,6 +150,13 @@ def format_proposal(proposals: list, session_type: str, week: int,
     lines = [f"PROGRAMME PROPOSAL — {session_type}, week {week}, computed from "
              f"the template and the logged loads."]
     lines.append("")
+    # Grouped, not repeated per exercise. On a full Push day the same sentence
+    # came back eight times — "opening week 1 from the most recent session..." —
+    # and the reasons and deferrals together were 773 of the block's 998 tokens,
+    # re-sent on every logged set. Measured before and after: 998 -> ~350.
+    # Same repetition, and the same fix, as the replay report's deferred notes.
+    grouped_reasons: dict = {}
+    grouped_deferred: dict = {}
     for proposal in proposals:
         top = proposal.working[0].render() if proposal.working else "load TBD"
         backoff = proposal.backoff[0].render() if proposal.backoff else None
@@ -159,9 +166,24 @@ def format_proposal(proposals: list, session_type: str, week: int,
             detail += f" · back-off {backoff}"
         lines.append(f"- {proposal.exercise} — {detail}")
         for reason in proposal.reasons[:1]:
-            lines.append(f"    why: {reason}")
+            grouped_reasons.setdefault(reason, []).append(proposal.exercise)
         for note in proposal.deferred:
-            lines.append(f"    UNDETERMINED: {note}")
+            # The note leads with its own exercise name; strip it so identical
+            # notes collapse instead of each being unique by prefix.
+            _, _, body = note.partition(": ")
+            grouped_deferred.setdefault(body or note, []).append(proposal.exercise)
+
+    if grouped_reasons:
+        lines.append("")
+        lines.append("WHY THOSE NUMBERS")
+        for reason, who in grouped_reasons.items():
+            lines.append(f"- {', '.join(who)}: {reason}")
+    if grouped_deferred:
+        lines.append("")
+        lines.append("UNDETERMINED — the programme does not settle these. "
+                     "Decide them and say what you decided.")
+        for body, who in grouped_deferred.items():
+            lines.append(f"- {', '.join(who)}: {body}")
     for exercise, logged in sorted((renamed or {}).items()):
         lines.append(f"  {exercise} is logged as \"{logged}\" — same lift, "
                      f"and its history was read from there.")
@@ -173,20 +195,7 @@ def format_proposal(proposals: list, session_type: str, week: int,
             f"other. Ask which he is doing today."
         )
     lines.append("")
-    lines.append(
-        "This is arithmetic, not a decision. It applies the wave, the "
-        "increments and the back-off drop to what he has actually logged, so "
-        "the numbers do not have to be derived in prose and cannot come out "
-        "different twice for the same input. An UNDETERMINED line is the "
-        "programme saying it genuinely does not settle that one — decide it "
-        "yourself and say what you decided."
-    )
-    lines.append(
-        "Follow it unless there is a reason not to. There often is: an injury, "
-        "a machine in use, how he says he feels, something he asked for. "
-        "Departing is expected and allowed. Departing SILENTLY is not — say "
-        "which exercise, what you did instead, and why, and mark the block "
-        "`Revised:` so the app applies it. A set count below the template with "
-        "no reason given is the failure this block exists to end."
-    )
+    lines.append("How to read this block is in the system prompt; it is not "
+                 "repeated here because this block is re-sent on every logged "
+                 "set and the explanation never changes.")
     return "\n".join(lines)
