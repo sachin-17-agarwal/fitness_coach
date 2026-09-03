@@ -227,6 +227,12 @@ class SessionOutcome:
     week_source: str        # "recorded" | "reconstructed" | "default"
     outcomes: list
     deferred: list
+    # Every deferred note describes the PRIOR session ("last session ran 4 reps
+    # against a 6-10 range"), so the prior session's week is what settles it. A
+    # deload deliberately cuts reps, so 4 reps in week 4 is the protocol working
+    # and 4 reps in week 2 is a load too heavy for the range. Without this the
+    # report states the fault and withholds the one fact that judges it.
+    prior_week: int | None = None
 
 
 @dataclass
@@ -337,6 +343,7 @@ def analyse(sessions: list[dict], default_week: int = 1,
         out.append(SessionOutcome(
             date=session["date"], prior_date=prior_session["date"], week=week,
             week_source=source, outcomes=outcomes, deferred=deferred,
+            prior_week=prior_session.get("mesocycle_week"),
         ))
 
     span = (out[0].date, out[-1].date) if out else None
@@ -406,6 +413,39 @@ def _short_date(iso: str) -> str:
         return f"{int(day)} {months[int(month) - 1]}"
     except (ValueError, IndexError):
         return iso
+
+
+def _attribute(entries: list, body: str = "") -> str:
+    """Name the sessions a deferred note came from, and judge the deload case.
+
+    "Last session ran 4 reps against a 6-10 range" is either the deload working
+    exactly as designed or a load too heavy for the range, and the note itself
+    says the log cannot tell them apart. It can: the week is what separates
+    them, and the report was already carrying it. Stating the fault while
+    withholding the fact that judges it is the failure this whole report exists
+    to stop.
+    """
+    if not entries:
+        return ""
+    parts = []
+    for date, week in entries:
+        parts.append(f"{_short_date(date)}"
+                     + (f" (week {week})" if week else ""))
+    # The deload verdict answers exactly one question — whether a rep count
+    # under the range was the protocol cutting reps or a load too heavy for it
+    # — so it belongs only on the note that raises it. Attached to "no logged
+    # history" it is noise dressed as a finding.
+    weeks = [w for _, w in entries if w]
+    if "BELOW range" not in body or not weeks:
+        verdict = ""
+    elif all(w == 4 for w in weeks):
+        verdict = " — every one a deload week, so this is the protocol working"
+    elif not any(w == 4 for w in weeks):
+        verdict = " — none of them a deload week, so this is a load too heavy "
+        verdict += "for the range, not a deload"
+    else:
+        verdict = " — a mix of deload and non-deload weeks"
+    return f" [after {', '.join(parts)}{verdict}]"
 
 
 def render_chat(replay: Replay) -> str:
@@ -522,6 +562,7 @@ def render_chat(replay: Replay) -> str:
     # Group by what the note SAYS, not which exercise it is about — the same
     # sentence repeated seven times is what makes the raw report unreadable.
     grouped: dict[str, list[str]] = {}
+    sources: dict[str, list[tuple]] = {}
     for s in replay.sessions:
         for note in s.deferred:
             exercise, _, body = note.partition(": ")
@@ -530,6 +571,10 @@ def render_chat(replay: Replay) -> str:
             grouped.setdefault(body, [])
             if exercise and exercise not in grouped[body]:
                 grouped[body].append(exercise)
+            seen = sources.setdefault(body, [])
+            entry = (s.prior_date, s.prior_week)
+            if entry not in seen:
+                seen.append(entry)
 
     if grouped:
         L.append("THE CODE COULDN'T DECIDE")
@@ -540,7 +585,7 @@ def render_chat(replay: Replay) -> str:
         L.append("")
         for body, exercises in grouped.items():
             who = f"{', '.join(exercises)} — " if exercises else ""
-            L.append(f"- {who}{body}")
+            L.append(f"- {who}{body}{_attribute(sources.get(body, []), body)}")
         L.append("")
 
     L.append("HOW TO READ THIS")
