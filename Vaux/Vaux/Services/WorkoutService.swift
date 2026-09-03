@@ -217,9 +217,6 @@ final class WorkoutService: Sendable {
         return session
     }
 
-    /// Ends a session: calculates tonnage, marks it `completed`, checks PRs,
-    /// resets workout state, and returns a summary.
-    @discardableResult
     /// Flip a finished session back to open so logging continues into it.
     ///
     /// Needed because the athlete's "continue the workout" is the app's "start
@@ -234,6 +231,9 @@ final class WorkoutService: Sendable {
         )
     }
 
+    /// Ends a session: calculates tonnage, marks it `completed`, checks PRs,
+    /// resets workout state, and returns a summary.
+    @discardableResult
     func endSession(id: UUID) async throws -> WorkoutSummary {
         let sets = try await fetchSets(sessionId: id)
         let now = ISO8601DateFormatter().string(from: Date())
