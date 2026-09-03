@@ -3865,7 +3865,7 @@ class DeferredNoteAttributionTests(unittest.TestCase):
         for line in out.split("\n"):
             if "no logged history" in line:
                 self.assertNotIn("deload week", line)
-                self.assertIn("[after ", line, "attribution still belongs here")
+                self.assertIn("Seen after ", line, "attribution still belongs here")
 
     def test_the_attribution_survives_the_ios_renderer(self):
         """It rides inside the bullet rather than on its own line, because
@@ -3873,6 +3873,99 @@ class DeferredNoteAttributionTests(unittest.TestCase):
         from replay import analyse, render_chat
         out = render_chat(analyse(self._sessions(2)))
         for line in out.split("\n"):
-            if "[after " in line:
+            if "Seen after " in line:
                 self.assertTrue(line.startswith("- "),
                                 f"attribution escaped its bullet: {line[:60]!r}")
+
+
+class DuplicateSessionRowTests(unittest.TestCase):
+    """Two rows for one training day corrupted everything downstream.
+
+    The week is reconstructed by walking the rotation and decrementing at each
+    day-1 session, so two Pull rows on one calendar day spend two rotation slots
+    on one training day and shift the week label of EVERY earlier session by
+    one — measured, 3,4,1,2,3,4 becomes 2,3,4,1,2,3,4. It also splits one
+    session's work in two, so both halves read as missing most of the template
+    and the "not logged" count is inflated with exercises that were performed.
+
+    The athlete's real replay showed it plainly once the deferred notes carried
+    their dates: "after 13 Jun (week 4), 13 Jun (week 1)" — one date, two weeks,
+    which no single session can be.
+    """
+
+    def _fetch(self, session_rows, set_rows):
+        from unittest.mock import MagicMock, patch
+        import replay as replay_mod
+        client = MagicMock()
+        def table(name):
+            t = MagicMock(); c = t.select.return_value
+            for attr in ("gte", "order", "in_"):
+                setattr(c, attr, MagicMock(return_value=c))
+            c.execute.return_value = MagicMock(data={
+                "workout_sessions": session_rows, "workout_sets": set_rows,
+                "memory": [{"key": "mesocycle_week", "value": "2"},
+                           {"key": "mesocycle_day", "value": "1"}],
+            }.get(name, []))
+            return t
+        client.table.side_effect = table
+        with patch.object(replay_mod, "get_supabase", return_value=client):
+            return replay_mod.fetch_pull_sessions(180)
+
+    @staticmethod
+    def _row(sid, date):
+        return {"id": sid, "date": date, "type": "Pull",
+                "mesocycle_week": None, "mesocycle_day": None}
+
+    @staticmethod
+    def _set(sid, exercise):
+        return {"workout_session_id": sid, "exercise": exercise,
+                "is_warmup": False, "notes": None, "actual_weight_kg": 50,
+                "actual_reps": 9, "actual_rpe": 8}
+
+    def test_one_training_day_written_twice_becomes_one_session(self):
+        sessions, _ = self._fetch(
+            [self._row("a", "2026-06-06"), self._row("b1", "2026-06-13"),
+             self._row("b2", "2026-06-13"), self._row("c", "2026-06-20")],
+            [self._set("a", "Cable Row"), self._set("b1", "Cable Row"),
+             self._set("b2", "Pull-Ups"), self._set("c", "Cable Row")])
+        self.assertEqual([s["date"] for s in sessions],
+                         ["2026-06-06", "2026-06-13", "2026-06-20"])
+
+    def test_the_split_work_is_reunited_not_reported_as_missing(self):
+        sessions, _ = self._fetch(
+            [self._row("b1", "2026-06-13"), self._row("b2", "2026-06-13")],
+            [self._set("b1", "Cable Row"), self._set("b2", "Pull-Ups")])
+        self.assertEqual(sorted(r["exercise"] for r in sessions[0]["sets"]),
+                         ["Cable Row", "Pull-Ups"])
+
+    def test_the_reconstructed_weeks_do_not_shift(self):
+        """The damage that made this worth finding."""
+        rows = [self._row("a", "2026-06-06"), self._row("b1", "2026-06-13"),
+                self._row("b2", "2026-06-13"), self._row("c", "2026-06-20")]
+        sets = [self._set(r["id"], "Cable Row") for r in rows]
+        sessions, _ = self._fetch(rows, sets)
+        weeks = [s.get("mesocycle_week") for s in sessions]
+        self.assertEqual(weeks, [3, 4, 1],
+                         "a duplicate row shifted the reconstruction")
+
+    def test_the_merge_is_reported_rather_than_done_silently(self):
+        _, notes = self._fetch(
+            [self._row("b1", "2026-06-13"), self._row("b2", "2026-06-13")],
+            [self._set("b1", "Cable Row")])
+        self.assertTrue([n for n in notes if "shared a date and type" in n])
+
+    def test_no_note_when_there_are_no_duplicates(self):
+        _, notes = self._fetch(
+            [self._row("a", "2026-06-06"), self._row("c", "2026-06-20")],
+            [self._set("a", "Cable Row"), self._set("c", "Cable Row")])
+        self.assertFalse([n for n in notes if "shared a date and type" in n])
+
+    def test_the_attribution_has_no_markdown_link_syntax(self):
+        """"[text]" is a link in markdown, so both surfaces strip the brackets
+        and the attribution runs into the sentence before it — the same class as
+        the underscores that turned "workout_sessions" into "workoutsessions"."""
+        from replay import _attribute
+        out = _attribute([("2026-06-13", 4)], "BELOW range")
+        self.assertNotIn("[", out)
+        self.assertNotIn("]", out)
+        self.assertIn("Seen after 13 Jun (week 4)", out)

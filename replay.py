@@ -98,11 +98,53 @@ def fetch_pull_sessions(days: int) -> tuple[list[dict], list[str]]:
     if not sessions:
         return [], notes
 
+    # Collapse session ROWS that share a date and a type before anything counts
+    # them. The week is reconstructed by walking the rotation and decrementing
+    # at each day-1 session, so two Pull rows on one calendar day spend two
+    # rotation slots on one training day and shift the week label of every
+    # earlier session by one. Measured: a single duplicate turns the Pull-week
+    # sequence 3,4,1,2,3,4 into 2,3,4,1,2,3,4.
+    #
+    # It also splits one session's work in two, so both halves read as missing
+    # most of the template — inflating the "not logged" count with exercises
+    # that were performed.
+    #
+    # A started-then-restarted session is far likelier than two Pull days in one
+    # day, so they are merged rather than dropped, and the merge is reported
+    # rather than done silently.
+    merged: list[dict] = []
+    by_day: dict[tuple, dict] = {}
+    duplicates = 0
+    for row in sessions:
+        key = (row.get("date"), row.get("type"))
+        first = by_day.get(key)
+        if first is None:
+            row["_ids"] = [row["id"]]
+            by_day[key] = row
+            merged.append(row)
+        else:
+            first["_ids"].append(row["id"])
+            duplicates += 1
+            # Keep a recorded week over a missing one; otherwise the first wins.
+            if first.get("mesocycle_week") is None:
+                first["mesocycle_week"] = row.get("mesocycle_week")
+                first["mesocycle_day"] = row.get("mesocycle_day")
+    if duplicates:
+        notes.append(
+            f"{duplicates} session{'' if duplicates == 1 else 's'} in this "
+            f"window shared a date and type with another — one training day "
+            f"written as two rows, usually a session started, left, and "
+            f"restarted. They have been combined. Left separate they would "
+            f"each look half-finished, and they would shift the reconstructed "
+            f"week of every earlier session by one."
+        )
+    sessions = merged
+
     rows = (
         supabase.table("workout_sets")
         .select("workout_session_id, exercise, is_warmup, notes, "
                 "actual_weight_kg, actual_reps, actual_rpe")
-        .in_("workout_session_id", [s["id"] for s in sessions])
+        .in_("workout_session_id", [i for s in sessions for i in s["_ids"]])
         .order("logged_at")
         .order("id")
         .execute()
@@ -126,7 +168,7 @@ def fetch_pull_sessions(days: int) -> tuple[list[dict], list[str]]:
                      "requested default.")
 
     for session in sessions:
-        session["sets"] = by_session.get(session["id"], [])
+        session["sets"] = [r for i in session["_ids"] for r in by_session.get(i, [])]
 
     pull = [s for s in sessions if s.get("type") == "Pull"]
 
@@ -445,7 +487,11 @@ def _attribute(entries: list, body: str = "") -> str:
         verdict += "for the range, not a deload"
     else:
         verdict = " — a mix of deload and non-deload weeks"
-    return f" [after {', '.join(parts)}{verdict}]"
+    # No square brackets: "[text]" is markdown link syntax, so both the iOS
+    # bubble and Telegram strip the delimiters and the attribution runs into the
+    # sentence before it. Same class as the underscores that turned
+    # "workout_sessions" into "workoutsessions".
+    return f" · Seen after {', '.join(parts)}{verdict}."
 
 
 def render_chat(replay: Replay) -> str:
