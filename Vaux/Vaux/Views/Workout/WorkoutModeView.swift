@@ -846,7 +846,7 @@ struct CoachNoteStrip: View {
     let note: String
     @State private var expanded = false
 
-    private var isLong: Bool { note.count > 140 }
+    private var isLong: Bool { note.count > 110 || note.contains("\n") }
 
     var body: some View {
         Button {
@@ -861,12 +861,23 @@ struct CoachNoteStrip: View {
                     .frame(height: 30, alignment: .top)
                     .offset(y: -4)
                 VStack(alignment: .leading, spacing: 8) {
-                    MarkdownText(content: note)
-                        .font(.system(size: 14))
-                        .lineSpacing(3)
-                        .foregroundStyle(Color.bone)
-                        .lineLimit(expanded ? nil : 3)
-                        .multilineTextAlignment(.leading)
+                    // Folded: one flat text so the limit applies to the whole
+                    // note, not to each paragraph (which let a six-paragraph
+                    // plan fill the screen). Expanded: the rendered markdown.
+                    if expanded {
+                        MarkdownText(content: note)
+                            .font(.system(size: 14))
+                            .lineSpacing(3)
+                            .foregroundStyle(Color.bone)
+                            .multilineTextAlignment(.leading)
+                    } else {
+                        Text(MarkdownText.plainText(note).replacingOccurrences(of: ", ", with: " "))
+                            .font(.system(size: 14))
+                            .lineSpacing(3)
+                            .foregroundStyle(Color.bone)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
                     HStack {
                         EditorialEyebrow(text: "Coach", color: Editorial.muted, size: 9.5, kerning: 1.8)
                         Spacer()
