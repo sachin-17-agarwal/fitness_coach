@@ -135,7 +135,7 @@ struct DashboardView: View {
             .padding(.horizontal, 22)
             .padding(.bottom, 12)
         }
-        .refreshable { await viewModel.load() }
+        .vauxRefreshable { await viewModel.load() }
     }
 
     // MARK: - Header — editorial masthead

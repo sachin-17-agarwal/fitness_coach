@@ -197,11 +197,14 @@ struct WorkoutModeView: View {
                 }
             )
         }
-        .navigationTitle(viewModel.isActive ? viewModel.sessionType : (effectiveSessionType.isEmpty ? "Workout" : effectiveSessionType))
+        // The page carries its own header in both states (TRAIN · TODAY and
+        // the session name before a session; name, week and END during one),
+        // so the bar never shows a title. On the Train tab there is nothing to
+        // go back to and the bar hides outright; pushed from the Dashboard it
+        // stays for the back button, empty.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        // While a session runs the page carries its own header (name, week,
-        // END), so the navigation bar steps aside.
-        .toolbar(viewModel.isActive ? .hidden : .visible, for: .navigationBar)
+        .toolbar(viewModel.isActive || sessionType.isEmpty ? .hidden : .visible, for: .navigationBar)
         .sheet(isPresented: $viewModel.showSummary) {
             if let summary = viewModel.summary {
                 WorkoutSummaryView(summary: summary) {
