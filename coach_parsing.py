@@ -857,3 +857,102 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
                 })
 
     return ("\n".join(lines), corrections) if corrections else (reply, [])
+
+
+# ---------------------------------------------------------------------------
+# Substituting the computed prescription
+# ---------------------------------------------------------------------------
+
+_PRESCRIPTION_PREFIXES = _WARMUP_PREFIXES + _WORKING_PREFIXES + _BACKOFF_PREFIXES
+_TEMPO_RE = re.compile(r'\|\s*Tempo:\s*([^|]+)', re.IGNORECASE)
+
+
+def _coach_tempo(body: list) -> str | None:
+    """The tempo the coach chose, if any. It is not arithmetic and not ours."""
+    for line in body:
+        found = _TEMPO_RE.search(line)
+        if found:
+            return found.group(1).strip()
+    return None
+
+
+def substitute_computed_blocks(reply: str, computed: dict) -> tuple[str, list]:
+    """Replace the coach's prescription lines with the programme's own.
+
+    The end of the road the guards were on. Set counts were trimmed, RPEs were
+    floored, a missing back-off was filled — each one editing a single field of
+    a block someone else had written, and each one a new way to be wrong,
+    because load, reps and RPE are one decision and a guard only ever sees one
+    of them. The last such guard reverted the mandatory HRV reduction and put a
+    suppressed-recovery day back at full intensity.
+
+    So the numbers are not corrected here. They are replaced, whole, by the
+    ones prescribe.py computed from the same logged loads, the same wave and
+    the same recovery readings — already coherent, because they were decided
+    together.
+
+    THREE THINGS THIS DELIBERATELY DOES NOT DO.
+
+    It does not inject. Only a block the coach actually wrote is replaced.
+    During a session the coach prescribes one exercise at a time ("EXERCISE 1
+    OF 4"), and adding the other five to that reply would replace the card the
+    athlete is halfway through.
+
+    It does not touch a `Revised:` block. That marker is the coach saying the
+    departure is deliberate, and it is the one exit the programme leaves — an
+    injury, a machine in use, how he says he feels. Every guard honoured it and
+    so does this.
+
+    It does not take the exercise's prose. `Form:` cues, notes and the tempo
+    are the coaching, not the arithmetic; only the Warm-up / Working Set /
+    Back-off lines are replaced, and the coach's tempo is carried onto the new
+    Working Set line rather than dropped.
+    """
+    if not computed:
+        return reply, []
+
+    wanted = {_normalise_exercise(name): name for name in computed}
+    header = re.compile(r'^\s*\*{1,2}([^*\n]+)\*{1,2}\s*$')
+    lines = reply.split("\n")
+
+    blocks = []
+    for i, line in enumerate(lines):
+        found = header.match(line)
+        if found:
+            blocks.append({"name": found.group(1).strip(), "start": i, "end": len(lines)})
+            if len(blocks) > 1:
+                blocks[-2]["end"] = i
+    if not blocks:
+        return reply, []
+
+    out, cursor, swapped = [], 0, []
+    for block in blocks:
+        out.extend(lines[cursor:block["start"]])
+        cursor = block["end"]
+        body = lines[block["start"] + 1:block["end"]]
+
+        key = _normalise_exercise(block["name"])
+        if key not in wanted or any(
+                l.strip().lower().startswith(("revised:", "revision:")) for l in body):
+            out.extend(lines[block["start"]:block["end"]])
+            continue
+
+        rendered = computed[wanted[key]]
+        tempo = _coach_tempo(body)
+        if tempo:
+            rendered = _TEMPO_RE.sub("", rendered)
+            rendered = "\n".join(
+                line + f" | Tempo: {tempo}" if line.strip().lower().startswith(
+                    _WORKING_PREFIXES) else line
+                for line in rendered.split("\n"))
+
+        kept = [l for l in body
+                if not l.strip().lower().startswith(_PRESCRIPTION_PREFIXES)]
+        # The rendered text carries its own header, so the coach's is dropped
+        # with it — the name is the programme's spelling either way.
+        out.extend(rendered.split("\n"))
+        out.extend(kept)
+        swapped.append(block["name"])
+
+    out.extend(lines[cursor:])
+    return "\n".join(out), swapped

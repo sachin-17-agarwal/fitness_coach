@@ -4171,6 +4171,138 @@ class InclineVariantVolumeTests(unittest.TestCase):
 
 
 
+
+class ComputedBlocksReplaceTheCoachsTests(unittest.TestCase):
+    """The end of the guards: the numbers are replaced, not corrected.
+
+    Set counts trimmed, RPEs floored, a missing back-off filled — each editing
+    ONE field of a block someone else wrote, and each a fresh way to be wrong,
+    because load, reps and RPE are one decision and a guard only ever sees one
+    of them. The last of them reverted the mandatory HRV reduction and put a
+    suppressed-recovery day back at full intensity.
+
+    prescribe.py already computes all three together from the same logged
+    loads, the same wave and the same recovery readings. So they go in whole.
+    """
+
+    PROMPT = None
+
+    @classmethod
+    def setUpClass(cls):
+        with open("system_prompt.txt") as handle:
+            cls.PROMPT = handle.read()
+
+    def _computed(self, session="Legs", week=1, loads=None, recovery=None):
+        import prescribe, programme
+        props, _, _ = programme.build_proposal(
+            self.PROMPT, session, week,
+            loads if loads is not None
+            else [{"exercise": "Leg Press", "load": 220.0, "reps": 10,
+                   "rpe": 9.0, "mesocycle_week": 3}])
+        if recovery is not None:
+            from prescribe import prescribe_session, day_plan, PriorSet
+            from coach_parsing import parse_session_template
+            plan = day_plan(parse_session_template(self.PROMPT, session)[0])[:1]
+            hist = {"Leg Press": PriorSet(load=220.0, reps=10, rpe=9.0,
+                                          date="", week=3)}
+            props = prescribe_session(plan, week, hist, recovery=recovery)
+        return {p.exercise: prescribe.render_block(p)
+                for p in props if prescribe.is_determined(p)}
+
+    AS_SENT = ("Three ramp sets, then the only compound of the session.\n\n"
+               "*Leg Press*\n"
+               "Warm-up: 60kg x12, 100kg x8, 150kg x4\n"
+               "Working Set: 220kg x5 @7 | Tempo: 3-1-2 | Rest: 2min\n"
+               "Back-off: 178kg x11 @6, 178kg x9 @6\n"
+               "Form: Feet mid-platform, control the descent.\n\n"
+               "Tell me how that feels.")
+
+    def test_the_session_that_started_all_of_this_comes_out_right(self):
+        from coach_parsing import substitute_computed_blocks, parse_all_prescriptions
+        out, swapped = substitute_computed_blocks(self.AS_SENT, self._computed())
+        self.assertEqual(swapped, ["Leg Press"])
+        card = parse_all_prescriptions(out)[0]
+        self.assertEqual(card["working"][0],
+                         {"weight": 222.5, "reps": 6, "rpe": 8.0})
+        self.assertEqual([b["rpe"] for b in card["backoff"]], [7.0, 7.0])
+        self.assertEqual(len(card["warmup"]), 3)
+
+    def test_the_coaching_around_the_numbers_is_kept(self):
+        """Form cues, tempo and prose are the coaching. Only the arithmetic
+        is the programme's."""
+        from coach_parsing import substitute_computed_blocks, parse_all_prescriptions
+        out, _ = substitute_computed_blocks(self.AS_SENT, self._computed())
+        self.assertIn("Three ramp sets", out)
+        self.assertIn("Tell me how that feels.", out)
+        self.assertIn("Form: Feet mid-platform, control the descent.", out)
+        self.assertEqual(parse_all_prescriptions(out)[0].get("tempo"), "3-1-2")
+
+    def test_a_revised_block_is_the_way_out_and_it_still_works(self):
+        from coach_parsing import substitute_computed_blocks
+        reply = ("*Leg Press*\n"
+                 "Revised: knee complained on the ramp, high-rep work today\n"
+                 "Working Set: 120kg x15 @6 | Rest: 2min\n")
+        out, swapped = substitute_computed_blocks(reply, self._computed())
+        self.assertEqual(swapped, [])
+        self.assertEqual(out, reply)
+
+    def test_nothing_is_injected_into_a_reply_that_did_not_ask(self):
+        """During a session the coach prescribes ONE exercise at a time.
+
+        Adding the other five to that reply would replace the card the athlete
+        is halfway through, which is the one thing worse than a wrong number on
+        it.
+        """
+        from coach_parsing import substitute_computed_blocks, parse_all_prescriptions
+        loads = [{"exercise": n, "load": 100.0, "reps": 10, "rpe": 8.0,
+                  "mesocycle_week": 3}
+                 for n in ("Leg Press", "Leg Extension", "Seated Leg Curl",
+                           "Machine Calf Raise", "Single Leg Sumo Press")]
+        computed = self._computed(loads=loads)
+        self.assertGreater(len(computed), 1, "several exercises are computable")
+        reply = "*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 2min\n"
+        out, swapped = substitute_computed_blocks(reply, computed)
+        self.assertEqual(swapped, ["Leg Press"])
+        self.assertEqual(len(parse_all_prescriptions(out)), 1)
+
+    def test_an_exercise_the_programme_cannot_settle_is_left_alone(self):
+        from coach_parsing import substitute_computed_blocks
+        reply = "*Single Leg Sumo Press*\nWorking Set: 120kg x8 @7 | Rest: 2min\n"
+        out, swapped = substitute_computed_blocks(reply, self._computed())
+        self.assertEqual(swapped, [])
+        self.assertEqual(out, reply)
+
+    def test_a_recovery_day_prescription_is_not_overwritten_with_a_hard_one(self):
+        """The critical finding, end to end.
+
+        On a >20% HRV day the programme prescribes NOTHING, so `computed` is
+        empty and the coach's own judgement stands. The old guard did the
+        opposite: it read the soft numbers as drift and pushed them up.
+        """
+        from coach_parsing import substitute_computed_blocks
+        computed = self._computed(recovery={
+            "hrv": 45, "hrv_avg": 60, "sleep_hours": 5.8,
+            "resting_hr": 55, "resting_hr_baseline": 55})
+        self.assertEqual(computed, {}, "nothing is prescribed on a recovery day")
+        reply = "*Leg Press*\nWorking Set: 150kg x8 @5 | Rest: 2min\n"
+        out, swapped = substitute_computed_blocks(reply, computed)
+        self.assertEqual(swapped, [])
+        self.assertIn("@5", out)
+
+    def test_a_reduced_day_substitutes_the_reduced_numbers(self):
+        """And when the programme DOES have an answer on a hard-ish day, it is
+        the reduced one — computed, so it cannot be mistaken for drift."""
+        from coach_parsing import substitute_computed_blocks, parse_all_prescriptions
+        computed = self._computed(recovery={
+            "hrv": 51.6, "hrv_avg": 60, "sleep_hours": 7.5,
+            "resting_hr": 55, "resting_hr_baseline": 55})
+        reply = "*Leg Press*\nWorking Set: 222.5kg x6 RPE8 | Rest: 2min\n"
+        out, swapped = substitute_computed_blocks(reply, computed)
+        self.assertEqual(swapped, ["Leg Press"])
+        top = parse_all_prescriptions(out)[0]["working"][0]
+        self.assertEqual((top["reps"], top["rpe"]), (5, 7.0))
+
+
 class RecoveryIsComputedNotProsedTests(unittest.TestCase):
     """The critical finding, fixed at its cause instead of worked around.
 
