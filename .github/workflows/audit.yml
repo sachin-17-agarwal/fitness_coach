@@ -40,7 +40,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python audit.py --days "${{ github.event.inputs.days || 90 }}"
+          DAYS: ${{ github.event.inputs.days || 90 }}
+        run: python audit.py --days "$DAYS"
 
       - name: Commit the report if it changed
         run: |
