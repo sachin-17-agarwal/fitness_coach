@@ -52,7 +52,7 @@ struct WorkoutCoachSheet: View {
                     if isThinking {
                         VStack(alignment: .leading, spacing: 12) {
                             EditorialEyebrow(text: "Coach", color: .mint, size: 10, kerning: 2.5)
-                            TypingDots()
+                            CoachTypingDots()
                         }
                         .padding(.top, 18)
                     } else if let coachNote, !coachNote.isEmpty {
@@ -127,7 +127,7 @@ struct WorkoutCoachSheet: View {
 }
 
 /// Three mint dots while the coach composes.
-private struct TypingDots: View {
+struct CoachTypingDots: View {
     @State private var phase = 0
     private let timer = Timer.publish(every: 0.35, on: .main, in: .common).autoconnect()
 
