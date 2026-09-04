@@ -731,3 +731,125 @@ def infer_session_weeks(session_types: list[str], next_week: int,
         if days[i] == 1:
             week = _wrap(week - 1)        # stepping back past day 1 crosses a week
     return out
+
+
+# ---------------------------------------------------------------------------
+# Rendering a computed session as prescription blocks
+# ---------------------------------------------------------------------------
+#
+# The point of this module was always that load, reps and RPE are ONE decision.
+# next_top_set picks all three together from the wave and the logged history;
+# the back-off drop and its rep step-down follow from the top set; the warm-up
+# ramp follows from the working weight. Split them apart and each is nonsense
+# on its own — an RPE is a claim about reps in reserve AT a load, so "same
+# weight, same reps, higher RPE" says nothing at all.
+#
+# That is why this renders the whole block rather than exposing the numbers for
+# something else to reassemble. Anything that edits one field of a rendered
+# block has, by construction, broken the coupling that made the three correct.
+
+
+def _fmt_load(spec: "SetSpec") -> str:
+    """`60kg`, `62.5kg`, `BW`, `BW+15kg`, or `[load TBD]`."""
+    if spec.bodyweight:
+        if not spec.weight_kg:
+            return "BW"
+        return f"BW+{spec.weight_kg:g}kg"
+    if spec.weight_kg is None:
+        return "[load TBD]"
+    return f"{spec.weight_kg:g}kg"
+
+
+def _fmt_reps(spec: "SetSpec") -> str:
+    if spec.reps_high > spec.reps_low:
+        return f"x{spec.reps_low}-{spec.reps_high}"
+    return f"x{spec.reps_low}"
+
+
+def _fmt_set(spec: "SetSpec", with_rpe: bool = True) -> str:
+    body = f"{_fmt_load(spec)} {_fmt_reps(spec)}"
+    return f"{body} RPE{spec.rpe:g}" if with_rpe else body
+
+
+def _fmt_rest(seconds: int) -> str:
+    """`90s`, `2min`, `2min30` — the shapes coach_parsing already reads."""
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds % 60 == 0:
+        return f"{seconds // 60}min"
+    return f"{seconds // 60}min{seconds % 60}"
+
+
+def _is_straight_set(exercise: str) -> bool:
+    """Direct ab work is straight sets at one load, with no back-off line.
+
+    Same test coach_parsing._set_shape uses, and for the same reason it was
+    added there: the shape is a property of the movement, not of the count.
+    Deciding it through the muscle map rather than a list here means a renamed
+    or added ab movement is picked up without a second list to maintain.
+    """
+    from volume import resolve_muscle_group
+    return resolve_muscle_group(exercise) == "Abs"
+
+
+def render_block(proposal: "Proposal", tempo: str | None = None) -> str:
+    """One computed exercise as the block format the parser and card expect.
+
+    Warm-ups deliberately carry no RPE: they are a ramp, not effort, and
+    :62 calls them "not working sets". The parser reads a warm-up entry as
+    weight and reps only, so an RPE there would be dropped anyway.
+
+    A block is emitted even when the load is undetermined. `[load TBD]` is the
+    honest rendering of a genuine feel-out — the alternative is silence, and
+    silence is what leaves the card reading "No plan yet".
+    """
+    lines = [f"*{proposal.exercise}*"]
+    straight = _is_straight_set(proposal.exercise)
+    # :61 "Every exercise (EXCEPT ABS) follows this structure" — and the three
+    # parts it then lists are the warm-up, the working set and the back-off.
+    # Ab work gets neither a ramp nor a drop, only its sets.
+    if proposal.warmup and not straight:
+        lines.append("Warm-up: " + ", ".join(
+            _fmt_set(w, with_rpe=False) for w in proposal.warmup))
+
+    if straight:
+        # Every set enumerated at one load, which is what the count means here.
+        # prescribe_session still models an ab exercise as a top set plus
+        # back-offs, so the total is what those two add up to.
+        top = proposal.working[0]
+        working = ", ".join([_fmt_set(top)] * (len(proposal.working) + len(proposal.backoff)))
+    else:
+        working = ", ".join(_fmt_set(w) for w in proposal.working)
+
+    suffix = f" | Tempo: {tempo}" if tempo else ""
+    lines.append(f"Working Set: {working}{suffix}"
+                 f" | Rest: {_fmt_rest(proposal.rest_seconds)}")
+
+    if proposal.backoff and not straight:
+        lines.append("Back-off: " + ", ".join(_fmt_set(b) for b in proposal.backoff))
+    return "\n".join(lines)
+
+
+def is_determined(proposal: "Proposal") -> bool:
+    """Did the programme actually settle a load for this exercise?
+
+    A lift with no logged history genuinely is the coach's call — :296 calls it
+    "a genuine feel-out". Rendering `[load TBD]` into a block would be worse
+    than saying nothing: it does not parse, so the card silently loses the
+    exercise, and it dresses an open question as a computed answer.
+    """
+    return all(spec.weight_kg is not None or spec.bodyweight
+               for spec in list(proposal.working) + list(proposal.backoff))
+
+
+def render_session(proposals: list, tempos: dict | None = None) -> tuple[str, list]:
+    """Every DETERMINED exercise for today, plus the names of those left open.
+
+    Returns the blocks and the exercises the coach still owns, so the caller can
+    tell the difference between "the programme has this" and "nobody does".
+    """
+    tempos = tempos or {}
+    determined = [p for p in proposals if is_determined(p)]
+    open_ones = [p.exercise for p in proposals if not is_determined(p)]
+    blocks = "\n\n".join(render_block(p, tempos.get(p.exercise)) for p in determined)
+    return blocks, open_ones

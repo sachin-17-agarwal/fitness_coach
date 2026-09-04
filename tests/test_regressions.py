@@ -4169,6 +4169,127 @@ class InclineVariantVolumeTests(unittest.TestCase):
 
 
 
+
+class ComputedSessionRendersAsACardTests(unittest.TestCase):
+    """The programme can now write the block, not just check someone else's.
+
+    Everything before this policed the model's arithmetic after the fact: set
+    counts trimmed, RPEs floored, a missing back-off filled. Each guard was a
+    new surface for a new bug, and an adversarial review of the last one
+    returned 4 critical findings in 200 lines — the worst being that raising an
+    RPE reverted the mandatory HRV reduction and pushed a suppressed-recovery
+    day back to full intensity.
+
+    The common cause is that load, reps and RPE are ONE decision. next_top_set
+    picks all three together; the back-off follows from the top set; the ramp
+    follows from the working weight. Editing one field of a finished block
+    breaks the coupling that made the three correct — which is why "same
+    weight, same reps, higher RPE", the commonest thing that enforcement did,
+    is not a fix but a contradiction: RPE is reps in reserve AT a load.
+
+    So the programme renders the whole block or none of it.
+    """
+
+    PROMPT = None
+
+    @classmethod
+    def setUpClass(cls):
+        with open("system_prompt.txt") as handle:
+            cls.PROMPT = handle.read()
+
+    def _session(self, session_type="Legs", week=1, loads=None):
+        import programme
+        return programme.build_proposal(self.PROMPT, session_type, week, loads or [])[0]
+
+    LEGS = [{"exercise": n, "load": l, "reps": 10, "rpe": 8.0, "mesocycle_week": 3}
+            for n, l in (("Leg Press", 220.0), ("Single Leg Sumo Press", 120.0),
+                         ("Leg Extension", 110.0), ("Seated Leg Curl", 100.0),
+                         ("Machine Calf Raise", 101.0), ("Ab Crunch Machine", 90.0))]
+
+    def test_every_rendered_block_parses_back_to_the_same_numbers(self):
+        """The card is what the parser makes of the text, so a lossy render is
+        a wrong card. Compared by NAME, never by zip() — zipping truncates to
+        the shorter list and reports a clean trip over a dropped block."""
+        import prescribe
+        from coach_parsing import parse_all_prescriptions
+        props = self._session()
+        blocks, _open = prescribe.render_session(props)
+        determined = [p for p in props if prescribe.is_determined(p)]
+        parsed = {q["exercise"]: q for q in parse_all_prescriptions(blocks)}
+
+        self.assertEqual(len(parsed), len(determined))
+        for p in determined:
+            with self.subTest(exercise=p.exercise):
+                q = parsed.get(p.exercise)
+                self.assertIsNotNone(q, f"{p.exercise} did not survive the render")
+                top, got = p.working[0], q["working"][0]
+                self.assertEqual(got["weight"], top.weight_kg)
+                self.assertEqual(got["reps"], top.reps_low)
+                self.assertEqual(got["rpe"], top.rpe)
+
+    def test_an_undetermined_lift_is_left_to_the_coach_not_faked(self):
+        """`[load TBD]` does not parse, so rendering it loses the exercise from
+        the card silently. A feel-out is the coach's call and is reported as
+        one."""
+        import prescribe
+        from coach_parsing import parse_all_prescriptions
+        props = self._session(loads=[])          # no history for anything
+        blocks, open_ones = prescribe.render_session(props)
+        self.assertEqual(blocks, "")
+        self.assertIn("Leg Press", open_ones)
+        self.assertEqual(parse_all_prescriptions(blocks), [])
+
+    def test_ab_work_is_straight_sets_with_no_warmup_and_no_backoff(self):
+        """:61 "Every exercise (except abs) follows this structure" — and the
+        structure is warm-up, working set, back-off. prescribe_session still
+        models abs as a top set plus back-offs, so the renderer is where that
+        stops being visible to the athlete."""
+        import prescribe
+        from coach_parsing import parse_all_prescriptions
+        props = self._session(loads=self.LEGS)
+        blocks, _ = prescribe.render_session(props)
+        abs_block = [b for b in blocks.split("\n\n") if "Ab Crunch" in b][0]
+        self.assertNotIn("Back-off:", abs_block)
+        self.assertNotIn("Warm-up:", abs_block)
+        card = [q for q in parse_all_prescriptions(blocks)
+                if q["exercise"] == "Ab Crunch Machine"][0]
+        self.assertEqual(len(card.get("backoff", [])), 0)
+        self.assertEqual(len(card.get("warmup", [])), 0)
+        self.assertGreater(len(card["working"]), 1, "every set enumerated")
+        loads = {s["weight"] for s in card["working"]}
+        self.assertEqual(len(loads), 1, "straight sets sit at ONE load")
+
+    def test_a_rep_range_survives_the_render_as_a_range(self):
+        """A back-off is prescribed as a BAND, not a point.
+
+        Caught by mutation: collapsing every rendered range to its low end
+        passed every other test here, because the second back-off still read as
+        fewer reps than the first. It silently turned "10-12" into "10", which
+        is a different instruction — the band is what polices the load (:66).
+        """
+        import prescribe
+        props = self._session(loads=self.LEGS)
+        blocks, _ = prescribe.render_session(props)
+        press = [b for b in blocks.split("\n\n") if b.startswith("*Leg Press*")][0]
+        backoff = [l for l in press.split("\n") if l.startswith("Back-off:")][0]
+        self.assertIn("x10-12", backoff)
+        self.assertIn("x8-10", backoff)
+
+    def test_a_compound_still_gets_its_ramp_and_its_backoffs(self):
+        import prescribe
+        from coach_parsing import parse_all_prescriptions
+        props = self._session(loads=self.LEGS)
+        blocks, _ = prescribe.render_session(props)
+        card = [q for q in parse_all_prescriptions(blocks)
+                if q["exercise"] == "Leg Press"][0]
+        self.assertEqual(len(card["warmup"]), 3)
+        self.assertEqual(len(card["backoff"]), 2)
+        self.assertLess(card["backoff"][1]["reps"], card["backoff"][0]["reps"],
+                        ":65 — the second back-off always carries fewer reps")
+        self.assertEqual(card["backoff"][0]["weight"], card["backoff"][1]["weight"],
+                         ":65 — at the SAME load")
+
+
 class FlatPressVariantVolumeTests(unittest.TestCase):
     """The flat variants had the trap the incline ones were fixed for.
 
