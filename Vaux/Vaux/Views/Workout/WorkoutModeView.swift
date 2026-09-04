@@ -654,119 +654,92 @@ struct WorkoutModeView: View {
 
     // MARK: - Coach feedback strips
 
+    /// Same shape as the quote it will become: the lime mark, three mint dots
+    /// where the words will land, COACH · WRITING beneath.
     private var coachThinkingStrip: some View {
-        HStack(spacing: 8) {
-            CoachAvatar()
-            Text("Coach is thinking…")
-                .font(.uiSmall)
-                .foregroundStyle(Color.fg1)
-            Spacer()
-            ProgressView()
-                .scaleEffect(0.7)
-                .tint(Color.signal)
+        HStack(alignment: .top, spacing: 14) {
+            Text("“")
+                .font(.display(52))
+                .foregroundStyle(Color.signal)
+                .frame(height: 30, alignment: .top)
+                .offset(y: -4)
+            VStack(alignment: .leading, spacing: 12) {
+                CoachTypingDots()
+                    .padding(.top, 6)
+                EditorialEyebrow(text: "Coach · writing", color: Editorial.muted, size: 9.5, kerning: 1.8)
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.ink3)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel("Coach is writing")
     }
 
     private func errorStrip(_ message: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .bold))
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            EditorialEyebrow(text: "Error", color: .ember, size: 9.5, kerning: 2)
             Text(message)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 13))
+                .foregroundStyle(Color.fg1)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(Color.ember)
-        .padding(10)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.ember.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.ember.opacity(0.22), lineWidth: 1)
-        )
+        .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
+        .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
     }
 
     private var emptyPrescriptionCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Eyebrow(text: "No plan yet")
-            Text("The coach didn't send exercises for this session.")
-                .font(.uiStrong)
+        VStack(alignment: .leading, spacing: 12) {
+            EditorialEyebrow(text: "No plan yet", color: Editorial.muted, size: 9.5, kerning: 2)
+            Text("NOTHING TO LIFT")
+                .font(.display(32))
                 .foregroundStyle(Color.fg0)
-            Text("Tap retry to ask again, or end the session and start a new one.")
-                .font(.uiSmall)
+            Text("The coach didn't send exercises for this session. Ask again, or end the session and start a new one.")
+                .font(.system(size: 13.5))
+                .lineSpacing(3)
                 .foregroundStyle(Color.fg1)
                 .fixedSize(horizontal: false, vertical: true)
-
-            Button {
-                Haptic.light()
-                Task { await viewModel.retryPrescription() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Retry")
-                        .font(.system(size: 13, weight: .semibold))
+            HStack {
+                Spacer()
+                Button {
+                    Haptic.light()
+                    Task { await viewModel.retryPrescription() }
+                } label: {
+                    EditorialEyebrow(text: "Ask again →", color: .signal, size: 10, kerning: 2.2)
+                        .frame(minHeight: 44)
                 }
-                .foregroundStyle(Color.fg0)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.ink3)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.line2, lineWidth: 1)
-                )
+                .buttonStyle(.plain)
+                .disabled(viewModel.isLoading)
             }
-            .buttonStyle(.plain)
-            .disabled(viewModel.isLoading)
+            .padding(.top, 4)
+            .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.cardBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.cardBorder, lineWidth: 0.5)
-        )
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.ink2.opacity(0.94)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.line, lineWidth: 1))
     }
 
+    /// The card's silhouette while the first prescription is on its way.
     private var prescriptionPlaceholder: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.surface)
-                    .frame(width: 42, height: 42)
-                VStack(alignment: .leading, spacing: 6) {
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(Color.surface)
-                        .frame(width: 120, height: 10)
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(Color.surface)
-                        .frame(width: 180, height: 16)
-                }
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                RoundedRectangle(cornerRadius: 3).fill(Color.ink3).frame(width: 110, height: 9)
                 Spacer()
+                RoundedRectangle(cornerRadius: 3).fill(Color.ink3).frame(width: 60, height: 9)
             }
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.surface)
-                .frame(height: 60)
+            RoundedRectangle(cornerRadius: 4).fill(Color.ink3).frame(width: 220, height: 30)
+            Rectangle().fill(Color.line).frame(height: 1).padding(.top, 6)
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 10).fill(Color.ink3).frame(width: 96, height: 44)
+                RoundedRectangle(cornerRadius: 10).fill(Color.ink3).frame(width: 96, height: 44)
+            }
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.cardBackground)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.ink2.opacity(0.94)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.line, lineWidth: 1))
         .redacted(reason: .placeholder)
+        .accessibilityLabel("Loading the plan")
     }
 
     // MARK: - Helpers
