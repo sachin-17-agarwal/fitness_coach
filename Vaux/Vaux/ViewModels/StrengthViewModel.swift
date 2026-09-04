@@ -359,12 +359,33 @@ final class StrengthViewModel {
         let drops = snap.lifts.filter { $0.state == .drop }.map(\.name)
         let shorts = snap.muscles.filter { $0.state == .short }.map { $0.muscle.rawValue.lowercased() }
         parts.append(("Peak week against peak week, \(snap.judged.blockLabel.lowercased()) over the one before. ", false))
-        if !prs.isEmpty { parts.append((prs.joined(separator: " and "), true)); parts.append((prs.count == 1 ? " set an all-time best. " : " set all-time bests. ", false)) }
-        if !stalls.isEmpty { parts.append((stalls.joined(separator: " and "), true)); parts.append((stalls.count == 1 ? " has not moved in two blocks. " : " have not moved in two blocks. ", false)) }
-        if !drops.isEmpty { parts.append((drops.joined(separator: " and "), true)); parts.append((" dropped more than 5%. ", false)) }
-        if !shorts.isEmpty { parts.append((shorts.joined(separator: " and ").capitalized, false)); parts.append((shorts.count == 1 ? " is short on sets, not strength." : " are short on sets, not strength.", false)) }
+
+        // Names read as a list — "A, B and C", or the first three "and N
+        // more" — never a chain of "and"s. Lifts are bold; muscles are not.
+        func clause(_ names: [String], bold: Bool, one: String, many: String, sentenceStart: Bool = false) {
+            guard !names.isEmpty else { return }
+            let (list, rest) = Self.nameList(names)
+            let shown = sentenceStart ? list.prefix(1).uppercased() + list.dropFirst() : list
+            parts.append((shown, bold))
+            if rest > 0 { parts.append((" and \(rest) more", false)) }
+            parts.append((names.count == 1 ? one : many, false))
+        }
+        clause(prs, bold: true, one: " set an all-time best. ", many: " set all-time bests. ")
+        clause(stalls, bold: true, one: " has not moved in two blocks. ", many: " have not moved in two blocks. ")
+        clause(drops, bold: true, one: " dropped more than 5%. ", many: " dropped more than 5%. ")
+        clause(shorts, bold: false, one: " is short on sets, not strength.", many: " are short on sets, not strength.", sentenceStart: true)
         if prs.isEmpty && stalls.isEmpty && drops.isEmpty && shorts.isEmpty { parts.append(("Every judged lift is holding or progressing. Nothing to act on.", false)) }
         return .editorial(parts)
+    }
+
+    /// "A, B and C" for up to three names; beyond that the first three and
+    /// how many are left, for the caller to append " and N more".
+    static func nameList(_ names: [String], limit: Int = 3) -> (shown: String, rest: Int) {
+        if names.count <= limit {
+            guard names.count > 1 else { return (names.first ?? "", 0) }
+            return (names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1], 0)
+        }
+        return (names.prefix(limit).joined(separator: ", "), names.count - limit)
     }
 
     static func coachPrompt(_ snap: BlockSnapshot?, focus: BodyMuscle?) -> String? {
