@@ -56,7 +56,7 @@ struct FitnessCoachApp: App {
     @ViewBuilder
     private var tabContent: some View {
         ZStack {
-            DashboardView(switchToChatTab: { selectedTab = .coach })
+            DashboardView(switchToChatTab: { selectedTab = .coach }, switchToTrainTab: { selectedTab = .train })
                 .hiddenUnlessActive(selectedTab == .home)
 
             CoachChatView(switchToTrainTab: { selectedTab = .train })

@@ -23,12 +23,16 @@ import SwiftUI
 
 struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
-    @State private var navigateToWorkout = false
     @State private var showWeightSheet = false
     @State private var showBriefing = false
     @AppStorage(Config.displayNameKey) private var displayName: String = ""
 
     var switchToChatTab: (() -> Void)? = nil
+    /// Starting a session goes to the Train tab, where the workout is the
+    /// root of its own stack. Pushing it from here left a live session one
+    /// edge-swipe from being popped, and a drag while scrolling the rest
+    /// screen dragged the whole page sideways.
+    var switchToTrainTab: (() -> Void)? = nil
 
     var body: some View {
         NavigationStack {
@@ -50,9 +54,6 @@ struct DashboardView: View {
                 }
             }
             .navigationBarHidden(true)
-            .navigationDestination(isPresented: $navigateToWorkout) {
-                WorkoutModeView(sessionType: viewModel.mesocycle.todayType)
-            }
             .sheet(isPresented: $showWeightSheet) {
                 WeightLogSheet(initialWeight: viewModel.latestWeightKg) {
                     Task { await viewModel.load() }
@@ -62,7 +63,7 @@ struct DashboardView: View {
                 MorningBriefingView(
                     onStartWorkout: { _ in
                         showBriefing = false
-                        navigateToWorkout = true
+                        switchToTrainTab?()
                     },
                     onOpenChat: {
                         showBriefing = false
@@ -461,7 +462,7 @@ struct DashboardView: View {
         let easy = level == .red
         return Button {
             Haptic.medium()
-            navigateToWorkout = true
+            switchToTrainTab?()
         } label: {
             HStack(spacing: 10) {
                 Text(easy ? "START — EASY" : "START SESSION")
