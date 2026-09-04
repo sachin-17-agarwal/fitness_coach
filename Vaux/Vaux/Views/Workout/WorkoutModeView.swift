@@ -24,6 +24,8 @@ struct WorkoutModeView: View {
     /// resolves today's type from `MesocycleService` so the tab matches the
     /// Dashboard instead of showing an empty "Full body" placeholder.
     var sessionType: String = ""
+    /// "Open in Coach" from the mid-workout sheet.
+    var switchToChatTab: (() -> Void)? = nil
 
     /// Set when today's session is swapped from this screen. Outranks both the
     /// passed-in type and the resolved one so the view flips immediately —
@@ -204,7 +206,10 @@ struct WorkoutModeView: View {
         // stays for the back button, empty.
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(viewModel.isActive || sessionType.isEmpty ? .hidden : .visible, for: .navigationBar)
+        // navigationBarHidden, not toolbar(.hidden): the latter let the
+        // content run up under the status bar on the Train tab root, so the
+        // session name sat behind the clock.
+        .navigationBarHidden(viewModel.isActive || sessionType.isEmpty)
         .sheet(isPresented: $viewModel.showSummary) {
             if let summary = viewModel.summary {
                 WorkoutSummaryView(summary: summary) {
@@ -507,18 +512,6 @@ struct WorkoutModeView: View {
                 .padding(.bottom, 24)
             }
 
-            // The composer only appears when asked for; the dock's round
-            // button toggles it, so the collapsed "Ask coach" bar is gone.
-            if viewModel.showInlineChat {
-                InlineChatInput(
-                    text: $viewModel.inlineChatText,
-                    isExpanded: $viewModel.showInlineChat,
-                    onSend: { Task { await viewModel.sendInlineMessage() } },
-                    isLoading: viewModel.isCoachThinking
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-
             // Pinned: a set is always loggable without scrolling. Suppressed
             // when there is no prescription to log against.
             if viewModel.currentPrescription != nil {
@@ -531,15 +524,37 @@ struct WorkoutModeView: View {
                     isBodyweight: ExerciseCatalog.isBodyweight(viewModel.currentPrescription?.exerciseName ?? ""),
                     isLoading: viewModel.isLoggingSet,
                     onLog: { Task { await viewModel.logSet() } },
-                    onAskCoach: { withAnimation(Motion.smooth) { viewModel.showInlineChat.toggle() } }
+                    onAskCoach: { viewModel.showInlineChat = true }
                 )
             }
         }
-        .animation(Motion.smooth, value: viewModel.showInlineChat)
+        .sheet(isPresented: $viewModel.showInlineChat) {
+            WorkoutCoachSheet(
+                text: $viewModel.inlineChatText,
+                exercise: viewModel.currentPrescription?.exerciseName ?? viewModel.sessionType,
+                lastQuestion: viewModel.lastInlineQuestion,
+                coachNote: viewModel.coachNote,
+                isThinking: viewModel.isCoachThinking,
+                onSend: { Task { await viewModel.sendInlineMessage() } },
+                openInCoach: openInCoachAction
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color.ink0)
+        }
         .onChange(of: viewModel.currentPrescription?.exerciseName) { _, _ in
             viewModel.loadLastSessionSetsIfNeeded()
         }
         .onAppear { viewModel.loadLastSessionSetsIfNeeded() }
+    }
+
+    /// Closes the sheet, then hands over to the Coach tab.
+    private var openInCoachAction: (() -> Void)? {
+        guard let switchToChatTab else { return nil }
+        return {
+            viewModel.showInlineChat = false
+            switchToChatTab()
+        }
     }
 
     /// "WORKING SET 2 OF 2" for the dock's eyebrow.

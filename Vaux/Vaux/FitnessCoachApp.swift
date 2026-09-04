@@ -63,7 +63,7 @@ struct FitnessCoachApp: App {
                 .hiddenUnlessActive(selectedTab == .coach)
 
             NavigationStack {
-                WorkoutModeView()
+                WorkoutModeView(switchToChatTab: { selectedTab = .coach })
             }
             .hiddenUnlessActive(selectedTab == .train)
 
