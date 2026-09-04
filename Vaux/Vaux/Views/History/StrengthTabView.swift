@@ -212,8 +212,11 @@ struct StrengthTabView: View {
             valueColor: lift.peak == nil ? Editorial.muted : .white,
             titleSize: lift.name.count > 14 ? 28 : 34
         ) {
+            // At least ±8% around the mean so a flat lift still reads as a
+            // line, but never narrower than the data: a block that moved 30%
+            // used to plot straight off the top of the chart.
             RibbonChart(values: values, color: color, shadedSlots: shaded, dividerSlots: dividers, prSlots: pr,
-                        range: mean > 0 ? (mean * 0.92)...(mean * 1.08) : nil)
+                        range: mean > 0 ? RibbonChart.bounds(range: nil, values: values.compactMap { $0 }, minimum: (mean * 0.92)...(mean * 1.08)) : nil)
                 .frame(height: 110)
                 .padding(.top, 6)
             HStack {

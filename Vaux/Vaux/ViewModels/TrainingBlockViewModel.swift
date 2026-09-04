@@ -137,13 +137,32 @@ final class TrainingBlockViewModel {
         heaviestWeekEver = byWeek.values.max() ?? 0
     }
 
+    /// Tonnage so far against last block at the same point: each session
+    /// this block has trained is matched to the same-numbered session of its
+    /// type in the previous block (second Push against second Push), so a
+    /// Wednesday is never judged against a finished week. Falls back to the
+    /// k-th session overall when the type has no counterpart.
     var blockDeltaPct: Double? {
-        guard previousBlockTonnage > 0 else { return nil }
-        // Compare like with like: only the weeks this block has reached.
-        let reached = currentWave.filter { $0.position.week <= current.week }.map(\.position.week)
-        let prevSame = previousWave.filter { reached.contains($0.position.week) }.reduce(0) { $0 + $1.tonnage }
-        guard prevSame > 0 else { return nil }
+        guard previousBlockTonnage > 0, let prevSame = sameToDateTonnage, prevSame > 0 else { return nil }
         return (blockTonnage - prevSame) / prevSame * 100
+    }
+
+    /// Last block's tonnage through the same sessions this block has done.
+    private var sameToDateTonnage: Double? {
+        let thisBlock = entries.filter { $0.position?.block == current.block }.sorted { $0.date < $1.date }
+        let lastBlock = entries.filter { $0.position?.block == current.block - 1 }.sorted { $0.date < $1.date }
+        guard !thisBlock.isEmpty, !lastBlock.isEmpty else { return nil }
+        var seen: [String: Int] = [:]
+        var total = 0.0
+        var matched = 0
+        for (k, e) in thisBlock.enumerated() {
+            let n = seen[e.type, default: 0]
+            seen[e.type] = n + 1
+            let sameType = lastBlock.filter { $0.type == e.type }
+            if n < sameType.count { total += sameType[n].tonnage; matched += 1 }
+            else if k < lastBlock.count { total += lastBlock[k].tonnage; matched += 1 }
+        }
+        return matched > 0 ? total : nil
     }
 
     var peakWeekTonnage: Double? { currentWave.first { $0.position.isPeak && $0.tonnage > 0 }?.tonnage }
@@ -162,9 +181,12 @@ final class TrainingBlockViewModel {
                 parts.append((w4 > 0 && w4 < peak ? "Deload is on plan: same loads, two reps off." : "Deload week is under way.", false))
             }
         } else {
-            let done = vm.currentWave.filter { $0.tonnage > 0 }.count
-            parts.append(("Week \(vm.current.week) of \(Config.weeksPerBlock). ", false))
-            if let d = vm.blockDeltaPct { parts.append(("Running ", false)); parts.append((Editorial.signedPct(d, decimals: 0), true)); parts.append((" against the same weeks of last block", false)); parts.append((done > 0 ? "." : ".", false)) }
+            let n = vm.blockSessions
+            parts.append(("Week \(vm.current.week) of \(Config.weeksPerBlock), \(n) session\(n == 1 ? "" : "s") in. ", false))
+            if let d = vm.blockDeltaPct {
+                parts.append(("Running ", false)); parts.append((Editorial.signedPct(d, decimals: 0), true))
+                parts.append((" against the same \(n == 1 ? "session" : "\(n) sessions") of last block — the week's total settles once the week is done.", false))
+            }
         }
         return .editorial(parts)
     }

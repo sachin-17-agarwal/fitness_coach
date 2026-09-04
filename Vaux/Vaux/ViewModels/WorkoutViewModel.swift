@@ -164,6 +164,9 @@ final class WorkoutViewModel {
     // Inline chat
     var inlineChatText = ""
     var showInlineChat = false
+    /// The athlete's last mid-workout question, shown as the YOU turn in the
+    /// coach sheet above the reply.
+    var lastInlineQuestion: String?
 
     // Summary
     var summary: WorkoutSummary?
@@ -719,6 +722,7 @@ final class WorkoutViewModel {
         let text = inlineChatText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         inlineChatText = ""
+        lastInlineQuestion = text
         isCoachThinking = true
         // Capture skip intent against the phase the athlete is looking at
         // *now* — applyAIResponse may re-sync the phase from the log below.
@@ -1005,12 +1009,6 @@ final class WorkoutViewModel {
     /// first — the strength sparkline on the rest screen.
     var strengthHistory: [E1RMPoint] = []
 
-    /// This lift's measured rest requirement — how short a rest has
-    /// historically cost reps — computed from the same 180-day history fetch
-    /// the sparkline uses. nil until the evidence clears RestCalibration's
-    /// bar, and the rest screen then simply makes no claim.
-    var restCalibration: RestCalibration?
-
     /// Best e1RM among today's working sets on the current exercise, so the
     /// sparkline can show the point being created right now.
     var todayE1RM: Double? {
@@ -1032,7 +1030,6 @@ final class WorkoutViewModel {
         lastSessionSets = []
         lastSessionSetsLoaded = false
         strengthHistory = []
-        restCalibration = nil
         lastBlockReference = nil
         // `before:` excludes today, otherwise the most recent session
         // containing this exercise is the one currently in progress and the
@@ -1054,7 +1051,6 @@ final class WorkoutViewModel {
             )) ?? []
             guard lastSessionSetsExercise == exercise else { return }
             strengthHistory = Self.bestE1RMPerSession(history, excluding: today)
-            restCalibration = RestCalibration.compute(from: history)
             lastBlockReference = Self.lastBlockReference(from: history, week: mesocycleWeek)
         }
     }

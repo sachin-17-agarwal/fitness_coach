@@ -23,12 +23,16 @@ import SwiftUI
 
 struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
-    @State private var navigateToWorkout = false
     @State private var showWeightSheet = false
     @State private var showBriefing = false
     @AppStorage(Config.displayNameKey) private var displayName: String = ""
 
     var switchToChatTab: (() -> Void)? = nil
+    /// Starting a session goes to the Train tab, where the workout is the
+    /// root of its own stack. Pushing it from here left a live session one
+    /// edge-swipe from being popped, and a drag while scrolling the rest
+    /// screen dragged the whole page sideways.
+    var switchToTrainTab: (() -> Void)? = nil
 
     var body: some View {
         NavigationStack {
@@ -50,9 +54,6 @@ struct DashboardView: View {
                 }
             }
             .navigationBarHidden(true)
-            .navigationDestination(isPresented: $navigateToWorkout) {
-                WorkoutModeView(sessionType: viewModel.mesocycle.todayType)
-            }
             .sheet(isPresented: $showWeightSheet) {
                 WeightLogSheet(initialWeight: viewModel.latestWeightKg) {
                     Task { await viewModel.load() }
@@ -62,7 +63,7 @@ struct DashboardView: View {
                 MorningBriefingView(
                     onStartWorkout: { _ in
                         showBriefing = false
-                        navigateToWorkout = true
+                        switchToTrainTab?()
                     },
                     onOpenChat: {
                         showBriefing = false
@@ -135,7 +136,7 @@ struct DashboardView: View {
             .padding(.horizontal, 22)
             .padding(.bottom, 12)
         }
-        .refreshable { await viewModel.load() }
+        .vauxRefreshable { await viewModel.load() }
     }
 
     // MARK: - Header — editorial masthead
@@ -339,13 +340,16 @@ struct DashboardView: View {
 
     private var todayBlock: some View {
         let meso = viewModel.mesocycle
-        let type = meso.todayType
         let finished = viewModel.todayFinishedSession
+        // Once a session is finished the mesocycle has already advanced to
+        // the next slot, so the schedule's "today" is tomorrow's session.
+        // Name what was actually trained.
+        let type = finished?.type ?? meso.todayType
 
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 10) {
                 mesocycleWave(current: meso.week, accent: finished == nil ? stateColor : Color.line2)
-                Text(eyebrowText(meso: meso, finished: finished != nil))
+                Text(eyebrowText(meso: meso, finished: finished))
                     .font(.system(size: 10, weight: .semibold))
                     .kerning(3)
                     .foregroundStyle(Color.fg2)
@@ -393,10 +397,26 @@ struct DashboardView: View {
         }
     }
 
-    private func eyebrowText(meso: MesocycleState, finished: Bool) -> String {
-        var parts = ["W\(meso.week)", "D\(meso.day)"]
-        if isDeload { parts.append("DELOAD") }
-        if finished { parts.append("DONE") }
+    private func eyebrowText(meso: MesocycleState, finished: WorkoutSession?) -> String {
+        var week = meso.week
+        var day = meso.day
+        if let finished {
+            // The state has moved on; read the finished session's own stamp,
+            // or step back one slot (yoga never consumed one).
+            if let w = finished.mesocycleWeek, let d = finished.mesocycleDay {
+                week = w; day = d
+            } else if finished.type != Config.yogaSessionType {
+                if meso.day == 1 {
+                    day = Config.cycleLength
+                    week = meso.week == 1 ? Config.mesocycleWeeks : meso.week - 1
+                } else {
+                    day = meso.day - 1
+                }
+            }
+        }
+        var parts = ["W\(week)", "D\(day)"]
+        if week == Config.mesocycleWeeks { parts.append("DELOAD") }
+        if finished != nil { parts.append("DONE") }
         return parts.joined(separator: " · ")
     }
 
@@ -442,7 +462,7 @@ struct DashboardView: View {
         let easy = level == .red
         return Button {
             Haptic.medium()
-            navigateToWorkout = true
+            switchToTrainTab?()
         } label: {
             HStack(spacing: 10) {
                 Text(easy ? "START — EASY" : "START SESSION")
@@ -469,10 +489,13 @@ struct DashboardView: View {
 
     private var tomorrowCard: some View {
         let meso = viewModel.mesocycle
-        let nextType = meso.nextSessionType
-        let wraps = meso.isLastDayOfCycle
-        let nextWeek = wraps ? (meso.week % Config.mesocycleWeeks) + 1 : meso.week
-        let nextDay = wraps ? 1 : meso.day + 1
+        // Shown only after today's session, when the state already points at
+        // the next slot: tomorrow IS the state's current slot (yoga on its
+        // day, as ever), not the one after it.
+        let tomorrow = Date().addingTimeInterval(24 * 60 * 60)
+        let nextType = Config.isYogaDay(tomorrow) ? Config.yogaSessionType : meso.rotationSessionType
+        let nextWeek = meso.week
+        let nextDay = meso.day
         return VStack(alignment: .leading, spacing: 4) {
             Text("TOMORROW · W\(nextWeek) D\(nextDay)")
                 .font(.system(size: 9, weight: .semibold))

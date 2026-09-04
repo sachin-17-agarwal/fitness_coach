@@ -16,16 +16,24 @@ struct TrainingTabView: View {
 
     @State private var expanded: Set<String> = []
     @State private var showReport = false
+    /// Blocks whose sessions are listed. The current block opens by default;
+    /// older blocks fold to one line each until tapped.
+    @State private var openBlocks: Set<Int>? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             hero
             DiagnosisText(text: TrainingBlockViewModel.diagnosis(vm), coachPrompt: coachPrompt, askCoach: askCoach)
-            SectionBar(title: "SESSIONS", right: "\(vm.blockSessions) THIS BLOCK · TAP TO OPEN")
+            SectionBar(title: "SESSIONS", right: "BY BLOCK · TAP A BLOCK TO FOLD")
             if vm.entries.isEmpty {
                 NoReadNote(text: "No sessions in the last \(TrainingBlockViewModel.windowDays) days. Start one in the Train tab.")
             }
-            ForEach(vm.entries) { e in sessionRow(e) }
+            ForEach(blockGroups, id: \.block) { group in
+                blockHeader(group)
+                if isOpen(group.block) {
+                    ForEach(group.entries) { e in sessionRow(e) }
+                }
+            }
         }
         .sheet(isPresented: $showReport) {
             BlockReportView(training: vm, strength: strength, recovery: recovery)
@@ -48,7 +56,7 @@ struct TrainingTabView: View {
                     StatStack(lines: [
                         .init(text: "\(vm.blockSessions) SESSIONS"),
                         .init(text: "\(vm.blockSets) SETS"),
-                        .init(text: vm.blockDeltaPct.map { Editorial.signedPct($0, decimals: 0) + " VS LAST BLOCK" } ?? "NO PRIOR BLOCK",
+                        .init(text: vm.blockDeltaPct.map { Editorial.signedPct($0, decimals: 0) + " VS SAME POINT LAST BLOCK" } ?? "NO PRIOR BLOCK",
                               color: (vm.blockDeltaPct ?? 0) >= 0 && vm.blockDeltaPct != nil ? Editorial.lime : Editorial.mid),
                     ]).padding(.bottom, 10)
                 }
@@ -89,9 +97,74 @@ struct TrainingTabView: View {
         var lines = ["Looking at my Training tab (\(vm.current.blockLabel.lowercased()), week \(vm.current.week)):",
                      "- \(Editorial.tonnage(vm.blockTonnage)) lifted over \(vm.blockSessions) sessions and \(vm.blockSets) working sets"]
         for w in vm.currentWave where w.tonnage > 0 { lines.append("- week \(w.position.week) (\(w.position.phaseLabel.lowercased())): \(Editorial.tonnage(w.tonnage))") }
-        if let d = vm.blockDeltaPct { lines.append("- \(Editorial.signedPct(d, decimals: 0)) against the same weeks of last block") }
+        if let d = vm.blockDeltaPct { lines.append("- \(Editorial.signedPct(d, decimals: 0)) against the same point of last block (\(vm.blockSessions) sessions in)") }
         lines.append("Is the wave landing the way it should?")
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: Sessions by block
+
+    private struct BlockGroup {
+        let block: Int          // Int.min for sessions the calendar could not place
+        let entries: [SessionEntry]
+        var tonnage: Double { entries.reduce(0) { $0 + $1.tonnage } }
+        var range: (start: String, end: String)? {
+            let dates = entries.map(\.date).sorted()
+            guard let a = dates.first, let b = dates.last else { return nil }
+            return (a, b)
+        }
+    }
+
+    /// Newest block first, each with its sessions newest first.
+    private var blockGroups: [BlockGroup] {
+        var byBlock: [Int: [SessionEntry]] = [:]
+        for e in vm.entries { byBlock[e.position?.block ?? Int.min, default: []].append(e) }
+        return byBlock.keys.sorted(by: >).map { BlockGroup(block: $0, entries: byBlock[$0] ?? []) }
+    }
+
+    private func isOpen(_ block: Int) -> Bool {
+        (openBlocks ?? [vm.current.block]).contains(block)
+    }
+
+    private func toggle(_ block: Int) {
+        var set = openBlocks ?? [vm.current.block]
+        if set.contains(block) { set.remove(block) } else { set.insert(block) }
+        openBlocks = set
+    }
+
+    /// One ruled line per block: its label and dates on the left, sessions
+    /// and tonnage on the right, a chevron for the fold.
+    private func blockHeader(_ group: BlockGroup) -> some View {
+        let open = isOpen(group.block)
+        let isCurrent = group.block == vm.current.block
+        let label: String = group.block == Int.min ? "UNPLACED" : BlockPosition(block: group.block, week: 1).blockLabel
+        let dates = group.range.map(BlockCalendar.shortRange) ?? ""
+        let n = group.entries.count
+        return Button {
+            Haptic.selection()
+            withAnimation(Motion.smooth) { toggle(group.block) }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                EditorialEyebrow(text: label, color: isCurrent ? Editorial.lime : Editorial.mid, size: 10, kerning: 2.5)
+                if !dates.isEmpty {
+                    EditorialEyebrow(text: dates, color: Editorial.muted, size: 9.5, kerning: 1.5)
+                }
+                Spacer()
+                EditorialEyebrow(text: "\(n) SESSION\(n == 1 ? "" : "S") · \(Editorial.tonnage(group.tonnage))", color: Editorial.muted, size: 9.5, kerning: 1.5)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Editorial.muted)
+                    .rotationEffect(.degrees(open ? 0 : -90))
+            }
+            .padding(.horizontal, Editorial.gutter)
+            .frame(height: 44)
+            .background(Editorial.wash.opacity(isCurrent ? 0 : 1))
+            .overlay(alignment: .top) { Rectangle().fill(Editorial.rule).frame(height: 1) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(label), \(n) sessions")
+        .accessibilityAddTraits(open ? [.isButton, .isSelected] : .isButton)
     }
 
     private func sessionRow(_ e: SessionEntry) -> some View {

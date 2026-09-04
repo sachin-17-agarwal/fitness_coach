@@ -22,8 +22,12 @@ enum ChartMath {
             let p1 = pts[i]
             let p2 = pts[i + 1]
             let p3 = i + 2 < pts.count ? pts[i + 2] : p2
-            let c1 = CGPoint(x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6)
-            let c2 = CGPoint(x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6)
+            // Catmull-Rom tangents, with the control points held inside the
+            // segment's own vertical span so a sharp rise never overshoots
+            // above (or below) the values it connects.
+            let lo = min(p1.y, p2.y), hi = max(p1.y, p2.y)
+            let c1 = CGPoint(x: p1.x + (p2.x - p0.x) / 6, y: min(max(p1.y + (p2.y - p0.y) / 6, lo), hi))
+            let c2 = CGPoint(x: p2.x - (p3.x - p1.x) / 6, y: min(max(p2.y - (p3.y - p1.y) / 6, lo), hi))
             p.addCurve(to: p2, control1: c1, control2: c2)
         }
         return p
@@ -92,11 +96,18 @@ struct RibbonChart: View {
     var endDotRadius: CGFloat = 5
 
     /// Fixed range when given, else fitted to the data with a little air.
-    static func bounds(range: ClosedRange<Double>?, values: [Double]) -> ClosedRange<Double> {
+    /// `minimum` widens a fitted range so a flat series still has height,
+    /// without ever letting a value fall outside the chart.
+    static func bounds(range: ClosedRange<Double>?, values: [Double], minimum: ClosedRange<Double>? = nil) -> ClosedRange<Double> {
         if let range { return range }
         let mn = values.min() ?? 0, mx = values.max() ?? 1
         let air = max((mx - mn) * 0.25, mx * 0.02, 0.5)
-        return (mn - air)...(mx + air)
+        var lo = mn - air, hi = mx + air
+        if let minimum {
+            lo = min(lo, minimum.lowerBound)
+            hi = max(hi, minimum.upperBound)
+        }
+        return lo...hi
     }
 
     var body: some View {
@@ -128,6 +139,11 @@ struct RibbonChart: View {
                     line.stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
                         .revealOnAppear()
                 }
+            }
+            .frame(width: w, height: h)
+            .clipped()
+            .overlay(alignment: .topLeading) {
+                ZStack(alignment: .topLeading) {
                 ForEach(present.indices, id: \.self) { k in
                     let (i, v) = present[k]
                     if prSlots.contains(i) {
@@ -138,6 +154,7 @@ struct RibbonChart: View {
                         Circle().fill(color).frame(width: endDotRadius * 2, height: endDotRadius * 2)
                             .position(x: x(i), y: y(v))
                     }
+                }
                 }
             }
         }

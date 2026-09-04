@@ -9,9 +9,10 @@
 // - The countdown IS the screen. Time is the only honest proxy anyone has for
 //   between-set muscle recovery (phosphocreatine resynthesis is invisible to
 //   every consumer signal), so the clock stops apologizing for itself.
-// - The receipt line under the bar is RestCalibration's finding — this lift's
-//   rest requirement measured from the athlete's own logged outcomes. It only
-//   renders when the evidence clears the bar; no calibration, no claim.
+// - The line under the bar states the prescribed rest and nothing else. A
+//   "calibrated" rest threshold was tried and removed: the gap between two
+//   log taps measures when the athlete pressed a button, not how long the
+//   muscle rested, so any claim built on it was noise dressed as insight.
 // - Heart rate is a one-line telltale (current bpm + drop from the post-set
 //   peak). The old zone bar answered a cardio question during a strength
 //   rest and is gone; zones still make sense mid-cardio, not here.
@@ -76,7 +77,6 @@ struct RestTimer: View {
     /// Session type for the header eyebrow ("SET 3 OF 3 · PULL").
     var sessionType: String = ""
     /// This lift's measured rest requirement, when the log supports one.
-    var calibration: RestCalibration? = nil
 
     @State private var goState = false
     @State private var showChat = false
@@ -221,21 +221,11 @@ struct RestTimer: View {
         .frame(height: 6)
     }
 
-    @ViewBuilder
     private var receiptLines: some View {
-        let total = timeText(Double(totalSeconds))
-        VStack(alignment: .leading, spacing: 4) {
-            Text(calibration == nil ? "OF \(total)" : "OF \(total) — CALIBRATED TO YOU")
-                .font(.system(size: 11, weight: .semibold))
-                .kerning(2)
-                .foregroundStyle(Color.fg2)
-            if let calibration {
-                Text(calibration.receiptLine)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .kerning(1.2)
-                    .foregroundStyle(Color.fg3)
-            }
-        }
+        Text("OF \(timeText(Double(totalSeconds)))")
+            .font(.system(size: 11, weight: .semibold))
+            .kerning(2)
+            .foregroundStyle(Color.fg2)
     }
 
     private var hairline: some View {
