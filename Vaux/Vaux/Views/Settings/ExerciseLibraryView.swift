@@ -199,7 +199,7 @@ struct ExerciseLibraryView: View {
                 }
                 .padding(.horizontal, 16)
             }
-            .refreshable { await viewModel.load() }
+            .vauxRefreshable { await viewModel.load() }
         }
     }
 

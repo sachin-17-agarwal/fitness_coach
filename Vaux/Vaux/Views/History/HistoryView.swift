@@ -58,7 +58,7 @@ struct HistoryView: View {
                     .transition(.opacity)
                 }
                 .ignoresSafeArea(edges: .top)
-                .refreshable { await viewModel.load() }
+                .vauxRefreshable { await viewModel.load() }
             }
         }
         .task { await viewModel.load() }
