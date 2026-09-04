@@ -48,7 +48,7 @@ struct TrainingTabView: View {
                     StatStack(lines: [
                         .init(text: "\(vm.blockSessions) SESSIONS"),
                         .init(text: "\(vm.blockSets) SETS"),
-                        .init(text: vm.blockDeltaPct.map { Editorial.signedPct($0, decimals: 0) + " VS LAST BLOCK" } ?? "NO PRIOR BLOCK",
+                        .init(text: vm.blockDeltaPct.map { Editorial.signedPct($0, decimals: 0) + " VS SAME POINT LAST BLOCK" } ?? "NO PRIOR BLOCK",
                               color: (vm.blockDeltaPct ?? 0) >= 0 && vm.blockDeltaPct != nil ? Editorial.lime : Editorial.mid),
                     ]).padding(.bottom, 10)
                 }
@@ -89,7 +89,7 @@ struct TrainingTabView: View {
         var lines = ["Looking at my Training tab (\(vm.current.blockLabel.lowercased()), week \(vm.current.week)):",
                      "- \(Editorial.tonnage(vm.blockTonnage)) lifted over \(vm.blockSessions) sessions and \(vm.blockSets) working sets"]
         for w in vm.currentWave where w.tonnage > 0 { lines.append("- week \(w.position.week) (\(w.position.phaseLabel.lowercased())): \(Editorial.tonnage(w.tonnage))") }
-        if let d = vm.blockDeltaPct { lines.append("- \(Editorial.signedPct(d, decimals: 0)) against the same weeks of last block") }
+        if let d = vm.blockDeltaPct { lines.append("- \(Editorial.signedPct(d, decimals: 0)) against the same point of last block (\(vm.blockSessions) sessions in)") }
         lines.append("Is the wave landing the way it should?")
         return lines.joined(separator: "\n")
     }
