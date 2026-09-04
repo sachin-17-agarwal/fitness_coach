@@ -89,7 +89,7 @@ struct BlockReportView: View {
             SectionBar(title: "THE BLOCK", right: "")
             row("SESSIONS", "\(training.blockSessions)", "")
             row("WORKING SETS", "\(training.blockSets)", "")
-            if let d = training.blockDeltaPct { row("VS LAST BLOCK", Editorial.signedPct(d, decimals: 0), "TONNAGE, SAME WEEKS") }
+            if let d = training.blockDeltaPct { row("VS LAST BLOCK", Editorial.signedPct(d, decimals: 0), "TONNAGE, SAME POINT") }
             if let s = snap, s.judgedCount > 0 {
                 row("MEDIAN STRENGTH GAIN", s.medianGainPct.map { Editorial.signedPct($0) } ?? "—", "PEAK WEEK VS PEAK WEEK")
                 row("ALL-TIME PRS", "\(s.prCount)", s.lifts.filter { $0.state == .pr }.map(\.name).joined(separator: " · ").uppercased())
