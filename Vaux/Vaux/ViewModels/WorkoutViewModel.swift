@@ -164,6 +164,9 @@ final class WorkoutViewModel {
     // Inline chat
     var inlineChatText = ""
     var showInlineChat = false
+    /// The athlete's last mid-workout question, shown as the YOU turn in the
+    /// coach sheet above the reply.
+    var lastInlineQuestion: String?
 
     // Summary
     var summary: WorkoutSummary?
@@ -719,6 +722,7 @@ final class WorkoutViewModel {
         let text = inlineChatText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         inlineChatText = ""
+        lastInlineQuestion = text
         isCoachThinking = true
         // Capture skip intent against the phase the athlete is looking at
         // *now* — applyAIResponse may re-sync the phase from the log below.
