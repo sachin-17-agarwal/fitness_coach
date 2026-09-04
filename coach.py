@@ -554,6 +554,54 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             send_telegram_message(report)
         return report
 
+    # ── "audit" command ───────────────────────────────────────────────────────
+    #
+    # Answers the question the shadow log could not: how often did a
+    # prescription the athlete actually trained on break a rule from this
+    # prompt. Not "were the programme's numbers better" — that needs a
+    # judgement, and mine is the same judgement already inside the programme.
+    #
+    # Every check is decidable from the prescription text plus the mesocycle
+    # week, so nothing is reconstructed and nothing is an opinion. It reads
+    # stored replies, so it reports on months of real sessions immediately
+    # rather than waiting for new ones — and it runs HERE because the database
+    # is reachable from the server and is not reachable from a development
+    # machine.
+    audit_match = re.match(r'^/?audit(?:\s+(\d+))?$', normalised_text)
+    if audit_match:
+        days = int(audit_match.group(1) or DEFAULT_REPLAY_DAYS)
+        # Same guard as replay, for the same reason: this report names
+        # exercises, and applyAIResponse would read those names as a transition
+        # and move the card off the lift he is mid-way through.
+        if not send_reply and get_workout_state().get("workout_mode") == "active":
+            message = ("You're mid-session, so I'm holding the audit — it names "
+                       "exercises, and posting that into the workout chat would "
+                       "move your card. Finish the session and run `audit` again.")
+            save_conversation_message("user", incoming_text)
+            save_conversation_message("assistant", message)
+            return message
+        try:
+            from audit import run_chat_audit  # local: keeps import order flat
+            # Loaded here, not inherited: `system_prompt` is a local of
+            # chat_with_coach and does not exist in this function. Referencing
+            # it compiled fine and would have raised NameError on the first
+            # `audit` typed — inside the try, so it would have surfaced as
+            # "Audit failed" rather than as the bug it is.
+            report, summary = run_chat_audit(days, load_system_prompt())
+        except Exception as exc:
+            log.exception("Audit command failed")
+            report = (f"Audit failed: {exc}\n\nThis is a diagnostic, so nothing "
+                      f"about your training is affected.")
+            summary = f"An audit was requested but failed: {exc}"
+        try:
+            save_conversation_message("user", incoming_text)
+            save_conversation_message("assistant", summary)
+        except Exception:
+            log.exception("Could not record the audit in the transcript")
+        if send_reply:
+            send_telegram_message(report)
+        return report
+
     # ── Detect session start ──────────────────────────────────────────────────
     start_phrases = [
         "starting pull", "starting push", "starting legs",

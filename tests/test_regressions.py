@@ -4173,6 +4173,103 @@ class InclineVariantVolumeTests(unittest.TestCase):
 
 
 
+
+class ProtocolAuditTests(unittest.TestCase):
+    """How often did the coach break its own protocol? Counted, not asserted.
+
+    Asked how I would know the computed numbers are better, the honest answer
+    was that I could not — "is the programme's number better" needs a
+    judgement, and mine is the same judgement already inside the programme, so
+    asking me is circular. And the shadow log needed Railway logs I cannot
+    reach.
+
+    This answers a narrower question that needs neither: how often did a
+    prescription the athlete actually trained on break a rule written in the
+    prompt. Every check is decidable from the prescription text plus the
+    mesocycle week — no load history reconstructed, no opinion — and it reads
+    STORED replies, so it reports on months of real sessions at once instead of
+    waiting for new ones.
+    """
+
+    PROMPT = None
+
+    @classmethod
+    def setUpClass(cls):
+        with open("system_prompt.txt") as handle:
+            cls.PROMPT = handle.read()
+
+    def _check(self, text, week, session="Legs"):
+        import audit
+        from coach_parsing import parse_all_prescriptions
+        out = []
+        for block in parse_all_prescriptions(text):
+            out += audit._violations(block, week, session, self.PROMPT)
+        return {code for code, _detail in out}
+
+    def test_it_finds_the_leg_press_card_the_athlete_caught(self):
+        found = self._check(
+            "*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 2min\n"
+            "Back-off: 178kg x11 @6, 178kg x9 @6\n", 1)
+        self.assertIn("rpe_under_target", found)
+        self.assertIn("backoff_rpe_under_target", found)
+        self.assertIn("reps_below_range", found)
+
+    def test_it_finds_the_missing_backoff_the_athlete_caught(self):
+        found = self._check(
+            "*Seated Leg Curl*\nWorking Set: 100kg x8 @7 | Rest: 90s\n"
+            "Back-off: 80kg x12 @6\n", 1)
+        self.assertIn("set_count", found)
+
+    def test_a_correct_block_is_clean(self):
+        self.assertEqual(self._check(
+            "*Leg Press*\nWorking Set: 222.5kg x6 RPE8 | Rest: 2min\n"
+            "Back-off: 178kg x10-12 RPE7, 178kg x8-10 RPE7\n", 1), set())
+
+    def test_a_deload_below_range_is_not_a_violation(self):
+        """Week 4 is SUPPOSED to stop short. Counting it would report the
+        protocol working as a fault and drown the real findings."""
+        self.assertEqual(self._check(
+            "*Leg Press*\nWorking Set: 220kg x4 RPE7 | Rest: 2min\n"
+            "Back-off: 176kg x8 RPE6, 176kg x6 RPE6\n", 4), set())
+
+    def test_an_rpe_ABOVE_the_target_is_not_a_violation(self):
+        """The audit counts the coach prescribing SOFT, which is the documented
+        failure. Harder than the week asks is a coaching call."""
+        self.assertNotIn("rpe_under_target", self._check(
+            "*Leg Press*\nWorking Set: 222.5kg x6 RPE9 | Rest: 2min\n", 1))
+
+    def test_identical_backoff_reps_are_caught(self):
+        """:65 — the second always carries fewer. The most common botch."""
+        self.assertIn("backoff_not_descending", self._check(
+            "*Leg Press*\nWorking Set: 222.5kg x6 RPE8 | Rest: 2min\n"
+            "Back-off: 178kg x10 RPE7, 178kg x10 RPE7\n", 1))
+
+    def test_the_report_renders_for_the_ios_bubble(self):
+        """MarkdownText joins consecutive non-blank lines, so a report laid out
+        for a terminal arrives as one paragraph — the mistake made in #116."""
+        import audit
+        text = audit.render_chat({
+            "days": 60, "replies": 10, "dated": 4, "undated": 6,
+            "prescriptions": 12, "counts": {"rpe_under_target": 3},
+            "violations": [{"date": "2026-09-04", "session": "Legs", "week": 1,
+                            "exercise": "Leg Press", "code": "rpe_under_target",
+                            "detail": "top set at RPE7 in week 1"}]})
+        rows = [l for l in text.split("\n") if l.strip()]
+        self.assertTrue(all(l.startswith(("-", "**")) for l in rows),
+                        f"a line would be swallowed by the bubble: {rows}")
+
+    def test_the_command_does_not_reference_a_name_it_does_not_have(self):
+        """`system_prompt` is a local of chat_with_coach. Referencing it from
+        handle_incoming_message compiles fine and raises NameError on the first
+        `audit` typed — inside the try, so it would have surfaced as "Audit
+        failed" rather than as the bug it is."""
+        import ast, inspect, coach
+        tree = ast.parse(inspect.getsource(coach.handle_incoming_message))
+        names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+        self.assertNotIn("system_prompt", names)
+        self.assertIn("load_system_prompt", names)
+
+
 class ProgrammeShadowModeTests(unittest.TestCase):
     """It observes. It must not be able to do anything else.
 
