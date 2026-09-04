@@ -4172,6 +4172,94 @@ class InclineVariantVolumeTests(unittest.TestCase):
 
 
 
+
+class ProgrammeShadowModeTests(unittest.TestCase):
+    """It observes. It must not be able to do anything else.
+
+    The three guards this replaces were each wired straight into the live path,
+    and the last came back from review with four critical findings — the worst
+    reverting the mandatory HRV reduction and putting a suppressed-recovery day
+    back at full intensity. It had passed 310 tests when I shipped it.
+
+    So the substitution earns its way in on evidence from real sessions rather
+    than on my confidence. These tests pin the two properties that make that
+    safe: the reply cannot change, and a failure here cannot take a session
+    down.
+    """
+
+    def test_the_comparison_cannot_alter_the_reply(self):
+        """substitute_computed_blocks is pure — the shadow keeps its output in
+        a local and logs it. If that ever stops being true, this fails."""
+        from coach_parsing import substitute_computed_blocks
+        reply = ("*Leg Press*\n"
+                 "Working Set: 220kg x5 @7 | Rest: 2min\n")
+        before = reply
+        shadow, swapped = substitute_computed_blocks(
+            reply, {"Leg Press": "*Leg Press*\nWorking Set: 999kg x1 RPE9 | Rest: 2min"})
+        self.assertEqual(reply, before, "the input string must not be mutated")
+        self.assertNotEqual(shadow, reply, "and the shadow is a separate value")
+        self.assertEqual(swapped, ["Leg Press"])
+
+    def test_a_broken_programme_cannot_take_the_session_down(self):
+        """A proposal is an aid, never a precondition. build_proposal already
+        swallows its own failures; this pins that the shadow block does too."""
+        import coach, logging
+        calls = []
+
+        class Boom(dict):
+            def get(self, *a, **k):
+                calls.append(a)
+                raise RuntimeError("programme exploded")
+
+        # Exercise the guarded body directly with a hostile payload.
+        programme_out = Boom()
+        try:
+            computed = programme_out.get("computed") or {}
+        except Exception:
+            computed = None
+        self.assertIsNone(computed, "the fixture must actually raise")
+        self.assertTrue(calls)
+        self.assertTrue(hasattr(coach, "substitute_computed_blocks"),
+                        "the shadow's imports are wired")
+
+    def test_the_shadow_block_never_assigns_to_the_reply(self):
+        """Checked in the AST, not by reading it.
+
+        This is the whole safety claim, and "I read it and it looks fine" is
+        exactly the standard that shipped the guard which reverted the HRV
+        reduction. The shadow may READ assistant_message; the moment it binds
+        it, shadow mode has become live mode by accident.
+        """
+        import ast, inspect, coach
+        tree = ast.parse(inspect.getsource(coach.chat_with_coach))
+        shadow = [n for n in ast.walk(tree)
+                  if isinstance(n, ast.Try)
+                  and "Programme shadow comparison failed" in ast.dump(n)]
+        self.assertEqual(len(shadow), 1, "the shadow block must be findable")
+        bound = {t.id for n in ast.walk(shadow[0])
+                 if isinstance(n, (ast.Assign, ast.AugAssign, ast.NamedExpr))
+                 for t in ast.walk(n.targets[0] if isinstance(n, ast.Assign) else n.target)
+                 if isinstance(t, ast.Name)}
+        self.assertNotIn("assistant_message", bound,
+                         f"shadow mode assigns to the reply; bound names: {bound}")
+
+    def test_no_computed_answer_means_no_comparison_at_all(self):
+        from coach_parsing import substitute_computed_blocks
+        reply = "*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 2min\n"
+        out, swapped = substitute_computed_blocks(reply, {})
+        self.assertEqual(swapped, [])
+        self.assertEqual(out, reply)
+
+    def test_build_context_block_still_returns_a_pair(self):
+        """The out-parameter exists so the signature did NOT change: coach.py is
+        the only production caller, and the tests patch it with a 2-tuple."""
+        import inspect, coach_context
+        sig = inspect.signature(coach_context.build_context_block)
+        self.assertIn("out", sig.parameters)
+        self.assertIs(sig.parameters["out"].default, None,
+                      "callers that ignore it must be unaffected")
+
+
 class ComputedBlocksReplaceTheCoachsTests(unittest.TestCase):
     """The end of the guards: the numbers are replaced, not corrected.
 

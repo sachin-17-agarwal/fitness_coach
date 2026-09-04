@@ -48,6 +48,8 @@ from coach_parsing import (
     build_exercise_note,
     check_set_counts,
     enforce_set_counts,
+    parse_all_prescriptions,
+    substitute_computed_blocks,
     extract_exercise_from_context,
     extract_exercise_from_set_message,
     get_session_type_for_day,
@@ -151,6 +153,7 @@ def _log_cache_usage(response) -> None:
 def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     recovery_override: dict | None = None) -> str:
     system_prompt = load_system_prompt()
+    programme_out: dict = {}
     stable_context, live_context = build_context_block(
         memory,
         ATHLETE_NAME,
@@ -159,6 +162,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         log,
         recovery_override=recovery_override,
         system_prompt=system_prompt,
+        out=programme_out,
     )
 
     # Appended to the LIVE half deliberately. It is derived from the prompt
@@ -293,6 +297,41 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
             )
     except Exception:
         log.exception("Set-count enforcement failed")
+
+    # SHADOW ONLY — computes the substitution and logs what it WOULD change.
+    # Nothing here alters the reply.
+    #
+    # The three guards this replaces were each wired straight in, and the last
+    # one came back from review with four critical findings — the worst being
+    # that it reverted the mandatory HRV reduction and put a suppressed-recovery
+    # day back at full intensity. It had passed 310 tests. So this one earns its
+    # way in on evidence from real sessions instead: every request logs the
+    # difference between what the coach wrote and what the programme computed
+    # from the same loads, the same week and the same recovery readings. When
+    # the log says the computed block is the better one, the substitution gets
+    # turned on; until then the athlete's card is untouched.
+    try:
+        computed = programme_out.get("computed") or {}
+        if computed:
+            shadow, would_swap = substitute_computed_blocks(assistant_message, computed)
+            if would_swap:
+                sent = {q["exercise"]: q for q in parse_all_prescriptions(assistant_message)}
+                would = {q["exercise"]: q for q in parse_all_prescriptions(shadow)}
+                for name in would_swap:
+                    a, b = sent.get(name), would.get(name)
+                    if not a or not b or a == b:
+                        continue
+                    log.warning(
+                        "PROGRAMME SHADOW (%s wk%s) %s: coach sent %s / %s — "
+                        "programme computes %s / %s",
+                        programme_out.get("session_type"), programme_out.get("week"),
+                        name, a.get("working"), a.get("backoff"),
+                        b.get("working"), b.get("backoff"),
+                    )
+            for name in programme_out.get("open") or []:
+                log.info("PROGRAMME SHADOW: %s left to the coach (no computed answer)", name)
+    except Exception:
+        log.exception("Programme shadow comparison failed")
 
     try:
         counts = check_set_counts(assistant_message, system_prompt, today_type)

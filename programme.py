@@ -117,7 +117,8 @@ def _history(plan, current_loads: list[dict]) -> tuple:
 
 
 def build_proposal(prompt: str, session_type: str, week: int,
-                   current_loads: list[dict]) -> tuple:
+                   current_loads: list[dict],
+                   recovery: dict | None = None) -> tuple:
     """The programme's proposal for today.
 
     Returns (proposals, renamed, ambiguous) — empty throughout when it cannot
@@ -130,7 +131,8 @@ def build_proposal(prompt: str, session_type: str, week: int,
         if not plan:
             return [], {}, {}
         history, renamed, ambiguous = _history(plan, current_loads)
-        return prescribe_session(plan, week, history), renamed, ambiguous
+        return (prescribe_session(plan, week, history, recovery=recovery),
+                renamed, ambiguous)
     except Exception:
         # A proposal is an aid, never a precondition. The coach has run without
         # one since the programme was written; a failure here must not take the
