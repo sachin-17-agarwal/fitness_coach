@@ -53,7 +53,10 @@ final class RestActivityController {
                exercise: String,
                sessionType: String,
                nextUp: String?) {
-        guard isAvailable else { return }
+        guard isAvailable else {
+            print("[RestActivity] Live Activities are off for Vaux (Settings → Vaux → Live Activities)")
+            return
+        }
 
         let state = RestActivityAttributes.ContentState(
             startDate: startDate,
@@ -63,9 +66,18 @@ final class RestActivityController {
             isComplete: false
         )
 
+        // Reuse the running activity — but only while it is actually running.
+        // Once the athlete swipes it away or iOS ends it, the reference stays
+        // non-nil and every later rest updated a dead island: the countdown
+        // simply stopped appearing for the rest of the session.
         if let activity {
-            Task { await activity.update(content(for: state)) }
-            return
+            switch activity.activityState {
+            case .active, .stale:
+                Task { await activity.update(content(for: state)) }
+                return
+            default:
+                self.activity = nil
+            }
         }
 
         do {
