@@ -4170,6 +4170,131 @@ class InclineVariantVolumeTests(unittest.TestCase):
 
 
 
+
+class RecoveryIsComputedNotProsedTests(unittest.TestCase):
+    """The critical finding, fixed at its cause instead of worked around.
+
+    An adversarial review of the RPE-enforcement guard found that it silently
+    reverted the reduction :315 makes mandatory: the coach wrote `215kg x5-7
+    @7` on a day HRV was 14% down, and the guard read that as drift and pushed
+    it back to `x6-7 @8`. Worst case it turned a prescribed recovery session at
+    @5 into a week-1 top set at @8 — full intensity on the day the athlete is
+    least able to absorb it.
+
+    No guard can fix that, because after the fact a recovery reduction and a
+    soft prescription are the same three numbers. The reduction has to be
+    COMPUTED, alongside the load and the reps it moves, which is what :323
+    says it is: "Reducing an RPE target is a REP change, not a note on the
+    card."
+    """
+
+    PROMPT = None
+
+    @classmethod
+    def setUpClass(cls):
+        with open("system_prompt.txt") as handle:
+            cls.PROMPT = handle.read()
+
+    def _leg_press(self, recovery, week=1):
+        from prescribe import prescribe_session, day_plan, PriorSet
+        from coach_parsing import parse_session_template
+        plan = day_plan(parse_session_template(self.PROMPT, "Legs")[0])[:1]
+        hist = {"Leg Press": PriorSet(load=220.0, reps=10, rpe=9.0, date="", week=3)}
+        return prescribe_session(plan, week, hist, recovery=recovery)[0]
+
+    NORMAL = {"hrv": 60, "hrv_avg": 60, "sleep_hours": 7.5,
+              "resting_hr": 55, "resting_hr_baseline": 55}
+
+    def test_no_recovery_data_changes_nothing(self):
+        base = self._leg_press(None).working[0]
+        same = self._leg_press(self.NORMAL).working[0]
+        self.assertEqual((base.weight_kg, base.reps_low, base.rpe), (222.5, 6, 8.0))
+        self.assertEqual((same.weight_kg, same.reps_low, same.rpe), (222.5, 6, 8.0))
+
+    def test_an_rpe_cut_is_a_rep_cut_at_the_same_load(self):
+        """:323 — `215kg x6-8 @ RPE8` becomes `215kg x5-7 @ RPE7`.
+
+        Explicitly NOT more reps at less effort, which is impossible, and not a
+        note on the card either.
+        """
+        top = self._leg_press({**self.NORMAL, "hrv": 51.6}).working[0]
+        self.assertEqual(top.weight_kg, 222.5, "the load holds")
+        self.assertEqual(top.rpe, 7.0, "one point down")
+        self.assertEqual(top.reps_low, 5, "and one rep with it")
+
+    def test_the_backoffs_move_with_the_top_set(self):
+        p = self._leg_press({**self.NORMAL, "hrv": 51.6})
+        self.assertTrue(all(b.rpe == 6.0 for b in p.backoff))
+        self.assertEqual([b.reps_low for b in p.backoff], [9, 7])
+
+    def test_short_sleep_cuts_the_load_and_leaves_the_effort(self):
+        """:317 — 5-6h: reduce top-set weight by 5%, note CNS fatigue."""
+        top = self._leg_press({**self.NORMAL, "sleep_hours": 5.8}).working[0]
+        self.assertEqual(top.weight_kg, 211.5)
+        self.assertEqual(top.rpe, 8.0)
+        self.assertEqual(top.reps_low, 6)
+
+    def test_the_ramp_follows_a_load_cut(self):
+        """Warm-up weights are absolute, not a live fraction of the top set.
+
+        Left alone, a 5% cut leaves the last ramp single at 93% of the working
+        weight instead of 88% — relatively HEAVIER than on a full day. My own
+        comment claimed the ramp "follows without being touched"; it does not.
+        """
+        for recovery in (self.NORMAL, {**self.NORMAL, "sleep_hours": 5.8}):
+            p = self._leg_press(recovery)
+            with self.subTest(sleep=recovery["sleep_hours"]):
+                self.assertAlmostEqual(
+                    p.warmup[-1].weight_kg / p.working[0].weight_kg, 0.88, places=2)
+
+    def test_the_strictest_rule_wins_and_prescribes_nothing(self):
+        """:321 — more than one matches; the STRICTEST applies. :316 says a
+        recovery session, which is a different session, not a lighter one."""
+        import prescribe
+        p = self._leg_press({**self.NORMAL, "hrv": 45, "sleep_hours": 5.8})
+        self.assertTrue(p.recovery_session)
+        self.assertEqual(p.working, [])
+        blocks, open_ones = prescribe.render_session([p])
+        self.assertEqual(blocks, "", "no block may render for a recovery day")
+        self.assertIn("Leg Press", open_ones)
+        self.assertTrue(any("RECOVERY SESSION" in d for d in p.deferred))
+
+    def test_an_elevated_resting_hr_is_flagged_though_it_moves_no_number(self):
+        """:319 attaches no arithmetic — "flag potential overreaching, ask how
+        they feel". An earlier cut gated on the numbers alone, so this rule
+        produced its reason and then dropped it silently."""
+        p = self._leg_press({**self.NORMAL, "resting_hr": 62})
+        self.assertTrue(any("resting HR" in r for r in p.reasons),
+                        f"no overreaching flag in {p.reasons}")
+        self.assertEqual(p.working[0].weight_kg, 222.5, "and it changes no number")
+
+    def test_the_resting_hr_threshold_uses_the_baseline_as_the_denominator(self):
+        """62 over a 55 baseline is 12.7% up, not 11.3%. Swapping the arguments
+        divides by the wrong number and under-reports every reading."""
+        from prescribe import recovery_adjustment
+        adj = recovery_adjustment({**self.NORMAL, "resting_hr": 62})
+        self.assertTrue(any("13%" in r for r in adj.reasons), adj.reasons)
+        quiet = recovery_adjustment({**self.NORMAL, "resting_hr": 60})
+        self.assertFalse(any("resting HR" in r for r in quiet.reasons),
+                         "9% up is under the threshold")
+
+    def test_a_deload_week_is_still_adjusted(self):
+        """Week 4 is not exempt: the recovery rules apply every week."""
+        top = self._leg_press({**self.NORMAL, "hrv": 51.6}, week=4).working[0]
+        self.assertEqual(top.rpe, 6.0, "deload 7 minus one")
+
+    def test_the_load_lever_is_used_when_reps_would_run_out(self):
+        """:323 — "If subtracting the reps leaves fewer than 5, hold the reps
+        and drop the load 5-10% instead. Either way, state which lever." """
+        from prescribe import SetSpec, apply_recovery, recovery_adjustment
+        adj = recovery_adjustment({**self.NORMAL, "hrv": 51.6})
+        reasons = []
+        out = apply_recovery(SetSpec(100.0, 5, 5, 8.0), adj, reasons)
+        self.assertEqual(out.reps_low, 5, "the reps hold")
+        self.assertLess(out.weight_kg, 100.0, "the load moves instead")
+        self.assertTrue(any("LOAD, not reps" in r for r in reasons))
+
+
 class ComputedSessionRendersAsACardTests(unittest.TestCase):
     """The programme can now write the block, not just check someone else's.
 

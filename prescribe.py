@@ -32,7 +32,7 @@ rather than silently resolved — see `Proposal.deferred`.
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # ── Exercise classification ──────────────────────────────────────────────────
 #
@@ -232,6 +232,9 @@ class Proposal:
     rest_seconds: int = 120
     reasons: list[str] = field(default_factory=list)
     deferred: list[str] = field(default_factory=list)
+    # Today's readings call for a different session, not a lighter version of
+    # this one (:316). Nothing may render a block for it.
+    recovery_session: bool = False
 
     def __post_init__(self):
         self.reasons = [strip_citations(r) for r in self.reasons]
@@ -268,6 +271,134 @@ def _round_load(value: float) -> float:
     number without pretending to know the athlete's equipment.
     """
     return round(value / _LOAD_GRID) * _LOAD_GRID
+
+
+@dataclass(frozen=True)
+class RecoveryAdjustment:
+    """What today's readout does to the week's targets, as arithmetic.
+
+    The rules are :315-319 and they are not advisory — "Recovery data is
+    injected with every message. Apply these rules". More than one usually
+    matches and :321 says the STRICTEST applies, so this resolves them rather
+    than leaving the choice to prose.
+
+    Why it lives here and not in an enforcement pass: the previous attempt
+    checked the model's RPE against the week's target on the way out, which
+    silently undid exactly this reduction and pushed a suppressed-HRV day back
+    to full intensity. The adjustment cannot be told apart from drift after the
+    fact — the only way to get it right is to compute it WITH the prescription,
+    where the load, the reps and the RPE are still one decision.
+    """
+    rpe_delta: float = 0.0
+    load_multiplier: float = 1.0
+    recovery_session: bool = False
+    reasons: tuple = ()
+
+    @property
+    def adjusted(self) -> bool:
+        """Anything to say about today, arithmetic or not.
+
+        `reasons` counts. :319 attaches no number to an elevated resting HR —
+        "flag potential overreaching, ask how they feel" — and an earlier cut
+        of this gated on the numbers alone, so that rule produced a reason and
+        then dropped it on the floor.
+        """
+        return bool(self.rpe_delta or self.load_multiplier != 1.0
+                    or self.recovery_session or self.reasons)
+
+
+def _pct_below(value, baseline) -> float | None:
+    """How far under the baseline, as a percentage. None when unknowable."""
+    try:
+        value, baseline = float(value), float(baseline)
+    except (TypeError, ValueError):
+        return None
+    if baseline <= 0:
+        return None
+    return (baseline - value) / baseline * 100.0
+
+
+def recovery_adjustment(recovery: dict | None) -> RecoveryAdjustment:
+    """Resolve :315-319 against today's numbers, strictest first.
+
+    Computed from the readings rather than from the rendered status line. The
+    status string is produced for a human to read and has been spelled three
+    different ways in two files; the numbers it is derived from have not moved.
+    """
+    if not recovery:
+        return RecoveryAdjustment()
+
+    hrv_down = _pct_below(recovery.get("hrv"), recovery.get("hrv_avg"))
+    # Above baseline, so the baseline is the denominator — _pct_below with the
+    # arguments swapped divides by the wrong number and under-reports.
+    rhr_down = _pct_below(recovery.get("resting_hr"),
+                          recovery.get("resting_hr_baseline"))
+    rhr_up = -rhr_down if rhr_down is not None else None
+    try:
+        sleep = float(recovery.get("sleep_hours"))
+    except (TypeError, ValueError):
+        sleep = None
+
+    reasons = []
+    # :316 the strictest rule, and the only one that is not an adjustment.
+    if (hrv_down is not None and hrv_down > 20) or (sleep is not None and sleep < 5):
+        if hrv_down is not None and hrv_down > 20:
+            reasons.append(f"HRV {hrv_down:.0f}% below the 7-day average (:316)")
+        if sleep is not None and sleep < 5:
+            reasons.append(f"{sleep:g}h sleep, under 5 (:316)")
+        return RecoveryAdjustment(recovery_session=True, reasons=tuple(reasons))
+
+    rpe_delta, multiplier = 0.0, 1.0
+    if hrv_down is not None and hrv_down > 10:
+        rpe_delta = -1.0
+        reasons.append(f"HRV {hrv_down:.0f}% below the 7-day average, so RPE "
+                       f"targets come down a point (:315)")
+    if sleep is not None and 5 <= sleep <= 6:
+        multiplier = 0.95
+        reasons.append(f"{sleep:g}h sleep, so the top set comes down 5% for CNS "
+                       f"fatigue (:317)")
+    if rhr_up is not None and rhr_up > 10:
+        reasons.append(f"resting HR {rhr_up:.0f}% above baseline — possible "
+                       f"overreaching, worth asking how he feels (:319)")
+    return RecoveryAdjustment(rpe_delta=rpe_delta, load_multiplier=multiplier,
+                              reasons=tuple(reasons))
+
+
+def apply_recovery(spec: "SetSpec", adjustment: RecoveryAdjustment,
+                   reasons: list) -> "SetSpec":
+    """Move load, reps and RPE together, per :323.
+
+    "Reducing an RPE target is a REP change, not a note on the card ... RPE is
+    reps-in-reserve, so one point of RPE at a fixed load is one rep: `215kg
+    x6-8 @ RPE8` becomes `215kg x5-7 @ RPE7`." Both ends of the band drop, and
+    it explicitly does NOT become more reps at less effort.
+
+    "If subtracting the reps leaves fewer than 5, hold the reps and drop the
+    load 5-10% instead. Either way, state which lever you used."
+    """
+    if not adjustment.adjusted:
+        return spec
+
+    rpe = spec.rpe + adjustment.rpe_delta
+    low, high = spec.reps_low, spec.reps_high
+    weight = spec.weight_kg
+    step = int(round(-adjustment.rpe_delta))
+
+    if step:
+        if low - step < DELOAD_MIN_REPS:
+            if weight is not None:
+                weight = _round_load(weight * 0.925)
+            reasons.append(
+                f"Recovery cut taken as LOAD, not reps: {low} reps minus {step} "
+                f"would leave under {DELOAD_MIN_REPS}, so the reps hold and the "
+                f"weight comes down 7.5% instead (:323)."
+            )
+        else:
+            low, high = low - step, max(low - step, high - step)
+    if adjustment.load_multiplier != 1.0 and weight is not None:
+        weight = _round_load(weight * adjustment.load_multiplier)
+
+    return SetSpec(weight, low, high, rpe, bodyweight=spec.bodyweight)
 
 
 def _met_top_of_range(prior: PriorSet, kind: str, target_rpe: float) -> bool:
@@ -615,12 +746,19 @@ def norm_name(name: str) -> str:
 
 
 def prescribe_session(plan, week: int,
-                      history: dict[str, PriorSet]) -> list[Proposal]:
+                      history: dict[str, PriorSet],
+                      recovery: dict | None = None) -> list[Proposal]:
     """Every exercise in `plan`, for this week, given this history.
 
     `history` maps exercise name to its most recent top working set — the same
     thing progression.get_current_loads already returns, so this consumes a
     readout that exists rather than re-deriving one from the log.
+
+    `recovery` is today's readings. When they trigger :315-319 the adjustment
+    is applied HERE, to every set, before anything renders — because :323 makes
+    the reduction a change to reps and load as well as RPE, and those three
+    only stay coherent while they are decided together. Checking them apart
+    afterwards is what mistook the reduction for drift and undid it.
     """
     if week not in WAVE:
         raise ValueError(f"mesocycle week must be 1-4, got {week!r}")
@@ -633,15 +771,66 @@ def prescribe_session(plan, week: int,
     # load. Building the view here means no caller has to know the convention.
     folded = {norm_name(name): prior for name, prior in history.items()}
 
+    adjustment = recovery_adjustment(recovery)
+
     proposals = []
     muscles_warm: set[str] = set()
     for exercise, sets, kind in plan:
-        proposals.append(prescribe_exercise(
+        proposal = prescribe_exercise(
             exercise, sets, kind, week, folded.get(norm_name(exercise)),
             set(muscles_warm)
-        ))
+        )
+        if adjustment.adjusted:
+            proposal = _adjusted(proposal, adjustment)
+        proposals.append(proposal)
         muscles_warm.update(warms(exercise))
     return proposals
+
+
+def _adjusted(proposal: Proposal, adjustment: RecoveryAdjustment) -> Proposal:
+    """Re-issue one exercise with today's recovery applied to every set.
+
+    The warm-up ramp carries a LOAD cut but not an RPE cut. A ramp is not
+    effort — :62 says warm-ups "are not working sets" — so dropping the RPE
+    target means nothing to it. But its weights are absolute, computed from the
+    working set at ~55/75/88%, so a 5% cut to the top set leaves the last ramp
+    single at 93% of it instead of 88%: heavier, relative to the day, than on a
+    full-intensity day. It gets the same multiplier.
+
+    A recovery session is NOT prescribed by scaling this one down. :316 says
+    "switch to recovery session", which is a different session — a decision
+    about what to train, not how heavy. It is surfaced as deferred so the coach
+    makes it out loud, which is what the rule asks for.
+    """
+    reasons = list(proposal.reasons)
+    deferred = list(proposal.deferred)
+
+    if adjustment.recovery_session:
+        deferred.append(
+            f"{proposal.exercise}: today's readings call for a RECOVERY SESSION "
+            f"rather than this one, so the programme prescribes NOTHING here — "
+            + "; ".join(adjustment.reasons) +
+            ". The programme does not substitute the session for you: say what "
+            "you are doing instead and why it protects the block (:316)."
+        )
+        return replace(proposal, deferred=deferred, working=[], backoff=[],
+                       warmup=[], recovery_session=True)
+
+    working = tuple(apply_recovery(w, adjustment, reasons) for w in proposal.working)
+    backoff = tuple(apply_recovery(b, adjustment, reasons) for b in proposal.backoff)
+    warmup = proposal.warmup
+    if adjustment.load_multiplier != 1.0:
+        warmup = [
+            SetSpec(_round_load(w.weight_kg * adjustment.load_multiplier)
+                    if w.weight_kg is not None else None,
+                    w.reps_low, w.reps_high, w.rpe, bodyweight=w.bodyweight)
+            for w in proposal.warmup
+        ]
+    for reason in adjustment.reasons:
+        if reason not in reasons:
+            reasons.append(reason)
+    return replace(proposal, warmup=list(warmup), working=list(working),
+                   backoff=list(backoff), reasons=reasons, deferred=deferred)
 
 
 def prescribe_pull(week: int, history: dict) -> list:
@@ -838,6 +1027,8 @@ def is_determined(proposal: "Proposal") -> bool:
     than saying nothing: it does not parse, so the card silently loses the
     exercise, and it dresses an open question as a computed answer.
     """
+    if proposal.recovery_session or not proposal.working:
+        return False
     return all(spec.weight_kg is not None or spec.bodyweight
                for spec in list(proposal.working) + list(proposal.backoff))
 
