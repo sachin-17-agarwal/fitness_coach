@@ -211,7 +211,7 @@ struct WorkoutModeView: View {
         .navigationBarHidden(viewModel.isActive || sessionType.isEmpty)
         .sheet(isPresented: $viewModel.showSummary) {
             if let summary = viewModel.summary {
-                WorkoutSummaryView(summary: summary) {
+                WorkoutSummaryView(summary: summary, sessionType: viewModel.sessionType.isEmpty ? effectiveSessionType : viewModel.sessionType) {
                     viewModel.dismissSummary()
                 }
             }
