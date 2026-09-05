@@ -70,6 +70,7 @@ struct WorkoutModeView: View {
             if isNonStrengthDay && !viewModel.isActive && !viewModel.showSummary {
                 CardioYogaLogView(
                     sessionType: effectiveSessionType,
+                    blockLine: blockLine,
                     onStartStrengthSession: effectiveSessionType == "Cardio+Abs"
                         ? { Task { await viewModel.startOrResumeWorkout(type: effectiveSessionType) } }
                         : nil,
