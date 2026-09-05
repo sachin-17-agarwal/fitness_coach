@@ -202,11 +202,19 @@ def fetch_recovery_by_date(days: int) -> dict:
 
 
 _PHASE_WEEK = {"baseline": 1, "volume": 2, "peak": 3, "deload": 4}
+# "Week 4 — Deload", "Week 1 (Baseline)", "Week 3: peak", "Baseline week 1",
+# "deload week (4)". The phase name sits right beside the number, with at most
+# punctuation between them; "Week 3 you hit 205kg ... peak" is a reference to
+# the past and must not read as today.
+_SEP = r"[\s—–\-:(/·,*_]{0,4}"
 _STATED_WEEK_RE = re.compile(
-    r"week\s*([1-4])\b[^\n]{0,40}?\b(baseline|volume|peak|deload)\b"
-    r"|\b(baseline|volume|peak|deload)\b[^\n]{0,40}?\bweek\s*([1-4])\b",
+    rf"\bweek{_SEP}([1-4])\b{_SEP}(?:of\s*4{_SEP})?(baseline|volume|peak|deload)\b"
+    rf"|\b(baseline|volume|peak|deload)\b(?:\s+(?:week|phase|intensity|progression))?{_SEP}"
+    rf"(?:week{_SEP})?\(?([1-4])\b",
     re.IGNORECASE)
-_PHASE_ONLY_RE = re.compile(r"\b(baseline|volume progression|peak intensity|deload)\b", re.IGNORECASE)
+_LONE_DELOAD_RE = re.compile(
+    r"(?:^|\n)\W*deload\b|\bdeload (?:week|day|session|today)\b", re.IGNORECASE)
+_NOT_TODAY_RE = re.compile(r"\b(next|last|previous|after|before|until|no|not|skip)\b", re.IGNORECASE)
 
 
 def stated_week(text: str) -> int | None:
@@ -214,31 +222,33 @@ def stated_week(text: str) -> int | None:
 
     The coach opens a session with the week it was handed — "Week 4 — Deload",
     "Week 1 (Baseline)" — from the same memory state the stamps come from, so
-    a stated week is as good as a stamp and better than a reconstruction. It
-    is read only where a week number and its phase name sit together, or
-    where exactly one phase name appears; "Week 3 you hit 205kg" alone is a
-    reference to the past and is not taken.
+    a stated week is as good as a stamp and better than a reconstruction. Only
+    a week number with its phase name right beside it is taken, or a deload
+    named as today's; the first reading of this accepted a phase word forty
+    characters away and mislabelled openings that mentioned the peak week.
     """
     if not text:
         return None
-    found = _STATED_WEEK_RE.search(text)
-    if found:
+    for found in _STATED_WEEK_RE.finditer(text):
         number = found.group(1) or found.group(4)
         phase = (found.group(2) or found.group(3) or "").lower()
         if number and _PHASE_WEEK.get(phase) == int(number):
             return int(number)
-    phases = set()
-    for match in _PHASE_ONLY_RE.finditer(text):
-        before = text[max(0, match.start() - 24):match.start()].lower()
-        after = text[match.end():match.end() + 16].lower()
-        # "next deload", "deload next week", "last peak": the past or the
-        # future, not today.
-        if re.search(r"\b(next|last|previous|after|before|until)\b", before + " " + after):
-            continue
-        phases.add(match.group(1).lower().split()[0])
-    if len(phases) == 1:
-        return _PHASE_WEEK[phases.pop()]
+    for match in _LONE_DELOAD_RE.finditer(text):
+        before = text[max(0, match.start() - 24):match.start()]
+        after = text[match.end():match.end() + 16]
+        if not _NOT_TODAY_RE.search(before + " " + after):
+            return 4
     return None
+
+
+def _snippet(text: str, width: int = 90) -> str:
+    """The stretch of the reply around its week statement, one line."""
+    found = _STATED_WEEK_RE.search(text or "") or _LONE_DELOAD_RE.search(text or "")
+    if not found:
+        return ""
+    lo, hi = max(0, found.start() - 30), min(len(text), found.end() + width)
+    return " ".join(text[lo:hi].split())
 
 
 def _violations(block: dict, week: int, session_type: str, prompt: str,
@@ -347,6 +357,7 @@ def audit(days: int, prompt: str) -> dict:
     # coach's own statement of it agreed with the session row.
     week_from = {"stated": 0, "stamped": 0, "reconstructed": 0}
     agreement = {"compared": 0, "agreed": 0}
+    disagreements: list = []
     for reply in replies:
         date = reply.get("date")
         known = weeks.get(date)
@@ -362,6 +373,10 @@ def audit(days: int, prompt: str) -> dict:
         if stated is not None:
             agreement["compared"] += 1
             agreement["agreed"] += int(stated == week)
+            if stated != week and len(disagreements) < 12:
+                disagreements.append({"date": date, "session": session_type,
+                                      "row_week": week, "stated": stated,
+                                      "snippet": _snippet(reply.get("content") or "")})
             week = stated
         blocks = [b for b in parse_all_prescriptions(reply.get("content") or "")
                   if b.get("working")]
@@ -393,7 +408,7 @@ def audit(days: int, prompt: str) -> dict:
             "undated": undated, "prescriptions": checked,
             "violations": findings, "counts": counts,
             "week_sources": week_sources, "week_from": week_from,
-            "agreement": agreement}
+            "agreement": agreement, "disagreements": disagreements}
 
 
 _LABELS = {
@@ -407,7 +422,7 @@ _LABELS = {
 }
 
 
-def render_chat(result: dict) -> str:
+def render_chat(result: dict, detail: bool = False) -> str:
     """The report as the iOS bubble will actually render it.
 
     Bulleted and blank-line separated on purpose: MarkdownText joins
@@ -463,6 +478,13 @@ def render_chat(result: dict) -> str:
         lines.append(f"- {f['date']} · {f['session']} wk{f['week']} · "
                      f"{f['exercise']} — {f['detail']}")
     lines.append("")
+    if detail and result.get("disagreements"):
+        lines += ["**Where the coach's stated week and the session row disagree (sample)**", ""]
+        for d in result["disagreements"]:
+            lines.append(f"- {d['date']} · {d['session']} · row says wk{d['row_week']}, "
+                         f"coach says wk{d['stated']} — “{d['snippet']}”")
+        lines.append("")
+
     # Bulleted like everything above it: a bare paragraph here is exactly the
     # trailing line that gets glued onto the row before it in the bubble.
     lines += ["- Every check is decidable from the prescription and the week — "
@@ -508,7 +530,7 @@ def _main() -> int:
         prompt = handle.read()
 
     result = audit(args.days, prompt)
-    report = render_chat(result)
+    report = render_chat(result, detail=True)
 
     stamp = now_local().date().isoformat()
     header = (f"<!-- generated {stamp} · {result['prescriptions']} prescriptions "

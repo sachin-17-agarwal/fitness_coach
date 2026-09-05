@@ -415,6 +415,9 @@ class StatedWeekTests(unittest.TestCase):
         from audit import stated_week
         self.assertIsNone(stated_week("Week 3 you hit 205kg x12, so this cycle opens at 210kg."))
         self.assertIsNone(stated_week("Deload next week; this week is the peak."))
+        self.assertIsNone(stated_week("Week 1 opens above the peak week you just finished."))
+        self.assertIsNone(stated_week("Read it from PEAK WEEK REFERENCE LOADS, not week 4."))
+        self.assertIsNone(stated_week("No deload yet — one more hard session."))
 
     def test_a_lone_phase_word_is_enough(self):
         from audit import stated_week
