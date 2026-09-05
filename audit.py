@@ -232,6 +232,9 @@ def stated_week(text: str) -> int | None:
     for found in _STATED_WEEK_RE.finditer(text):
         number = found.group(1) or found.group(4)
         phase = (found.group(2) or found.group(3) or "").lower()
+        before = text[max(0, found.start() - 24):found.start()]
+        if _NOT_TODAY_RE.search(before):
+            continue                      # "so next Week 1 baseline, drop 5%"
         if number and _PHASE_WEEK.get(phase) == int(number):
             return int(number)
     for match in _LONE_DELOAD_RE.finditer(text):
@@ -252,7 +255,8 @@ def _snippet(text: str, width: int = 90) -> str:
 
 
 def _violations(block: dict, week: int, session_type: str, prompt: str,
-                recovery: dict | None = None, full_reply: bool = True) -> list:
+                recovery: dict | None = None, full_reply: bool = True,
+                week_known: bool = True) -> list:
     """Every rule this one prescription breaks. Mechanical, not a judgement.
 
     A `Revised:` block is the coach departing from the programme on purpose —
@@ -261,6 +265,13 @@ def _violations(block: dict, week: int, session_type: str, prompt: str,
     session or re-stated one exercise mid-way through it: the set count is
     only checkable on the former, because "Back-off 2 of 2" on its own is a
     partial block by design, not a two-set prescription.
+
+    `week_known` is False when the week is only a reconstruction from the
+    rotation. Measured against the coach's own statements, that reconstruction
+    was wrong two times in three over ninety days — the rotation itself has
+    changed — so on such a day only the checks that need no week run: the
+    set count, and the shape of the back-offs. An RPE or a rep count judged
+    against a guessed week is not a finding.
     """
     if block.get("revised"):
         return []
@@ -291,6 +302,8 @@ def _violations(block: dict, week: int, session_type: str, prompt: str,
 
     top = working[0]
     rpe = top.get("rpe")
+    if not week_known:
+        targets = None
     if targets and rpe is not None and rpe < targets["top"]:
         out.append(("rpe_under_target",
                     f"top set at RPE{rpe:g} in week {week}, which targets "
@@ -306,7 +319,7 @@ def _violations(block: dict, week: int, session_type: str, prompt: str,
     # Only for a movement the catalog can classify: an unknown name falls to
     # the isolation range, and a compound under a spelling the map has not
     # met would be reported as under-repped at 7.
-    if known and week != 4 and reps is not None and reps < low:
+    if known and week_known and week != 4 and reps is not None and reps < low:
         out.append(("reps_below_range",
                     f"top set at {reps} reps against a {low}-{high} range"))
 
@@ -358,6 +371,21 @@ def audit(days: int, prompt: str) -> dict:
     week_from = {"stated": 0, "stamped": 0, "reconstructed": 0}
     agreement = {"compared": 0, "agreed": 0}
     disagreements: list = []
+
+    # The coach names the week once, in the reply that opens the session; the
+    # replies that follow through the day do not repeat it. So the statement
+    # is read for the DAY, not the reply, and the most-stated week wins.
+    stated_by_date: dict = {}
+    snippet_by_date: dict = {}
+    for reply in replies:
+        stated = stated_week(reply.get("content") or "")
+        if stated is not None and reply.get("date"):
+            tally = stated_by_date.setdefault(reply["date"], {})
+            tally[stated] = tally.get(stated, 0) + 1
+            snippet_by_date.setdefault(reply["date"], _snippet(reply.get("content") or ""))
+    stated_for = {d: max(t, key=t.get) for d, t in stated_by_date.items()}
+    compared_dates: set = set()
+
     for reply in replies:
         date = reply.get("date")
         known = weeks.get(date)
@@ -369,15 +397,20 @@ def audit(days: int, prompt: str) -> dict:
             undated += 1
             continue
         dated += 1
-        stated = stated_week(reply.get("content") or "")
+        stated = stated_for.get(date)
+        source = ("stated" if stated is not None
+                  else week_sources_by_date.get(date, "reconstructed"))
         if stated is not None:
-            agreement["compared"] += 1
-            agreement["agreed"] += int(stated == week)
-            if stated != week and len(disagreements) < 12:
-                disagreements.append({"date": date, "session": session_type,
-                                      "row_week": week, "stated": stated,
-                                      "snippet": _snippet(reply.get("content") or "")})
+            if date not in compared_dates:
+                compared_dates.add(date)
+                agreement["compared"] += 1
+                agreement["agreed"] += int(stated == week)
+                if stated != week and len(disagreements) < 12:
+                    disagreements.append({"date": date, "session": session_type,
+                                          "row_week": week, "stated": stated,
+                                          "snippet": snippet_by_date.get(date, "")})
             week = stated
+        week_known = source != "reconstructed"
         blocks = [b for b in parse_all_prescriptions(reply.get("content") or "")
                   if b.get("working")]
         # The session-opening reply lays the whole day out; anything shorter
@@ -393,11 +426,10 @@ def audit(days: int, prompt: str) -> dict:
                 continue
             seen_blocks.add(key)
             checked += 1
-            week_from["stated" if stated is not None else
-                      ("stamped" if week_sources_by_date.get(date) == "stamped"
-                       else "reconstructed")] += 1
+            week_from[source] += 1
             for code, detail in _violations(block, week, session_type, prompt,
-                                            recovery.get(date), full_reply):
+                                            recovery.get(date), full_reply,
+                                            week_known=week_known):
                 findings.append({"date": date, "session": session_type,
                                  "week": week, "exercise": block.get("exercise"),
                                  "code": code, "detail": detail})
@@ -436,14 +468,15 @@ def render_chat(result: dict, detail: bool = False) -> str:
     sources = result.get("week_sources") or {}
     origin = result.get("week_from") or {}
     agreement = result.get("agreement") or {}
-    provenance = (f"Week known from the coach's own reply for {origin.get('stated', 0)} "
-                  f"prescriptions, from the session stamp for {origin.get('stamped', 0)}, "
-                  f"reconstructed from the rotation for {origin.get('reconstructed', 0)}. "
-                  f"Sessions in the window: {sources.get('stamped', 0)} stamped, "
-                  f"{sources.get('reconstructed', 0)} reconstructed.")
+    known = origin.get("stated", 0) + origin.get("stamped", 0)
+    provenance = (f"Week known for {known} prescriptions ({origin.get('stated', 0)} from "
+                  f"the coach's own words that day, {origin.get('stamped', 0)} from the "
+                  f"session stamp): every check ran. Week only reconstructed for "
+                  f"{origin.get('reconstructed', 0)}: set count and back-off shape "
+                  f"checked, RPE and rep range not judged.")
     if agreement.get("compared"):
-        provenance += (f" Where the coach stated the week, it agreed with the session "
-                       f"row {agreement['agreed']} of {agreement['compared']} times.")
+        provenance += (f" Where the coach stated the week, the rotation walk agreed "
+                       f"{agreement['agreed']} of {agreement['compared']} days.")
 
     if not checked:
         lines += ["- No prescriptions found in that window to check.", "",

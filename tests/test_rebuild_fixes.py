@@ -418,6 +418,7 @@ class StatedWeekTests(unittest.TestCase):
         self.assertIsNone(stated_week("Week 1 opens above the peak week you just finished."))
         self.assertIsNone(stated_week("Read it from PEAK WEEK REFERENCE LOADS, not week 4."))
         self.assertIsNone(stated_week("No deload yet — one more hard session."))
+        self.assertIsNone(stated_week("so next Week 1 baseline, treat those weights as too heavy"))
 
     def test_a_lone_phase_word_is_enough(self):
         from audit import stated_week
@@ -444,6 +445,44 @@ class StatedWeekTests(unittest.TestCase):
         self.assertNotIn("rpe_under_target", codes, "a deload at RPE 7 is the protocol working")
         self.assertEqual(result["week_from"]["stated"], 1)
         self.assertEqual(result["agreement"], {"compared": 1, "agreed": 0})
+
+    def _run(self, replies, weeks, by_date):
+        import audit as audit_module
+        original = (audit_module.fetch_assistant_replies, audit_module.fetch_session_weeks,
+                    audit_module.fetch_recovery_by_date)
+        try:
+            audit_module.fetch_assistant_replies = lambda days: replies
+            audit_module.fetch_session_weeks = lambda days: (
+                weeks, {"stamped": 0, "reconstructed": len(weeks), "by_date": by_date})
+            audit_module.fetch_recovery_by_date = lambda days: {}
+            return audit_module.audit(30, _prompt())
+        finally:
+            (audit_module.fetch_assistant_replies, audit_module.fetch_session_weeks,
+             audit_module.fetch_recovery_by_date) = original
+
+    def test_the_opening_reply_dates_the_whole_day(self):
+        """The week is named once, when the session opens; the block that
+        follows three replies later inherits it."""
+        opening = "*TODAY: LEGS — Week 4 Deload*\nStop two short on everything."
+        later = "*Leg Press*\nWorking Set: 220kg x8 @7 | Rest: 2min\nBack-off: 176kg x10 @6, 176kg x8 @6"
+        result = self._run(
+            [{"date": "2026-09-01", "content": opening}, {"date": "2026-09-01", "content": later}],
+            {"2026-09-01": ("Legs", 1)}, {"2026-09-01": "reconstructed"})
+        self.assertEqual(result["week_from"], {"stated": 1, "stamped": 0, "reconstructed": 0})
+        self.assertNotIn("rpe_under_target", {f["code"] for f in result["violations"]})
+
+    def test_a_reconstructed_week_only_gets_the_checks_that_need_no_week(self):
+        reply = ("*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 2min\nBack-off: 176kg x10 @6\n\n"
+                 "*Leg Extension*\nWorking Set: 100kg x10 @7 | Rest: 90s\nBack-off: 80kg x12 @6\n\n"
+                 "*Seated Leg Curl*\nWorking Set: 90kg x10 @7 | Rest: 90s\nBack-off: 72kg x12 @6, 72kg x12 @6")
+        result = self._run([{"date": "2026-09-01", "content": reply}],
+                           {"2026-09-01": ("Legs", 1)}, {"2026-09-01": "reconstructed"})
+        codes = [f["code"] for f in result["violations"]]
+        self.assertNotIn("rpe_under_target", codes)
+        self.assertNotIn("reps_below_range", codes)
+        self.assertIn("set_count", codes, "Leg Press is a 3-set exercise")
+        self.assertIn("backoff_not_descending", codes)
+        self.assertEqual(result["week_from"]["reconstructed"], 3)
 
 
 class _FakeQuery:
