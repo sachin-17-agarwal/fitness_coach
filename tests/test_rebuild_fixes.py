@@ -359,6 +359,27 @@ class AuditCountTests(unittest.TestCase):
         codes = [c for c, _ in _violations(block, 1, "Push", _prompt())]
         self.assertNotIn("reps_below_range", codes)
 
+    def test_a_bodyweight_back_off_is_not_measured_on_the_plate(self):
+        from audit import _violations
+        block = {"exercise": "Dips",
+                 "working": [{"weight": 14.0, "reps": 8, "rpe": 8.0}],
+                 "backoff": [{"weight": 4.0, "reps": 10, "rpe": 7.0}]}
+        codes = [c for c, _ in _violations(block, 1, "Push", _prompt(), full_reply=False)]
+        self.assertNotIn("backoff_drop", codes)
+
+    def test_a_back_off_one_stack_step_outside_the_band_is_the_band(self):
+        from audit import _violations
+        # 65 -> 47.5 is 27%; 50 would be 23% but the stack has no 48.75.
+        block = {"exercise": "Lat Pulldown",
+                 "working": [{"weight": 65.0, "reps": 8, "rpe": 8.0}],
+                 "backoff": [{"weight": 47.5, "reps": 10, "rpe": 7.0}]}
+        codes = [c for c, _ in _violations(block, 1, "Pull", _prompt(), full_reply=False)]
+        self.assertNotIn("backoff_drop", codes)
+        # 100 -> 60 is 40%: not a rounding question.
+        block["working"][0]["weight"], block["backoff"][0]["weight"] = 100.0, 60.0
+        codes = [c for c, _ in _violations(block, 1, "Pull", _prompt(), full_reply=False)]
+        self.assertIn("backoff_drop", codes)
+
     def test_the_same_lift_on_the_same_day_is_counted_once(self):
         import audit as audit_module
         opening = "\n\n".join(
