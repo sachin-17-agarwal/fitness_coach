@@ -34,9 +34,39 @@ from datetime import timedelta
 from coach_parsing import (get_session_type_for_day, parse_all_prescriptions,
                            parse_session_template, _normalise_exercise,
                            _set_shape)
-from data import get_supabase, now_local
-from prescribe import TOP_SET_RANGE, WAVE, classify, recovery_adjustment
+from data import get_supabase, is_session_finished, now_local
+from prescribe import (TOP_SET_RANGE, WAVE, classify, infer_session_weeks,
+                       recovery_adjustment)
 from volume import resolve_contributions
+
+# PostgREST answers at most this many rows per request, silently. The first
+# real run of this audit read exactly 1000 replies — the OLDEST 1000 in the
+# window, because the query was ordered ascending — and reported that none
+# could be dated. Every fetch here pages.
+_PAGE = 1000
+
+
+def _all_rows(build) -> list[dict]:
+    """Every row of a query, paged past the server's per-request cap.
+
+    `build` returns a fresh query with its select, filters and ordering
+    applied; the range is added here so no caller can forget it.
+    """
+    rows: list[dict] = []
+    start = 0
+    while True:
+        page = (build().range(start, start + _PAGE - 1).execute()).data or []
+        rows.extend(page)
+        if len(page) < _PAGE:
+            return rows
+        start += _PAGE
+
+
+def _as_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 log = logging.getLogger(__name__)
 
@@ -51,40 +81,71 @@ def fetch_assistant_replies(days: int) -> list[dict]:
     if not supabase:
         raise RuntimeError("No Supabase client configured.")
     since = (now_local().date() - timedelta(days=days)).isoformat()
-    rows = (
+    rows = _all_rows(lambda: (
         supabase.table("conversations")
         .select("date, role, content")
         .gte("date", since)
         .eq("role", _ASSISTANT)
         .order("date")
         .order("id")
-        .execute()
-    ).data or []
+    ))
     return [r for r in rows if (r.get("content") or "").strip()]
 
 
-def fetch_session_weeks(days: int) -> dict:
-    """date -> (session_type, mesocycle_week) from the sessions themselves.
+def fetch_session_weeks(days: int) -> tuple[dict, dict]:
+    """date -> (session_type, mesocycle_week), and how each week was known.
 
-    Taken from the stamped row rather than recomputed. A session records the
-    week it was trained in; reconstructing it here would import the very
-    rotation-walking that duplicate rows were shown to corrupt.
+    Read from the stamped row where there is one. Rows written before stamping
+    began carry nothing, and on the first real run that was every row in the
+    window — so the week is otherwise RECONSTRUCTED from the rotation, exactly
+    as the replay does: the day is the type, the week turns at day 4, and the
+    walk is anchored to the mesocycle state in memory. Duplicate rows for one
+    date and type are collapsed first, because a duplicate spends two rotation
+    slots on one training day and shifts every earlier week by one. Unfinished
+    sessions are not slots at all.
+
+    A stamp always wins over a reconstruction. The counts say how many of each
+    the report rests on, so a number built on reconstruction is labelled as
+    such rather than passed off as read.
     """
     supabase = get_supabase()
     since = (now_local().date() - timedelta(days=days)).isoformat()
-    rows = (
+    rows = _all_rows(lambda: (
         supabase.table("workout_sessions")
-        .select("date, type, mesocycle_week")
+        .select("id, date, type, status, mesocycle_week")
         .gte("date", since)
         .order("date")
-        .execute()
-    ).data or []
-    weeks = {}
+        .order("id")
+    ))
+    sessions, seen = [], set()
     for row in rows:
-        date, week = row.get("date"), row.get("mesocycle_week")
-        if date and week and date not in weeks:
-            weeks[date] = (row.get("type") or "", int(week))
-    return weeks
+        if not is_session_finished(row.get("status")):
+            continue
+        key = (row.get("date"), (row.get("type") or "").strip())
+        if not key[0] or key in seen:
+            continue
+        seen.add(key)
+        sessions.append(row)
+
+    stamped = [_as_int(r.get("mesocycle_week")) for r in sessions]
+    inferred: list = [None] * len(sessions)
+    if any(week is None for week in stamped):
+        from replay import _load_mesocycle_state  # local: keeps import order flat
+        state = _load_mesocycle_state(supabase)
+        if state:
+            inferred = infer_session_weeks([r.get("type") for r in sessions], *state)
+
+    weeks, counts = {}, {"stamped": 0, "reconstructed": 0}
+    for row, stamp, guess in zip(sessions, stamped, inferred):
+        week = stamp or guess
+        if not week or week not in WAVE:
+            continue
+        date = row["date"]
+        if date in weeks:
+            continue
+        weeks[date] = ((row.get("type") or "").strip(), int(week))
+        counts["stamped" if stamp else "reconstructed"] += 1
+    return weeks, counts
 
 
 def fetch_recovery_by_date(days: int) -> dict:
@@ -106,7 +167,7 @@ def fetch_recovery_by_date(days: int) -> dict:
     if not supabase:
         return {}
     since = (now_local().date() - timedelta(days=days)).isoformat()
-    rows = (
+    rows = _all_rows(lambda: (
         # "recovery", not "health_data" — the name I first wrote does not
         # exist. The query would have returned nothing and the audit would have
         # gone quietly back to being recovery-blind: the same critical, with no
@@ -115,8 +176,7 @@ def fetch_recovery_by_date(days: int) -> dict:
         .select("date, sleep_hours, hrv, resting_hr")
         .gte("date", since)
         .order("date")
-        .execute()
-    ).data or []
+    ))
     by_date = {r["date"]: dict(r) for r in rows if r.get("date")}
 
     # hrv_avg and the RHR baseline are 7-day trailing means, the same window
@@ -227,7 +287,7 @@ def _violations(block: dict, week: int, session_type: str, prompt: str,
 def audit(days: int, prompt: str) -> dict:
     """Count protocol violations across every stored prescription."""
     replies = fetch_assistant_replies(days)
-    weeks = fetch_session_weeks(days)
+    weeks, week_sources = fetch_session_weeks(days)
     recovery = fetch_recovery_by_date(days)
 
     checked, findings, dated, undated = 0, [], 0, 0
@@ -268,7 +328,8 @@ def audit(days: int, prompt: str) -> dict:
         counts[f["code"]] = counts.get(f["code"], 0) + 1
     return {"days": days, "replies": len(replies), "dated": dated,
             "undated": undated, "prescriptions": checked,
-            "violations": findings, "counts": counts}
+            "violations": findings, "counts": counts,
+            "week_sources": week_sources}
 
 
 _LABELS = {
@@ -293,17 +354,23 @@ def render_chat(result: dict) -> str:
     findings = result["violations"]
     lines = [f"**Protocol audit — last {result['days']} days**", ""]
 
+    sources = result.get("week_sources") or {}
+    provenance = (f"{sources.get('stamped', 0)} session weeks read from the log, "
+                  f"{sources.get('reconstructed', 0)} reconstructed from the rotation.")
+
     if not checked:
         lines += ["- No prescriptions found in that window to check.", "",
                   f"- {result['replies']} coach replies were read; "
-                  f"{result['undated']} could not be matched to a session with "
-                  f"a recorded mesocycle week."]
+                  f"{result['undated']} fell on days with no finished session "
+                  f"whose mesocycle week is known.",
+                  f"- {provenance}"]
         return "\n".join(lines)
 
     bad = len({(f["date"], f["exercise"]) for f in findings})
     lines += [f"- **{checked}** prescriptions checked across "
-              f"**{result['dated']}** sessions.",
-              f"- **{bad}** of them broke at least one rule.", ""]
+              f"**{result['dated']}** replies on dated training days.",
+              f"- **{bad}** of them broke at least one rule.",
+              f"- {provenance}", ""]
 
     if not findings:
         lines += ["- Nothing to report: every prescription followed the "
