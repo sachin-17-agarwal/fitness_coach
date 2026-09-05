@@ -85,7 +85,7 @@ def match_logged_names(template_exercises, logged_names) -> tuple:
     return matches, ambiguous
 
 
-def _history(plan, current_loads: list[dict]) -> tuple:
+def _history(plan, current_loads: list[dict], week: int | None = None) -> tuple:
     """progression.get_current_loads rows -> the shape prescribe consumes.
 
     Keyed by the TEMPLATE name, so the proposal for "Incline Press" carries the
@@ -105,24 +105,35 @@ def _history(plan, current_loads: list[dict]) -> tuple:
     history = {}
     for exercise, logged_name in matches.items():
         row = rows[logged_name]
+        # progression writes a bodyweight set's load as the string "BW".
+        # Handed to arithmetic it raised, and the exception took every other
+        # exercise's proposal down with it.
+        load = row.get("load")
+        bodyweight = isinstance(load, str)
         history[norm_name(exercise)] = PriorSet(
-            load=row.get("load"),
+            load=None if bodyweight else load,
             reps=row.get("reps"),
             rpe=row.get("rpe"),
             date=str(row.get("date") or ""),
-            week=row.get("mesocycle_week"),
+            week=row.get("mesocycle_week") if week is None else week,
+            bodyweight=bodyweight,
         )
     renamed = {e: n for e, n in matches.items() if norm_name(e) != norm_name(n)}
     return history, renamed, ambiguous
 
 
 def build_proposal(prompt: str, session_type: str, week: int,
-                   current_loads: list[dict]) -> tuple:
+                   current_loads: list[dict],
+                   recovery: dict | None = None,
+                   peak_week_loads: list[dict] | None = None) -> tuple:
     """The programme's proposal for today.
 
     Returns (proposals, renamed, ambiguous) — empty throughout when it cannot
     compute one. `renamed` records where a template name resolved to a different
     logged name, `ambiguous` where it refused to.
+
+    `peak_week_loads` is progression.get_peak_week_loads: each lift's top set
+    from the most recent week 3. Weeks 1 and 4 anchor to it (:181, :185).
     """
     try:
         entries, _total = parse_session_template(prompt, session_type)
@@ -130,7 +141,10 @@ def build_proposal(prompt: str, session_type: str, week: int,
         if not plan:
             return [], {}, {}
         history, renamed, ambiguous = _history(plan, current_loads)
-        return prescribe_session(plan, week, history), renamed, ambiguous
+        peak_history, _r, _a = _history(plan, peak_week_loads or [], week=3)
+        return (prescribe_session(plan, week, history, recovery=recovery,
+                                  peak_history=peak_history),
+                renamed, ambiguous)
     except Exception:
         # A proposal is an aid, never a precondition. The coach has run without
         # one since the programme was written; a failure here must not take the
@@ -165,7 +179,11 @@ def format_proposal(proposals: list, session_type: str, week: int,
         if backoff:
             detail += f" · back-off {backoff}"
         lines.append(f"- {proposal.exercise} — {detail}")
-        for reason in proposal.reasons[:1]:
+        # Recovery notes are never truncated: :321 requires saying which rules
+        # applied when more than one matches, and :323 requires stating which
+        # lever was used. The [:1] below is a token economy for the ordinary
+        # progression reason and must not swallow those.
+        for reason in list(getattr(proposal, "recovery_reasons", [])) + proposal.reasons[:1]:
             grouped_reasons.setdefault(reason, []).append(proposal.exercise)
         for note in proposal.deferred:
             # The note leads with its own exercise name; strip it so identical
