@@ -4464,7 +4464,7 @@ class ComputedBlocksReplaceTheCoachsTests(unittest.TestCase):
         self.assertEqual(swapped, ["Leg Press"])
         card = parse_all_prescriptions(out)[0]
         self.assertEqual(card["working"][0],
-                         {"weight": 222.5, "reps": 6, "rpe": 8.0})
+                         {"weight": 222.5, "reps": 6, "reps_high": 10, "rpe": 8.0})
         self.assertEqual([b["rpe"] for b in card["backoff"]], [7.0, 7.0])
         self.assertEqual(len(card["warmup"]), 3)
 

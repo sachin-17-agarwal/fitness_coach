@@ -37,7 +37,7 @@ class BodyweightPriorTests(unittest.TestCase):
         top = pull.working[0]
         self.assertTrue(top.bodyweight)
         self.assertEqual(top.weight_kg, 2.5)
-        self.assertEqual((top.reps_low, top.reps_high), (6, 6))
+        self.assertEqual((top.reps_low, top.reps_high), (6, 10), "the band, floor at the bottom")
         self.assertTrue(prescribe.is_determined(pull))
 
     def test_dips_are_bodyweight_too(self):
@@ -52,7 +52,7 @@ class BodyweightPriorTests(unittest.TestCase):
         props, _, _ = programme.build_proposal(_prompt(), "Pull", 2, self.PULL)
         pull = next(p for p in props if p.exercise == "Pull-Ups")
         block = prescribe.render_block(pull)
-        self.assertIn("BW + 2.5kg x6 RPE8", block)
+        self.assertIn("BW + 2.5kg x6-10 RPE8", block)
         card = parse_all_prescriptions(block)[0]
         self.assertEqual(card["working"][0]["weight"], 2.5)
         self.assertIn("BW x5", block, "the ramp set is at bodyweight")
@@ -65,6 +65,22 @@ class BodyweightPriorTests(unittest.TestCase):
                             reasons, deferred)
         self.assertEqual(spec.reps_low, prescribe.DELOAD_MIN_REPS)
         self.assertTrue(any("not available at bodyweight" in d for d in deferred))
+
+
+class MalformedHistoryTests(unittest.TestCase):
+    def test_junk_in_a_history_row_costs_that_exercise_not_the_session(self):
+        rows = [{"exercise": "Cable Row", "load": "abc", "reps": "x", "rpe": "y"},
+                {"exercise": "Lat Pulldown", "load": 70.0, "reps": 8, "rpe": 8.0}]
+        props, _, _ = programme.build_proposal(_prompt(), "Pull", 2, rows)
+        self.assertEqual(len(props), 7)
+        by = {p.exercise: p for p in props}
+        self.assertFalse(prescribe.is_determined(by["Cable Row"]))
+        self.assertEqual(by["Lat Pulldown"].working[0].weight_kg, 70.0)
+
+    def test_a_tiny_load_still_gets_a_real_back_off(self):
+        from prescribe import SetSpec, backoff_sets
+        [b] = backoff_sets(SetSpec(1.0, 8, 8, 8.0), COMPOUND, 1, 1, [])
+        self.assertLess(b.weight_kg, 1.0)
 
 
 class WarmupRampTests(unittest.TestCase):
@@ -99,7 +115,7 @@ class WeekTwoBacklogTests(unittest.TestCase):
         reasons = []
         spec = next_top_set("Cable Row", COMPOUND, 2, PriorSet(80.0, 12, 9.0), reasons, [])
         self.assertEqual(spec.weight_kg, 82.5)
-        self.assertEqual((spec.reps_low, spec.reps_high), (6, 6))
+        self.assertEqual((spec.reps_low, spec.reps_high), (6, 10))
         self.assertTrue(any("OVERDUE" in r for r in reasons))
 
     def test_week_two_at_the_top_of_the_range_over_target_still_adds_reps(self):
@@ -189,6 +205,81 @@ class SubstitutionTests(unittest.TestCase):
         card = parse_all_prescriptions(out)[0]
         self.assertEqual(len(card["warmup"]), 2)
         self.assertEqual(out.count("Warm-up:"), 1)
+
+
+class LoadIncreaseIsABandTests(unittest.TestCase):
+    """:181's own example is "opens at 210kg x6-8" — a band, RPE decides."""
+
+    def test_week_one_after_a_peak_at_the_top_prescribes_the_band_not_a_point(self):
+        spec = next_top_set("Leg Press", COMPOUND, 1, PriorSet(220.0, 10, 9.0, week=3), [], [])
+        self.assertEqual((spec.weight_kg, spec.reps_low, spec.reps_high, spec.rpe), (222.5, 6, 10, 8.0))
+
+    def test_a_full_cycle_stays_coherent_and_moves(self):
+        """Two cycles with the athlete hitting the band at the target RPE:
+        every week's set is reachable from the last, the deload is two reps
+        short at the SAME load, and the next cycle opens above this one."""
+        plan = (("Leg Press", 3, COMPOUND),)
+        recent = peak = PriorSet(220.0, 10, 9.0, week=3)
+        opens = []
+        for _cycle in (1, 2):
+            for week in (1, 2, 3, 4):
+                [p] = prescribe_session(plan, week, {"Leg Press": recent}, peak_history={"Leg Press": peak})
+                top = p.working[0]
+                if week == 1:
+                    opens.append(top.weight_kg)
+                if week == 4:
+                    self.assertEqual(top.weight_kg, peak.load, "deload holds the week 3 load")
+                    self.assertEqual(top.reps_low, peak.reps - 2, "two RPE points is two reps")
+                recent = PriorSet(top.weight_kg, top.reps_high, top.rpe, week=week)
+                if week == 3:
+                    peak = recent
+        self.assertGreater(opens[1], opens[0], "the wave moves between cycles")
+
+
+class CoachFailureBenchmarkTests(unittest.TestCase):
+    """The failures the athlete actually saw from the coach, and what the
+    programme computes from the same inputs. This is the 'better than the
+    coach' claim made checkable."""
+
+    def test_baseline_week_after_a_220_for_10_peak(self):
+        """Coach sent 220kg x5 @7 for a week-1 baseline. The programme opens
+        above the peak, at the week's RPE, with the band."""
+        [p] = prescribe_session((("Leg Press", 3, COMPOUND),), 1, {},
+                                peak_history={"Leg Press": PriorSet(220.0, 10, 9.0, week=3)})
+        top = p.working[0]
+        self.assertEqual((top.weight_kg, top.rpe), (222.5, 8.0))
+        self.assertEqual((top.reps_low, top.reps_high), (6, 10))
+        self.assertEqual(len(p.backoff), 2, "a 3-set exercise carries two back-offs")
+        self.assertEqual(p.backoff[0].weight_kg, p.backoff[1].weight_kg)
+        self.assertLess(p.backoff[1].reps_low, p.backoff[0].reps_low)
+
+    def test_a_lift_with_months_of_history_is_never_called_new(self):
+        """Coach said "this exercise is new" about Incline Press, logged as
+        Incline Barbell Press. The programme resolves the name and computes."""
+        rows = [{"exercise": "Incline Barbell Press", "load": 60.0, "reps": 8, "rpe": 8.0}]
+        props, renamed, _ = programme.build_proposal(_prompt(), "Push", 2, rows)
+        incline = next(p for p in props if p.exercise == "Incline Press")
+        self.assertTrue(prescribe.is_determined(incline))
+        self.assertEqual(incline.working[0].weight_kg, 60.0)
+        self.assertEqual(renamed.get("Incline Press"), "Incline Barbell Press")
+
+    def test_a_suppressed_hrv_day_comes_down_a_point_everywhere(self):
+        """The guard that raised a soft RPE back to target undid this. The
+        programme computes it into every set at once."""
+        recovery = {"hrv": 51, "hrv_avg": 60, "sleep_hours": 7.5}
+        [p] = prescribe_session((("Leg Press", 3, COMPOUND),), 2,
+                                {"Leg Press": PriorSet(222.5, 8, 8.0)}, recovery=recovery)
+        self.assertEqual(p.working[0].rpe, 7.0)
+        self.assertEqual(p.working[0].reps_low, 8, "one point of RPE is one rep: 9 becomes 8")
+        self.assertTrue(all(b.rpe == 6.0 for b in p.backoff))
+        self.assertTrue(p.recovery_reasons)
+
+    def test_the_same_inputs_always_give_the_same_session(self):
+        plan = (("Leg Press", 3, COMPOUND), ("Leg Extension", 2, prescribe.ISOLATION))
+        hist = {"Leg Press": PriorSet(220.0, 8, 8.0), "Leg Extension": PriorSet(100.0, 12, 8.0)}
+        a = prescribe.render_session(prescribe_session(plan, 2, hist))
+        b = prescribe.render_session(prescribe_session(plan, 2, hist))
+        self.assertEqual(a, b)
 
 
 class AuditCountTests(unittest.TestCase):

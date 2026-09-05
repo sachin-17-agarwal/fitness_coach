@@ -85,6 +85,22 @@ def match_logged_names(template_exercises, logged_names) -> tuple:
     return matches, ambiguous
 
 
+def _number(value) -> float | None:
+    """A float, or None for anything that is not one. The rows come from
+    progression, which writes floats — but a proposal is built on every coach
+    message, and one malformed row must cost an exercise, not the session."""
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out == out else None      # NaN is not a load
+
+
+def _integer(value) -> int | None:
+    number = _number(value)
+    return int(number) if number is not None else None
+
+
 def _history(plan, current_loads: list[dict], week: int | None = None) -> tuple:
     """progression.get_current_loads rows -> the shape prescribe consumes.
 
@@ -109,11 +125,11 @@ def _history(plan, current_loads: list[dict], week: int | None = None) -> tuple:
         # Handed to arithmetic it raised, and the exception took every other
         # exercise's proposal down with it.
         load = row.get("load")
-        bodyweight = isinstance(load, str)
+        bodyweight = isinstance(load, str) and load.strip().upper() == "BW"
         history[norm_name(exercise)] = PriorSet(
-            load=None if bodyweight else load,
-            reps=row.get("reps"),
-            rpe=row.get("rpe"),
+            load=None if bodyweight else _number(load),
+            reps=_integer(row.get("reps")),
+            rpe=_number(row.get("rpe")),
             date=str(row.get("date") or ""),
             week=row.get("mesocycle_week") if week is None else week,
             bodyweight=bodyweight,
