@@ -392,7 +392,7 @@ class AuditCountTests(unittest.TestCase):
                     audit_module.fetch_recovery_by_date)
         try:
             audit_module.fetch_assistant_replies = lambda days: replies
-            audit_module.fetch_session_weeks = lambda days: ({"2026-09-01": ("Legs", 1)}, {"stamped": 1, "reconstructed": 0})
+            audit_module.fetch_session_weeks = lambda days: ({"2026-09-01": ("Legs", 1)}, {"stamped": 1, "reconstructed": 0, "by_date": {"2026-09-01": "stamped"}})
             audit_module.fetch_recovery_by_date = lambda days: {}
             result = audit_module.audit(30, _prompt())
         finally:
@@ -402,6 +402,45 @@ class AuditCountTests(unittest.TestCase):
         press = [f for f in result["violations"] if f["exercise"] == "Leg Press"
                  and f["code"] == "set_count"]
         self.assertEqual(len(press), 1)
+
+
+class StatedWeekTests(unittest.TestCase):
+    def test_a_week_named_with_its_phase_is_read(self):
+        from audit import stated_week
+        self.assertEqual(stated_week("Week 4 — Deload. Same weights as week 3, stop short."), 4)
+        self.assertEqual(stated_week("*Week 1 (Baseline)*\nOpening the cycle above last peak."), 1)
+        self.assertEqual(stated_week("Peak intensity, week 3. Closest to failure."), 3)
+
+    def test_a_past_reference_is_not_taken(self):
+        from audit import stated_week
+        self.assertIsNone(stated_week("Week 3 you hit 205kg x12, so this cycle opens at 210kg."))
+        self.assertIsNone(stated_week("Deload next week; this week is the peak."))
+
+    def test_a_lone_phase_word_is_enough(self):
+        from audit import stated_week
+        self.assertEqual(stated_week("Deload today. Leg Press 220kg x8 @7."), 4)
+
+    def test_the_stated_week_overrides_the_reconstruction(self):
+        import audit as audit_module
+        deload = ("Week 4 — Deload.\n\n*Leg Press*\nWorking Set: 220kg x8 @7 | Rest: 2min\n"
+                  "Back-off: 176kg x10 @6, 176kg x8 @6")
+        replies = [{"date": "2026-09-01", "content": deload}]
+        original = (audit_module.fetch_assistant_replies, audit_module.fetch_session_weeks,
+                    audit_module.fetch_recovery_by_date)
+        try:
+            audit_module.fetch_assistant_replies = lambda days: replies
+            audit_module.fetch_session_weeks = lambda days: (
+                {"2026-09-01": ("Legs", 1)},
+                {"stamped": 0, "reconstructed": 1, "by_date": {"2026-09-01": "reconstructed"}})
+            audit_module.fetch_recovery_by_date = lambda days: {}
+            result = audit_module.audit(30, _prompt())
+        finally:
+            (audit_module.fetch_assistant_replies, audit_module.fetch_session_weeks,
+             audit_module.fetch_recovery_by_date) = original
+        codes = {f["code"] for f in result["violations"]}
+        self.assertNotIn("rpe_under_target", codes, "a deload at RPE 7 is the protocol working")
+        self.assertEqual(result["week_from"]["stated"], 1)
+        self.assertEqual(result["agreement"], {"compared": 1, "agreed": 0})
 
 
 class _FakeQuery:
@@ -477,7 +516,9 @@ class AuditFetchTests(unittest.TestCase):
         self.assertEqual(weeks["2026-08-22"], ("Push", 1))
         self.assertEqual(weeks["2026-08-20"], ("Pull", 1))
         self.assertNotIn("2026-08-30", weeks)
-        self.assertEqual(counts, {"stamped": 1, "reconstructed": 4})
+        self.assertEqual({k: v for k, v in counts.items() if k != "by_date"},
+                         {"stamped": 1, "reconstructed": 4})
+        self.assertEqual(counts["by_date"]["2026-08-26"], "stamped")
 
 
 if __name__ == "__main__":
