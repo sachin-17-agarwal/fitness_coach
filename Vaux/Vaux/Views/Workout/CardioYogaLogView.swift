@@ -1,18 +1,20 @@
 // CardioYogaLogView.swift
 // Vaux
 //
-// Logging surface for sessions that don't fit the sets/reps/weight mould:
-// Cardio+Abs (variable cardio + ab work) and Yoga. Supports pulling today's
-// Apple Watch workouts from HealthKit and manual entry for activities not
-// captured there (stairs, a mixed boxing session, etc.).
+// The non-strength day as a two-part day, in the scheme. Cardio comes in
+// from the Watch and is imported as ruled rows; abs is a coached session like
+// any other, started from a pinned START ABS. Manual cardio logging is there
+// for what the Watch missed, folded behind a text action so it never leads.
+// Yoga uses the same page with one half.
 
 import SwiftUI
 import HealthKit
 
 struct CardioYogaLogView: View {
     let sessionType: String
-    /// Closure invoked when the user taps "Log abs exercise" on a Cardio+Abs
-    /// day. Flips the parent view into the regular strength logging flow.
+    /// "Week 1 · Day 4 · Baseline" from the parent, which owns the block state.
+    var blockLine: String? = nil
+    /// Starts the strength flow for the ab work on a Cardio+Abs day.
     var onStartStrengthSession: (() -> Void)? = nil
     /// Whether today's session is already a manual swap rather than the
     /// schedule's choice.
@@ -26,10 +28,15 @@ struct CardioYogaLogView: View {
     @State private var hkError: String?
 
     @State private var todaysSession: WorkoutSession?
+    /// Today's cardio entries (tagged in `notes`), imported or manual.
     @State private var loggedEntries: [WorkoutSet] = []
+    /// Today's ab work, logged through the strength flow.
+    @State private var absSets: [WorkoutSet] = []
+    @State private var lastAbs: AbsRecap?
     @State private var isLoadingSession = true
     @State private var errorMessage: String?
 
+    @State private var manualOpen = false
     @State private var selectedActivity: String
     @State private var durationMinutes: Int = 30
     @State private var intensity: Double = 7.0
@@ -41,11 +48,13 @@ struct CardioYogaLogView: View {
 
     init(
         sessionType: String,
+        blockLine: String? = nil,
         onStartStrengthSession: (() -> Void)? = nil,
         isOverridden: Bool = false,
         onChangeSession: ((String?) -> Void)? = nil
     ) {
         self.sessionType = sessionType
+        self.blockLine = blockLine
         self.onStartStrengthSession = onStartStrengthSession
         self.isOverridden = isOverridden
         self.onChangeSession = onChangeSession
@@ -81,439 +90,652 @@ struct CardioYogaLogView: View {
     /// as "30 min · Boxing" rather than "0kg × 30".
     private var entryTag: String { isYoga ? "yoga" : "cardio" }
 
+    /// The last completed ab work, for the ABS section before today's starts.
+    struct AbsRecap {
+        var date: String
+        var exercises: [String]
+        var sets: Int
+        var minutes: Int?
+        var rpeLow: Double?
+        var rpeHigh: Double?
+    }
+
+    // MARK: - Derived
+
+    private var cardioMinutes: Int { loggedEntries.reduce(0) { $0 + ($1.actualReps ?? 0) } }
+    private var manualEntries: [WorkoutSet] {
+        loggedEntries.filter { !($0.notes ?? "").contains("hk:") }
+    }
+    private var absDone: Bool { !absSets.isEmpty }
+
+    /// Ab exercises in the order they were done, each with its sets.
+    private var absByExercise: [(name: String, sets: [WorkoutSet])] {
+        var order: [String] = []
+        var grouped: [String: [WorkoutSet]] = [:]
+        for set in absSets where set.isWarmup != true {
+            if grouped[set.exercise] == nil { order.append(set.exercise) }
+            grouped[set.exercise, default: []].append(set)
+        }
+        return order.map { ($0, grouped[$0] ?? []) }
+    }
+
     // MARK: - Body
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
-                heroHeader
+        ZStack {
+            Color.ink0.ignoresSafeArea()
 
-                if let error = errorMessage {
-                    errorStrip(error)
-                }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    topBar
+                    hero
+                    dayRow
 
-                appleWatchSection
+                    if let error = errorMessage {
+                        errorStrip(error)
+                    }
 
-                manualEntrySection
-
-                if !loggedEntries.isEmpty {
-                    loggedEntriesSection
-                }
-
-                if isCardioAbs {
-                    absCallToAction
+                    cardioSection
+                    if manualOpen {
+                        manualFold
+                    }
+                    if !manualEntries.isEmpty {
+                        loggedSection
+                    }
+                    if isCardioAbs {
+                        absSection
+                    }
+                    Spacer(minLength: 40)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if isCardioAbs, onStartStrengthSession != nil {
+                    pinnedButton
+                }
+            }
         }
         .task {
             await loadTodaysSession()
             await loadHealthWorkouts()
+            if isCardioAbs { await loadLastAbs() }
         }
     }
 
-    // MARK: - Hero header
+    // MARK: - Header
 
-    private var heroHeader: some View {
-        let accent = Color.forSession(sessionType)
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Eyebrow(text: isOverridden ? "Today · changed" : "Today's session")
-                Spacer()
-                // This screen only logs — there is no "begin session" on a
-                // yoga day — so without a swap here the athlete who wanted to
-                // train instead was stuck, with the only way out on another
-                // tab entirely.
-                if let onChangeSession {
-                    SessionSwapButton(
-                        currentType: sessionType,
-                        isOverridden: isOverridden,
-                        onChange: onChangeSession
-                    )
-                }
+    private var topBar: some View {
+        HStack {
+            EditorialEyebrow(text: isOverridden ? "Train · Today · Changed" : "Train · Today")
+            Spacer()
+            if let onChangeSession {
+                SessionSwapButton(
+                    currentType: sessionType,
+                    isOverridden: isOverridden,
+                    onChange: onChangeSession
+                )
             }
-            HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(accent.opacity(0.12))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: isYoga ? "figure.mind.and.body" : "heart.circle.fill")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(accent)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(sessionType)
-                        .font(.serifMD)
-                        .foregroundStyle(Color.fg0)
-                    Text((isYoga ? "Mobility · Stretching" : "Zone 2 · Core").uppercased())
-                        .font(.eyebrowSmall)
-                        .kerning(1.2)
-                        .foregroundStyle(Color.fg2)
-                }
-                Spacer()
-            }
-            .padding(.vertical, 4)
+        }
+        .frame(height: 44)
+        .padding(.horizontal, Editorial.gutter)
+    }
 
-            if isLoadingSession {
-                HStack(spacing: 8) {
-                    ProgressView().tint(accent).scaleEffect(0.7)
-                    Text("Opening today's session…")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.fg2)
-                }
+    private var title: String {
+        isCardioAbs ? "CARDIO+ABS" : sessionType.uppercased()
+    }
+
+    private var focusLine: String {
+        isYoga ? "Mobility · Stretching" : "Zone 2 · Core · 30–45 min"
+    }
+
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let blockLine {
+                EditorialEyebrow(text: blockLine, color: .mint, size: 10, kerning: 2.5)
             }
+            Text(title)
+                .font(.display(68))
+                .foregroundStyle(Color.fg0)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            EditorialEyebrow(text: focusLine, color: Editorial.mid, size: 10.5, kerning: 2.5)
+        }
+        .padding(.horizontal, Editorial.gutter)
+        .padding(.top, 36)
+    }
+
+    // MARK: - Day row
+
+    private var cardioState: (value: String, sub: String, color: Color) {
+        if cardioMinutes > 0 {
+            let first = loggedEntries.first
+            let how = (first?.notes ?? "").contains("hk:") ? "Imported" : "Logged"
+            return ("\(cardioMinutes) min", "\(first?.exercise ?? "Cardio") · \(how)", .mint)
+        }
+        if isLoadingHK { return ("Reading", "Apple Watch", Editorial.muted) }
+        if !healthWorkouts.isEmpty {
+            return ("On Watch", "\(healthWorkouts.count) to import", Color.fg0)
+        }
+        return ("Waiting", "From Watch", Editorial.muted)
+    }
+
+    private var absState: (value: String, sub: String, color: Color) {
+        if absDone {
+            let sets = absSets.filter { $0.isWarmup != true }.count
+            if let minutes = Self.spanMinutes(absSets) {
+                return ("\(sets) sets", "\(minutes) min · \(absByExercise.count) movements", .mint)
+            }
+            return ("\(sets) sets", "\(absByExercise.count) movements", .mint)
+        }
+        if let lastAbs {
+            return ("Not started", "\(lastAbs.exercises.count) movements", Color.fg0)
+        }
+        return ("Not started", "Strength mode", Color.fg0)
+    }
+
+    private var dayRow: some View {
+        HStack(alignment: .top, spacing: 0) {
+            dayCell(index: "01", name: isYoga ? "Yoga" : "Cardio", state: cardioState, first: true)
+            if isCardioAbs {
+                dayCell(index: "02", name: "Abs", state: absState, first: false)
+            }
+        }
+        .padding(.horizontal, Editorial.gutter)
+        .padding(.top, 16)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.line).frame(height: 1).padding(.horizontal, Editorial.gutter)
+        }
+        .padding(.top, 30)
+    }
+
+    private func dayCell(index: String, name: String,
+                         state: (value: String, sub: String, color: Color),
+                         first: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                EditorialEyebrow(text: index, color: Editorial.muted, size: 9, kerning: 1.8)
+                EditorialEyebrow(text: name, color: Color.fg0, size: 9, kerning: 1.8)
+            }
+            Text(state.value.uppercased())
+                .font(.display(22))
+                .foregroundStyle(state.color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            EditorialEyebrow(text: state.sub, color: Editorial.muted, size: 8.5, kerning: 1.2)
+        }
+        .padding(.leading, first ? 0 : 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .leading) {
+            if !first { Rectangle().fill(Color.line).frame(width: 1) }
         }
     }
 
-    // MARK: - Apple Watch import
+    // MARK: - Cardio from the Watch
 
-    private var appleWatchSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: "applewatch")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.fg2)
-                Eyebrow(text: "Apple Watch")
-                Spacer()
-                Button {
-                    Haptic.light()
-                    Task { await loadHealthWorkouts(forceRefresh: true) }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.fg2)
-                }
-                .buttonStyle(.plain)
-                .disabled(isLoadingHK)
-            }
+    private var cardioSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader(isYoga ? "Yoga" : "Cardio", right: "From Apple Watch")
 
             if isLoadingHK {
-                HStack(spacing: 8) {
-                    ProgressView().tint(Color.fg1).scaleEffect(0.7)
-                    Text("Reading today's workouts…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.fg2)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                stateLine("Reading the Watch…", body: nil)
             } else if let err = hkError {
-                Text(err)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.ember)
+                stateLine("Watch unavailable", body: err, color: .ember)
             } else if healthWorkouts.isEmpty {
-                Text("No workouts recorded on your Watch today. Record one or log manually below.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.fg2)
-                    .fixedSize(horizontal: false, vertical: true)
+                stateLine("Nothing on the Watch yet",
+                          body: "Record it on the Watch and it lands here. Pull down to sync.")
             } else {
-                VStack(spacing: 8) {
-                    ForEach(healthWorkouts, id: \.uuid) { workout in
-                        healthWorkoutRow(workout)
-                    }
+                ForEach(Array(healthWorkouts.enumerated()), id: \.element.uuid) { index, workout in
+                    healthWorkoutRow(workout, first: index == 0)
                 }
             }
+
+            Button {
+                Haptic.light()
+                withAnimation(Motion.snappy) { manualOpen.toggle() }
+            } label: {
+                EditorialEyebrow(
+                    text: manualOpen ? "↘ Log \(isYoga ? "yoga" : "cardio") manually" : "↗ Log \(isYoga ? "yoga" : "cardio") manually",
+                    color: manualOpen ? Editorial.mid : .signal, size: 10, kerning: 2
+                )
+                .frame(minHeight: 44, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, Editorial.gutter)
+            .padding(.top, 4)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .darkCard(padding: 14, cornerRadius: 16)
     }
 
-    private func healthWorkoutRow(_ workout: HKWorkout) -> some View {
+    private func stateLine(_ headline: String, body: String?, color: Color = Editorial.muted) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            EditorialEyebrow(text: headline, color: color, size: 10, kerning: 2.2)
+            if let body {
+                Text(body)
+                    .font(.system(size: 13))
+                    .lineSpacing(3)
+                    .foregroundStyle(color == .ember ? Color.ember : Editorial.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, Editorial.gutter)
+        .padding(.top, 18)
+        .padding(.bottom, 4)
+    }
+
+    private func healthWorkoutRow(_ workout: HKWorkout, first: Bool) -> some View {
         let name = Self.displayName(for: workout.workoutActivityType)
         let minutes = Int((workout.duration / 60).rounded())
-        let start = Self.timeFormatter.string(from: workout.startDate)
         let alreadyImported = loggedEntries.contains { set in
             (set.notes ?? "").contains(workout.uuid.uuidString)
         }
-        return HStack(spacing: 12) {
-            Image(systemName: Self.icon(for: workout.workoutActivityType))
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.fg0)
-                .frame(width: 30, height: 30)
-                .background(Circle().fill(Color.ink3))
+        var facts = ["\(minutes) min", Self.timeFormatter.string(from: workout.startDate)]
+        if let kcal = Self.kcal(workout) { facts.append("\(kcal) kcal") }
+        if let bpm = Self.averageHR(workout) { facts.append("\(bpm) bpm") }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name)
-                    .font(.system(size: 14, weight: .semibold))
+        return HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(name.uppercased())
+                    .font(.display(22))
                     .foregroundStyle(Color.fg0)
-                Text("\(minutes) min · \(start)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced).monospacedDigit())
-                    .foregroundStyle(Color.fg2)
+                    .lineLimit(1)
+                EditorialEyebrow(text: facts.joined(separator: " · "), color: Editorial.muted, size: 9, kerning: 1.4)
             }
             Spacer()
-
-            Button {
-                Haptic.medium()
-                Task { await importWorkout(workout, displayName: name, minutes: minutes) }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: alreadyImported ? "checkmark" : "square.and.arrow.down")
-                        .font(.system(size: 10, weight: .bold))
-                    Text(alreadyImported ? "Imported" : "Import")
-                        .font(.system(size: 11, weight: .semibold))
+            if alreadyImported {
+                EditorialEyebrow(text: "✓ Imported", color: .mint, size: 10, kerning: 2)
+            } else {
+                Button {
+                    Haptic.medium()
+                    Task { await importWorkout(workout, displayName: name, minutes: minutes) }
+                } label: {
+                    EditorialEyebrow(text: "Import", color: .signal, size: 10, kerning: 2)
+                        .frame(minHeight: 44)
                 }
-                .foregroundStyle(alreadyImported ? Color.mint : Color.signalInk)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule().fill(alreadyImported ? Color.mint.opacity(0.12) : Color.signal)
-                )
+                .buttonStyle(.plain)
+                // Gated on the initial fetch, not on a session existing: the
+                // session is created lazily by `ensureSession()` on first log.
+                .disabled(isLogging || isLoadingSession)
+                .accessibilityLabel("Import \(name) from Apple Watch")
             }
-            .buttonStyle(.plain)
-            // Gated on the initial fetch, not on a session existing: the
-            // session is now created lazily by `ensureSession()` on first
-            // log, so requiring one up front would disable this forever.
-            // Waiting for the fetch still matters — tapping mid-load could
-            // create a second session before the existing one arrives.
-            .disabled(alreadyImported || isLogging || isLoadingSession)
+        }
+        .frame(minHeight: 60)
+        .padding(.horizontal, Editorial.gutter)
+        .overlay(alignment: .top) {
+            if !first { Rectangle().fill(Color.line).frame(height: 1).padding(.horizontal, Editorial.gutter) }
         }
     }
 
-    // MARK: - Manual entry
+    // MARK: - Manual fold
 
-    private var manualEntrySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Eyebrow(text: "Log \(isYoga ? "yoga" : "cardio") manually")
+    private var manualFold: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            activityWords
+                .padding(.top, 6)
 
-            // Activity picker — horizontal scroll
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(activityOptions, id: \.self) { option in
-                        activityChip(option)
-                    }
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 12) {
+                    EditorialEyebrow(text: "Duration", color: Editorial.muted, size: 9, kerning: 1.8)
+                    durationStepper
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 14) {
+                    EditorialEyebrow(text: "Intensity · RPE", color: Editorial.muted, size: 9, kerning: 1.8)
+                    rpeScale
+                }
+                .padding(.leading, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .leading) { Rectangle().fill(Color.line).frame(width: 1) }
+            }
+            .padding(.horizontal, Editorial.gutter)
+            .padding(.top, 22)
+
+            HStack {
+                TextField("Notes", text: $notes, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...3)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.fg0)
+                if notes.isEmpty {
+                    EditorialEyebrow(text: "Optional", color: Editorial.muted, size: 8.5, kerning: 1.5)
                 }
             }
+            .frame(minHeight: 48)
+            .padding(.horizontal, Editorial.gutter)
+            .padding(.top, 18)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.line).frame(height: 1).padding(.horizontal, Editorial.gutter)
+            }
 
-            // Duration stepper
             HStack {
-                Text("Duration")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.fg1)
                 Spacer()
                 Button {
-                    Haptic.light()
-                    durationMinutes = max(5, durationMinutes - 5)
+                    Haptic.medium()
+                    Task { await submitManualEntry() }
                 } label: {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Color.fg1)
+                    HStack(spacing: 8) {
+                        if isLogging {
+                            ProgressView().tint(Color.signal).scaleEffect(0.7)
+                        }
+                        EditorialEyebrow(text: "+ Log entry", color: .signal, size: 10.5, kerning: 2)
+                    }
+                    .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
+                .disabled(isLogging || isLoadingSession)
+            }
+            .padding(.horizontal, Editorial.gutter)
+            .padding(.top, 6)
+        }
+        .transition(.opacity)
+    }
 
-                Text("\(durationMinutes) min")
-                    .font(.numSM)
+    /// The activity as a horizontal run of display words — chosen in lime.
+    private var activityWords: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .firstTextBaseline, spacing: 18) {
+                ForEach(activityOptions, id: \.self) { option in
+                    let chosen = option == selectedActivity
+                    Button {
+                        Haptic.selection()
+                        withAnimation(Motion.snappy) { selectedActivity = option }
+                    } label: {
+                        Text(option.uppercased())
+                            .font(.display(chosen ? 26 : 20))
+                            .foregroundStyle(chosen ? Color.signal : Color.fg3)
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(chosen ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, Editorial.gutter)
+        }
+    }
+
+    private var durationStepper: some View {
+        HStack(spacing: 12) {
+            roundButton("minus") {
+                durationMinutes = max(5, durationMinutes - 5)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text("\(durationMinutes)")
+                    .font(.display(34))
                     .foregroundStyle(Color.fg0)
-                    .frame(minWidth: 70)
                     .contentTransition(.numericText())
+                    .frame(minWidth: 44, alignment: .leading)
+                EditorialEyebrow(text: "min", color: Editorial.muted, size: 9, kerning: 1.5)
+            }
+            roundButton("plus") {
+                durationMinutes = min(180, durationMinutes + 5)
+            }
+        }
+    }
 
+    private func roundButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptic.light()
+            withAnimation(Motion.snappy) { action() }
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.fg1)
+                .frame(width: 34, height: 34)
+                .overlay(Circle().stroke(Color.line2, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.92))
+    }
+
+    /// RPE 5–10 as a typographic scale, the same one the workout dock uses.
+    private var rpeScale: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            ForEach(5...10, id: \.self) { n in
+                let chosen = Int(intensity.rounded()) == n
                 Button {
-                    Haptic.light()
-                    durationMinutes = min(180, durationMinutes + 5)
+                    Haptic.selection()
+                    withAnimation(Motion.snappy) { intensity = Double(n) }
                 } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Color.fg1)
+                    Text("\(n)")
+                        .font(.display(chosen ? 26 : 18))
+                        .foregroundStyle(chosen ? Color.signal : Color.fg3)
+                        .frame(minWidth: 18, minHeight: 44)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("RPE \(n)")
             }
+        }
+    }
 
-            // Intensity slider
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Intensity")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.fg1)
-                    Spacer()
-                    Text("RPE \(intensity.oneDecimal)")
-                        .font(.numSM)
-                        .foregroundStyle(Color.forSession(sessionType))
+    // MARK: - Logged today (manual entries)
+
+    private var loggedSection: some View {
+        let minutes = manualEntries.reduce(0) { $0 + ($1.actualReps ?? 0) }
+        return VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Logged today", right: "\(manualEntries.count) entr\(manualEntries.count == 1 ? "y" : "ies") · \(minutes) min")
+            ForEach(Array(manualEntries.enumerated()), id: \.offset) { index, entry in
+                let rpe = entry.actualRpe.map { " · RPE \($0.wholeOrOne)" } ?? ""
+                ledgerRow(entry.exercise, sub: "\(entry.actualReps ?? 0) min\(rpe)", first: index == 0) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.mint)
                 }
-                Slider(value: $intensity, in: 1...10, step: 0.5)
-                    .tint(Color.forSession(sessionType))
             }
+        }
+    }
 
-            // Notes
-            TextField("Notes (optional)", text: $notes, axis: .vertical)
-                .font(.system(size: 13))
-                .foregroundStyle(Color.fg0)
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.ink1)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.line, lineWidth: 1)
-                )
-                .lineLimit(1...3)
+    // MARK: - Abs
 
-            // Submit
-            Button {
-                Haptic.medium()
-                Task { await submitManualEntry() }
-            } label: {
-                HStack(spacing: 6) {
-                    if isLogging {
-                        ProgressView().tint(Color.signalInk).scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .bold))
+    @ViewBuilder
+    private var absSection: some View {
+        if absDone {
+            VStack(alignment: .leading, spacing: 0) {
+                sectionHeader("Abs", right: Self.doneLabel(absSets))
+                ForEach(Array(absByExercise.enumerated()), id: \.offset) { index, group in
+                    ledgerRow(group.name, sub: Self.setSummary(group.sets), first: index == 0) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color.mint)
                     }
-                    Text("Log entry")
-                        .font(.system(size: 14, weight: .semibold))
                 }
-                .foregroundStyle(Color.signalInk)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.signal)
-                )
             }
-            .buttonStyle(PressScaleStyle())
-            .disabled(isLogging || isLoadingSession)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .darkCard(padding: 14, cornerRadius: 16)
-    }
-
-    private func activityChip(_ option: String) -> some View {
-        let isSelected = option == selectedActivity
-        let accent = Color.forSession(sessionType)
-        return Button {
-            Haptic.selection()
-            selectedActivity = option
-        } label: {
-            Text(option)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isSelected ? accent : Color.fg1)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule().fill(isSelected ? accent.opacity(0.10) : Color.ink3)
-                )
-                .overlay(
-                    Capsule().stroke(isSelected ? accent.opacity(0.35) : Color.line2, lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Logged entries
-
-    private var loggedEntriesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Eyebrow(text: "Today's entries")
-                Spacer()
-                Text("\(loggedEntries.count)")
-                    .font(.eyebrowSmall)
-                    .foregroundStyle(Color.fg2)
-            }
-            VStack(spacing: 8) {
-                ForEach(Array(loggedEntries.enumerated()), id: \.offset) { _, entry in
-                    loggedEntryRow(entry)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                sectionHeader("Abs", right: "A session like any other")
+                if let lastAbs {
+                    VStack(alignment: .leading, spacing: 6) {
+                        EditorialEyebrow(text: "Last time · \(Self.shortDate(lastAbs.date))", color: Editorial.muted, size: 9, kerning: 1.8)
+                        Text(lastAbs.exercises.map { $0.uppercased() }.joined(separator: " · "))
+                            .font(.display(22))
+                            .foregroundStyle(Color.fg0)
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        EditorialEyebrow(text: Self.recapFacts(lastAbs), color: Editorial.muted, size: 8.5, kerning: 1.2)
+                    }
+                    .padding(.horizontal, Editorial.gutter)
+                    .padding(.top, 18)
+                } else if isLoadingSession {
+                    stateLine("Opening today…", body: nil)
+                } else {
+                    stateLine("First ab session in the log",
+                              body: "The coach writes the movements when you start; they log as sets like any other day.")
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .darkCard(padding: 14, cornerRadius: 16)
     }
 
-    private func loggedEntryRow(_ entry: WorkoutSet) -> some View {
-        let minutes = entry.actualReps ?? 0
-        let rpe = entry.actualRpe
-        return HStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 14))
+    private var pinnedButton: some View {
+        Group {
+            if absDone {
+                HStack(spacing: 12) {
+                    Text("DAY COMPLETE")
+                        .font(.display(24))
+                        .kerning(0.6)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 15, weight: .bold))
+                }
                 .foregroundStyle(Color.mint)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(entry.exercise)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.fg0)
-                Text("\(minutes) min\(rpe.map { " · RPE \($0.oneDecimal)" } ?? "")")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced).monospacedDigit())
-                    .foregroundStyle(Color.fg2)
+                .frame(maxWidth: .infinity)
+                .frame(height: 60)
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.line2, lineWidth: 1))
+                .accessibilityLabel("Day complete")
+            } else {
+                Button {
+                    Haptic.medium()
+                    onStartStrengthSession?()
+                } label: {
+                    HStack(spacing: 12) {
+                        Text("START ABS")
+                            .font(.display(24))
+                            .kerning(0.6)
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    .foregroundStyle(Color.signalInk)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 60)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.signal))
+                }
+                .buttonStyle(PressScaleStyle())
+                .disabled(isLoadingSession)
             }
-            Spacer()
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Editorial.gutter)
+        .padding(.top, 12)
+        .padding(.bottom, 14)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.ink1)
+            LinearGradient(colors: [Color.ink0.opacity(0), Color.ink0, Color.ink0],
+                           startPoint: .top, endPoint: .bottom)
         )
     }
 
-    // MARK: - Abs CTA
+    // MARK: - Building blocks
 
-    private var absCallToAction: some View {
-        Button {
-            Haptic.medium()
-            onStartStrengthSession?()
-        } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.signal.opacity(0.18))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: "figure.core.training")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.signal)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Log abs exercises")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.fg0)
-                    Text("Switch to strength mode for planks, crunches, etc.")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.fg1)
-                        .lineLimit(2)
-                }
-                Spacer()
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.fg2)
+    private func sectionHeader(_ title: String, right: String = "") -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            EditorialEyebrow(text: title)
+            Spacer()
+            if !right.isEmpty {
+                EditorialEyebrow(text: right, color: Editorial.muted, size: 9.5, kerning: 1.5)
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.ink2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [Color.signal.opacity(0.3), Color.line],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            )
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, Editorial.gutter)
+        .padding(.top, 30)
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.line).frame(height: 1).padding(.horizontal, Editorial.gutter)
+        }
+    }
+
+    private func ledgerRow<Right: View>(_ name: String, sub: String, first: Bool,
+                                        @ViewBuilder right: () -> Right) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(name.uppercased())
+                    .font(.display(22))
+                    .foregroundStyle(Color.fg0)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                EditorialEyebrow(text: sub, color: Editorial.muted, size: 9, kerning: 1.4)
+            }
+            Spacer()
+            right()
+        }
+        .frame(minHeight: 60)
+        .padding(.horizontal, Editorial.gutter)
+        .overlay(alignment: .top) {
+            if !first { Rectangle().fill(Color.line).frame(height: 1).padding(.horizontal, Editorial.gutter) }
+        }
     }
 
     private func errorStrip(_ message: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .bold))
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Circle().fill(Color.ember).frame(width: 6, height: 6)
             Text(message)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12.5))
+                .foregroundStyle(Color.ember)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(Color.ember)
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.ember.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.ember.opacity(0.22), lineWidth: 1)
-        )
+        .padding(.horizontal, Editorial.gutter)
+        .padding(.top, 18)
+    }
+
+    // MARK: - Formatting
+
+    private static func kcal(_ workout: HKWorkout) -> Int? {
+        workout.statistics(for: HKQuantityType(.activeEnergyBurned))?
+            .sumQuantity()?.doubleValue(for: .kilocalorie()).map { Int($0.rounded()) }
+    }
+
+    private static func averageHR(_ workout: HKWorkout) -> Int? {
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        return workout.statistics(for: HKQuantityType(.heartRate))?
+            .averageQuantity()?.doubleValue(for: unit).map { Int($0.rounded()) }
+    }
+
+    /// Minutes between the first and last logged set, when both are stamped.
+    private static func spanMinutes(_ sets: [WorkoutSet]) -> Int? {
+        let stamps = sets.compactMap { $0.loggedAt }.compactMap(TranscriptTurn.parseTimestamp)
+        guard let first = stamps.min(), let last = stamps.max(), last > first else { return nil }
+        return max(1, Int((last.timeIntervalSince(first) / 60).rounded()))
+    }
+
+    private static func doneLabel(_ sets: [WorkoutSet]) -> String {
+        let stamps = sets.compactMap { $0.loggedAt }.compactMap(TranscriptTurn.parseTimestamp)
+        if let last = stamps.max() {
+            return "Done · \(last.formatted(.dateTime.hour().minute()))"
+        }
+        return "Done"
+    }
+
+    /// "3 × 12 · 27.5 kg · RPE 8" from an exercise's working sets.
+    private static func setSummary(_ sets: [WorkoutSet]) -> String {
+        guard let top = sets.max(by: { ($0.actualWeightKg ?? 0) < ($1.actualWeightKg ?? 0) }) else { return "" }
+        var parts = ["\(sets.count) × \(top.actualReps ?? 0)"]
+        if let w = top.actualWeightKg, w > 0 { parts.append("\(w.wholeOrOne) kg") }
+        if let rpe = top.actualRpe { parts.append("RPE \(rpe.wholeOrOne)") }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func recapFacts(_ recap: AbsRecap) -> String {
+        var parts = ["\(recap.sets) sets"]
+        if let minutes = recap.minutes { parts.append("\(minutes) min") }
+        if let low = recap.rpeLow, let high = recap.rpeHigh {
+            parts.append(low == high ? "RPE \(low.wholeOrOne)" : "RPE \(low.wholeOrOne)–\(high.wholeOrOne)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func shortDate(_ iso: String) -> String {
+        guard let date = dateFormatter.date(from: iso) else { return iso }
+        return date.formatted(.dateTime.day().month(.abbreviated))
+    }
+
+    // MARK: - Last ab work
+
+    /// The most recent Cardio+Abs day that carried strength sets.
+    private func loadLastAbs() async {
+        do {
+            let sessions: [WorkoutSession] = try await SupabaseClient.shared.fetch(
+                "workout_sessions",
+                query: ["type": "eq.\(sessionType)", "date": "lt.\(Self.todayString())"],
+                order: "date.desc",
+                limit: 4
+            )
+            for session in sessions {
+                guard let id = session.id else { continue }
+                let sets = (try? await workoutService.fetchSets(sessionId: id)) ?? []
+                let work = sets.filter { !($0.notes ?? "").contains(entryTag) && $0.isWarmup != true }
+                guard !work.isEmpty else { continue }
+                var names: [String] = []
+                for set in work where !names.contains(set.exercise) { names.append(set.exercise) }
+                let rpes = work.compactMap(\.actualRpe)
+                lastAbs = AbsRecap(date: session.date, exercises: names, sets: work.count,
+                                   minutes: Self.spanMinutes(work),
+                                   rpeLow: rpes.min(), rpeHigh: rpes.max())
+                return
+            }
+        } catch {
+            // A missing recap is not an error the athlete needs; the section
+            // reads as a first session.
+        }
     }
 
     // MARK: - Session bootstrapping
@@ -542,6 +764,7 @@ struct CardioYogaLogView: View {
                 if let id = session.id {
                     let sets = (try? await workoutService.fetchSets(sessionId: id)) ?? []
                     loggedEntries = sets.filter { ($0.notes ?? "").contains(entryTag) }
+                    absSets = sets.filter { !($0.notes ?? "").contains(entryTag) }
                 }
             }
             // Deliberately does NOT create one. `startSession` writes an
@@ -718,27 +941,6 @@ struct CardioYogaLogView: View {
         case .coreTraining: return "Core"
         case .mindAndBody: return "Mind & Body"
         default: return "Workout"
-        }
-    }
-
-    private static func icon(for type: HKWorkoutActivityType) -> String {
-        switch type {
-        case .running: return "figure.run"
-        case .walking, .hiking: return "figure.walk"
-        case .cycling: return "figure.outdoor.cycle"
-        case .rowing: return "figure.rower"
-        case .swimming: return "figure.pool.swim"
-        case .boxing, .kickboxing: return "figure.boxing"
-        case .stairs, .stairClimbing: return "figure.stairs"
-        case .elliptical: return "figure.elliptical"
-        case .yoga, .mindAndBody: return "figure.mind.and.body"
-        case .pilates: return "figure.pilates"
-        case .flexibility: return "figure.flexibility"
-        case .jumpRope: return "figure.jumprope"
-        case .highIntensityIntervalTraining: return "figure.highintensity.intervaltraining"
-        case .coreTraining: return "figure.core.training"
-        case .mixedCardio: return "heart.circle.fill"
-        default: return "figure.mixed.cardio"
         }
     }
 }
