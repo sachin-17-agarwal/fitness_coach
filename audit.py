@@ -135,7 +135,7 @@ def fetch_session_weeks(days: int) -> tuple[dict, dict]:
         if state:
             inferred = infer_session_weeks([r.get("type") for r in sessions], *state)
 
-    weeks, counts = {}, {"stamped": 0, "reconstructed": 0}
+    weeks, counts = {}, {"stamped": 0, "reconstructed": 0, "by_date": {}}
     for row, stamp, guess in zip(sessions, stamped, inferred):
         week = stamp or guess
         if not week or week not in WAVE:
@@ -144,7 +144,9 @@ def fetch_session_weeks(days: int) -> tuple[dict, dict]:
         if date in weeks:
             continue
         weeks[date] = ((row.get("type") or "").strip(), int(week))
-        counts["stamped" if stamp else "reconstructed"] += 1
+        source = "stamped" if stamp else "reconstructed"
+        counts[source] += 1
+        counts["by_date"][date] = source
     return weeks, counts
 
 
@@ -197,6 +199,46 @@ def fetch_recovery_by_date(days: int) -> dict:
         by_date[date]["hrv_avg"] = (sum(hrvs) / len(hrvs)) if hrvs else None
         by_date[date]["resting_hr_baseline"] = (sum(rhrs) / len(rhrs)) if rhrs else None
     return by_date
+
+
+_PHASE_WEEK = {"baseline": 1, "volume": 2, "peak": 3, "deload": 4}
+_STATED_WEEK_RE = re.compile(
+    r"week\s*([1-4])\b[^\n]{0,40}?\b(baseline|volume|peak|deload)\b"
+    r"|\b(baseline|volume|peak|deload)\b[^\n]{0,40}?\bweek\s*([1-4])\b",
+    re.IGNORECASE)
+_PHASE_ONLY_RE = re.compile(r"\b(baseline|volume progression|peak intensity|deload)\b", re.IGNORECASE)
+
+
+def stated_week(text: str) -> int | None:
+    """The mesocycle week the coach itself named in the reply, if it did.
+
+    The coach opens a session with the week it was handed — "Week 4 — Deload",
+    "Week 1 (Baseline)" — from the same memory state the stamps come from, so
+    a stated week is as good as a stamp and better than a reconstruction. It
+    is read only where a week number and its phase name sit together, or
+    where exactly one phase name appears; "Week 3 you hit 205kg" alone is a
+    reference to the past and is not taken.
+    """
+    if not text:
+        return None
+    found = _STATED_WEEK_RE.search(text)
+    if found:
+        number = found.group(1) or found.group(4)
+        phase = (found.group(2) or found.group(3) or "").lower()
+        if number and _PHASE_WEEK.get(phase) == int(number):
+            return int(number)
+    phases = set()
+    for match in _PHASE_ONLY_RE.finditer(text):
+        before = text[max(0, match.start() - 24):match.start()].lower()
+        after = text[match.end():match.end() + 16].lower()
+        # "next deload", "deload next week", "last peak": the past or the
+        # future, not today.
+        if re.search(r"\b(next|last|previous|after|before|until)\b", before + " " + after):
+            continue
+        phases.add(match.group(1).lower().split()[0])
+    if len(phases) == 1:
+        return _PHASE_WEEK[phases.pop()]
+    return None
 
 
 def _violations(block: dict, week: int, session_type: str, prompt: str,
@@ -296,10 +338,15 @@ def audit(days: int, prompt: str) -> dict:
     """Count protocol violations across every stored prescription."""
     replies = fetch_assistant_replies(days)
     weeks, week_sources = fetch_session_weeks(days)
+    week_sources_by_date = week_sources.pop("by_date", {})
     recovery = fetch_recovery_by_date(days)
 
     checked, findings, dated, undated = 0, [], 0, 0
     seen_blocks: set = set()
+    # How the week of each checked prescription was known, and whether the
+    # coach's own statement of it agreed with the session row.
+    week_from = {"stated": 0, "stamped": 0, "reconstructed": 0}
+    agreement = {"compared": 0, "agreed": 0}
     for reply in replies:
         date = reply.get("date")
         known = weeks.get(date)
@@ -311,6 +358,11 @@ def audit(days: int, prompt: str) -> dict:
             undated += 1
             continue
         dated += 1
+        stated = stated_week(reply.get("content") or "")
+        if stated is not None:
+            agreement["compared"] += 1
+            agreement["agreed"] += int(stated == week)
+            week = stated
         blocks = [b for b in parse_all_prescriptions(reply.get("content") or "")
                   if b.get("working")]
         # The session-opening reply lays the whole day out; anything shorter
@@ -326,6 +378,9 @@ def audit(days: int, prompt: str) -> dict:
                 continue
             seen_blocks.add(key)
             checked += 1
+            week_from["stated" if stated is not None else
+                      ("stamped" if week_sources_by_date.get(date) == "stamped"
+                       else "reconstructed")] += 1
             for code, detail in _violations(block, week, session_type, prompt,
                                             recovery.get(date), full_reply):
                 findings.append({"date": date, "session": session_type,
@@ -337,7 +392,8 @@ def audit(days: int, prompt: str) -> dict:
     return {"days": days, "replies": len(replies), "dated": dated,
             "undated": undated, "prescriptions": checked,
             "violations": findings, "counts": counts,
-            "week_sources": week_sources}
+            "week_sources": week_sources, "week_from": week_from,
+            "agreement": agreement}
 
 
 _LABELS = {
@@ -363,8 +419,16 @@ def render_chat(result: dict) -> str:
     lines = [f"**Protocol audit — last {result['days']} days**", ""]
 
     sources = result.get("week_sources") or {}
-    provenance = (f"{sources.get('stamped', 0)} session weeks read from the log, "
-                  f"{sources.get('reconstructed', 0)} reconstructed from the rotation.")
+    origin = result.get("week_from") or {}
+    agreement = result.get("agreement") or {}
+    provenance = (f"Week known from the coach's own reply for {origin.get('stated', 0)} "
+                  f"prescriptions, from the session stamp for {origin.get('stamped', 0)}, "
+                  f"reconstructed from the rotation for {origin.get('reconstructed', 0)}. "
+                  f"Sessions in the window: {sources.get('stamped', 0)} stamped, "
+                  f"{sources.get('reconstructed', 0)} reconstructed.")
+    if agreement.get("compared"):
+        provenance += (f" Where the coach stated the week, it agreed with the session "
+                       f"row {agreement['agreed']} of {agreement['compared']} times.")
 
     if not checked:
         lines += ["- No prescriptions found in that window to check.", "",
