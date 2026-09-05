@@ -371,7 +371,7 @@ class AuditCountTests(unittest.TestCase):
                     audit_module.fetch_recovery_by_date)
         try:
             audit_module.fetch_assistant_replies = lambda days: replies
-            audit_module.fetch_session_weeks = lambda days: {"2026-09-01": ("Legs", 1)}
+            audit_module.fetch_session_weeks = lambda days: ({"2026-09-01": ("Legs", 1)}, {"stamped": 1, "reconstructed": 0})
             audit_module.fetch_recovery_by_date = lambda days: {}
             result = audit_module.audit(30, _prompt())
         finally:
@@ -381,6 +381,82 @@ class AuditCountTests(unittest.TestCase):
         press = [f for f in result["violations"] if f["exercise"] == "Leg Press"
                  and f["code"] == "set_count"]
         self.assertEqual(len(press), 1)
+
+
+class _FakeQuery:
+    """Enough of the PostgREST builder to page: filters are ignored, `range`
+    slices the rows the fake table holds."""
+
+    def __init__(self, rows):
+        self._rows, self._lo, self._hi = rows, 0, None
+
+    def __getattr__(self, name):
+        if name in ("select", "gte", "lte", "eq", "in_", "order"):
+            return lambda *a, **k: self
+        raise AttributeError(name)
+
+    def range(self, lo, hi):
+        self._lo, self._hi = lo, hi
+        return self
+
+    def execute(self):
+        hi = len(self._rows) if self._hi is None else self._hi + 1
+        return type("R", (), {"data": self._rows[self._lo:hi]})()
+
+
+class _FakeSupabase:
+    def __init__(self, tables):
+        self.tables = tables
+
+    def table(self, name):
+        return _FakeQuery(self.tables.get(name, []))
+
+
+class AuditFetchTests(unittest.TestCase):
+    """The first real run read exactly 1000 replies and dated none of them."""
+
+    def test_every_row_is_read_past_the_thousand_row_cap(self):
+        import audit as audit_module
+        rows = [{"date": "2026-08-01", "role": "assistant", "content": f"r{i}"} for i in range(2350)]
+        fake = _FakeSupabase({"conversations": rows})
+        original = audit_module.get_supabase
+        audit_module.get_supabase = lambda: fake
+        try:
+            got = audit_module.fetch_assistant_replies(90)
+        finally:
+            audit_module.get_supabase = original
+        self.assertEqual(len(got), 2350)
+
+    def test_unstamped_sessions_get_their_week_from_the_rotation(self):
+        """Pull, Push, Legs, Cardio+Abs, Pull … walked back from the memory
+        state (next session: week 2, day 2), stamps win where present, a
+        duplicate row and an unfinished row are not slots."""
+        import audit as audit_module
+        import replay
+        sessions = [
+            {"id": 1, "date": "2026-08-20", "type": "Pull", "status": "completed", "mesocycle_week": None},
+            {"id": 2, "date": "2026-08-22", "type": "Push", "status": "completed", "mesocycle_week": None},
+            {"id": 3, "date": "2026-08-22", "type": "Push", "status": "completed", "mesocycle_week": None},   # duplicate
+            {"id": 4, "date": "2026-08-24", "type": "Legs", "status": "complete", "mesocycle_week": None},
+            {"id": 5, "date": "2026-08-26", "type": "Cardio+Abs", "status": "completed", "mesocycle_week": 1},
+            {"id": 6, "date": "2026-08-28", "type": "Pull", "status": "completed", "mesocycle_week": None},
+            {"id": 7, "date": "2026-08-30", "type": "Push", "status": "in_progress", "mesocycle_week": None},  # unfinished
+        ]
+        fake = _FakeSupabase({"workout_sessions": sessions})
+        original = (audit_module.get_supabase, replay._load_mesocycle_state)
+        audit_module.get_supabase = lambda: fake
+        replay._load_mesocycle_state = lambda supabase: (2, 2)
+        try:
+            weeks, counts = audit_module.fetch_session_weeks(90)
+        finally:
+            audit_module.get_supabase, replay._load_mesocycle_state = original
+        self.assertEqual(weeks["2026-08-28"], ("Pull", 2), "the last finished session is week 2 day 1")
+        self.assertEqual(weeks["2026-08-26"], ("Cardio+Abs", 1), "stamped")
+        self.assertEqual(weeks["2026-08-24"], ("Legs", 1))
+        self.assertEqual(weeks["2026-08-22"], ("Push", 1))
+        self.assertEqual(weeks["2026-08-20"], ("Pull", 1))
+        self.assertNotIn("2026-08-30", weeks)
+        self.assertEqual(counts, {"stamped": 1, "reconstructed": 4})
 
 
 if __name__ == "__main__":
