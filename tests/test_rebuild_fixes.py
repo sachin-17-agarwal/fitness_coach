@@ -282,6 +282,59 @@ class CoachFailureBenchmarkTests(unittest.TestCase):
         self.assertEqual(a, b)
 
 
+class GoLiveSwitchTests(unittest.TestCase):
+    """The substitution reaches the reply only behind PROGRAMME_SUBSTITUTION."""
+
+    def test_the_switch_defaults_off(self):
+        import os
+        from settings import get_settings
+        os.environ.pop("PROGRAMME_SUBSTITUTION", None)
+        self.assertFalse(get_settings().programme_substitution)
+
+    def test_the_live_block_binds_the_reply_only_under_the_switch(self):
+        """AST, like the shadow test: the only place assistant_message is bound
+        from the computed blocks sits inside `if ...programme_substitution:`."""
+        import ast, inspect, coach
+        tree = ast.parse(inspect.getsource(coach.chat_with_coach))
+        live = [n for n in ast.walk(tree)
+                if isinstance(n, ast.If) and "programme_substitution" in ast.dump(n.test)]
+        self.assertEqual(len(live), 1, "one guarded live block")
+        bound_inside = {t.id for n in ast.walk(live[0]) if isinstance(n, ast.Assign)
+                        for t in ast.walk(n.targets[0]) if isinstance(t, ast.Name)}
+        self.assertIn("assistant_message", bound_inside)
+        # And nowhere else does a substitution result reach the reply.
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "assistant_message"
+                    for t in ast.walk(node.targets[0])):
+                inside_live = any(node is m for m in ast.walk(live[0]))
+                src = ast.dump(node.value)
+                self.assertTrue(inside_live or "substitut" not in src.lower(),
+                                "a substitution binds the reply outside the switch")
+
+    def test_on_and_off_end_to_end(self):
+        import os
+        from settings import get_settings
+        from coach_parsing import substitute_computed_blocks, parse_all_prescriptions
+        computed = {"Leg Press": ("*Leg Press*\nWorking Set: 222.5kg x6-10 RPE8 | Rest: 2min\n"
+                                  "Back-off: 178kg x10-12 RPE7, 178kg x8-10 RPE7")}
+        reply = "*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 2min\nBack-off: 178kg x11 @6\n"
+        # Off: the shadow path leaves the reply alone (mirrors coach.py's gate).
+        os.environ.pop("PROGRAMME_SUBSTITUTION", None)
+        out = substitute_computed_blocks(reply, computed)[0] if get_settings().programme_substitution else reply
+        self.assertEqual(out, reply)
+        # On: the same call rewrites the prescription lines.
+        os.environ["PROGRAMME_SUBSTITUTION"] = "1"
+        try:
+            self.assertTrue(get_settings().programme_substitution)
+            out = substitute_computed_blocks(reply, computed)[0]
+            card = parse_all_prescriptions(out)[0]
+            self.assertEqual(card["working"][0]["weight"], 222.5)
+            self.assertEqual(len(card["backoff"]), 2)
+        finally:
+            os.environ.pop("PROGRAMME_SUBSTITUTION", None)
+
+
 class AuditCountTests(unittest.TestCase):
     def test_a_revised_block_is_not_a_violation(self):
         from audit import _violations
