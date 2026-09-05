@@ -1,7 +1,4 @@
 date,session,week,exercise,code,detail
-2026-06-09,Push,1,Dumbbell Chest Press,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
-2026-06-09,Push,1,Dumbbell Chest Press,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
-2026-06-09,Push,1,Dumbbell Chest Press,reps_below_range,top set at 4 reps against a 6-10 range
 2026-06-09,Push,4,Machine Shoulder Press,set_count,2 working set(s) against a template of 3
 2026-06-09,Push,4,Cable Lateral Raise,set_count,2 working set(s) against a template of 3
 2026-06-09,Push,4,Tricep Pushdown,set_count,2 working set(s) against a template of 3
@@ -12,7 +9,7 @@ date,session,week,exercise,code,detail
 2026-06-14,Pull,2,Incline Dumbbell Curl,reps_below_range,top set at 6 reps against a 8-12 range
 2026-06-15,Push,2,Cable Lateral Raise,reps_below_range,top set at 6 reps against a 8-12 range
 2026-06-15,Push,2,Tricep Pushdown,reps_below_range,top set at 6 reps against a 8-12 range
-2026-06-17,Legs,1,Lying Leg Curl,reps_below_range,top set at 6 reps against a 8-12 range
+2026-06-17,Legs,2,Lying Leg Curl,reps_below_range,top set at 6 reps against a 8-12 range
 2026-06-23,Pull,3,Hammer Curl,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
 2026-06-23,Pull,3,Hammer Curl,backoff_rpe_under_target,"back-off at RPE7 in week 3, which targets RPE8"
 2026-06-23,Pull,3,Machine Bicep Curl,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
@@ -74,17 +71,21 @@ date,session,week,exercise,code,detail
 2026-07-04,Push,1,Cable Lateral Raise,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-04,Push,1,Cable Lateral Raise,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
 2026-07-04,Push,1,Cable Lateral Raise,reps_below_range,top set at 7 reps against a 8-12 range
+2026-07-04,Push,1,Dips,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-04,Push,1,Dips,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
 2026-07-04,Push,4,Machine Shoulder Press,set_count,2 working set(s) against a template of 3
 2026-07-04,Push,4,Tricep Pushdown,set_count,2 working set(s) against a template of 3
+2026-07-06,Legs,1,Lying Leg Curl,reps_below_range,top set at 3 reps against a 7-12 range
+2026-07-07,Cardio+Abs,1,Ab Wheel Rollout,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-07,Cardio+Abs,1,Pallof Press,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-08,Pull,2,Incline DB Curl,reps_below_range,top set at 6 reps against a 8-12 range
 2026-07-08,Pull,2,Hammer Curl,reps_below_range,top set at 6 reps against a 8-12 range
 2026-07-08,Pull,2,Hammer Curl,set_count,2 working set(s) against a template of 3
-2026-07-08,Pull,1,Machine Bicep Curl,reps_below_range,top set at 6 reps against a 8-12 range
+2026-07-08,Pull,2,Machine Bicep Curl,reps_below_range,top set at 6 reps against a 8-12 range
 2026-07-09,Push,1,Cable Lateral Raise,set_count,2 working set(s) against a template of 3
 2026-07-10,Legs,2,Lying Leg Curl,reps_below_range,top set at 4 reps against a 8-12 range
 2026-07-10,Legs,2,Single Leg Sumo Press,set_count,2 working set(s) against a template of 3
-2026-07-11,Cardio+Abs,1,Hanging Leg Raises,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-11,Cardio+Abs,2,Hanging Leg Raises,rpe_under_target,"top set at RPE7 in week 2, which targets RPE8"
 2026-07-11,Cardio+Abs,2,Pallof Press,rpe_under_target,"top set at RPE7 in week 2, which targets RPE8"
 2026-07-11,Cardio+Abs,1,Ab Wheel Rollout,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-13,Pull,3,Lat Pulldown,rpe_under_target,"top set at RPE7 in week 3, which targets RPE8"
@@ -98,8 +99,8 @@ date,session,week,exercise,code,detail
 2026-07-13,Pull,3,Machine Bicep Curl,rpe_under_target,"top set at RPE7 in week 3, which targets RPE8"
 2026-07-13,Pull,3,Machine Bicep Curl,backoff_rpe_under_target,"back-off at RPE6 in week 3, which targets RPE7"
 2026-07-13,Pull,3,Machine Bicep Curl,set_count,2 working set(s) against a template of 3
-2026-07-14,Push,2,Machine Shoulder Press,set_count,2 working set(s) against a template of 3
-2026-07-14,Push,2,Tricep Pushdown,set_count,2 working set(s) against a template of 3
+2026-07-14,Push,3,Machine Shoulder Press,set_count,2 working set(s) against a template of 3
+2026-07-14,Push,3,Tricep Pushdown,set_count,2 working set(s) against a template of 3
 2026-07-15,Legs,3,Leg Press,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
 2026-07-15,Legs,3,Leg Press,backoff_rpe_under_target,"back-off at RPE7 in week 3, which targets RPE8"
 2026-07-15,Legs,3,Leg Extension,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
@@ -114,25 +115,44 @@ date,session,week,exercise,code,detail
 2026-07-21,Legs,3,Ab Crunch Machine,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
 2026-07-22,Cardio+Abs,4,Cable Crunch,set_count,4 working set(s) against a template of 3
 2026-07-22,Cardio+Abs,4,Pallof Press,set_count,3 working set(s) against a template of 2
+2026-07-23,Pull,1,Machine Bicep Curl,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-23,Pull,1,Machine Bicep Curl,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-07-23,Pull,1,Machine Bicep Curl,reps_below_range,top set at 5 reps against a 8-12 range
+2026-07-23,Pull,1,Hammer Curl,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-23,Pull,1,Hammer Curl,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-07-23,Pull,1,Hammer Curl,reps_below_range,top set at 5 reps against a 8-12 range
 2026-07-23,Pull,1,Cable Row,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-23,Pull,1,Cable Row,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
 2026-07-23,Pull,1,Cable Row,reps_below_range,top set at 5 reps against a 6-10 range
 2026-07-23,Pull,1,T-Bar Row,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-23,Pull,1,T-Bar Row,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
 2026-07-23,Pull,1,T-Bar Row,reps_below_range,top set at 5 reps against a 6-10 range
+2026-07-23,Pull,1,Lat Pulldown,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-23,Pull,1,Lat Pulldown,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-07-23,Pull,1,Lat Pulldown,reps_below_range,top set at 5 reps against a 6-10 range
 2026-07-24,Push,1,Face Pulls,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-24,Push,1,Face Pulls,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
 2026-07-24,Push,1,Machine Chest Press,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-24,Push,1,Machine Chest Press,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
 2026-07-24,Push,1,Machine Chest Press,reps_below_range,top set at 5 reps against a 6-10 range
+2026-07-24,Push,1,Cable Lateral Raise,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-24,Push,1,Cable Lateral Raise,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-07-24,Push,1,Cable Lateral Raise,reps_below_range,top set at 6 reps against a 8-12 range
+2026-07-24,Push,1,Dips,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-24,Push,1,Dips,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-07-24,Push,1,Cable Chest Fly,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-24,Push,1,Cable Chest Fly,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
 2026-07-24,Push,4,Machine Shoulder Press,set_count,2 working set(s) against a template of 3
 2026-07-24,Push,4,Tricep Pushdown,set_count,2 working set(s) against a template of 3
 2026-07-25,Legs,1,Machine Calf Raise,backoff_not_descending,"second back-off at 9 reps, not fewer than 9"
-2026-07-25,Legs,4,Single Leg Sumo Press,backoff_not_descending,"second back-off at 9 reps, not fewer than 9"
+2026-07-25,Legs,1,Single Leg Sumo Press,backoff_not_descending,"second back-off at 9 reps, not fewer than 9"
 2026-07-25,Legs,1,Leg Extension,backoff_not_descending,"second back-off at 10 reps, not fewer than 10"
-2026-07-25,Legs,4,Lying Leg Curl,backoff_not_descending,"second back-off at 8 reps, not fewer than 8"
+2026-07-25,Legs,1,Lying Leg Curl,reps_below_range,top set at 6 reps against a 7-12 range
+2026-07-25,Legs,1,Lying Leg Curl,backoff_not_descending,"second back-off at 8 reps, not fewer than 8"
 2026-07-27,Cardio+Abs,1,Reverse Cable Fly,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-27,Cardio+Abs,1,Overhead Cable Extension,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-27,Cardio+Abs,1,Hanging Leg Raises,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-07-27,Cardio+Abs,1,Pallof Press,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-07-29,Push,2,Tricep Pushdown,backoff_not_descending,"second back-off at 10 reps, not fewer than 10"
 2026-07-29,Push,2,Cable Lateral Raise,reps_below_range,top set at 6 reps against a 8-12 range
 2026-07-29,Push,2,Cable Lateral Raise,backoff_not_descending,"second back-off at 10 reps, not fewer than 10"
@@ -172,9 +192,5 @@ date,session,week,exercise,code,detail
 2026-08-27,Cardio+Abs,3,Ab Wheel Rollout,rpe_under_target,"top set at RPE7 in week 3, which targets RPE9"
 2026-08-27,Cardio+Abs,3,Hanging Leg Raises,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
 2026-08-29,Push,4,Tricep Pushdown,backoff_loads_differ,two back-offs at different loads
-2026-08-29,Push,1,Dumbbell Shoulder Press,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
-2026-08-29,Push,1,Dumbbell Shoulder Press,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
-2026-08-31,Legs,3,Machine Calf Raise,rpe_under_target,"top set at RPE7 in week 3, which targets RPE9"
-2026-08-31,Legs,3,Machine Calf Raise,backoff_rpe_under_target,"back-off at RPE6 in week 3, which targets RPE8"
 2026-08-31,Legs,3,Seated Leg Curl,rpe_under_target,"top set at RPE7 in week 3, which targets RPE9"
 2026-08-31,Legs,3,Seated Leg Curl,backoff_rpe_under_target,"back-off at RPE6 in week 3, which targets RPE8"
