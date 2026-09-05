@@ -36,6 +36,7 @@ from coach_parsing import (get_session_type_for_day, parse_all_prescriptions,
                            _set_shape)
 from data import get_supabase, now_local
 from prescribe import TOP_SET_RANGE, WAVE, classify, recovery_adjustment
+from volume import resolve_contributions
 
 log = logging.getLogger(__name__)
 
@@ -118,12 +119,19 @@ def fetch_recovery_by_date(days: int) -> dict:
     ).data or []
     by_date = {r["date"]: dict(r) for r in rows if r.get("date")}
 
-    # hrv_avg and the RHR baseline are 7-day trailing means, the same shape
-    # data.py computes for the live context. Recomputed here rather than read,
-    # because what was stored is today's average, not that day's.
+    # hrv_avg and the RHR baseline are 7-day trailing means, the same window
+    # data.py computes for the live context — the seven days up to AND
+    # INCLUDING the day, by calendar date rather than by row count, so a gap in
+    # the readings does not stretch the window back a fortnight.
+    from datetime import date as _date
     dates = sorted(by_date)
-    for i, date in enumerate(dates):
-        window = [by_date[d] for d in dates[max(0, i - 7):i]]
+    for date in dates:
+        try:
+            day = _date.fromisoformat(date)
+        except ValueError:
+            continue
+        since = (day - timedelta(days=7)).isoformat()
+        window = [by_date[d] for d in dates if since <= d <= date]
         hrvs = [r["hrv"] for r in window if r.get("hrv") is not None]
         rhrs = [r["resting_hr"] for r in window if r.get("resting_hr") is not None]
         by_date[date]["hrv_avg"] = (sum(hrvs) / len(hrvs)) if hrvs else None
@@ -132,9 +140,20 @@ def fetch_recovery_by_date(days: int) -> dict:
 
 
 def _violations(block: dict, week: int, session_type: str, prompt: str,
-                recovery: dict | None = None) -> list:
-    """Every rule this one prescription breaks. Mechanical, not a judgement."""
+                recovery: dict | None = None, full_reply: bool = True) -> list:
+    """Every rule this one prescription breaks. Mechanical, not a judgement.
+
+    A `Revised:` block is the coach departing from the programme on purpose —
+    an injury, a machine in use — and the one exit the protocol leaves, so it
+    is not a violation of it. `full_reply` says whether the reply laid out the
+    session or re-stated one exercise mid-way through it: the set count is
+    only checkable on the former, because "Back-off 2 of 2" on its own is a
+    partial block by design, not a two-set prescription.
+    """
+    if block.get("revised"):
+        return []
     name = block.get("exercise") or ""
+    known = bool(resolve_contributions(name))
     kind = classify(name)
     low, high = TOP_SET_RANGE[kind]
     targets = WAVE.get(week)
@@ -172,13 +191,16 @@ def _violations(block: dict, week: int, session_type: str, prompt: str,
             break
 
     reps = top.get("reps")
-    if week != 4 and reps is not None and reps < low:
+    # Only for a movement the catalog can classify: an unknown name falls to
+    # the isolation range, and a compound under a spelling the map has not
+    # met would be reported as under-repped at 7.
+    if known and week != 4 and reps is not None and reps < low:
         out.append(("reps_below_range",
                     f"top set at {reps} reps against a {low}-{high} range"))
 
     pairs, _total = parse_session_template(prompt, session_type)
     expected = {_normalise_exercise(n): c for n, c in pairs}
-    target = expected.get(_normalise_exercise(name))
+    target = expected.get(_normalise_exercise(name)) if full_reply else None
     if target:
         straight = _set_shape(name, target).startswith(f"{target} straight")
         actual = len(working) if straight else len(working) + len(backoff)
@@ -209,6 +231,7 @@ def audit(days: int, prompt: str) -> dict:
     recovery = fetch_recovery_by_date(days)
 
     checked, findings, dated, undated = 0, [], 0, 0
+    seen_blocks: set = set()
     for reply in replies:
         date = reply.get("date")
         known = weeks.get(date)
@@ -220,12 +243,23 @@ def audit(days: int, prompt: str) -> dict:
             undated += 1
             continue
         dated += 1
-        for block in parse_all_prescriptions(reply.get("content") or ""):
-            if not (block.get("working") or []):
+        blocks = [b for b in parse_all_prescriptions(reply.get("content") or "")
+                  if b.get("working")]
+        # The session-opening reply lays the whole day out; anything shorter
+        # is a mid-session re-statement of one lift, and its set count means
+        # nothing on its own.
+        pairs, _total = parse_session_template(prompt, session_type)
+        full_reply = len(blocks) >= max(2, len(pairs) // 2) if pairs else False
+        for block in blocks:
+            key = (date, _normalise_exercise(block.get("exercise") or ""))
+            if key in seen_blocks:
+                # The same lift is re-stated on every logged set during a
+                # session. One prescription trained on, counted once.
                 continue
+            seen_blocks.add(key)
             checked += 1
             for code, detail in _violations(block, week, session_type, prompt,
-                                            recovery.get(date)):
+                                            recovery.get(date), full_reply):
                 findings.append({"date": date, "session": session_type,
                                  "week": week, "exercise": block.get("exercise"),
                                  "code": code, "detail": detail})

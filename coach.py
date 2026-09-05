@@ -313,7 +313,10 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     try:
         computed = programme_out.get("computed") or {}
         if computed:
-            shadow, would_swap = substitute_computed_blocks(assistant_message, computed)
+            shadow, would_swap = substitute_computed_blocks(
+                assistant_message, computed,
+                aliases=programme_out.get("aliases"),
+                skip=programme_out.get("logged_today") or ())
             if would_swap:
                 sent = {q["exercise"]: q for q in parse_all_prescriptions(assistant_message)}
                 would = {q["exercise"]: q for q in parse_all_prescriptions(shadow)}

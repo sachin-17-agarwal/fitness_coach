@@ -426,6 +426,7 @@ def build_context_block(memory: dict, athlete_name: str,
         system_prompt, today_session, _safe_int(mesocycle_week),
         results.get("current_loads") or [],
         recovery=data,
+        peak_week_loads=results.get("peak_week_loads") or [],
     )
     # Handed back to the caller rather than rendered into the prompt. The
     # numbers are already here — the loads, the week and today's recovery all
@@ -447,6 +448,14 @@ def build_context_block(memory: dict, athlete_name: str,
             out["open"] = open_names
             out["session_type"] = today_session
             out["week"] = _safe_int(mesocycle_week)
+            # Logged spelling -> template name, so a block the coach heads
+            # "Incline Barbell Press" still meets the programme's "Incline
+            # Press"; and the lifts already on the board today, which the
+            # substitution must leave to the coach.
+            out["aliases"] = {logged: template for template, logged in _renamed.items()}
+            out["logged_today"] = sorted({
+                (c.get("exercise") or "").strip()
+                for c in (results.get("set_comparisons") or []) if c.get("exercise")})
         except Exception:
             log.exception("Could not render the computed session")
             out.clear()

@@ -876,7 +876,9 @@ def _coach_tempo(body: list) -> str | None:
     return None
 
 
-def substitute_computed_blocks(reply: str, computed: dict) -> tuple[str, list]:
+def substitute_computed_blocks(reply: str, computed: dict,
+                               aliases: dict | None = None,
+                               skip=()) -> tuple[str, list]:
     """Replace the coach's prescription lines with the programme's own.
 
     The end of the road the guards were on. Set counts were trimmed, RPEs were
@@ -907,11 +909,34 @@ def substitute_computed_blocks(reply: str, computed: dict) -> tuple[str, list]:
     are the coaching, not the arithmetic; only the Warm-up / Working Set /
     Back-off lines are replaced, and the coach's tempo is carried onto the new
     Working Set line rather than dropped.
+
+    AND TWO MORE, FOUND ON REVIEW.
+
+    It keeps the coach's header line. The programme keys its blocks by the
+    template name ("Incline Press"); the coach writes the name the athlete
+    logs under ("Incline Barbell Press"), which is also the name the iOS card
+    keys its transitions on. Swapping the header for the programme's spelling
+    would read as a change of exercise mid-session. `aliases` maps the logged
+    spelling back to the template name so such a block is still matched.
+
+    It leaves alone any exercise in `skip` — the ones with sets already logged
+    today. The computed block is built from LAST session's loads; once the top
+    set is on the board the coach's re-prescription is a reaction to today,
+    and overwriting it with the pre-session numbers would undo exactly the
+    adjustment a coach is for.
     """
     if not computed:
         return reply, []
 
     wanted = {_normalise_exercise(name): name for name in computed}
+    for logged, template in (aliases or {}).items():
+        if template in computed:
+            wanted.setdefault(_normalise_exercise(logged), template)
+    skipped = {_normalise_exercise(name) for name in skip or ()}
+    skipped |= {_normalise_exercise(logged) for logged, template in (aliases or {}).items()
+                if _normalise_exercise(template) in skipped}
+    skipped |= {_normalise_exercise(template) for logged, template in (aliases or {}).items()
+                if _normalise_exercise(logged) in skipped}
     lines = reply.split("\n")
 
     # A bold line is a CANDIDATE header, never a header on its own. Three of
@@ -956,7 +981,7 @@ def substitute_computed_blocks(reply: str, computed: dict) -> tuple[str, list]:
         body = lines[block["start"] + 1:block["end"]]
 
         key = _normalise_exercise(block["name"])
-        if key not in wanted or any(
+        if key not in wanted or key in skipped or _normalise_exercise(wanted[key]) in skipped or any(
                 l.strip().lower().startswith(("revised:", "revision:")) for l in body):
             out.extend(lines[block["start"]:block["end"]])
             continue
@@ -972,9 +997,16 @@ def substitute_computed_blocks(reply: str, computed: dict) -> tuple[str, list]:
 
         kept = [l for l in body
                 if not l.strip().lower().startswith(_PRESCRIPTION_PREFIXES)]
-        # The rendered text carries its own header, so the coach's is dropped
-        # with it — the name is the programme's spelling either way.
-        out.extend(rendered.split("\n"))
+        # The coach's header stays; the programme's own header line is dropped.
+        # A prescription written on the header line itself ("*Dips* Warm-up:
+        # BW x8") goes with the other prescription lines, or the card would
+        # carry two warm-ups.
+        header = lines[block["start"]]
+        closing = re.match(r'^(\s*\*{1,2}[^*\n]+?\*{1,2})(.*)$', header)
+        if closing and closing.group(2).strip().lower().startswith(_PRESCRIPTION_PREFIXES):
+            header = closing.group(1)
+        out.append(header)
+        out.extend(rendered.split("\n")[1:])
         out.extend(kept)
         swapped.append(block["name"])
 

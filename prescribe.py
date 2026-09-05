@@ -127,6 +127,23 @@ PRIMARY_MUSCLE = {
 
 BODYWEIGHT = {"Pull-Ups"}
 
+
+def is_bodyweight(exercise: str) -> bool:
+    """Loaded by adding weight to the athlete, not by a stack (:274).
+
+    Read from the shared catalog rather than the one-line set above, which
+    knew Pull-Ups and nothing else — so Dips arrived as a 2.5kg movement, and
+    the whole Push proposal went with it. A machine or assisted variant is a
+    stack movement whatever its name says.
+    """
+    name = (exercise or "").lower()
+    if exercise in BODYWEIGHT:
+        return True
+    if "machine" in name or "assisted" in name:
+        return False
+    from muscle_map import BODYWEIGHT_MOVEMENTS  # local: keeps import order flat
+    return any(tag in name for tag in BODYWEIGHT_MOVEMENTS)
+
 # :63 Working Set 1 — "Compounds 6-10 reps, isolation exercises 8-12 reps".
 # :64 Back-off — "Compounds 10-12 reps, isolation exercises 12-15 reps".
 TOP_SET_RANGE = {COMPOUND: (6, 10), ISOLATION: (8, 12)}
@@ -165,11 +182,12 @@ class PriorSet:
     Deliberately the same shape as one row of progression.find_current_loads,
     which is already the system's answer to "what weight is he on" (:211).
     """
-    load: float | None          # None or 0.0 for bodyweight
+    load: float | None          # the ADDED load for a bodyweight movement
     reps: int | None
     rpe: float | None
     date: str = ""
     week: int | None = None     # mesocycle week it was performed in, if known
+    bodyweight: bool = False    # progression's "BW" key: a set at bodyweight
 
 
 @dataclass
@@ -190,7 +208,7 @@ class SetSpec:
 
     def render(self) -> str:
         if self.bodyweight:
-            load = "BW" if not self.weight_kg else f"BW+{self.weight_kg:g}kg"
+            load = "BW" if not self.weight_kg else f"BW + {self.weight_kg:g}kg"
         elif self.weight_kg is None:
             load = "[load TBD]"
         else:
@@ -426,8 +444,13 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     """The top set for today, from the wave and what was logged last time."""
     targets = WAVE[week]
     low, high = TOP_SET_RANGE[kind]
+    bodyweight = is_bodyweight(exercise) or bool(prior and prior.bodyweight)
 
-    if prior is None or prior.load is None:
+    # A bodyweight movement with a logged set HAS a load — the athlete — and
+    # progression writes it as "BW". Reading that as "no load" deferred every
+    # pull-up as a feel-out; reading it as a number raised TypeError and took
+    # the whole session's proposal down with it, on every Pull and Push day.
+    if prior is None or (prior.load is None and not bodyweight):
         deferred.append(
             f"{exercise}: no logged history, so no opening load can be computed. "
             f"The programme calls this a genuine feel-out — ramp in clear steps and "
@@ -435,8 +458,9 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         )
         return SetSpec(None, low, high, targets["top"])
 
-    load = prior.load
-    bodyweight = exercise in BODYWEIGHT
+    load = (prior.load or 0.0) if bodyweight else prior.load
+    if bodyweight and isinstance(load, str):
+        load = 0.0
 
     if prior.reps is not None and prior.reps < low and week != 4:
         # :70 "That flexibility runs UPWARD only ... drifting BELOW an
@@ -499,6 +523,20 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         # :182 — "Keep the Week 1 weight and reach RPE 8 by adding reps toward
         # the top of the range. If last week already hit the top of the range at
         # RPE <=8, add 2.5-5kg instead and reset reps to the bottom."
+        #
+        # :205 first: reps ABOVE the range are a backlog whatever the RPE was.
+        # The generic branch below the week ladder applies it, but every week
+        # returns before reaching that branch, so 12 reps at RPE 9 on a 6-10
+        # range was told to "add reps toward the top" of a range it had left.
+        if prior.reps is not None and prior.reps > high:
+            step = INCREMENT[kind]
+            load = _round_load(load + step)
+            reasons.append(
+                f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the "
+                f"top of the {low}-{high} range, so the increase was already due "
+                f"(:205). Reps reset to the bottom."
+            )
+            return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
         if _met_top_of_range(prior, kind, targets["top"]):
             step = INCREMENT[kind]
             load = _round_load(load + step)
@@ -560,7 +598,16 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             )
         drop = int(round((prior.rpe or targets["top"]) - targets["top"]))
         reps = (prior.reps or high) - max(drop, 0)
-        if reps < DELOAD_MIN_REPS:
+        if reps < DELOAD_MIN_REPS and bodyweight and not load:
+            # No added load to drop and no stack to lower: the floor holds.
+            reps = DELOAD_MIN_REPS
+            deferred.append(
+                f"{exercise}: a deload by load is not available at bodyweight, "
+                f"so the reps hold at {DELOAD_MIN_REPS} instead of "
+                f"{(prior.reps or high) - max(drop, 0)}. Decide whether an "
+                f"easier variation is the better deload."
+            )
+        elif reps < DELOAD_MIN_REPS:
             # :186 the low-rep exception — deload by load instead.
             load = _round_load(load * (1 - DELOAD_LOAD_DROP))
             reps = prior.reps or high
@@ -634,7 +681,10 @@ def backoff_sets(top: SetSpec, kind: str, count: int, week: int,
         # A weighted pull-up backs off by shedding the added load, not by
         # becoming a different exercise. Dropping 20% of bodyweight is not a
         # thing he can do.
-        load = _round_load((top.weight_kg or 0) * (1 - BACKOFF_DROP)) or None
+        # Shed, not scaled: 20% off a 2.5kg plate is a 2kg plate, which no
+        # gym has and which changes nothing about the set. The reason line
+        # below always said "sheds the added load"; now the number does too.
+        load = None
         reasons.append(
             "Back-off sheds the added load and stays at bodyweight — a bodyweight "
             "movement cannot drop 20% of the athlete (:64 applied to the added "
@@ -672,7 +722,11 @@ def warmup_ramp(exercise: str, top: SetSpec, muscles_warm: set[str],
     never by the week. ":125 Deload holds week-3 loads, so a deload ramp is
     identical to the peak-week ramp."
     """
-    primary = PRIMARY_MUSCLE.get(exercise, "")
+    # From the catalog, like everything else here. PRIMARY_MUSCLE knows the
+    # seven Pull movements and nothing else, so on Push and Legs every lift
+    # read as the first for its muscle and a warm chest got a full ramp on the
+    # fourth pressing movement of the day.
+    primary = primary_muscle(exercise) or PRIMARY_MUSCLE.get(exercise, "")
     first_for_muscle = primary not in muscles_warm
     weight = top.weight_kg
 
@@ -752,7 +806,8 @@ def norm_name(name: str) -> str:
 
 def prescribe_session(plan, week: int,
                       history: dict[str, PriorSet],
-                      recovery: dict | None = None) -> list[Proposal]:
+                      recovery: dict | None = None,
+                      peak_history: dict[str, PriorSet] | None = None) -> list[Proposal]:
     """Every exercise in `plan`, for this week, given this history.
 
     `history` maps exercise name to its most recent top working set — the same
@@ -764,6 +819,12 @@ def prescribe_session(plan, week: int,
     the reduction a change to reps and load as well as RPE, and those three
     only stay coherent while they are decided together. Checking them apart
     afterwards is what mistook the reduction for drift and undid it.
+
+    `peak_history` is the same shape, holding each lift's top set from the
+    most recent WEEK 3. Week 1 opens from it and week 4 deloads against it
+    (:181, :185); `history` is the most recent session, which going into a
+    deload is the peak week and coming out of one is the deload itself — so
+    without this the wave opened every cycle from its own softest week.
     """
     if week not in WAVE:
         raise ValueError(f"mesocycle week must be 1-4, got {week!r}")
@@ -775,15 +836,19 @@ def prescribe_session(plan, week: int,
     # exercise has never been trained" and prescribes a feel-out instead of a
     # load. Building the view here means no caller has to know the convention.
     folded = {norm_name(name): prior for name, prior in history.items()}
+    peak = {norm_name(name): prior for name, prior in (peak_history or {}).items()}
 
     adjustment = recovery_adjustment(recovery)
 
     proposals = []
     muscles_warm: set[str] = set()
     for exercise, sets, kind in plan:
+        key = norm_name(exercise)
+        prior = folded.get(key)
+        if week in (1, 4) and peak.get(key) is not None:
+            prior = peak[key]
         proposal = prescribe_exercise(
-            exercise, sets, kind, week, folded.get(norm_name(exercise)),
-            set(muscles_warm)
+            exercise, sets, kind, week, prior, set(muscles_warm)
         )
         if adjustment.adjusted:
             proposal = _adjusted(proposal, adjustment)
@@ -979,11 +1044,15 @@ def infer_session_weeks(session_types: list[str], next_week: int,
 
 
 def _fmt_load(spec: "SetSpec") -> str:
-    """`60kg`, `62.5kg`, `BW`, `BW+15kg`, or `[load TBD]`."""
+    """`60kg`, `62.5kg`, `BW`, `BW + 15kg`, or `[load TBD]`.
+
+    `BW + 15kg` is the prompt's own spelling (:274, :782). Both parsers read
+    it as 15kg, which is also what a logged weighted pull-up is stored as, so
+    the number on the card and the number in the log agree."""
     if spec.bodyweight:
         if not spec.weight_kg:
             return "BW"
-        return f"BW+{spec.weight_kg:g}kg"
+        return f"BW + {spec.weight_kg:g}kg"
     if spec.weight_kg is None:
         return "[load TBD]"
     return f"{spec.weight_kg:g}kg"
