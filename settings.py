@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     app_timezone: str = "Australia/Sydney"
     log_level: str = "INFO"
 
+    # The programme's computed prescription replaces the coach's arithmetic
+    # in the reply. Off, the substitution runs in shadow and only logs the
+    # difference. This is the go-live switch: a config change, not a deploy.
+    programme_substitution: bool = False
+
     # Athlete profile (used in coach context block)
     athlete_name: str = "Athlete"
     athlete_current_weight_kg: int = 0

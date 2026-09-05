@@ -336,6 +336,32 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     except Exception:
         log.exception("Programme shadow comparison failed")
 
+    # LIVE, behind PROGRAMME_SUBSTITUTION. The same substitution the shadow
+    # computed, applied to the reply: the coach keeps its prose, its cues and
+    # its tempo, and the Warm-up / Working Set / Back-off lines become the
+    # programme's. Nothing else in this function may bind the reply from the
+    # computed blocks — the shadow block above is checked in the AST for that,
+    # and this one is checked for being guarded by the switch.
+    #
+    # A Revised: block, an exercise with sets already on the board today, and
+    # anything the programme left open all stay the coach's, exactly as in
+    # shadow. Failure here leaves the reply as the coach wrote it.
+    if get_settings().programme_substitution:
+        try:
+            computed = programme_out.get("computed") or {}
+            if computed:
+                substituted, swapped = substitute_computed_blocks(
+                    assistant_message, computed,
+                    aliases=programme_out.get("aliases"),
+                    skip=programme_out.get("logged_today") or ())
+                if swapped:
+                    assistant_message = substituted
+                    log.warning("PROGRAMME LIVE (%s wk%s): substituted %s",
+                                programme_out.get("session_type"),
+                                programme_out.get("week"), ", ".join(swapped))
+        except Exception:
+            log.exception("Programme substitution failed; reply left as written")
+
     try:
         counts = check_set_counts(assistant_message, system_prompt, today_type)
         for bad in counts["mismatches"]:
