@@ -1001,12 +1001,19 @@ def _fmt_set(spec: "SetSpec", with_rpe: bool = True) -> str:
 
 
 def _fmt_rest(seconds: int) -> str:
-    """`90s`, `2min`, `2min30` — the shapes coach_parsing already reads."""
-    if seconds < 60:
-        return f"{seconds}s"
+    """Whole minutes as "2min", anything else as seconds.
+
+    The "1min30" form this used to emit for 90 seconds appears nowhere in the
+    prompt and BOTH iOS parsers truncate it at the "min" — reading 90 seconds
+    as 60. Isolation work rests 90s, so that was a third of the rest gone from
+    4 of 8 exercises on Push, 3 of 7 on Pull, 4 of 6 on Legs and every one on
+    Cardio+Abs. The docstring it replaces claimed these were "the shapes
+    coach_parsing already reads", which was the part worth checking and was not
+    checked: the function could never produce "90s" at all.
+    """
     if seconds % 60 == 0:
         return f"{seconds // 60}min"
-    return f"{seconds // 60}min{seconds % 60}"
+    return f"{seconds}s"
 
 
 def _is_straight_set(exercise: str) -> bool:

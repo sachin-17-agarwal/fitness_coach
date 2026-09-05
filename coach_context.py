@@ -433,12 +433,23 @@ def build_context_block(memory: dict, athlete_name: str,
     # mean a second set of fetches that could disagree with the ones the coach
     # was actually shown.
     if out is not None:
-        blocks, open_names = render_session(_proposals)
-        out["computed"] = {p.exercise: render_block(p)
-                           for p in _proposals if is_determined(p)}
-        out["open"] = open_names
-        out["session_type"] = today_session
-        out["week"] = _safe_int(mesocycle_week)
+        # Guarded, like build_proposal above it. This is the only part of the
+        # computed path that runs BEFORE the Anthropic call, and it sat bare:
+        # anything it raised propagated out of chat_with_coach, which webhook.py
+        # turns into a 502 the athlete sees as the coach being down. A rendering
+        # detail — an asterisk in an exercise name was enough — could take the
+        # whole conversation offline. The shadow already handles an empty dict,
+        # so failing to fill it costs a log line and nothing else.
+        try:
+            _blocks, open_names = render_session(_proposals)
+            out["computed"] = {p.exercise: render_block(p)
+                               for p in _proposals if is_determined(p)}
+            out["open"] = open_names
+            out["session_type"] = today_session
+            out["week"] = _safe_int(mesocycle_week)
+        except Exception:
+            log.exception("Could not render the computed session")
+            out.clear()
     programme_proposal = format_proposal(
         _proposals, today_session, _safe_int(mesocycle_week),
         _renamed, _ambiguous,
