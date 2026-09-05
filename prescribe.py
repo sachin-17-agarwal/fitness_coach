@@ -441,7 +441,16 @@ def _met_top_of_range(prior: PriorSet, kind: str, target_rpe: float) -> bool:
 
 def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                  reasons: list[str], deferred: list[str]) -> SetSpec:
-    """The top set for today, from the wave and what was logged last time."""
+    """The top set for today, from the wave and what was logged last time.
+
+    When the load moves, the reps are prescribed as the whole band with the
+    target RPE deciding where in it the set lands — the prompt's own example
+    is "this cycle opens at 210kg x6-8". A single count at the bottom read as
+    a target, and failed the prompt's coherence check (:176): after 220kg x10
+    at RPE 9, six reps at 222.5kg is nowhere near RPE 8. It also fed the
+    deload a six-rep peak set and turned "stop two reps short" into a 17.5%
+    load cut. "Reps reset to the bottom" is the floor of the band, not a cap.
+    """
     targets = WAVE[week]
     low, high = TOP_SET_RANGE[kind]
     bodyweight = is_bodyweight(exercise) or bool(prior and prior.bodyweight)
@@ -517,7 +526,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"bottom of the {low}-{high} range. Baseline means the start "
                 f"of a NEW cycle, never a repeat of the last one."
             )
-        return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
+        return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
 
     if week == 2:
         # :182 — "Keep the Week 1 weight and reach RPE 8 by adding reps toward
@@ -536,7 +545,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"top of the {low}-{high} range, so the increase was already due "
                 f"(:205). Reps reset to the bottom."
             )
-            return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
+            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
         if _met_top_of_range(prior, kind, targets["top"]):
             step = INCREMENT[kind]
             load = _round_load(load + step)
@@ -545,7 +554,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"{low}-{high} range at RPE {prior.rpe:g}, so reps have nowhere left "
                 f"to go (:182). Reps reset to the bottom."
             )
-            return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
+            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
         target_low = max(low, min((prior.reps or low) + 1, high))
         reasons.append(
             f"Week 2 holds the week 1 load and adds reps toward the top of the "
@@ -565,7 +574,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"{prior.reps} reps, already at the top of the range, so load is the "
                 f"preferred lever (:183)."
             )
-            return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
+            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
         target_low = max(low, min((prior.reps or low) + 1, high))
         reasons.append(
             f"Week 3 peak via REPS: same load, 1-2 more reps than week 2 to reach "
@@ -634,7 +643,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             f"of the {low}-{high} range, which means the increase was already due "
             f"last session (:205)."
         )
-        return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
+        return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
 
     if _met_top_of_range(prior, kind, targets["top"]):
         # :203 rep progression is exhausted, so the load moves.
@@ -646,7 +655,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             f"under the week's target of {targets['top']:g} (:203). Reps reset to "
             f"the bottom of the range."
         )
-        return SetSpec(load, low, low, targets["top"], bodyweight=bodyweight)
+        return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
 
     # :201 rep progression first — same load, aim further up the range.
     # Clamp to the range: a prior session below the floor must not drag the
@@ -694,6 +703,11 @@ def backoff_sets(top: SetSpec, kind: str, count: int, week: int,
         load = None
     else:
         load = _round_load(top.weight_kg * (1 - BACKOFF_DROP))
+        if load >= top.weight_kg:
+            # A working load small enough that 20% of it rounds to nothing. A
+            # back-off at the top-set load is not a back-off; take one grid
+            # step down so the drop exists.
+            load = max(0.0, top.weight_kg - _LOAD_GRID)
         reasons.append(
             f"Back-off at {load:g}kg — {BACKOFF_DROP:.0%} below the top set, inside "
             f"the 15-25% band (:64), at RPE {rpe:g} for week {week}."
