@@ -1,0 +1,56 @@
+# Reads the training database and writes a protocol audit into the repository.
+#
+# This exists because of where things can and cannot be reached from. A
+# development machine is behind an egress proxy that denies both the Supabase
+# host and the Railway app, so any report produced there has to be pasted in by
+# hand, every time. A GitHub Actions runner is not behind that proxy: it can
+# read the database, and the repository it writes to IS reachable.
+#
+# One-time setup: add SUPABASE_URL and SUPABASE_KEY as repository secrets.
+# Nothing else is needed, and nothing has to be copied by anyone afterwards.
+name: Protocol audit
+
+on:
+  schedule:
+    # 06:00 UTC daily — after any realistic session, before the morning brief.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "How many days of history to audit"
+        default: "90"
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run the audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DAYS: ${{ github.event.inputs.days || 90 }}
+        run: python audit.py --days "$DAYS"
+
+      - name: Commit the report if it changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          if git diff --staged --quiet; then
+            echo "No change in the audit; nothing to commit."
+          else
+            git commit -m "Protocol audit $(date -u +%Y-%m-%d)"
+            git push
+          fi

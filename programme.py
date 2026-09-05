@@ -117,7 +117,8 @@ def _history(plan, current_loads: list[dict]) -> tuple:
 
 
 def build_proposal(prompt: str, session_type: str, week: int,
-                   current_loads: list[dict]) -> tuple:
+                   current_loads: list[dict],
+                   recovery: dict | None = None) -> tuple:
     """The programme's proposal for today.
 
     Returns (proposals, renamed, ambiguous) — empty throughout when it cannot
@@ -130,7 +131,8 @@ def build_proposal(prompt: str, session_type: str, week: int,
         if not plan:
             return [], {}, {}
         history, renamed, ambiguous = _history(plan, current_loads)
-        return prescribe_session(plan, week, history), renamed, ambiguous
+        return (prescribe_session(plan, week, history, recovery=recovery),
+                renamed, ambiguous)
     except Exception:
         # A proposal is an aid, never a precondition. The coach has run without
         # one since the programme was written; a failure here must not take the
@@ -165,7 +167,11 @@ def format_proposal(proposals: list, session_type: str, week: int,
         if backoff:
             detail += f" · back-off {backoff}"
         lines.append(f"- {proposal.exercise} — {detail}")
-        for reason in proposal.reasons[:1]:
+        # Recovery notes are never truncated: :321 requires saying which rules
+        # applied when more than one matches, and :323 requires stating which
+        # lever was used. The [:1] below is a token economy for the ordinary
+        # progression reason and must not swallow those.
+        for reason in list(getattr(proposal, "recovery_reasons", [])) + proposal.reasons[:1]:
             grouped_reasons.setdefault(reason, []).append(proposal.exercise)
         for note in proposal.deferred:
             # The note leads with its own exercise name; strip it so identical
