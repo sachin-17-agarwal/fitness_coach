@@ -235,6 +235,11 @@ class Proposal:
     # Today's readings call for a different session, not a lighter version of
     # this one (:316). Nothing may render a block for it.
     recovery_session: bool = False
+    # Kept apart from `reasons` because they must not be truncated. :321 says
+    # more than one rule usually matches and the coach must say WHICH — and
+    # format_proposal keeps only the first ordinary reason per exercise, so a
+    # recovery cut sharing that list loses every explanation but one.
+    recovery_reasons: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         self.reasons = [strip_citations(r) for r in self.reasons]
@@ -817,20 +822,55 @@ def _adjusted(proposal: Proposal, adjustment: RecoveryAdjustment) -> Proposal:
                        warmup=[], recovery_session=True)
 
     working = tuple(apply_recovery(w, adjustment, reasons) for w in proposal.working)
-    backoff = tuple(apply_recovery(b, adjustment, reasons) for b in proposal.backoff)
-    warmup = proposal.warmup
-    if adjustment.load_multiplier != 1.0:
-        warmup = [
-            SetSpec(_round_load(w.weight_kg * adjustment.load_multiplier)
-                    if w.weight_kg is not None else None,
-                    w.reps_low, w.reps_high, w.rpe, bodyweight=w.bodyweight)
-            for w in proposal.warmup
-        ]
-    for reason in adjustment.reasons:
-        if reason not in reasons:
-            reasons.append(reason)
+
+    # Everything else follows the TOP SET's actual movement, not its own copy
+    # of the rules. Applying the levers to each set independently was wrong in
+    # both directions at once: apply_recovery's low-rep escape hatch can drop
+    # the working load 7.5% without touching `load_multiplier`, so the ramp —
+    # which only watched the multiplier — stayed put, and a "warm-up" triple
+    # ended up at 95% of the day's working weight. Meanwhile the back-off, cut
+    # by a different amount than the top set, drifted to 13.5% below it,
+    # outside :64's 15-25% band, while the reason handed to the coach still
+    # claimed "20% below the top set, inside the 15-25% band".
+    #
+    # A ramp is a fraction of the working weight and a back-off is a fraction
+    # of the working weight. Both stay fractions of it.
+    before = proposal.working[0].weight_kg if proposal.working else None
+    after = working[0].weight_kg if working else None
+    ratio = (after / before) if (before and after) else 1.0
+
+    def _scaled(spec):
+        if spec.weight_kg is None or ratio == 1.0:
+            return spec
+        return SetSpec(_round_load(spec.weight_kg * ratio), spec.reps_low,
+                       spec.reps_high, spec.rpe, bodyweight=spec.bodyweight)
+
+    # Back-offs take the rep and RPE change from the wave, and the LOAD change
+    # from the top set — never their own load lever, which is what let the two
+    # drift apart.
+    backoff = []
+    for b in proposal.backoff:
+        moved = apply_recovery(_scaled(b), adjustment, [])
+        backoff.append(SetSpec(_scaled(b).weight_kg, moved.reps_low,
+                               moved.reps_high, moved.rpe,
+                               bodyweight=b.bodyweight))
+    backoff = tuple(backoff)
+    warmup = [_scaled(w) for w in proposal.warmup]
+    # PREPENDED, not appended. format_proposal keeps only the first reason per
+    # exercise (:170), so an appended recovery reason is computed, rendered and
+    # then dropped before the coach ever sees it — the cut happens to the
+    # numbers and the explanation for it silently does not arrive. :315 says
+    # "reduce RPE targets by 1. Flag it." The flag is the half that was lost.
+    recovery_notes = list(adjustment.reasons)
+    # apply_recovery records the lever it used ("taken as LOAD, not reps"),
+    # which :323 requires be stated either way. It lands in `reasons`, so lift
+    # it across rather than leaving it to the truncation.
+    lever = [r for r in reasons if "Recovery cut taken" in r]
+    recovery_notes += [r for r in lever if r not in recovery_notes]
+    reasons = [r for r in reasons if r not in lever]
     return replace(proposal, warmup=list(warmup), working=list(working),
-                   backoff=list(backoff), reasons=reasons, deferred=deferred)
+                   backoff=list(backoff), reasons=reasons, deferred=deferred,
+                   recovery_reasons=recovery_notes)
 
 
 def prescribe_pull(week: int, history: dict) -> list:

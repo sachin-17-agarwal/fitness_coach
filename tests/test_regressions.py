@@ -4198,12 +4198,12 @@ class ProtocolAuditTests(unittest.TestCase):
         with open("system_prompt.txt") as handle:
             cls.PROMPT = handle.read()
 
-    def _check(self, text, week, session="Legs"):
+    def _check(self, text, week, session="Legs", recovery=None):
         import audit
         from coach_parsing import parse_all_prescriptions
         out = []
         for block in parse_all_prescriptions(text):
-            out += audit._violations(block, week, session, self.PROMPT)
+            out += audit._violations(block, week, session, self.PROMPT, recovery)
         return {code for code, _detail in out}
 
     def test_it_finds_the_leg_press_card_the_athlete_caught(self):
@@ -4219,6 +4219,62 @@ class ProtocolAuditTests(unittest.TestCase):
             "*Seated Leg Curl*\nWorking Set: 100kg x8 @7 | Rest: 90s\n"
             "Back-off: 80kg x12 @6\n", 1)
         self.assertIn("set_count", found)
+
+    def test_a_mandated_recovery_reduction_is_not_counted_as_a_violation(self):
+        """The worst finding of the review, and the reason this audit could not
+        have been trusted.
+
+        :313 is "Recovery data is injected with every message. Apply these
+        rules", and :315 makes the RPE reduction MANDATORY at >10% HRV down. A
+        prescription that obeyed it sits a point under the week — the exact
+        shape of the failure being counted. Blind to the readings, the audit
+        reported the programme's OWN compliant block as three violations per
+        exercise, and would have reported the coach at its worst on the days it
+        was most correct.
+
+        The same mistake the enforcement guard made, reproduced inside the tool
+        built to measure it: after the fact, a mandated reduction and a soft
+        prescription are the same three numbers.
+        """
+        # Two back-offs: Leg Press is a 3-set exercise, and a fixture short of
+        # that fires set_count for a reason that has nothing to do with
+        # recovery — which is what the next test is for.
+        soft = ("*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 2min\n"
+                "Back-off: 176kg x9-11 @6, 176kg x7-9 @6\n")
+        hrv_down = {"hrv": 51.6, "hrv_avg": 60, "sleep_hours": 7.5,
+                    "resting_hr": 55, "resting_hr_baseline": 55}
+        self.assertEqual(self._check(soft, 1, recovery=hrv_down), set())
+        # And it still fires when the readings did NOT call for it.
+        normal = {**hrv_down, "hrv": 60}
+        self.assertIn("rpe_under_target", self._check(soft, 1, recovery=normal))
+
+    def test_recovery_does_not_excuse_a_missing_backoff(self):
+        """The reduction moves RPE and reps. It says nothing about set counts,
+        so a shifted target must not launder an unrelated violation."""
+        hrv_down = {"hrv": 51.6, "hrv_avg": 60, "sleep_hours": 7.5,
+                    "resting_hr": 55, "resting_hr_baseline": 55}
+        found = self._check(
+            "*Seated Leg Curl*\nWorking Set: 100kg x8 @7 | Rest: 90s\n"
+            "Back-off: 80kg x12 @6\n", 1, recovery=hrv_down)
+        self.assertEqual(found, {"set_count"})
+
+    def test_every_table_the_audit_reads_exists(self):
+        """`health_data` was the first name written here and does not exist.
+
+        The query would have returned nothing and the audit would have gone
+        quietly back to being recovery-blind — the critical above, with no
+        symptom, in the one tool whose value is being trusted about the past.
+        """
+        import glob, re
+        used = set(re.findall(r'\.table\("([^"]+)"\)', open("audit.py").read()))
+        known = set()
+        for path in glob.glob("*.py"):
+            if path == "audit.py":
+                continue
+            known |= set(re.findall(r'\.table\("([^"]+)"\)', open(path).read()))
+        self.assertTrue(used)
+        self.assertEqual(used - known, set(),
+                         "audit.py reads a table no other module knows about")
 
     def test_a_correct_block_is_clean(self):
         self.assertEqual(self._check(
@@ -4581,9 +4637,32 @@ class RecoveryIsComputedNotProsedTests(unittest.TestCase):
         they feel". An earlier cut gated on the numbers alone, so this rule
         produced its reason and then dropped it silently."""
         p = self._leg_press({**self.NORMAL, "resting_hr": 62})
-        self.assertTrue(any("resting HR" in r for r in p.reasons),
-                        f"no overreaching flag in {p.reasons}")
+        self.assertTrue(any("resting HR" in r for r in p.recovery_reasons),
+                        f"no overreaching flag in {p.recovery_reasons}")
         self.assertEqual(p.working[0].weight_kg, 222.5, "and it changes no number")
+
+    def test_every_recovery_reason_survives_into_the_proposal(self):
+        """The half that was being lost.
+
+        format_proposal keeps only the FIRST ordinary reason per exercise, for
+        token economy. Recovery notes shared that list, so on a day where sleep
+        and HRV both matched, the numbers were cut and the explanation for the
+        cut was computed, rendered and then dropped — leaving a quietly lighter
+        session with no stated cause. :315 is "reduce RPE targets by 1. Flag
+        it." and :321 requires saying WHICH rules applied when several match.
+        """
+        from programme import format_proposal
+        p = self._leg_press({**self.NORMAL, "hrv": 51.6, "sleep_hours": 5.8},
+                            week=4)
+        rendered = format_proposal([p], "Legs", 4)
+        # BOTH matched rules, not just the first. The load lever is not
+        # asserted here: this fixture's prior is 10 reps, so the deload lands
+        # at 7 and never crosses the floor that triggers it. That path has its
+        # own test — asserting it here passed only in my head.
+        self.assertIn("HRV", rendered)
+        self.assertIn("sleep", rendered)
+        self.assertLess(p.working[0].weight_kg, 220.0,
+                        "and the numbers moved, not just the prose")
 
     def test_the_resting_hr_threshold_uses_the_baseline_as_the_denominator(self):
         """62 over a 55 baseline is 12.7% up, not 11.3%. Swapping the arguments

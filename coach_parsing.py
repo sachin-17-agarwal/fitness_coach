@@ -912,16 +912,40 @@ def substitute_computed_blocks(reply: str, computed: dict) -> tuple[str, list]:
         return reply, []
 
     wanted = {_normalise_exercise(name): name for name in computed}
-    header = re.compile(r'^\s*\*{1,2}([^*\n]+)\*{1,2}\s*$')
     lines = reply.split("\n")
 
+    # A bold line is a CANDIDATE header, never a header on its own. Three of
+    # this function's worst failures came from treating the two as the same:
+    #
+    #   - "*Bench Press*" as a discussion heading, with prose under it, was
+    #     replaced by a full prescription. A chat reply about yesterday became
+    #     two cards the athlete had not been given.
+    #   - "**This is lighter on purpose**" inside a block ended it, so the
+    #     "Revised:" line below was no longer in the body and the deliberate
+    #     lighter load was overwritten — the one exemption that exists for an
+    #     injury, defeated by an emphasised sentence.
+    #   - "*Landmine Press* (subbing for OHP)" was not matched at all, because
+    #     the pattern demanded end-of-line after the asterisks. Its sets fell
+    #     into the PREVIOUS block's body and were deleted as prescription lines.
+    #
+    # Trailing text after the name is allowed, and a candidate is promoted only
+    # when its own body carries at least one prescription line. Everything else
+    # belongs to the block above it, which is where "Revised:" and the coach's
+    # prose were meant to be looked for all along.
+    candidate = re.compile(r'^\s*\*{1,2}([^*\n]+?)\*{1,2}\s*(?:\(|$|[^*\w].*$)')
+    marks = [(i, candidate.match(l)) for i, l in enumerate(lines)]
+    marks = [(i, m.group(1).strip()) for i, m in marks if m]
+
     blocks = []
-    for i, line in enumerate(lines):
-        found = header.match(line)
-        if found:
-            blocks.append({"name": found.group(1).strip(), "start": i, "end": len(lines)})
-            if len(blocks) > 1:
-                blocks[-2]["end"] = i
+    for pos, (i, name) in enumerate(marks):
+        end = marks[pos + 1][0] if pos + 1 < len(marks) else len(lines)
+        body = lines[i + 1:end]
+        if any(l.strip().lower().startswith(_PRESCRIPTION_PREFIXES) for l in body):
+            blocks.append({"name": name, "start": i, "end": end})
+        elif blocks:
+            # Prose or emphasis under the previous exercise: extend it, so the
+            # body it is scanned for really is the whole block.
+            blocks[-1]["end"] = end
     if not blocks:
         return reply, []
 

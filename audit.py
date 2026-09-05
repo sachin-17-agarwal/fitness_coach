@@ -35,7 +35,7 @@ from coach_parsing import (get_session_type_for_day, parse_all_prescriptions,
                            parse_session_template, _normalise_exercise,
                            _set_shape)
 from data import get_supabase, now_local
-from prescribe import TOP_SET_RANGE, WAVE, classify
+from prescribe import TOP_SET_RANGE, WAVE, classify, recovery_adjustment
 
 log = logging.getLogger(__name__)
 
@@ -86,12 +86,71 @@ def fetch_session_weeks(days: int) -> dict:
     return weeks
 
 
-def _violations(block: dict, week: int, session_type: str, prompt: str) -> list:
+def fetch_recovery_by_date(days: int) -> dict:
+    """date -> the readings that were true that morning.
+
+    Without this the audit is worse than useless. :313 is "Recovery data is
+    injected with every message. Apply these rules", and :315 makes the RPE
+    reduction MANDATORY when HRV is more than 10% down. A prescription that
+    obeyed it sits a point under the week — which is exactly the shape of the
+    failure this audit exists to count. Blind to the readings, it reports the
+    protocol working as three violations per exercise, and would have told us
+    the coach was worst on precisely the days it was most correct.
+
+    This is the same mistake the enforcement guard made, reproduced in the tool
+    built to measure it: after the fact, a mandated reduction and a soft
+    prescription are the same three numbers.
+    """
+    supabase = get_supabase()
+    if not supabase:
+        return {}
+    since = (now_local().date() - timedelta(days=days)).isoformat()
+    rows = (
+        # "recovery", not "health_data" — the name I first wrote does not
+        # exist. The query would have returned nothing and the audit would have
+        # gone quietly back to being recovery-blind: the same critical, with no
+        # symptom, in a tool whose whole value is being trusted about the past.
+        supabase.table("recovery")
+        .select("date, sleep_hours, hrv, resting_hr")
+        .gte("date", since)
+        .order("date")
+        .execute()
+    ).data or []
+    by_date = {r["date"]: dict(r) for r in rows if r.get("date")}
+
+    # hrv_avg and the RHR baseline are 7-day trailing means, the same shape
+    # data.py computes for the live context. Recomputed here rather than read,
+    # because what was stored is today's average, not that day's.
+    dates = sorted(by_date)
+    for i, date in enumerate(dates):
+        window = [by_date[d] for d in dates[max(0, i - 7):i]]
+        hrvs = [r["hrv"] for r in window if r.get("hrv") is not None]
+        rhrs = [r["resting_hr"] for r in window if r.get("resting_hr") is not None]
+        by_date[date]["hrv_avg"] = (sum(hrvs) / len(hrvs)) if hrvs else None
+        by_date[date]["resting_hr_baseline"] = (sum(rhrs) / len(rhrs)) if rhrs else None
+    return by_date
+
+
+def _violations(block: dict, week: int, session_type: str, prompt: str,
+                recovery: dict | None = None) -> list:
     """Every rule this one prescription breaks. Mechanical, not a judgement."""
     name = block.get("exercise") or ""
     kind = classify(name)
     low, high = TOP_SET_RANGE[kind]
     targets = WAVE.get(week)
+
+    # The day's readings shift the targets before anything is compared against
+    # them. A recovery session is not audited at all: :316 says switch session,
+    # so whatever was prescribed that day was the coach's call to make.
+    adjustment = recovery_adjustment(recovery)
+    if adjustment.recovery_session:
+        return []
+    if targets and adjustment.rpe_delta:
+        targets = {"top": targets["top"] + adjustment.rpe_delta,
+                   "backoff": targets["backoff"] + adjustment.rpe_delta,
+                   "name": targets.get("name", "")}
+        # :323 makes the RPE cut a REP cut too, so the floor moves with it.
+        low = max(1, low + int(round(adjustment.rpe_delta)))
     out = []
 
     working = block.get("working") or []
@@ -147,6 +206,7 @@ def audit(days: int, prompt: str) -> dict:
     """Count protocol violations across every stored prescription."""
     replies = fetch_assistant_replies(days)
     weeks = fetch_session_weeks(days)
+    recovery = fetch_recovery_by_date(days)
 
     checked, findings, dated, undated = 0, [], 0, 0
     for reply in replies:
@@ -164,7 +224,8 @@ def audit(days: int, prompt: str) -> dict:
             if not (block.get("working") or []):
                 continue
             checked += 1
-            for code, detail in _violations(block, week, session_type, prompt):
+            for code, detail in _violations(block, week, session_type, prompt,
+                                            recovery.get(date)):
                 findings.append({"date": date, "session": session_type,
                                  "week": week, "exercise": block.get("exercise"),
                                  "code": code, "detail": detail})
