@@ -295,7 +295,7 @@ def build_context_block(memory: dict, athlete_name: str,
                         athlete_current_weight_kg: int,
                         athlete_goal_weight_kg: int,
                         log, recovery_override: dict | None = None,
-                        system_prompt: str = "") -> str:
+                        system_prompt: str = "", out: dict | None = None) -> str:
     """`system_prompt` is passed in rather than loaded here: coach.py imports
     this module, so importing load_system_prompt back would be a cycle. Absent,
     the programme proposal is skipped and every other block is unaffected."""
@@ -420,11 +420,36 @@ def build_context_block(memory: dict, athlete_name: str,
     # two cannot disagree about what he is lifting. Deliberately placed in the
     # LIVE half rather than the stable half: it depends on the session type and
     # the mesocycle week, both of which move.
-    from programme import build_proposal, format_proposal  # local: import order
+    from programme import build_proposal, format_proposal
+    from prescribe import is_determined, render_block, render_session  # local: import order
     _proposals, _renamed, _ambiguous = ([], {}, {}) if not system_prompt else build_proposal(
         system_prompt, today_session, _safe_int(mesocycle_week),
         results.get("current_loads") or [],
+        recovery=data,
     )
+    # Handed back to the caller rather than rendered into the prompt. The
+    # numbers are already here — the loads, the week and today's recovery all
+    # meet at this line — and computing them a second time in coach.py would
+    # mean a second set of fetches that could disagree with the ones the coach
+    # was actually shown.
+    if out is not None:
+        # Guarded, like build_proposal above it. This is the only part of the
+        # computed path that runs BEFORE the Anthropic call, and it sat bare:
+        # anything it raised propagated out of chat_with_coach, which webhook.py
+        # turns into a 502 the athlete sees as the coach being down. A rendering
+        # detail — an asterisk in an exercise name was enough — could take the
+        # whole conversation offline. The shadow already handles an empty dict,
+        # so failing to fill it costs a log line and nothing else.
+        try:
+            _blocks, open_names = render_session(_proposals)
+            out["computed"] = {p.exercise: render_block(p)
+                               for p in _proposals if is_determined(p)}
+            out["open"] = open_names
+            out["session_type"] = today_session
+            out["week"] = _safe_int(mesocycle_week)
+        except Exception:
+            log.exception("Could not render the computed session")
+            out.clear()
     programme_proposal = format_proposal(
         _proposals, today_session, _safe_int(mesocycle_week),
         _renamed, _ambiguous,

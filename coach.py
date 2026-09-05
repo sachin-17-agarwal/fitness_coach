@@ -48,6 +48,8 @@ from coach_parsing import (
     build_exercise_note,
     check_set_counts,
     enforce_set_counts,
+    parse_all_prescriptions,
+    substitute_computed_blocks,
     extract_exercise_from_context,
     extract_exercise_from_set_message,
     get_session_type_for_day,
@@ -151,6 +153,7 @@ def _log_cache_usage(response) -> None:
 def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     recovery_override: dict | None = None) -> str:
     system_prompt = load_system_prompt()
+    programme_out: dict = {}
     stable_context, live_context = build_context_block(
         memory,
         ATHLETE_NAME,
@@ -159,6 +162,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         log,
         recovery_override=recovery_override,
         system_prompt=system_prompt,
+        out=programme_out,
     )
 
     # Appended to the LIVE half deliberately. It is derived from the prompt
@@ -293,6 +297,41 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
             )
     except Exception:
         log.exception("Set-count enforcement failed")
+
+    # SHADOW ONLY — computes the substitution and logs what it WOULD change.
+    # Nothing here alters the reply.
+    #
+    # The three guards this replaces were each wired straight in, and the last
+    # one came back from review with four critical findings — the worst being
+    # that it reverted the mandatory HRV reduction and put a suppressed-recovery
+    # day back at full intensity. It had passed 310 tests. So this one earns its
+    # way in on evidence from real sessions instead: every request logs the
+    # difference between what the coach wrote and what the programme computed
+    # from the same loads, the same week and the same recovery readings. When
+    # the log says the computed block is the better one, the substitution gets
+    # turned on; until then the athlete's card is untouched.
+    try:
+        computed = programme_out.get("computed") or {}
+        if computed:
+            shadow, would_swap = substitute_computed_blocks(assistant_message, computed)
+            if would_swap:
+                sent = {q["exercise"]: q for q in parse_all_prescriptions(assistant_message)}
+                would = {q["exercise"]: q for q in parse_all_prescriptions(shadow)}
+                for name in would_swap:
+                    a, b = sent.get(name), would.get(name)
+                    if not a or not b or a == b:
+                        continue
+                    log.warning(
+                        "PROGRAMME SHADOW (%s wk%s) %s: coach sent %s / %s — "
+                        "programme computes %s / %s",
+                        programme_out.get("session_type"), programme_out.get("week"),
+                        name, a.get("working"), a.get("backoff"),
+                        b.get("working"), b.get("backoff"),
+                    )
+            for name in programme_out.get("open") or []:
+                log.info("PROGRAMME SHADOW: %s left to the coach (no computed answer)", name)
+    except Exception:
+        log.exception("Programme shadow comparison failed")
 
     try:
         counts = check_set_counts(assistant_message, system_prompt, today_type)
@@ -511,6 +550,54 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             # The transcript is a convenience here, not the deliverable — the
             # athlete already has the report in front of him either way.
             log.exception("Could not record the replay in the transcript")
+        if send_reply:
+            send_telegram_message(report)
+        return report
+
+    # ── "audit" command ───────────────────────────────────────────────────────
+    #
+    # Answers the question the shadow log could not: how often did a
+    # prescription the athlete actually trained on break a rule from this
+    # prompt. Not "were the programme's numbers better" — that needs a
+    # judgement, and mine is the same judgement already inside the programme.
+    #
+    # Every check is decidable from the prescription text plus the mesocycle
+    # week, so nothing is reconstructed and nothing is an opinion. It reads
+    # stored replies, so it reports on months of real sessions immediately
+    # rather than waiting for new ones — and it runs HERE because the database
+    # is reachable from the server and is not reachable from a development
+    # machine.
+    audit_match = re.match(r'^/?audit(?:\s+(\d+))?$', normalised_text)
+    if audit_match:
+        days = int(audit_match.group(1) or DEFAULT_REPLAY_DAYS)
+        # Same guard as replay, for the same reason: this report names
+        # exercises, and applyAIResponse would read those names as a transition
+        # and move the card off the lift he is mid-way through.
+        if not send_reply and get_workout_state().get("workout_mode") == "active":
+            message = ("You're mid-session, so I'm holding the audit — it names "
+                       "exercises, and posting that into the workout chat would "
+                       "move your card. Finish the session and run `audit` again.")
+            save_conversation_message("user", incoming_text)
+            save_conversation_message("assistant", message)
+            return message
+        try:
+            from audit import run_chat_audit  # local: keeps import order flat
+            # Loaded here, not inherited: `system_prompt` is a local of
+            # chat_with_coach and does not exist in this function. Referencing
+            # it compiled fine and would have raised NameError on the first
+            # `audit` typed — inside the try, so it would have surfaced as
+            # "Audit failed" rather than as the bug it is.
+            report, summary = run_chat_audit(days, load_system_prompt())
+        except Exception as exc:
+            log.exception("Audit command failed")
+            report = (f"Audit failed: {exc}\n\nThis is a diagnostic, so nothing "
+                      f"about your training is affected.")
+            summary = f"An audit was requested but failed: {exc}"
+        try:
+            save_conversation_message("user", incoming_text)
+            save_conversation_message("assistant", summary)
+        except Exception:
+            log.exception("Could not record the audit in the transcript")
         if send_reply:
             send_telegram_message(report)
         return report
