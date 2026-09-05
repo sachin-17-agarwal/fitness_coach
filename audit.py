@@ -36,7 +36,7 @@ from coach_parsing import (get_session_type_for_day, parse_all_prescriptions,
                            _set_shape)
 from data import get_supabase, is_session_finished, now_local
 from prescribe import (TOP_SET_RANGE, WAVE, classify, infer_session_weeks,
-                       recovery_adjustment)
+                       is_bodyweight, recovery_adjustment)
 from volume import resolve_contributions
 
 # PostgREST answers at most this many rows per request, silently. The first
@@ -276,9 +276,17 @@ def _violations(block: dict, week: int, session_type: str, prompt: str,
             out.append(("backoff_not_descending",
                         f"second back-off at {r1} reps, not fewer than {r0}"))
 
-    if backoff and top.get("weight") and backoff[0].get("weight"):
+    # Not for a bodyweight movement: the number on the line is the added
+    # plate, and 20% of the plate is not 20% of the load. "Dips BW + 14kg"
+    # backing off to "BW + 4kg" read as a 71% drop.
+    if (backoff and top.get("weight") and backoff[0].get("weight")
+            and not is_bodyweight(name)):
         drop = (top["weight"] - backoff[0]["weight"]) / top["weight"] * 100
-        if not 15 <= drop <= 25:
+        # :64 is 15-25%, and the prompt also says to round to the nearest
+        # step the equipment has. A back-off within one 2.5kg step of the band
+        # is the band, on a stack that could not land inside it.
+        outside_by = 0.0 if 15 <= drop <= 25 else min(abs(drop - 15), abs(drop - 25))
+        if outside_by / 100 * top["weight"] > 2.5:
             out.append(("backoff_drop",
                         f"back-off {drop:.0f}% below the top set, outside 15-25%"))
     return out
