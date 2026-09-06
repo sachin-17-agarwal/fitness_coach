@@ -72,7 +72,7 @@ struct PrescriptionCard: View {
             }
             .padding(.top, 8)
 
-            if prescription.tempo != nil || prescription.formCue != nil {
+            if prescription.tempo != nil || prescription.formCue != nil || prescription.why != nil {
                 cuesSection
             }
 
@@ -336,6 +336,23 @@ struct PrescriptionCard: View {
                 .padding(.vertical, 12)
                 .overlay(alignment: .top) {
                     if prescription.tempo != nil { Rectangle().fill(Color.line).frame(height: 1) }
+                }
+            }
+            if let why = prescription.why, !why.isEmpty {
+                HStack(alignment: .top, spacing: 16) {
+                    EditorialEyebrow(text: "Why", color: Editorial.muted, size: 9.5, kerning: 2)
+                        .padding(.top, 2)
+                    Text(why)
+                        .font(.system(size: 13.5))
+                        .lineSpacing(3)
+                        .foregroundStyle(Color.bone)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 12)
+                .overlay(alignment: .top) {
+                    if prescription.tempo != nil || prescription.formCue != nil {
+                        Rectangle().fill(Color.line).frame(height: 1)
+                    }
                 }
             }
         }

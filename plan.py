@@ -135,6 +135,9 @@ class ExercisePlan:
     rest_seconds: int = 120
     form_cue: str = ""
     note: str = ""
+    # Set by validate(): this exercise fills one of the template's weak-point
+    # slots rather than replacing a named movement.
+    slot_fill: bool = False
 
 
 @dataclass
@@ -219,6 +222,7 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
         slot_fill = False
         if target is None and filled_slots < len(slots):
             slot_fill = True
+            e.slot_fill = True
             filled_slots += 1
             target = slots[filled_slots - 1][1]
             if len(e.reason) < 20:
@@ -344,13 +348,16 @@ def render_exercise(e: ExercisePlan) -> str:
             f"{_load(s.load_kg, e.exercise)} {_reps(s)} RPE{s.rpe:g}" for s in e.backoff))
     if e.form_cue:
         lines.append(f"Form: {e.form_cue}")
-    tail = []
-    if e.decision == "adjust" and e.reason:
-        tail.append(f"Changed from the programme: {e.reason}")
+    # The reason travels WITH the exercise, on its own prefixed line, so the
+    # card shows it under the lift it belongs to when that lift is up — not
+    # six reasons at once in the opening note. A slot fill is the programme
+    # asking for a movement, not a departure from it, and is labelled so.
+    if e.slot_fill and e.reason:
+        lines.append(f"Why: Weak-point slot — {e.reason}")
+    elif e.decision == "adjust" and e.reason:
+        lines.append(f"Why: Changed from the programme — {e.reason}")
     if e.note:
-        tail.append(e.note)
-    if tail:
-        lines.append(" ".join(tail))
+        lines.append(e.note)
     return "\n".join(lines)
 
 

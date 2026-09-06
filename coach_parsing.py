@@ -470,6 +470,7 @@ def _parse_block(name: str, block: str) -> dict | None:
     working = []
     backoff = []
     form = None
+    why = None
     tempo = None
     rest = None
     revised = False
@@ -499,6 +500,8 @@ def _parse_block(name: str, block: str) -> dict | None:
                 backoff = _parse_set_list_with_rpe(parts[0])
         elif lower.startswith(("form:", "form cue:", "cue:")):
             form = line.split(":", 1)[1].strip()
+        elif lower.startswith("why:"):
+            why = line.split(":", 1)[1].strip()
         elif lower.startswith("tempo:"):
             tempo = line.split(":", 1)[1].strip()
         elif lower.startswith("rest:"):
@@ -538,6 +541,8 @@ def _parse_block(name: str, block: str) -> dict | None:
         result["backoff"] = backoff
     if form:
         result["form"] = form
+    if why:
+        result["why"] = why
     if tempo:
         result["tempo"] = tempo
     if rest:
