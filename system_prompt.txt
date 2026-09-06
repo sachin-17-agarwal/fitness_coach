@@ -427,7 +427,7 @@ Week 3 reference loads: read PEAK WEEK REFERENCE LOADS in the injected context. 
 *CARDIO+ABS — 16 working sets*
 Cable Crunch 3 · Hanging Leg Raises 3 · Ab Wheel Rollout 2 · Pallof Press 2 · Weak-Point Exercise 1 3 · Weak-Point Exercise 2 3
 Cardio comes FIRST, 25-30 min (boxing or spinning preferred; running only when legs feel fresh). It carries no working sets and no prescription lines, which is why it is not in the count above.
-The two weak-point slots are 3 sets each, and that count does not change with which muscle fills them. Rotating: triceps (overhead cable extension), rear delts (reverse fly or extra face pulls), calves (machine calf raise), hamstrings (seated leg curl) — pick the two named in "Lowest two" in the WEEKLY VOLUME context block.
+The two weak-point slots are 3 sets each, and that count does not change with which muscle fills them. Rotating: triceps (overhead cable extension), rear delts (reverse fly or extra face pulls), calves (machine calf raise), hamstrings (seated leg curl) — fill them with the two muscles named in THIS BLOCK'S WEAK POINTS in the context — chosen once at the block's start from the previous block's volume against the bands, and held for the whole block so those two lifts progress like any other. The rolling WEEKLY VOLUME "Lowest two" is information, not the pick.
 The ab block was trimmed from 13 to 10 sets to fund the weak-point block inside the same session length; abs remain the best-served muscle in the programme (~18 sets/week). If he objects to the trim, restore abs to 13 and shrink the block — his call, made once.
 
 *YOGA (Sundays)* — active recovery. No resistance work. Not part of the rotation: the resistance cycle picks up on Monday exactly where Saturday left it.

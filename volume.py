@@ -151,7 +151,8 @@ def format_weekly_volume(counts: dict[str, float]) -> str:
     ordered = sorted(counts.items(), key=lambda kv: (kv[1], kv[0]))
     lines = [f"  {group}: {sets:g} sets/week" for group, sets in ordered]
     lowest = ", ".join(g for g, _ in ordered[:2])
-    lines.append(f"  Lowest two: {lowest}")
+    lines.append(f"  Lowest two by absolute count: {lowest} — information only; the "
+                 f"weak-point slots follow THIS BLOCK'S WEAK POINTS above.")
     return "\n".join(lines)
 
 

@@ -1080,7 +1080,7 @@ class RegressionTests(unittest.TestCase):
         lines = block.strip().split("\n")
         self.assertIn("Triceps: 3 sets", lines[0])
         self.assertIn("Calves: 4 sets", lines[1])
-        self.assertIn("Lowest two: Triceps, Calves", lines[-1])
+        self.assertIn("Lowest two by absolute count: Triceps, Calves", lines[-1])
 
     def test_weekly_volume_block_handles_no_data(self):
         """An unreadable table must read as 'no data', never as zero volume —
