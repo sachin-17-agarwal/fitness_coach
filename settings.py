@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # difference. This is the go-live switch: a config change, not a deploy.
     programme_substitution: bool = False
 
+    # The session-opening reply is a typed plan (plan.py) rendered into the
+    # card's text, with every departure from the programme carrying its
+    # reason. Off, the opening is prose as before. Any failure of the plan
+    # call falls back to prose on its own.
+    plan_contract: bool = True
+
     # Athlete profile (used in coach context block)
     athlete_name: str = "Athlete"
     athlete_current_weight_kg: int = 0

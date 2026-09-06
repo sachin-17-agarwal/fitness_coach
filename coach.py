@@ -150,48 +150,15 @@ def _log_cache_usage(response) -> None:
         log.debug("Could not read cache usage", exc_info=True)
 
 
-def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
-                    recovery_override: dict | None = None) -> str:
-    system_prompt = load_system_prompt()
-    programme_out: dict = {}
-    stable_context, live_context = build_context_block(
-        memory,
-        ATHLETE_NAME,
-        ATHLETE_CURRENT_WEIGHT_KG,
-        ATHLETE_GOAL_WEIGHT_KG,
-        log,
-        recovery_override=recovery_override,
-        system_prompt=system_prompt,
-        out=programme_out,
-    )
+def _prose_reply(system_prompt: str, stable_context: str, live_context: str,
+                 messages_to_send: list):
+    """The coach's ordinary reply: prose, one call, thinking off.
 
-    # Appended to the LIVE half deliberately. It is derived from the prompt
-    # rather than the database, so it would sit happily in the cached block —
-    # but it has to be read against today's session type, and putting it beside
-    # the live workout state is where the coach is already looking when it
-    # decides how many sets an exercise gets.
-    today_type = session_type_for(
-        _safe_int(memory.get("mesocycle_day", 1)),
-        override=memory.get(SESSION_OVERRIDE_KEY),
-    )
-    live_context += format_session_template(system_prompt, today_type)
-
-    conversation_history.append({"role": "user", "content": user_message})
-    save_conversation_message("user", user_message)
-
-    messages_to_send = _truncate_history(conversation_history)
-
-    # Split system into two blocks so the static prompt is cached across calls
-    # but the per-request context (recovery, sessions, workout state) stays live.
-    #
-    # The breakpoint uses the 1-hour TTL rather than the 5-minute default.
-    # Traffic here is bursty: a morning briefing, then a 60-90 minute session
-    # where messages arrive a set at a time. Rest periods keep most turns
-    # inside 5 minutes, but every longer gap — walking to the next machine,
-    # a heavy single, a stretch of not talking to the coach — expired the
-    # entry and re-wrote the whole ~17k-token prompt. A 1h write costs 2x
-    # instead of 1.25x and needs three reads to break even, which a session
-    # of twenty-plus turns clears easily.
+    Split by volatility, not by topic. Everything that only changes once a
+    day goes in the cached block so a breakpoint can sit after it; everything
+    that moves as sets are logged goes in the live one. The two are
+    concatenated in `system`, so the coach reads one continuous context.
+    """
     response = get_anthropic_client().messages.create(
         model="claude-sonnet-5",
         # Thinking is set EXPLICITLY, and that is the whole point of the line.
@@ -241,20 +208,105 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         ],
         messages=messages_to_send,
     )
-
     _log_cache_usage(response)
+    return response
 
-    if not response.content:
-        assistant_message = "Sorry, I couldn't generate a response. Please try again."
-    else:
-        assistant_message = response.content[0].text
+
+def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
+                    recovery_override: dict | None = None,
+                    plan_request: bool = False) -> str:
+    system_prompt = load_system_prompt()
+    programme_out: dict = {}
+    stable_context, live_context = build_context_block(
+        memory,
+        ATHLETE_NAME,
+        ATHLETE_CURRENT_WEIGHT_KG,
+        ATHLETE_GOAL_WEIGHT_KG,
+        log,
+        recovery_override=recovery_override,
+        system_prompt=system_prompt,
+        out=programme_out,
+    )
+
+    # Appended to the LIVE half deliberately. It is derived from the prompt
+    # rather than the database, so it would sit happily in the cached block —
+    # but it has to be read against today's session type, and putting it beside
+    # the live workout state is where the coach is already looking when it
+    # decides how many sets an exercise gets.
+    today_type = session_type_for(
+        _safe_int(memory.get("mesocycle_day", 1)),
+        override=memory.get(SESSION_OVERRIDE_KEY),
+    )
+    live_context += format_session_template(system_prompt, today_type)
+
+    conversation_history.append({"role": "user", "content": user_message})
+    save_conversation_message("user", user_message)
+
+    messages_to_send = _truncate_history(conversation_history)
+
+    # Split system into two blocks so the static prompt is cached across calls
+    # but the per-request context (recovery, sessions, workout state) stays live.
+    #
+    # The breakpoint uses the 1-hour TTL rather than the 5-minute default.
+    # Traffic here is bursty: a morning briefing, then a 60-90 minute session
+    # where messages arrive a set at a time. Rest periods keep most turns
+    # inside 5 minutes, but every longer gap — walking to the next machine,
+    # a heavy single, a stretch of not talking to the coach — expired the
+    # entry and re-wrote the whole ~17k-token prompt. A 1h write costs 2x
+    # instead of 1.25x and needs three reads to break even, which a session
+    # of twenty-plus turns clears easily.
+    # A session-opening message on a strength day is answered with a PLAN —
+    # typed, checked against the programme, every departure carrying its
+    # reason — rendered into the text the card already reads. Anything short
+    # of a valid plan falls through to the prose reply below, so the athlete
+    # always gets an answer.
+    assistant_message = None
+    response = None
+    if plan_request and get_settings().plan_contract:
+        try:
+            from plan import render_plan, request_session_plan, save_decisions
+            plan, plan_notes = request_session_plan(
+                get_anthropic_client(),
+                system_blocks=[
+                    {"type": "text", "text": system_prompt},
+                    {"type": "text", "text": stable_context,
+                     "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+                    {"type": "text", "text": live_context},
+                ],
+                messages=messages_to_send,
+                session_type=today_type,
+                week=_safe_int(memory.get("mesocycle_week", 1)),
+                prompt=system_prompt,
+                proposal=programme_out.get("computed") or {},
+            )
+            for note in plan_notes:
+                log.info("PLAN CONTRACT (%s): %s", today_type, note)
+            if plan is not None:
+                assistant_message = render_plan(plan)
+                try:
+                    session_id = (get_workout_state() or {}).get("current_session_id") or None
+                except Exception:
+                    session_id = None
+                save_decisions(plan, today_type, _safe_int(memory.get("mesocycle_week", 1)),
+                               session_id=session_id)
+        except Exception:
+            log.exception("Plan contract failed; falling back to the prose reply")
+            assistant_message = None
+
+    if assistant_message is None:
+        response = _prose_reply(system_prompt, stable_context, live_context, messages_to_send)
+        if not response.content:
+            assistant_message = "Sorry, I couldn't generate a response. Please try again."
+        else:
+            assistant_message = response.content[0].text
+
 
     # A reply cut off at the token ceiling is the one failure the parsers
     # cannot see: a prescription truncated mid-block still matches the
     # `Warm-up:` / `Working Set:` prefixes it managed to emit, so the card
     # renders a partial plan and the athlete is left asking for it again.
     # Nothing here can un-truncate it, but it must not pass silently.
-    if getattr(response, "stop_reason", None) == "max_tokens":
+    if response is not None and getattr(response, "stop_reason", None) == "max_tokens":
         log.warning(
             "Coach reply hit max_tokens — prescription may be truncated (%d chars)",
             len(assistant_message),
@@ -768,8 +820,10 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                 })
 
     # ── Get coach response ────────────────────────────────────────────────────
+    from plan import is_plan_request  # local: keeps import order flat
     response = chat_with_coach(incoming_text, conversation_history, memory,
-                               recovery_override=recovery_override)
+                               recovery_override=recovery_override,
+                               plan_request=is_plan_request(incoming_text, expected_session_type))
 
     if inherited_attribution:
         guessed, count = inherited_attribution
