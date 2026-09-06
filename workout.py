@@ -523,13 +523,31 @@ def get_workout_context(state: dict) -> str:
             .execute()
         rows = sets_result.data or []
 
-        # Skip cardio/yoga entries — they share the session but encode
-        # duration in actual_reps and would otherwise confuse the
-        # strength-focused recap below.
-        strength_rows = [
+        # Cardio and yoga entries share the session but encode duration in
+        # actual_reps, so they are kept out of the strength recap below and
+        # stated on their own. They used to be dropped here entirely, which
+        # left the coach with no sign that the cardio half was in — it read
+        # the exporter's Apple Watch feed instead, which lags, and told the
+        # athlete to go and do the cardio he had just imported.
+        cardio_rows = [
             r for r in rows
-            if not (r.get("notes") or "").lower().startswith(("cardio", "yoga"))
+            if (r.get("notes") or "").lower().startswith(("cardio", "yoga"))
         ]
+        strength_rows = [r for r in rows if r not in cardio_rows]
+
+        cardio_lines = []
+        for r in cardio_rows:
+            minutes = r.get("actual_reps")
+            rpe = r.get("actual_rpe")
+            source = " — imported from the Watch" if "hk:" in (r.get("notes") or "") else " — logged by hand"
+            rpe_s = f" @ RPE {rpe}" if rpe is not None else ""
+            cardio_lines.append(f"  {r.get('exercise')} — {minutes} min{rpe_s}{source}")
+        if cardio_lines:
+            cardio_text = "\n".join(cardio_lines)
+        elif (session_type or "").strip() in ("Cardio+Abs", "Yoga"):
+            cardio_text = "  NONE yet — the cardio half has not been logged or imported."
+        else:
+            cardio_text = ""
 
         # Group by exercise so the coach sees structured progress per lift
         # rather than a flat dump. The most recently logged exercise is
@@ -610,6 +628,7 @@ def get_workout_context(state: dict) -> str:
 Session type: {session_type}
 Session duration: {duration} minutes{duration_warning}{current_line}{last_line}
 
+{("Cardio logged this session (this line is the fact; the Apple Watch export feed lags and does not override it):" + chr(10) + cardio_text + chr(10)) if cardio_text else ""}
 Working sets logged this session: {working_count}
 
 Logged this session (grouped by exercise, in order):
