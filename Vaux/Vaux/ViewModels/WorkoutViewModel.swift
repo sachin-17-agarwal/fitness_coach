@@ -216,7 +216,7 @@ final class WorkoutViewModel {
             // then shows "No plan yet" and the athlete has to ask again.
             let prompt: String
             if type == "Cardio+Abs" {
-                prompt = "Starting my \(type) session. Give me the cardio instruction as plain narrative (duration and modality — it needs no prescription block), then in the SAME reply prescribe the first AB exercise in the strict straight-set format: *Exercise Name* on its own line, a Working Set: line with every set enumerated comma-separated plus Tempo and Rest, and a Form: line. No Back-off line — abs are straight sets. Do not defer the ab prescription until after the cardio; my card cannot render without it and I will be starting the abs from this same screen."
+                prompt = "Starting my \(type) session from the abs side — no cardio has been imported yet, so give any cardio instruction as plain narrative (no prescription block), then prescribe every ab exercise and the two weak-point exercises for today (sets, reps, weight, RPE), and the first exercise in detail so I can start."
             } else {
                 prompt = "Starting my \(type) session. List today's full exercise plan first (every exercise with sets/reps/weight/RPE in the strict format), then prescribe the first exercise in detail so I can warm up."
             }
@@ -375,11 +375,13 @@ final class WorkoutViewModel {
             }
         }
 
-        // For the abs flow, ask the coach for an abs exercise prescription
-        // rather than a full-session plan.
+        // The abs flow: cardio is logged and imported already, so this opens
+        // the ab block as a regular workout. The backend answers a session
+        // opener with a typed plan rendered into the card's format, so the
+        // prompt asks for the whole block rather than dictating the format.
         let prompt: String
         if session.type == "Cardio+Abs" {
-            prompt = "I've finished cardio for my \(session.type) session. Prescribe the first abs exercise using the strict straight-set format: *Exercise Name* on its own line, then a Working Set: line with EVERY set enumerated comma-separated (e.g. 25kg x12, 25kg x12, 25kg x12) plus Tempo and Rest, then a Form: line. Abs are straight sets — no Back-off line. The iOS card needs this exact format to render."
+            prompt = "I've finished cardio for my \(session.type) session — it is logged and imported from the Watch, so no cardio prescription is needed. Now the ab block: prescribe every ab exercise and the two weak-point exercises for today (sets, reps, weight, RPE), then the first exercise in detail so I can start."
         } else {
             // Explicit demand for the full phase list — the iOS card uses
             // Warm-up / Working Set / Back-off as the structure for its
