@@ -23,7 +23,7 @@ it should carry.
 import logging
 
 from coach_parsing import parse_session_template
-from prescribe import PriorSet, day_plan, norm_name, prescribe_session
+from prescribe import PriorSet, _is_straight_set, day_plan, norm_name, prescribe_session
 
 log = logging.getLogger(__name__)
 
@@ -191,9 +191,15 @@ def format_proposal(proposals: list, session_type: str, week: int,
         top = proposal.working[0].render() if proposal.working else "load TBD"
         backoff = proposal.backoff[0].render() if proposal.backoff else None
         count = proposal.working_set_count
-        detail = f"{count} working set{'' if count == 1 else 's'} · top {top}"
-        if backoff:
-            detail += f" · back-off {backoff}"
+        if _is_straight_set(proposal.exercise):
+            # Ab work is straight sets at one load (:145). The coach was shown
+            # a top set plus back-offs here and, correctly, "adjusted" every
+            # ab exercise to undo a shape the programme never meant.
+            detail = f"{count} straight set{'' if count == 1 else 's'} at one load · {top}"
+        else:
+            detail = f"{count} working set{'' if count == 1 else 's'} · top {top}"
+            if backoff:
+                detail += f" · back-off {backoff}"
         lines.append(f"- {proposal.exercise} — {detail}")
         # Recovery notes are never truncated: :321 requires saying which rules
         # applied when more than one matches, and :323 requires stating which

@@ -34,6 +34,10 @@ struct ExercisePrescription: Identifiable, Sendable {
     /// phases) is deliberate and must be applied verbatim instead of being
     /// reconciled against the prescription already on screen.
     var isRevision: Bool = false
+    /// The coach's reason for this exercise's numbers, from a `Why:` line —
+    /// a departure from the programme, or which muscle a weak-point slot
+    /// serves. Shown under the lift it belongs to, not in the opening note.
+    var why: String? = nil
 
     var targetWeightKg: Double? { workingSets.first?.weight }
     var targetReps: Int? { workingSets.first?.reps }
@@ -132,6 +136,7 @@ final class PrescriptionParser {
         var working: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)] = []
         var backoff: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)] = []
         var formCue: String?
+        var why: String?
         var tempo: String?
         var restSeconds: Int?
         var isRevision = false
@@ -155,6 +160,8 @@ final class PrescriptionParser {
                 backoff = sets
             } else if lower.hasPrefix("form:") || lower.hasPrefix("form cue:") || lower.hasPrefix("cue:") {
                 formCue = extractAfterColon(trimmed)
+            } else if lower.hasPrefix("why:") {
+                why = extractAfterColon(trimmed)
             } else if lower.hasPrefix("tempo:") {
                 tempo = extractAfterColon(trimmed)
             } else if lower.hasPrefix("rest:") {
@@ -196,7 +203,8 @@ final class PrescriptionParser {
             formCue: formCue,
             tempo: tempo,
             restSeconds: restSeconds,
-            isRevision: isRevision
+            isRevision: isRevision,
+            why: why
         )
     }
 
@@ -497,7 +505,7 @@ final class PrescriptionParser {
     /// everything that isn't a bold exercise header, Warm-up/Working/Back-off/Form/Rest line.
     static func extractCoachNote(_ text: String) -> String? {
         let structuredPrefixes = warmupPrefixes + workingPrefixes + backoffPrefixes + [
-            "form:", "form cue:", "cue:",
+            "form:", "form cue:", "cue:", "why:",
             "rest:", "tempo:",
             "revised:", "revision:",
         ]

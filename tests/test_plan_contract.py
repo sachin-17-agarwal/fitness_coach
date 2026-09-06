@@ -71,6 +71,17 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(p.exercises[0].working[0], SetPlan(220.0, 6, 10, 8.0))
 
 
+class ProposalRenderingTests(unittest.TestCase):
+    def test_ab_work_is_shown_to_the_coach_as_straight_sets(self):
+        import programme
+        rows = [{"exercise": "Ab Crunch Machine", "load": 90.0, "reps": 10, "rpe": 8.0}]
+        props, _, _ = programme.build_proposal(_prompt(), "Legs", 2, rows)
+        text = programme.format_proposal(props, "Legs", 2, {}, {})
+        line = next(l for l in text.split("\n") if "Ab Crunch Machine —" in l)
+        self.assertIn("3 straight sets at one load", line)
+        self.assertNotIn("back-off", line)
+
+
 class ValidationTests(unittest.TestCase):
     PROMPT = None
 
@@ -192,12 +203,23 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("backoff", abs_)
         self.assertTrue(text.startswith("HRV is on baseline"))
 
-    def test_a_departure_is_written_where_the_athlete_reads_it(self):
+    def test_a_departure_travels_with_its_exercise_as_a_why_line(self):
         raw = _legs_plan()
         raw["exercises"][2]["decision"] = "adjust"
         raw["exercises"][2]["reason"] = "Machine steps in 5kg, so 100 stays and reps carry the progression."
         text = render_plan(parse_plan(json.dumps(raw)))
-        self.assertIn("Changed from the programme: Machine steps in 5kg", text)
+        self.assertIn("Why: Changed from the programme — Machine steps in 5kg", text)
+        card = {c["exercise"]: c for c in parse_all_prescriptions(text)}["Leg Extension"]
+        self.assertTrue(card["why"].startswith("Changed from the programme"))
+        self.assertNotIn("why", {c["exercise"]: c for c in parse_all_prescriptions(text)}["Leg Press"])
+
+    def test_a_slot_fill_is_labelled_as_the_programme_asking_not_a_departure(self):
+        raw = CardioAbsTests._plan()
+        plan = parse_plan(json.dumps(raw))
+        self.assertEqual(validate(plan, "Cardio+Abs", _prompt()), [])
+        text = render_plan(plan)
+        self.assertIn("Why: Weak-point slot — Weak-point slot: triceps", text)
+        self.assertNotIn("Changed from the programme", text)
 
     def test_bodyweight_renders_in_the_prompts_spelling(self):
         e = ExercisePlan("Dips", "accept", "default", warmup=[(0, 8)],
