@@ -139,6 +139,12 @@ class ValidationTests(unittest.TestCase):
         raw["exercises"][0]["reason"] = "Knee was sore on the last top set; holding 220 this week."
         self.assertEqual(validate(parse_plan(json.dumps(raw)), "Legs", self.PROMPT, computed), [])
 
+    def test_a_back_off_at_the_top_sets_rpe_is_refused_on_any_exercise(self):
+        raw = _legs_plan()
+        for b in raw["exercises"][0]["backoff"]:
+            b["rpe"] = 8
+        self.assertTrue(any("LOWER RPE" in p for p in self._problems(raw)))
+
     def test_a_back_off_far_outside_the_band_is_named(self):
         raw = _legs_plan()
         for b in raw["exercises"][0]["backoff"]:
@@ -197,6 +203,24 @@ class CardioAbsTests(unittest.TestCase):
         raw["exercises"] = raw["exercises"][:5]          # only the triceps fill
         problems = validate(parse_plan(json.dumps(raw)), "Cardio+Abs", self.PROMPT, weak_points=["Triceps"])
         self.assertEqual(problems, [])
+
+    def test_a_slot_fill_with_same_load_back_offs_is_refused(self):
+        """The first live fill: 105kg x11 @8 with back-offs of 105kg x10 @8 and
+        105kg x9 @8. Three top sets, not a top set and two back-offs."""
+        raw = self._plan()
+        raw["exercises"][4] = {"exercise": "Seated Leg Curl", "decision": "accept",
+                               "reason": "Weak-point slot: hamstrings are the lowest muscle this block.",
+                               "warmup": [{"load_kg": 58, "reps": 10}],
+                               "working": [{"load_kg": 105, "reps_low": 11, "reps_high": 11, "rpe": 8}],
+                               "backoff": [{"load_kg": 105, "reps_low": 10, "reps_high": 10, "rpe": 8},
+                                           {"load_kg": 105, "reps_low": 9, "reps_high": 9, "rpe": 8}],
+                               "tempo": "3-1-2", "rest_seconds": 90, "form_cue": "Full stretch.", "note": ""}
+        problems = validate(parse_plan(json.dumps(raw)), "Cardio+Abs", self.PROMPT)
+        self.assertTrue(any("LIGHTER than the top set" in p for p in problems))
+        self.assertTrue(any("LOWER RPE" in p for p in problems))
+        raw["exercises"][4]["backoff"] = [{"load_kg": 85, "reps_low": 12, "reps_high": 15, "rpe": 7},
+                                          {"load_kg": 85, "reps_low": 10, "reps_high": 13, "rpe": 7}]
+        self.assertEqual(validate(parse_plan(json.dumps(raw)), "Cardio+Abs", self.PROMPT), [])
 
     def test_the_abs_opening_is_a_plan_request(self):
         self.assertTrue(is_plan_request("Starting the ab work of my Cardio+Abs session. Cardio is done", "Cardio+Abs"))
@@ -540,6 +564,25 @@ class SetReplyTests(unittest.TestCase):
                                                                 "reps_high": 1, "rpe": 8, "apply_to_remaining": True}}
         self.assertEqual(render_set_reply(reply, "Cable Crunch", self.STRAIGHT, done=1), "Good set. Same again.")
         self.assertEqual(parse_all_prescriptions("Good set. Same again."), [])
+
+    def test_a_back_off_at_the_top_load_is_handed_back_then_falls_back(self):
+        from plan import request_set_reply, set_reply_problems
+        bad = {"note": "Same weight again.", "next_set": {"changed": True, "load_kg": 220, "reps_low": 10,
+                                                           "reps_high": 12, "rpe": 8, "apply_to_remaining": True}}
+        good = {"note": "Back-offs at 176.", "next_set": {"changed": True, "load_kg": 176, "reps_low": 10,
+                                                           "reps_high": 12, "rpe": 7, "apply_to_remaining": True}}
+        problems = set_reply_problems(bad, "Leg Press", self.TOPBACK, done=1)
+        self.assertTrue(any("LIGHTER than the top set" in p for p in problems))
+        client = _FakeClient([json.dumps(bad), json.dumps(good)])
+        reply, notes = request_set_reply(client, [], [{"role": "user", "content": "Logged working set 1 of 3"}],
+                                         "Leg Press", 1, 3, stored=self.TOPBACK)
+        self.assertEqual(reply["next_set"]["load_kg"], 176)
+        self.assertEqual(len(client.requests), 2)
+        self.assertIn("LIGHTER", client.requests[1]["messages"][-1]["content"])
+        client = _FakeClient([json.dumps(bad), json.dumps(bad)])
+        reply, notes = request_set_reply(client, [], [{"role": "user", "content": "x"}], "Leg Press", 1, 3,
+                                         stored=self.TOPBACK)
+        self.assertIsNone(reply)
 
     def test_nonsense_numbers_fall_back_to_prose(self):
         from plan import render_set_reply
