@@ -3153,12 +3153,16 @@ class ReplayCommandTests(unittest.TestCase):
         stale = {"workout_mode": "active",
                  "current_session_id": "old-session",
                  "session_start_time": "2020-01-01T10:00:00"}
+        # The row is open and stamped on the slot the state still stands on:
+        # nobody ended it and nobody advanced, so this is the case that moves.
+        row = {"status": "in_progress", "mesocycle_week": 1, "mesocycle_day": 1}
         with patch("coach.load_today_conversation", return_value=[]), \
              patch("coach.chat_with_coach", return_value="LLM"), \
              patch("coach.get_workout_state", return_value=stale), \
              patch("coach.send_telegram_message"), \
              patch("coach.end_session") as end, \
              patch("coach.advance_mesocycle") as advance, \
+             patch("workout.session_row", return_value=row), \
              patch("replay.run_chat_replay", return_value=("R", "S")):
             out = handle_incoming_message("replay", memory)
         self.assertEqual(out, "R")
