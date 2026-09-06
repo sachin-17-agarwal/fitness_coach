@@ -192,7 +192,7 @@ def _same_set(spec: SetPlan, parsed: dict) -> bool:
 
 
 def validate(plan: SessionPlan, session_type: str, prompt: str,
-             proposal: dict | None = None) -> list[str]:
+             proposal: dict | None = None, weak_points: list | None = None) -> list[str]:
     """Every way the plan breaks the programme, as sentences the model can act on.
 
     Mechanical rules only — set counts from the template, the shape of the
@@ -227,6 +227,12 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
             target = slots[filled_slots - 1][1]
             if len(e.reason) < 20:
                 problems.append(f"{e.exercise}: a weak-point slot — say which muscle it serves and why.")
+            if weak_points:
+                from weakpoints import primary_muscle  # local: keeps import order flat
+                served = primary_muscle(e.exercise)
+                if served and served not in weak_points and e.decision != "adjust":
+                    problems.append(f"{e.exercise}: serves {served}, but this block's weak points are "
+                                    f"{' and '.join(weak_points)}. Use one of those, or mark adjust and say why.")
             if len(e.working) + len(e.backoff) != target:
                 problems.append(f"{e.exercise}: a weak-point slot is {target} sets, in either shape.")
         elif target is None:
@@ -413,7 +419,8 @@ def _phase(week: int) -> str:
 
 def request_session_plan(client, system_blocks: list, messages: list,
                          session_type: str, week: int, prompt: str,
-                         proposal: dict | None = None, model: str = MODEL) -> tuple:
+                         proposal: dict | None = None, model: str = MODEL,
+                         weak_points: list | None = None) -> tuple:
     """Ask for the plan, check it, hand it back once if it breaks a rule.
 
     Returns (plan, log_lines). `plan` is None when no valid plan could be had,
@@ -448,7 +455,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             notes.append(f"attempt {attempt}: plan did not parse ({exc})")
             return None, notes
-        problems = validate(plan, session_type, prompt, proposal)
+        problems = validate(plan, session_type, prompt, proposal, weak_points)
         if not problems:
             notes.append(f"attempt {attempt}: plan accepted")
             return plan, notes

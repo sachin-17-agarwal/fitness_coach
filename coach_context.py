@@ -291,6 +291,11 @@ def _recovery_from_override(payload: dict) -> dict:
     }
 
 
+def _block_weak_points(memory: dict, prompt: str):
+    from weakpoints import current_block_weak_points  # local: keeps import order flat
+    return current_block_weak_points(memory, prompt)
+
+
 def _recent_decisions() -> list:
     from plan import load_recent_decisions  # local: keeps import order flat
     return load_recent_decisions()
@@ -320,7 +325,7 @@ def build_context_block(memory: dict, athlete_name: str,
     # timeout. Keep this in step when a fetch is added — it has now drifted
     # three times, most recently when the peak-week and set-comparison fetches
     # landed on separate branches and each bumped the count to eleven.
-    with ThreadPoolExecutor(max_workers=13) as executor:
+    with ThreadPoolExecutor(max_workers=14) as executor:
         futures = {
             executor.submit(get_full_session_history, 30): "session_history",
             executor.submit(get_recovery_history, 30): "recovery_history",
@@ -334,6 +339,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(get_weak_point_history): "weak_point",
             executor.submit(get_set_comparisons): "set_comparisons",
             executor.submit(_recent_decisions): "decisions",
+            executor.submit(_block_weak_points, memory, system_prompt): "block_weak_points",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
         # its own authoritative snapshot.
@@ -412,6 +418,8 @@ def build_context_block(memory: dict, athlete_name: str,
     workout_state = results.get("workout_state") or {}
     workout_context = get_workout_context(workout_state)
     weekly_volume = format_weekly_volume(results.get("weekly_volume") or {})
+    from weakpoints import format_block_weak_points  # local: keeps import order flat
+    block_weak_points = format_block_weak_points(results.get("block_weak_points"))
     load_stalls = format_stalls(results.get("load_stalls") or [])
     current_loads = format_current_loads(results.get("current_loads") or [])
     peak_week_loads = format_peak_week_loads(results.get("peak_week_loads") or [])
@@ -459,6 +467,8 @@ def build_context_block(memory: dict, athlete_name: str,
             # Press"; and the lifts already on the board today, which the
             # substitution must leave to the coach.
             out["aliases"] = {logged: template for template, logged in _renamed.items()}
+            _bwp = results.get("block_weak_points") or {}
+            out["weak_points"] = [p["muscle"] for p in (_bwp.get("picks") or [])]
             out["logged_today"] = sorted({
                 (c.get("exercise") or "").strip()
                 for c in (results.get("set_comparisons") or []) if c.get("exercise")})
@@ -533,6 +543,8 @@ re-derive it from the log:
 
 TODAY'S APPLE WATCH WORKOUTS:
 {apple_workouts_today}
+
+{block_weak_points}
 
 WEEKLY VOLUME — working sets per week, normalised over 14 days (lowest first):
 {weekly_volume}
