@@ -519,7 +519,7 @@ if __name__ == "__main__":
 
 
 class SetReplyTests(unittest.TestCase):
-    """A change to the next set is a number too: typed, rendered into the block."""
+    """A mid-session change is a decision; the programme computes the sets."""
 
     STRAIGHT = {"working": [{"load_kg": 97.5, "reps_low": 9, "reps_high": 9, "rpe": 8}] * 3,
                 "backoff": [], "tempo": "2-1-2", "rest_seconds": 90}
@@ -528,79 +528,90 @@ class SetReplyTests(unittest.TestCase):
                            {"load_kg": 176, "reps_low": 8, "reps_high": 10, "rpe": 7}],
                "tempo": "3-1-2", "rest_seconds": 120}
 
-    def test_the_next_set_moves_on_the_card_not_only_in_prose(self):
+    @staticmethod
+    def _reply(decision, steps=1, scope="remaining", reason="It came in at RPE 7 against 8.", revised=None):
+        return {"note": "Read.", "decision": decision, "steps": steps, "scope": scope, "reason": reason,
+                "revised": revised or {"load_kg": 0, "reps_low": 1, "reps_high": 1, "rpe": 8}}
+
+    def test_heavier_moves_the_remaining_straight_sets_by_a_computed_step(self):
         from plan import render_set_reply
-        reply = {"note": "That flew up at RPE 7. Next set at 100.",
-                 "next_set": {"changed": True, "load_kg": 100, "reps_low": 12, "reps_high": 12, "rpe": 8,
-                              "apply_to_remaining": True}}
-        text = render_set_reply(reply, "Cable Crunch", self.STRAIGHT, done=1)
+        text = render_set_reply(self._reply("heavier"), "Cable Crunch", self.STRAIGHT, done=1)
         card = parse_all_prescriptions(text)[0]
-        self.assertEqual([s["weight"] for s in card["working"]], [97.5, 100.0, 100.0],
-                         "the logged set keeps its target; the remaining two move")
-        self.assertEqual(card["working"][1]["reps"], 12)
-        self.assertTrue(text.startswith("That flew up"))
-        self.assertNotIn("backoff", card)
+        self.assertEqual([s["weight"] for s in card["working"]], [97.5, 102.5, 102.5],
+                         "5% of 97.5 rounds to a 5kg step; the logged set keeps its target")
+        self.assertTrue(text.startswith("Read."))
 
     def test_next_only_moves_one_set(self):
         from plan import render_set_reply
-        reply = {"note": "", "next_set": {"changed": True, "load_kg": 100, "reps_low": 12, "reps_high": 12,
-                                          "rpe": 8, "apply_to_remaining": False}}
-        card = parse_all_prescriptions(render_set_reply(reply, "Cable Crunch", self.STRAIGHT, done=1))[0]
-        self.assertEqual([s["weight"] for s in card["working"]], [97.5, 100.0, 97.5])
+        card = parse_all_prescriptions(render_set_reply(self._reply("more_reps", scope="next"),
+                                                        "Cable Crunch", self.STRAIGHT, done=1))[0]
+        self.assertEqual([s["reps"] for s in card["working"]], [9, 10, 9])
 
-    def test_a_back_off_change_lands_on_the_back_off_line(self):
+    def test_easier_on_a_back_off_is_a_rep_change_at_the_same_load(self):
         from plan import render_set_reply
-        reply = {"note": "Top set was RPE 9.5; back-offs come down.",
-                 "next_set": {"changed": True, "load_kg": 170, "reps_low": 10, "reps_high": 12, "rpe": 7,
-                              "apply_to_remaining": True}}
-        card = parse_all_prescriptions(render_set_reply(reply, "Leg Press", self.TOPBACK, done=1))[0]
+        card = parse_all_prescriptions(render_set_reply(self._reply("easier"), "Leg Press", self.TOPBACK, done=1))[0]
         self.assertEqual(card["working"][0]["weight"], 220.0, "the logged top set is untouched")
-        self.assertEqual([b["weight"] for b in card["backoff"]], [170.0, 170.0])
-        self.assertEqual(card["tempo"], "3-1-2")
+        self.assertEqual([(b["weight"], b["reps"], b["rpe"]) for b in card["backoff"]],
+                         [(176.0, 9, 6.0), (176.0, 7, 6.0)])
 
-    def test_no_change_is_just_the_note(self):
+    def test_easier_under_five_reps_moves_the_load_instead(self):
+        from plan import apply_set_decision, SetPlan
+        moved = apply_set_decision("easier", 1, SetPlan(100.0, 5, 6, 8.0), "Leg Press")
+        self.assertEqual((moved.load_kg, moved.reps_low, moved.rpe), (92.5, 5, 7.0))
+
+    def test_hold_is_just_the_note(self):
         from plan import render_set_reply
-        reply = {"note": "Good set. Same again.", "next_set": {"changed": False, "load_kg": 0, "reps_low": 1,
-                                                                "reps_high": 1, "rpe": 8, "apply_to_remaining": True}}
-        self.assertEqual(render_set_reply(reply, "Cable Crunch", self.STRAIGHT, done=1), "Good set. Same again.")
-        self.assertEqual(parse_all_prescriptions("Good set. Same again."), [])
+        self.assertEqual(render_set_reply(self._reply("hold", reason=""), "Cable Crunch", self.STRAIGHT, done=1), "Read.")
 
-    def test_a_back_off_at_the_top_load_is_handed_back_then_falls_back(self):
-        from plan import request_set_reply, set_reply_problems
-        bad = {"note": "Same weight again.", "next_set": {"changed": True, "load_kg": 220, "reps_low": 10,
-                                                           "reps_high": 12, "rpe": 8, "apply_to_remaining": True}}
-        good = {"note": "Back-offs at 176.", "next_set": {"changed": True, "load_kg": 176, "reps_low": 10,
-                                                           "reps_high": 12, "rpe": 7, "apply_to_remaining": True}}
-        problems = set_reply_problems(bad, "Leg Press", self.TOPBACK, done=1)
-        self.assertTrue(any("LIGHTER than the top set" in p for p in problems))
+    def test_there_is_no_move_that_makes_a_ramp_single_out_of_a_top_set(self):
+        """The live failure: 108kg x10-12 @8 became 95kg x3 @6. No decision in
+        the vocabulary reaches that set; the widest moves stay in shape."""
+        from plan import SET_DECISIONS, apply_set_decision, SetPlan
+        planned = SetPlan(108.0, 10, 12, 8.0)
+        for decision in SET_DECISIONS:
+            if decision == "revise":
+                continue
+            for steps in (1, 2):
+                moved = apply_set_decision(decision, steps, planned, "Machine Calf Raise")
+                self.assertGreaterEqual(moved.reps_low, 8, decision)
+                self.assertGreaterEqual(moved.rpe, 6.0, decision)
+                self.assertGreaterEqual(moved.load_kg, 97.0, decision)
+
+    def test_a_revision_is_marked_and_needs_a_reason(self):
+        from plan import render_set_reply, set_reply_problems
+        bad = self._reply("revise", reason="pain", revised={"load_kg": 60, "reps_low": 15, "reps_high": 15, "rpe": 7})
+        self.assertTrue(set_reply_problems(bad, "Leg Press", self.TOPBACK, done=1))
+        good = self._reply("revise", reason="Knee complained on the top set; high-rep back-offs instead.",
+                           revised={"load_kg": 120, "reps_low": 15, "reps_high": 15, "rpe": 7})
+        text = render_set_reply(good, "Leg Press", self.TOPBACK, done=1)
+        self.assertIn("Revised: Knee complained", text)
+        card = parse_all_prescriptions(text)[0]
+        self.assertTrue(card.get("revised"))
+        self.assertEqual([b["weight"] for b in card["backoff"]], [120.0, 120.0])
+
+    def test_a_change_without_a_reason_is_handed_back_then_falls_back(self):
+        from plan import request_set_reply
+        bad = self._reply("lighter", reason="")
+        good = self._reply("lighter")
         client = _FakeClient([json.dumps(bad), json.dumps(good)])
         reply, notes = request_set_reply(client, [], [{"role": "user", "content": "Logged working set 1 of 3"}],
                                          "Leg Press", 1, 3, stored=self.TOPBACK)
-        self.assertEqual(reply["next_set"]["load_kg"], 176)
+        self.assertEqual(reply["decision"], "lighter")
         self.assertEqual(len(client.requests), 2)
-        self.assertIn("LIGHTER", client.requests[1]["messages"][-1]["content"])
         client = _FakeClient([json.dumps(bad), json.dumps(bad)])
         reply, notes = request_set_reply(client, [], [{"role": "user", "content": "x"}], "Leg Press", 1, 3,
                                          stored=self.TOPBACK)
         self.assertIsNone(reply)
 
-    def test_nonsense_numbers_fall_back_to_prose(self):
-        from plan import render_set_reply
-        reply = {"note": "x", "next_set": {"changed": True, "load_kg": 100, "reps_low": 0, "reps_high": 0,
-                                           "rpe": 12, "apply_to_remaining": True}}
-        self.assertIsNone(render_set_reply(reply, "Cable Crunch", self.STRAIGHT, done=1))
-
     def test_the_request_runs_cheap_and_parses(self):
         from plan import request_set_reply, SET_REPLY_SCHEMA
-        client = _FakeClient([json.dumps({"note": "ok", "next_set": {"changed": False, "load_kg": 0, "reps_low": 1,
-                                                                    "reps_high": 1, "rpe": 8, "apply_to_remaining": True}})])
-        reply, notes = request_set_reply(client, [], [{"role": "user", "content": "Logged working set 1 of 3: 97.5kg x 9 @ RPE 8."}],
-                                         "Cable Crunch", 1, 3)
-        self.assertEqual(reply["note"], "ok")
+        client = _FakeClient([json.dumps(self._reply("hold", reason=""))])
+        reply, notes = request_set_reply(client, [], [{"role": "user", "content": "Logged working set 1 of 3"}],
+                                         "Cable Crunch", 1, 3, stored=self.STRAIGHT)
+        self.assertEqual(reply["decision"], "hold")
         req = client.requests[0]
         self.assertEqual(req["output_config"]["effort"], "low")
         self.assertEqual(req["output_config"]["format"]["schema"], SET_REPLY_SCHEMA)
-        self.assertEqual(len(client.requests), 1, "no retry on a set reply")
 
     def test_a_logged_set_message_goes_through_the_contract_and_falls_back_without_a_plan(self):
         import coach
@@ -610,33 +621,27 @@ class SetReplyTests(unittest.TestCase):
             def create(self, **kwargs):
                 calls.append(kwargs)
                 if "output_config" in kwargs:
-                    text = json.dumps({"note": "Flew up. Next at 100.",
-                                       "next_set": {"changed": True, "load_kg": 100, "reps_low": 12, "reps_high": 12,
-                                                    "rpe": 8, "apply_to_remaining": True}})
+                    text = json.dumps(SetReplyTests._reply("heavier"))
                 else:
                     text = "prose reply"
                 return type("R", (), {"content": [type("B", (), {"type": "text", "text": text})()],
                                       "usage": None, "stop_reason": "end_turn"})()
 
         fake_client = type("C", (), {"messages": FakeMessages()})()
-        common = dict(
-            latest_exercise=lambda sid: "Cable Crunch",
-            logged_sets_for=lambda sid, ex: 1,
-        )
         with patch("coach.get_anthropic_client", return_value=fake_client), \
              patch("coach.load_system_prompt", return_value=_prompt()), \
              patch("coach.build_context_block", return_value=("STABLE", "LIVE")), \
              patch("coach._truncate_history", side_effect=lambda h: h), \
              patch("coach.save_conversation_message"), \
              patch("coach.session_type_for", return_value="Cardio+Abs"), \
-             patch.object(plan_module, "latest_exercise", common["latest_exercise"]), \
-             patch.object(plan_module, "logged_sets_for", common["logged_sets_for"]), \
+             patch.object(plan_module, "latest_exercise", lambda sid: "Cable Crunch"), \
+             patch.object(plan_module, "logged_sets_for", lambda sid, ex: 1), \
              patch.object(plan_module, "load_today_plan", lambda ex: SetReplyTests.STRAIGHT), \
              patch.dict(os.environ, {"PLAN_CONTRACT": "1"}):
             reply = coach.chat_with_coach("Logged working set 1 of 3: 97.5kg x 9 @ RPE 8.", [], {"mesocycle_week": 2},
                                           set_log_session="sid")
         self.assertIn("*Cable Crunch*", reply)
-        self.assertIn("100kg x12 RPE8", reply)
+        self.assertIn("102.5kg x9 RPE8", reply)
         self.assertEqual(len(calls), 1)
 
         calls.clear()
@@ -646,7 +651,7 @@ class SetReplyTests(unittest.TestCase):
              patch("coach._truncate_history", side_effect=lambda h: h), \
              patch("coach.save_conversation_message"), \
              patch("coach.session_type_for", return_value="Cardio+Abs"), \
-             patch.object(plan_module, "latest_exercise", common["latest_exercise"]), \
+             patch.object(plan_module, "latest_exercise", lambda sid: "Cable Crunch"), \
              patch.object(plan_module, "load_today_plan", lambda ex: None), \
              patch.dict(os.environ, {"PLAN_CONTRACT": "1"}):
             reply = coach.chat_with_coach("Logged working set 1 of 3: 97.5kg x 9 @ RPE 8.", [], {}, set_log_session="sid")

@@ -633,49 +633,66 @@ def is_plan_request(text: str, session_type: str) -> bool:
 # ── Mid-session: the reply to a logged set ───────────────────────────────────
 #
 # The opening plan put every number on the card through the contract, and
-# then the first logged set broke it: the coach wrote "Next set: 100kg x12
-# RPE8" as prose, the card kept 97.5 x 9, and the athlete was left with two
-# answers. A change to the next set is a number too. It goes through the same
-# door — typed, checked, rendered into the block the card reads — and the
-# coach's read on the set stays prose.
+# then the first logged set broke it: the coach wrote "Next set: 100kg x12" as
+# prose and the card kept 97.5 x 9. The first repair let the coach return the
+# next set as free numbers and policed them with bounds — and a ramp single
+# (95kg x3 @6) walked straight through the bounds and overwrote a top set.
+#
+# So the mid-session change is a DECISION, not a number. The coach picks a
+# move from a small vocabulary — hold, a step lighter or heavier, a rep or two
+# either way, a point easier or harder — and the programme computes the sets
+# from the plan on the card. There is no move that turns a 108kg x10-12 @8 top
+# set into a 95kg x3 @6 single, so there is nothing to police. The one exit is
+# `revise`: free numbers, a stated reason, and a `Revised:` line the athlete
+# sees, exactly as the prompt has always defined a deliberate departure.
+
+SET_DECISIONS = ("hold", "lighter", "heavier", "fewer_reps", "more_reps", "easier", "harder", "revise")
 
 SET_REPLY_SCHEMA = {
     "type": "object",
     "properties": {
         "note": {
             "type": "string",
-            "description": "Your read on the set he just logged and what to do on the next one: one to "
-                           "three sentences, plain prose. State the next target in words only if it "
-                           "CHANGES; the card carries it either way.",
+            "description": "Your read on the set he just logged and the instruction for the next one: one "
+                           "to three sentences, plain prose. Do not write numbers for the next set; the card "
+                           "is computed from `decision`.",
         },
-        "next_set": {
+        "decision": {
+            "type": "string", "enum": list(SET_DECISIONS),
+            "description": "hold: the card stands. lighter/heavier: the load moves one or two steps. "
+                           "fewer_reps/more_reps: the rep target moves one or two. easier/harder: the RPE "
+                           "target moves a point, applied as the programme applies it (reps first). "
+                           "revise: a deliberate departure — injury, machine in use — with `revised` filled "
+                           "and `reason` stated.",
+        },
+        "steps": {"type": "integer", "description": "1 or 2. Ignored for hold and revise."},
+        "scope": {"type": "string", "enum": ["next", "remaining"],
+                  "description": "next: only the next set. remaining: every set left in this phase."},
+        "reason": {"type": "string",
+                   "description": "One sentence: the fact from the set he just did (or the reading, or the "
+                                  "machine) that drove the decision. Empty for hold."},
+        "revised": {
             "type": "object",
-            "properties": {
-                "changed": {"type": "boolean",
-                            "description": "true only when the next set should differ from what the card shows."},
-                "load_kg": {"type": "number", "description": "Added load for a bodyweight movement."},
-                "reps_low": {"type": "integer"},
-                "reps_high": {"type": "integer"},
-                "rpe": {"type": "number"},
-                "apply_to_remaining": {"type": "boolean",
-                                       "description": "true: every remaining set of this phase takes the new "
-                                                      "target. false: only the next set."},
-            },
-            "required": ["changed", "load_kg", "reps_low", "reps_high", "rpe", "apply_to_remaining"],
+            "properties": {"load_kg": {"type": "number"}, "reps_low": {"type": "integer"},
+                           "reps_high": {"type": "integer"}, "rpe": {"type": "number"}},
+            "required": ["load_kg", "reps_low", "reps_high", "rpe"],
             "additionalProperties": False,
+            "description": "Used only with decision = revise.",
         },
     },
-    "required": ["note", "next_set"],
+    "required": ["note", "decision", "steps", "scope", "reason", "revised"],
     "additionalProperties": False,
 }
 
 SET_REPLY_INSTRUCTION = """
 He has just logged a set of {exercise} (set {done} of {total} done). Return the SET REPLY
-object: `note` is your read and your instruction, in your voice; `next_set` says whether
-the NEXT set's numbers change. Change them only for a reason you can name — the set he
-just did (reps, RPE), a reading, a joint, a machine step — and put that reason in `note`.
-If nothing changes, `changed` is false and the card stands. Never write a target in prose
-that differs from `next_set`; the card is rendered from `next_set`.
+object. `note` is your read and your instruction, in your voice. `decision` is what
+happens to the next set: `hold` unless the set he just did gives you a reason — it came
+in well under or over the target RPE, the reps fell short or flew past, the ramp said
+the working weight is wrong. A step lighter or heavier, a rep or two, a point easier or
+harder: pick the move and the size, and the programme computes the numbers. Say the
+reason in `reason`. Use `revise` only for a genuine departure (pain, equipment) and fill
+`revised` — it is shown to him as a revision.
 """.strip()
 
 
@@ -757,88 +774,129 @@ def _as_set(d: dict) -> SetPlan:
                    float(d.get("rpe", 8)))
 
 
+def _load_step(exercise: str, load: float) -> float:
+    """One step for this movement: the programme's increment, or 5% of the
+    load rounded to the half-kilo when that is larger."""
+    from prescribe import INCREMENT, _round_load, classify
+    base = INCREMENT[classify(exercise)]
+    return max(base, _round_load(load * 0.05))
+
+
+def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: str) -> SetPlan | None:
+    """The programme's arithmetic for one move on one planned set.
+
+    easier/harder follow :323 — a point of RPE at a fixed load is a rep; if
+    that would leave under five reps, the reps hold and the load moves 7.5%.
+    None when the decision is unknown.
+    """
+    from prescribe import DELOAD_MIN_REPS, _round_load, is_bodyweight
+    n = 1 if steps < 1 else min(int(steps), 2)
+    low, high, load, rpe = planned.reps_low, planned.reps_high, planned.load_kg, planned.rpe
+    if decision == "hold":
+        return planned
+    if decision in ("lighter", "heavier"):
+        if is_bodyweight(exercise) and load <= 0 and decision == "lighter":
+            return planned
+        step = _load_step(exercise, load) * n
+        load = max(0.0, _round_load(load - step if decision == "lighter" else load + step))
+        return SetPlan(load, low, high, rpe)
+    if decision in ("fewer_reps", "more_reps"):
+        d = -n if decision == "fewer_reps" else n
+        return SetPlan(load, max(1, low + d), max(1, high + d), rpe)
+    if decision in ("easier", "harder"):
+        d = -n if decision == "easier" else n
+        new_rpe = min(10.0, max(5.0, rpe + d))
+        if decision == "easier" and low - n < DELOAD_MIN_REPS:
+            return SetPlan(_round_load(load * 0.925) if load > 0 else load, low, high, new_rpe)
+        return SetPlan(load, max(1, low + d), max(1, high + d), new_rpe)
+    return None
+
+
 def set_reply_problems(reply: dict, exercise: str, stored: dict, done: int) -> list[str]:
-    """What is wrong with a proposed next set, in sentences the model can act on."""
-    nxt = reply.get("next_set") or {}
-    if not nxt.get("changed"):
+    """Only `revise` carries free numbers, and only its sanity is checked; a
+    computed move cannot be malformed."""
+    decision = (reply.get("decision") or "").strip().lower()
+    if decision not in SET_DECISIONS:
+        return [f"decision must be one of {', '.join(SET_DECISIONS)}."]
+    if decision == "hold":
         return []
-    working = [_as_set(s) for s in stored.get("working") or []]
-    backoff = [_as_set(s) for s in stored.get("backoff") or []]
-    if not working:
-        return []
-    try:
-        target = SetPlan(float(nxt.get("load_kg", 0) or 0), int(nxt.get("reps_low", 1)),
-                         int(nxt.get("reps_high", nxt.get("reps_low", 1))), float(nxt.get("rpe", 8)))
-    except (TypeError, ValueError):
-        return ["next_set carries numbers that are not numbers."]
-    out: list[str] = []
-    if not (1 <= target.reps_low <= target.reps_high <= 30):
-        out.append(f"reps {target.reps_low}-{target.reps_high} are not a real target.")
-    if not (5 <= target.rpe <= 10):
-        out.append(f"RPE {target.rpe:g} is outside 5-10.")
-    if target.load_kg < 0:
-        out.append("negative load.")
-    straight = len(working) > 1
-    if not straight and done >= 1 and not is_bodyweight(exercise):
-        top = working[0]
-        if target.load_kg >= top.load_kg > 0:
-            out.append(f"the next set is a back-off and must be LIGHTER than the top set "
-                       f"({top.load_kg:g}kg): {target.load_kg:g}kg is not a back-off.")
-        if target.rpe >= top.rpe:
-            out.append(f"a back-off targets a lower RPE than the top set's RPE{top.rpe:g}.")
-    return out
+    if len((reply.get("reason") or "").strip()) < 12:
+        return ["a change to the next set carries the reason for it, in one sentence."]
+    if decision == "revise":
+        r = reply.get("revised") or {}
+        try:
+            low, high, rpe, load = int(r.get("reps_low", 0)), int(r.get("reps_high", 0)), float(r.get("rpe", 0)), float(r.get("load_kg", 0))
+        except (TypeError, ValueError):
+            return ["revised carries numbers that are not numbers."]
+        out = []
+        if not (1 <= low <= high <= 30):
+            out.append(f"revised reps {low}-{high} are not a real target.")
+        if not (5 <= rpe <= 10):
+            out.append(f"revised RPE {rpe:g} is outside 5-10.")
+        if load < 0:
+            out.append("revised load is negative.")
+        return out
+    return []
 
 
 def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str | None:
-    """The coach's note, plus the exercise's block with the next set moved.
+    """The coach's note, plus the exercise's block with the decision applied.
 
-    Sets already logged keep the target they were logged against; the change
-    lands on the next set and, when asked, every remaining set of that phase.
-    The whole block is re-sent so the card's merge sees complete phases and
-    nothing already on screen is lost.
+    Sets already logged keep the target they were logged against; the move
+    lands on the next set and, when `scope` is remaining, every set left in
+    that phase. The whole block is re-sent so the card's merge sees complete
+    phases and nothing already on screen is lost. `revise` renders the given
+    set with a `Revised:` line, the prompt's own marker for a departure.
     """
     note = (reply.get("note") or "").strip()
-    nxt = reply.get("next_set") or {}
+    decision = (reply.get("decision") or "hold").strip().lower()
     working = [_as_set(s) for s in stored.get("working") or []]
     backoff = [_as_set(s) for s in stored.get("backoff") or []]
-    if not working:
+    if not working or set_reply_problems(reply, exercise, stored, done):
         return None
-    if not nxt.get("changed"):
+    if decision == "hold":
         return note or None
 
-    if set_reply_problems(reply, exercise, stored, done):
-        return None
-    target = SetPlan(float(nxt.get("load_kg", 0) or 0), int(nxt.get("reps_low", 1)),
-                     int(nxt.get("reps_high", nxt.get("reps_low", 1))), float(nxt.get("rpe", 8)))
-    remaining_all = bool(nxt.get("apply_to_remaining", True))
-
     straight = len(working) > 1
-    if straight:
-        sequence = [("working", i) for i in range(len(working))]
-    else:
-        sequence = [("working", 0)] + [("backoff", i) for i in range(len(backoff))]
+    sequence = ([("working", i) for i in range(len(working))] if straight
+                else [("working", 0)] + [("backoff", i) for i in range(len(backoff))])
     if done >= len(sequence):
         return note or None
     phase, _ = sequence[done]
+    remaining_all = (reply.get("scope") or "next") == "remaining"
+    steps = int(reply.get("steps") or 1)
+
+    def moved(planned: SetPlan) -> SetPlan:
+        if decision == "revise":
+            r = reply.get("revised") or {}
+            return SetPlan(float(r["load_kg"]), int(r["reps_low"]), int(r["reps_high"]), float(r["rpe"]))
+        return apply_set_decision(decision, steps, planned, exercise) or planned
+
     for k, (ph, i) in enumerate(sequence):
         if k < done or ph != phase:
             continue
         if k > done and not remaining_all:
             break
-        (working if ph == "working" else backoff)[i] = target
+        target_list = working if ph == "working" else backoff
+        target_list[i] = moved(target_list[i])
 
     e = ExercisePlan(exercise=exercise, decision="adjust", reason="", working=working, backoff=backoff,
                      tempo=str(stored.get("tempo") or ""), rest_seconds=int(stored.get("rest_seconds") or 0))
-    block = render_exercise(e)
+    # A computed move keeps the plan's shape by construction; a revision is
+    # the athlete's and the coach's business, marked as such.
+    lines = render_exercise(e).split("\n")
+    if decision == "revise":
+        lines.insert(1, f"Revised: {(reply.get('reason') or '').strip()}")
+    block = "\n".join(lines)
     return f"{note}\n\n{block}" if note else block
 
 
 def request_set_reply(client, system_blocks: list, messages: list, exercise: str,
                       done: int, total: int, model: str = MODEL,
                       stored: dict | None = None) -> tuple:
-    """Ask for the set reply. Cheap: adaptive thinking at low effort. A next
-    set that breaks the back-off rules is handed back once; a second failure
-    falls back to the prose reply."""
+    """Ask for the set reply. Cheap: adaptive thinking at low effort. A reply
+    that fails the (small) checks is handed back once; a second failure falls
+    back to the prose reply."""
     notes: list[str] = []
     instruction = SET_REPLY_INSTRUCTION.format(exercise=exercise, done=done, total=total)
     system = list(system_blocks) + [{"type": "text", "text": instruction}]
@@ -864,14 +922,15 @@ def request_set_reply(client, system_blocks: list, messages: list, exercise: str
             return None, notes
         problems = set_reply_problems(reply, exercise, stored or {}, done) if stored else []
         if not problems:
-            notes.append("set reply accepted" + (" · next set changed" if (reply.get("next_set") or {}).get("changed") else ""))
+            decision = (reply.get("decision") or "hold")
+            notes.append(f"set reply accepted · {decision}")
             return reply, notes
         notes.append(f"set reply attempt {attempt}: " + " | ".join(problems))
         if attempt == 2:
             return None, notes
         turns = turns + [
             {"role": "assistant", "content": text},
-            {"role": "user", "content": "Your next set breaks the programme:\n- " + "\n- ".join(problems)
+            {"role": "user", "content": "Your set reply is not valid:\n- " + "\n- ".join(problems)
                                         + "\nReturn the corrected set reply."},
         ]
     return None, notes
