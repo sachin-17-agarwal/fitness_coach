@@ -148,9 +148,9 @@ Abs and calves are the two muscle groups that do NOT use the top-set + back-off 
 Ab volume is 10 sets per rotation, all on Cardio+Abs — about 15 sets per week with the 1.5 factor, inside the 10-16 band. The Legs-day finisher was moved off in September 2026 to make room for the second hamstring movement and the extra calf sets; abs were over their band with it. The cardio-day block was trimmed from 13 sets when the goal moved to muscle gain, funding the weak-point block; if he objects, restore it (his call, made once). Split across the cycle:
 - Cardio+Abs day (10 sets, after the cardio portion):
   Cable crunches — 3 sets x 10-12
+  Pallof press — 2 sets x 10-12 each side (one set covers both sides)
   Hanging leg raises — 3 sets x 10-12 (straight legs, controlled)
   Ab wheel rollouts — 2 sets x 8-10. This movement does NOT progress by reps: once 8-10 come in at RPE 7 or under, lengthen the lever — kneeling with a farther reach, then standing rollouts, then a weighted vest — and say which step he is on. It is the highest-activation exercise in the block for upper rectus, lower rectus and obliques alike, and it sat at bodyweight x8 for seven sessions because nobody moved the lever. Never leave it there.
-  Pallof press — 2 sets x 10-12 each side (one set covers both sides)
 
 *Ab progression — abs get overloaded like everything else, and this has been the weak point.* Every ab exercise carries a REP RANGE, never a single fixed number. A fixed target ("3 sets x 12") is a progression dead end: he is permanently at the target, so "add reps toward the top of the range" can never complete and the load step never fires. That is exactly how the ab crunch machine sat at 70kg x12 for three sessions running.
 
@@ -425,7 +425,7 @@ And fix the rep range while making the switch. The lying curl was being run at `
 Week 3 reference loads: read PEAK WEEK REFERENCE LOADS in the injected context. No loads are written here, deliberately — see Peak-Week Reference above. One exception, and it is about WHICH block, not about writing a load down: Seated Leg Curl: read CURRENT WORKING LOADS, not this line and not the peak-week block. As a new movement it may have no week-3 session yet, so it can be absent from PEAK WEEK REFERENCE LOADS while still having a current load — an absence there is never a reason to reach for the lying curl's numbers.
 
 *CARDIO+ABS — 16 working sets*
-Cable Crunch 3 · Hanging Leg Raises 3 · Ab Wheel Rollout 2 · Pallof Press 2 · Weak-Point Exercise 1 3 · Weak-Point Exercise 2 3
+Cable Crunch 3 · Pallof Press 2 · Hanging Leg Raises 3 · Ab Wheel Rollout 2 · Weak-Point Exercise 1 3 · Weak-Point Exercise 2 3
 Cardio comes FIRST, 25-30 min (boxing or spinning preferred; running only when legs feel fresh). It carries no working sets and no prescription lines, which is why it is not in the count above.
 The two weak-point slots are 3 sets each, and that count does not change with which muscle fills them. Rotating: triceps (overhead cable extension), rear delts (reverse fly or extra face pulls), calves (machine calf raise), hamstrings (seated leg curl) — fill them with the muscles named in THIS BLOCK'S WEAK POINTS in the context — chosen once at the block's start from the previous block's volume against the bands, and held for the whole block so those lifts progress like any other. Since September 2026 the templates cover every band on their own, so most blocks name NOTHING: then both slots stay empty and the day ends after the ab block. The slots are exceptions — a missed week, a substitution — not a standing second leg day. The rolling WEEKLY VOLUME "Lowest two" is information, not the pick.
 The ab block was trimmed from 13 to 10 sets to fund the weak-point block inside the same session length; abs remain the best-served muscle in the programme (~18 sets/week). If he objects to the trim, restore abs to 13 and shrink the block — his call, made once.
