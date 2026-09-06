@@ -196,6 +196,40 @@ def _same_set(spec: SetPlan, parsed: dict) -> bool:
             and abs(spec.rpe - float(parsed.get("rpe") or 0)) < 1e-6)
 
 
+def _backoff_problems(e: ExercisePlan) -> list[str]:
+    """The rules a back-off must obey, wherever the exercise came from.
+
+    A back-off is lighter than the top set and easier than it — that is what
+    the word means (:64, :66). The first live weak-point fill went out as
+    105kg x11 @8 with back-offs of 105kg x10 @8 and 105kg x9 @8: same load,
+    same RPE, three top sets in a row. The slot path had checked only that
+    the back-offs matched each other.
+    """
+    out: list[str] = []
+    if not e.working or not e.backoff:
+        return out
+    top = e.working[0]
+    if len({b.load_kg for b in e.backoff}) > 1:
+        out.append(f"{e.exercise}: both back-offs at the SAME load.")
+    if len(e.backoff) > 1 and e.backoff[1].reps_low >= e.backoff[0].reps_low:
+        out.append(f"{e.exercise}: the second back-off carries fewer reps than the first.")
+    if not is_bodyweight(e.exercise):
+        if top.load_kg > 0 and e.backoff[0].load_kg >= top.load_kg:
+            out.append(f"{e.exercise}: a back-off is LIGHTER than the top set — {e.backoff[0].load_kg:g}kg "
+                       f"against a top set of {top.load_kg:g}kg is not a back-off. Drop 15-25%.")
+        elif top.load_kg > 0:
+            drop = 1 - e.backoff[0].load_kg / top.load_kg
+            outside = 0.0 if 0.15 <= drop <= 0.25 else min(abs(drop - 0.15), abs(drop - 0.25))
+            if outside * top.load_kg > 2.5:
+                out.append(f"{e.exercise}: back-off {drop:.0%} below the top set; the band is 15-25%.")
+    for b in e.backoff:
+        if b.rpe >= top.rpe:
+            out.append(f"{e.exercise}: a back-off targets a LOWER RPE than the top set "
+                       f"(top RPE{top.rpe:g}, back-off RPE{b.rpe:g}); the wave puts it one point under.")
+            break
+    return out
+
+
 def validate(plan: SessionPlan, session_type: str, prompt: str,
              proposal: dict | None = None, weak_points: list | None = None) -> list[str]:
     """Every way the plan breaks the programme, as sentences the model can act on.
@@ -275,16 +309,11 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
             continue
 
         if slot_fill:
-            top = e.working[0]
             if len(e.working) > 1 and e.backoff:
                 problems.append(f"{e.exercise}: either straight sets or one top set with back-offs, not both.")
-            if len({b.load_kg for b in e.backoff}) > 1:
-                problems.append(f"{e.exercise}: back-offs at the SAME load.")
-            if len(e.backoff) > 1 and e.backoff[1].reps_low >= e.backoff[0].reps_low:
-                problems.append(f"{e.exercise}: the second back-off carries fewer reps than the first.")
-            for b in e.backoff:
-                if b.rpe > top.rpe:
-                    problems.append(f"{e.exercise}: a back-off cannot target a higher RPE than the top set.")
+            if len(e.working) > 1 and len({s.load_kg for s in e.working}) > 1:
+                problems.append(f"{e.exercise}: straight sets sit at ONE load.")
+            problems.extend(_backoff_problems(e))
         elif _is_straight(e.exercise, target):
             if e.backoff:
                 problems.append(f"{e.exercise}: ab work is straight sets — no back-off line.")
@@ -300,20 +329,7 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
                 problems.append(f"{e.exercise}: {len(e.working) + len(e.backoff)} working sets against a "
                                 f"template of {target} (1 top set + {target - 1} back-off"
                                 f"{'s' if target - 1 != 1 else ''}).")
-            top = e.working[0]
-            if len(e.backoff) > 1:
-                if len({b.load_kg for b in e.backoff}) > 1:
-                    problems.append(f"{e.exercise}: both back-offs at the SAME load.")
-                if e.backoff[1].reps_low >= e.backoff[0].reps_low:
-                    problems.append(f"{e.exercise}: the second back-off carries fewer reps than the first.")
-            if e.backoff and top.load_kg > 0 and not is_bodyweight(e.exercise):
-                drop = 1 - e.backoff[0].load_kg / top.load_kg
-                outside = 0.0 if 0.15 <= drop <= 0.25 else min(abs(drop - 0.15), abs(drop - 0.25))
-                if outside * top.load_kg > 2.5:
-                    problems.append(f"{e.exercise}: back-off {drop:.0%} below the top set; the band is 15-25%.")
-            for b in e.backoff:
-                if b.rpe > top.rpe:
-                    problems.append(f"{e.exercise}: a back-off cannot target a higher RPE than the top set.")
+            problems.extend(_backoff_problems(e))
 
         computed = _proposal_numbers(proposal_by_key.get(key, ""))
         if e.decision == "accept" and computed.get("working"):
@@ -741,6 +757,38 @@ def _as_set(d: dict) -> SetPlan:
                    float(d.get("rpe", 8)))
 
 
+def set_reply_problems(reply: dict, exercise: str, stored: dict, done: int) -> list[str]:
+    """What is wrong with a proposed next set, in sentences the model can act on."""
+    nxt = reply.get("next_set") or {}
+    if not nxt.get("changed"):
+        return []
+    working = [_as_set(s) for s in stored.get("working") or []]
+    backoff = [_as_set(s) for s in stored.get("backoff") or []]
+    if not working:
+        return []
+    try:
+        target = SetPlan(float(nxt.get("load_kg", 0) or 0), int(nxt.get("reps_low", 1)),
+                         int(nxt.get("reps_high", nxt.get("reps_low", 1))), float(nxt.get("rpe", 8)))
+    except (TypeError, ValueError):
+        return ["next_set carries numbers that are not numbers."]
+    out: list[str] = []
+    if not (1 <= target.reps_low <= target.reps_high <= 30):
+        out.append(f"reps {target.reps_low}-{target.reps_high} are not a real target.")
+    if not (5 <= target.rpe <= 10):
+        out.append(f"RPE {target.rpe:g} is outside 5-10.")
+    if target.load_kg < 0:
+        out.append("negative load.")
+    straight = len(working) > 1
+    if not straight and done >= 1 and not is_bodyweight(exercise):
+        top = working[0]
+        if target.load_kg >= top.load_kg > 0:
+            out.append(f"the next set is a back-off and must be LIGHTER than the top set "
+                       f"({top.load_kg:g}kg): {target.load_kg:g}kg is not a back-off.")
+        if target.rpe >= top.rpe:
+            out.append(f"a back-off targets a lower RPE than the top set's RPE{top.rpe:g}.")
+    return out
+
+
 def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str | None:
     """The coach's note, plus the exercise's block with the next set moved.
 
@@ -758,10 +806,10 @@ def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str
     if not nxt.get("changed"):
         return note or None
 
+    if set_reply_problems(reply, exercise, stored, done):
+        return None
     target = SetPlan(float(nxt.get("load_kg", 0) or 0), int(nxt.get("reps_low", 1)),
                      int(nxt.get("reps_high", nxt.get("reps_low", 1))), float(nxt.get("rpe", 8)))
-    if not (1 <= target.reps_low <= target.reps_high <= 30 and 5 <= target.rpe <= 10 and target.load_kg >= 0):
-        return None
     remaining_all = bool(nxt.get("apply_to_remaining", True))
 
     straight = len(working) > 1
@@ -786,28 +834,44 @@ def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str
 
 
 def request_set_reply(client, system_blocks: list, messages: list, exercise: str,
-                      done: int, total: int, model: str = MODEL) -> tuple:
-    """Ask for the set reply. Cheap: adaptive thinking at low effort, one call,
-    no retry — a failure falls back to the prose reply."""
+                      done: int, total: int, model: str = MODEL,
+                      stored: dict | None = None) -> tuple:
+    """Ask for the set reply. Cheap: adaptive thinking at low effort. A next
+    set that breaks the back-off rules is handed back once; a second failure
+    falls back to the prose reply."""
     notes: list[str] = []
     instruction = SET_REPLY_INSTRUCTION.format(exercise=exercise, done=done, total=total)
-    response = client.messages.create(
-        model=model,
-        max_tokens=4000,
-        thinking={"type": "adaptive"},
-        output_config={"format": {"type": "json_schema", "schema": SET_REPLY_SCHEMA},
-                       "effort": "low"},
-        system=list(system_blocks) + [{"type": "text", "text": instruction}],
-        messages=list(messages),
-    )
-    text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
-    if not text or getattr(response, "stop_reason", None) == "max_tokens":
-        notes.append("set reply: nothing complete returned")
-        return None, notes
-    try:
-        reply = json.loads(text)
-    except ValueError as exc:
-        notes.append(f"set reply did not parse ({exc})")
-        return None, notes
-    notes.append("set reply accepted" + (" · next set changed" if (reply.get("next_set") or {}).get("changed") else ""))
-    return reply, notes
+    system = list(system_blocks) + [{"type": "text", "text": instruction}]
+    turns = list(messages)
+    for attempt in (1, 2):
+        response = client.messages.create(
+            model=model,
+            max_tokens=4000,
+            thinking={"type": "adaptive"},
+            output_config={"format": {"type": "json_schema", "schema": SET_REPLY_SCHEMA},
+                           "effort": "low"},
+            system=system,
+            messages=turns,
+        )
+        text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
+        if not text or getattr(response, "stop_reason", None) == "max_tokens":
+            notes.append(f"set reply attempt {attempt}: nothing complete returned")
+            return None, notes
+        try:
+            reply = json.loads(text)
+        except ValueError as exc:
+            notes.append(f"set reply attempt {attempt}: did not parse ({exc})")
+            return None, notes
+        problems = set_reply_problems(reply, exercise, stored or {}, done) if stored else []
+        if not problems:
+            notes.append("set reply accepted" + (" · next set changed" if (reply.get("next_set") or {}).get("changed") else ""))
+            return reply, notes
+        notes.append(f"set reply attempt {attempt}: " + " | ".join(problems))
+        if attempt == 2:
+            return None, notes
+        turns = turns + [
+            {"role": "assistant", "content": text},
+            {"role": "user", "content": "Your next set breaks the programme:\n- " + "\n- ".join(problems)
+                                        + "\nReturn the corrected set reply."},
+        ]
+    return None, notes

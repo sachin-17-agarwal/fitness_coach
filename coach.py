@@ -317,6 +317,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                         {"type": "text", "text": live_context},
                     ],
                     messages=messages_to_send, exercise=exercise, done=done, total=total,
+                    stored=stored,
                 )
                 for note in set_notes:
                     log.info("SET CONTRACT (%s): %s", exercise, note)
