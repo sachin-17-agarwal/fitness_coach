@@ -660,14 +660,16 @@ struct CardioYogaLogView: View {
     // MARK: - Formatting
 
     private static func kcal(_ workout: HKWorkout) -> Int? {
-        workout.statistics(for: HKQuantityType(.activeEnergyBurned))?
-            .sumQuantity()?.doubleValue(for: .kilocalorie()).map { Int($0.rounded()) }
+        guard let value = workout.statistics(for: HKQuantityType(.activeEnergyBurned))?
+            .sumQuantity()?.doubleValue(for: .kilocalorie()) else { return nil }
+        return Int(value.rounded())
     }
 
     private static func averageHR(_ workout: HKWorkout) -> Int? {
         let unit = HKUnit.count().unitDivided(by: .minute())
-        return workout.statistics(for: HKQuantityType(.heartRate))?
-            .averageQuantity()?.doubleValue(for: unit).map { Int($0.rounded()) }
+        guard let value = workout.statistics(for: HKQuantityType(.heartRate))?
+            .averageQuantity()?.doubleValue(for: unit) else { return nil }
+        return Int(value.rounded())
     }
 
     /// Minutes between the first and last logged set, when both are stamped.
