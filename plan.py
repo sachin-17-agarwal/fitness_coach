@@ -612,3 +612,202 @@ def is_plan_request(text: str, session_type: str) -> bool:
     """A session-opening message on a strength day: the one reply that is a
     whole plan rather than a conversation."""
     return session_type in PLAN_DAYS and bool(_PLAN_REQUEST_RE.match(text or ""))
+
+
+# ── Mid-session: the reply to a logged set ───────────────────────────────────
+#
+# The opening plan put every number on the card through the contract, and
+# then the first logged set broke it: the coach wrote "Next set: 100kg x12
+# RPE8" as prose, the card kept 97.5 x 9, and the athlete was left with two
+# answers. A change to the next set is a number too. It goes through the same
+# door — typed, checked, rendered into the block the card reads — and the
+# coach's read on the set stays prose.
+
+SET_REPLY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "note": {
+            "type": "string",
+            "description": "Your read on the set he just logged and what to do on the next one: one to "
+                           "three sentences, plain prose. State the next target in words only if it "
+                           "CHANGES; the card carries it either way.",
+        },
+        "next_set": {
+            "type": "object",
+            "properties": {
+                "changed": {"type": "boolean",
+                            "description": "true only when the next set should differ from what the card shows."},
+                "load_kg": {"type": "number", "description": "Added load for a bodyweight movement."},
+                "reps_low": {"type": "integer"},
+                "reps_high": {"type": "integer"},
+                "rpe": {"type": "number"},
+                "apply_to_remaining": {"type": "boolean",
+                                       "description": "true: every remaining set of this phase takes the new "
+                                                      "target. false: only the next set."},
+            },
+            "required": ["changed", "load_kg", "reps_low", "reps_high", "rpe", "apply_to_remaining"],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["note", "next_set"],
+    "additionalProperties": False,
+}
+
+SET_REPLY_INSTRUCTION = """
+He has just logged a set of {exercise} (set {done} of {total} done). Return the SET REPLY
+object: `note` is your read and your instruction, in your voice; `next_set` says whether
+the NEXT set's numbers change. Change them only for a reason you can name — the set he
+just did (reps, RPE), a reading, a joint, a machine step — and put that reason in `note`.
+If nothing changes, `changed` is false and the card stands. Never write a target in prose
+that differs from `next_set`; the card is rendered from `next_set`.
+""".strip()
+
+
+def _same(a: str, b: str) -> bool:
+    return _normalise_exercise(a) == _normalise_exercise(b)
+
+
+def load_today_plan(exercise: str) -> dict | None:
+    """The stored plan for this exercise at today's opening: {working, backoff,
+    tempo, rest_seconds} as SetPlan-shaped dicts, or None when the opening was
+    not under the contract (then the reply stays prose)."""
+    supabase = get_supabase()
+    if not supabase:
+        return None
+    today = now_local().strftime("%Y-%m-%d")
+    try:
+        rows = (
+            supabase.table("prescription_decisions")
+            .select("exercise, plan, id")
+            .eq("date", today)
+            .order("id", desc=True)
+            .execute()
+        ).data or []
+    except Exception:
+        log.warning("Could not read today's plan for %s", exercise)
+        return None
+    for row in rows:
+        if not _same(row.get("exercise") or "", exercise):
+            continue
+        detail = row.get("plan") or {}
+        if isinstance(detail, str):
+            try:
+                detail = json.loads(detail)
+            except ValueError:
+                return None
+        if detail.get("working"):
+            return detail
+    return None
+
+
+def logged_sets_for(session_id: str, exercise: str) -> int:
+    """Working (non-warm-up) sets of this exercise persisted against the session."""
+    supabase = get_supabase()
+    if not supabase or not session_id:
+        return 0
+    try:
+        rows = (
+            supabase.table("workout_sets")
+            .select("exercise, is_warmup")
+            .eq("workout_session_id", session_id)
+            .execute()
+        ).data or []
+    except Exception:
+        return 0
+    return sum(1 for r in rows if _same(r.get("exercise") or "", exercise) and not r.get("is_warmup"))
+
+
+def latest_exercise(session_id: str) -> str:
+    """The exercise of the most recently logged set in the session."""
+    supabase = get_supabase()
+    if not supabase or not session_id:
+        return ""
+    try:
+        rows = (
+            supabase.table("workout_sets")
+            .select("exercise, logged_at")
+            .eq("workout_session_id", session_id)
+            .order("logged_at", desc=True)
+            .limit(1)
+            .execute()
+        ).data or []
+    except Exception:
+        return ""
+    return (rows[0].get("exercise") or "") if rows else ""
+
+
+def _as_set(d: dict) -> SetPlan:
+    return SetPlan(float(d.get("load_kg", 0) or 0), int(d.get("reps_low", 1)), int(d.get("reps_high", 1)),
+                   float(d.get("rpe", 8)))
+
+
+def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str | None:
+    """The coach's note, plus the exercise's block with the next set moved.
+
+    Sets already logged keep the target they were logged against; the change
+    lands on the next set and, when asked, every remaining set of that phase.
+    The whole block is re-sent so the card's merge sees complete phases and
+    nothing already on screen is lost.
+    """
+    note = (reply.get("note") or "").strip()
+    nxt = reply.get("next_set") or {}
+    working = [_as_set(s) for s in stored.get("working") or []]
+    backoff = [_as_set(s) for s in stored.get("backoff") or []]
+    if not working:
+        return None
+    if not nxt.get("changed"):
+        return note or None
+
+    target = SetPlan(float(nxt.get("load_kg", 0) or 0), int(nxt.get("reps_low", 1)),
+                     int(nxt.get("reps_high", nxt.get("reps_low", 1))), float(nxt.get("rpe", 8)))
+    if not (1 <= target.reps_low <= target.reps_high <= 30 and 5 <= target.rpe <= 10 and target.load_kg >= 0):
+        return None
+    remaining_all = bool(nxt.get("apply_to_remaining", True))
+
+    straight = len(working) > 1
+    if straight:
+        sequence = [("working", i) for i in range(len(working))]
+    else:
+        sequence = [("working", 0)] + [("backoff", i) for i in range(len(backoff))]
+    if done >= len(sequence):
+        return note or None
+    phase, _ = sequence[done]
+    for k, (ph, i) in enumerate(sequence):
+        if k < done or ph != phase:
+            continue
+        if k > done and not remaining_all:
+            break
+        (working if ph == "working" else backoff)[i] = target
+
+    e = ExercisePlan(exercise=exercise, decision="adjust", reason="", working=working, backoff=backoff,
+                     tempo=str(stored.get("tempo") or ""), rest_seconds=int(stored.get("rest_seconds") or 0))
+    block = render_exercise(e)
+    return f"{note}\n\n{block}" if note else block
+
+
+def request_set_reply(client, system_blocks: list, messages: list, exercise: str,
+                      done: int, total: int, model: str = MODEL) -> tuple:
+    """Ask for the set reply. Cheap: adaptive thinking at low effort, one call,
+    no retry — a failure falls back to the prose reply."""
+    notes: list[str] = []
+    instruction = SET_REPLY_INSTRUCTION.format(exercise=exercise, done=done, total=total)
+    response = client.messages.create(
+        model=model,
+        max_tokens=4000,
+        thinking={"type": "adaptive"},
+        output_config={"format": {"type": "json_schema", "schema": SET_REPLY_SCHEMA},
+                       "effort": "low"},
+        system=list(system_blocks) + [{"type": "text", "text": instruction}],
+        messages=list(messages),
+    )
+    text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
+    if not text or getattr(response, "stop_reason", None) == "max_tokens":
+        notes.append("set reply: nothing complete returned")
+        return None, notes
+    try:
+        reply = json.loads(text)
+    except ValueError as exc:
+        notes.append(f"set reply did not parse ({exc})")
+        return None, notes
+    notes.append("set reply accepted" + (" · next set changed" if (reply.get("next_set") or {}).get("changed") else ""))
+    return reply, notes

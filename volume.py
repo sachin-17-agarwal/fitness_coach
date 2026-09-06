@@ -231,17 +231,23 @@ def get_weak_point_history(sessions_back: int = 4) -> list[dict]:
         supabase = get_supabase()
         if not supabase:
             return []
+        # Rows, then DAYS. A Cardio+Abs day has produced two rows more than
+        # once — the cardio import in one, the ab work in another — and
+        # taking the last four rows read two days as four sessions, half of
+        # them "none logged". The block's history is per training day.
         ws = (
             supabase.table("workout_sessions")
             .select("id, date")
             .eq("type", "Cardio+Abs")
             .order("date", desc=True)
-            .limit(sessions_back)
+            .limit(sessions_back * 4)
             .execute()
         )
-        rows = ws.data or []
-        if not rows:
+        all_rows = ws.data or []
+        if not all_rows:
             return []
+        dates = sorted({r["date"] for r in all_rows if r.get("date")}, reverse=True)[:sessions_back]
+        rows = [r for r in all_rows if r.get("date") in dates]
         sets_result = (
             supabase.table("workout_sets")
             .select("workout_session_id, exercise, is_warmup, notes")
@@ -256,6 +262,9 @@ def get_weak_point_history(sessions_back: int = 4) -> list[dict]:
     for row in sets_result.data or []:
         by_session.setdefault(row["workout_session_id"], []).append(row)
 
+    by_date: dict[str, list[dict]] = {}
+    for r in rows:
+        by_date.setdefault(r["date"], []).extend(by_session.get(r["id"], []))
     return find_weak_point_work(
-        [{"date": r["date"], "sets": by_session.get(r["id"], [])} for r in rows]
+        [{"date": d, "sets": by_date[d]} for d in sorted(by_date, reverse=True)]
     )

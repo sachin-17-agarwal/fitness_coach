@@ -492,3 +492,150 @@ class WiringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SetReplyTests(unittest.TestCase):
+    """A change to the next set is a number too: typed, rendered into the block."""
+
+    STRAIGHT = {"working": [{"load_kg": 97.5, "reps_low": 9, "reps_high": 9, "rpe": 8}] * 3,
+                "backoff": [], "tempo": "2-1-2", "rest_seconds": 90}
+    TOPBACK = {"working": [{"load_kg": 220, "reps_low": 6, "reps_high": 10, "rpe": 8}],
+               "backoff": [{"load_kg": 176, "reps_low": 10, "reps_high": 12, "rpe": 7},
+                           {"load_kg": 176, "reps_low": 8, "reps_high": 10, "rpe": 7}],
+               "tempo": "3-1-2", "rest_seconds": 120}
+
+    def test_the_next_set_moves_on_the_card_not_only_in_prose(self):
+        from plan import render_set_reply
+        reply = {"note": "That flew up at RPE 7. Next set at 100.",
+                 "next_set": {"changed": True, "load_kg": 100, "reps_low": 12, "reps_high": 12, "rpe": 8,
+                              "apply_to_remaining": True}}
+        text = render_set_reply(reply, "Cable Crunch", self.STRAIGHT, done=1)
+        card = parse_all_prescriptions(text)[0]
+        self.assertEqual([s["weight"] for s in card["working"]], [97.5, 100.0, 100.0],
+                         "the logged set keeps its target; the remaining two move")
+        self.assertEqual(card["working"][1]["reps"], 12)
+        self.assertTrue(text.startswith("That flew up"))
+        self.assertNotIn("backoff", card)
+
+    def test_next_only_moves_one_set(self):
+        from plan import render_set_reply
+        reply = {"note": "", "next_set": {"changed": True, "load_kg": 100, "reps_low": 12, "reps_high": 12,
+                                          "rpe": 8, "apply_to_remaining": False}}
+        card = parse_all_prescriptions(render_set_reply(reply, "Cable Crunch", self.STRAIGHT, done=1))[0]
+        self.assertEqual([s["weight"] for s in card["working"]], [97.5, 100.0, 97.5])
+
+    def test_a_back_off_change_lands_on_the_back_off_line(self):
+        from plan import render_set_reply
+        reply = {"note": "Top set was RPE 9.5; back-offs come down.",
+                 "next_set": {"changed": True, "load_kg": 170, "reps_low": 10, "reps_high": 12, "rpe": 7,
+                              "apply_to_remaining": True}}
+        card = parse_all_prescriptions(render_set_reply(reply, "Leg Press", self.TOPBACK, done=1))[0]
+        self.assertEqual(card["working"][0]["weight"], 220.0, "the logged top set is untouched")
+        self.assertEqual([b["weight"] for b in card["backoff"]], [170.0, 170.0])
+        self.assertEqual(card["tempo"], "3-1-2")
+
+    def test_no_change_is_just_the_note(self):
+        from plan import render_set_reply
+        reply = {"note": "Good set. Same again.", "next_set": {"changed": False, "load_kg": 0, "reps_low": 1,
+                                                                "reps_high": 1, "rpe": 8, "apply_to_remaining": True}}
+        self.assertEqual(render_set_reply(reply, "Cable Crunch", self.STRAIGHT, done=1), "Good set. Same again.")
+        self.assertEqual(parse_all_prescriptions("Good set. Same again."), [])
+
+    def test_nonsense_numbers_fall_back_to_prose(self):
+        from plan import render_set_reply
+        reply = {"note": "x", "next_set": {"changed": True, "load_kg": 100, "reps_low": 0, "reps_high": 0,
+                                           "rpe": 12, "apply_to_remaining": True}}
+        self.assertIsNone(render_set_reply(reply, "Cable Crunch", self.STRAIGHT, done=1))
+
+    def test_the_request_runs_cheap_and_parses(self):
+        from plan import request_set_reply, SET_REPLY_SCHEMA
+        client = _FakeClient([json.dumps({"note": "ok", "next_set": {"changed": False, "load_kg": 0, "reps_low": 1,
+                                                                    "reps_high": 1, "rpe": 8, "apply_to_remaining": True}})])
+        reply, notes = request_set_reply(client, [], [{"role": "user", "content": "Logged working set 1 of 3: 97.5kg x 9 @ RPE 8."}],
+                                         "Cable Crunch", 1, 3)
+        self.assertEqual(reply["note"], "ok")
+        req = client.requests[0]
+        self.assertEqual(req["output_config"]["effort"], "low")
+        self.assertEqual(req["output_config"]["format"]["schema"], SET_REPLY_SCHEMA)
+        self.assertEqual(len(client.requests), 1, "no retry on a set reply")
+
+    def test_a_logged_set_message_goes_through_the_contract_and_falls_back_without_a_plan(self):
+        import coach
+        calls = []
+
+        class FakeMessages:
+            def create(self, **kwargs):
+                calls.append(kwargs)
+                if "output_config" in kwargs:
+                    text = json.dumps({"note": "Flew up. Next at 100.",
+                                       "next_set": {"changed": True, "load_kg": 100, "reps_low": 12, "reps_high": 12,
+                                                    "rpe": 8, "apply_to_remaining": True}})
+                else:
+                    text = "prose reply"
+                return type("R", (), {"content": [type("B", (), {"type": "text", "text": text})()],
+                                      "usage": None, "stop_reason": "end_turn"})()
+
+        fake_client = type("C", (), {"messages": FakeMessages()})()
+        common = dict(
+            latest_exercise=lambda sid: "Cable Crunch",
+            logged_sets_for=lambda sid, ex: 1,
+        )
+        with patch("coach.get_anthropic_client", return_value=fake_client), \
+             patch("coach.load_system_prompt", return_value=_prompt()), \
+             patch("coach.build_context_block", return_value=("STABLE", "LIVE")), \
+             patch("coach._truncate_history", side_effect=lambda h: h), \
+             patch("coach.save_conversation_message"), \
+             patch("coach.session_type_for", return_value="Cardio+Abs"), \
+             patch.object(plan_module, "latest_exercise", common["latest_exercise"]), \
+             patch.object(plan_module, "logged_sets_for", common["logged_sets_for"]), \
+             patch.object(plan_module, "load_today_plan", lambda ex: SetReplyTests.STRAIGHT), \
+             patch.dict(os.environ, {"PLAN_CONTRACT": "1"}):
+            reply = coach.chat_with_coach("Logged working set 1 of 3: 97.5kg x 9 @ RPE 8.", [], {"mesocycle_week": 2},
+                                          set_log_session="sid")
+        self.assertIn("*Cable Crunch*", reply)
+        self.assertIn("100kg x12 RPE8", reply)
+        self.assertEqual(len(calls), 1)
+
+        calls.clear()
+        with patch("coach.get_anthropic_client", return_value=fake_client), \
+             patch("coach.load_system_prompt", return_value=_prompt()), \
+             patch("coach.build_context_block", return_value=("STABLE", "LIVE")), \
+             patch("coach._truncate_history", side_effect=lambda h: h), \
+             patch("coach.save_conversation_message"), \
+             patch("coach.session_type_for", return_value="Cardio+Abs"), \
+             patch.object(plan_module, "latest_exercise", common["latest_exercise"]), \
+             patch.object(plan_module, "load_today_plan", lambda ex: None), \
+             patch.dict(os.environ, {"PLAN_CONTRACT": "1"}):
+            reply = coach.chat_with_coach("Logged working set 1 of 3: 97.5kg x 9 @ RPE 8.", [], {}, set_log_session="sid")
+        self.assertEqual(reply, "prose reply", "no stored plan for the exercise means prose, as before")
+
+
+class WeakPointHistoryTests(unittest.TestCase):
+    def test_history_is_per_training_day_not_per_row(self):
+        import volume
+
+        class Q:
+            def __init__(self, rows): self.rows = rows
+            def __getattr__(self, name):
+                return lambda *a, **k: self
+            def execute(self): return type("R", (), {"data": self.rows})()
+
+        sessions = [{"id": "a1", "date": "2026-09-01"}, {"id": "a2", "date": "2026-09-01"},   # two rows, one day
+                    {"id": "b1", "date": "2026-08-27"}, {"id": "b2", "date": "2026-08-27"},
+                    {"id": "c1", "date": "2026-08-23"}]
+        sets = [{"workout_session_id": "a1", "exercise": "Boxing", "is_warmup": False, "notes": "cardio · hk:x"},
+                {"workout_session_id": "a2", "exercise": "Machine Calf Raise", "is_warmup": False, "notes": ""},
+                {"workout_session_id": "b1", "exercise": "Boxing", "is_warmup": False, "notes": "cardio"},
+                {"workout_session_id": "b2", "exercise": "Seated Leg Curl", "is_warmup": False, "notes": ""},
+                {"workout_session_id": "c1", "exercise": "Cable Crunch", "is_warmup": False, "notes": ""}]
+
+        class S:
+            def table(self, name):
+                return Q(sessions) if name == "workout_sessions" else Q(sets)
+
+        with patch.object(volume, "get_supabase", return_value=S()):
+            history = volume.get_weak_point_history(4)
+        self.assertEqual([h["date"] for h in history], ["2026-09-01", "2026-08-27", "2026-08-23"])
+        self.assertTrue(history[0]["muscles"], "the calf work on the second row of the day counts")
+        self.assertTrue(history[1]["muscles"])
+        self.assertFalse(history[2]["muscles"], "a day with only ab work carried no block work")

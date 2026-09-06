@@ -214,7 +214,8 @@ def _prose_reply(system_prompt: str, stable_context: str, live_context: str,
 
 def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     recovery_override: dict | None = None,
-                    plan_request: bool = False) -> str:
+                    plan_request: bool = False,
+                    set_log_session: str | None = None) -> str:
     system_prompt = load_system_prompt()
     programme_out: dict = {}
     stable_context, live_context = build_context_block(
@@ -292,6 +293,39 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                                session_id=session_id)
         except Exception:
             log.exception("Plan contract failed; falling back to the prose reply")
+            assistant_message = None
+
+    # A logged set's reply goes through the same door. The coach's read stays
+    # prose; a change to the next set is a number, so it is typed, checked and
+    # rendered into the block the card reads — never written as prose beside
+    # a card that still says otherwise.
+    if assistant_message is None and set_log_session and get_settings().plan_contract:
+        try:
+            from plan import (latest_exercise, load_today_plan, logged_sets_for,
+                              render_set_reply, request_set_reply)
+            exercise = latest_exercise(set_log_session)
+            stored = load_today_plan(exercise) if exercise else None
+            if stored:
+                done = logged_sets_for(set_log_session, exercise)
+                total = len(stored.get("working") or []) + len(stored.get("backoff") or [])
+                reply, set_notes = request_set_reply(
+                    get_anthropic_client(),
+                    system_blocks=[
+                        {"type": "text", "text": system_prompt},
+                        {"type": "text", "text": stable_context,
+                         "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+                        {"type": "text", "text": live_context},
+                    ],
+                    messages=messages_to_send, exercise=exercise, done=done, total=total,
+                )
+                for note in set_notes:
+                    log.info("SET CONTRACT (%s): %s", exercise, note)
+                if reply is not None:
+                    assistant_message = render_set_reply(reply, exercise, stored, done)
+            else:
+                log.info("SET CONTRACT: no stored plan for %r today; prose reply", exercise)
+        except Exception:
+            log.exception("Set contract failed; falling back to the prose reply")
             assistant_message = None
 
     if assistant_message is None:
@@ -822,9 +856,19 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
 
     # ── Get coach response ────────────────────────────────────────────────────
     from plan import is_plan_request  # local: keeps import order flat
+    # The app's own "Logged working set 2 of 3: …" line, during a live session,
+    # is the one message whose reply may move the next set.
+    set_log_session = None
+    if is_ios_structured_log(incoming_text):
+        set_log_session = session_id or None
+        if not set_log_session:
+            from workout import _find_live_session  # local: keeps import order flat
+            live = _find_live_session()
+            set_log_session = (live or {}).get("id") or None
     response = chat_with_coach(incoming_text, conversation_history, memory,
                                recovery_override=recovery_override,
-                               plan_request=is_plan_request(incoming_text, expected_session_type))
+                               plan_request=is_plan_request(incoming_text, expected_session_type),
+                               set_log_session=set_log_session)
 
     if inherited_attribution:
         guessed, count = inherited_attribution
