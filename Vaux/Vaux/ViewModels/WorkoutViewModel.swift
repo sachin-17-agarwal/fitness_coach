@@ -1001,8 +1001,15 @@ final class WorkoutViewModel {
     }
 
     /// 1-based position of the current exercise among the session's plan.
+    /// The plan in the order it was prescribed. `allPrescriptions` is
+    /// rearranged as the session moves ("up next" starts at the current
+    /// lift), which made the header read "Exercise 1 of 6" on the third
+    /// lift of the day. The counter reads this instead.
+    private var planOrder: [String] = []
+
     var currentExerciseIndex: Int? {
         guard let rx = currentPrescription else { return nil }
+        if let i = planOrder.firstIndex(of: rx.exerciseName) { return i + 1 }
         if let i = allPrescriptions.firstIndex(where: { $0.exerciseName == rx.exerciseName }) { return i + 1 }
         return nil
     }
@@ -1698,11 +1705,13 @@ final class WorkoutViewModel {
         // plan" reply). Below that, merge.
         if incoming.count >= 3 {
             allPrescriptions = incoming
+            planOrder = incoming.map(\.exerciseName)
             return
         }
         var merged = allPrescriptions
         for rx in incoming {
             let name = rx.exerciseName
+            if !planOrder.contains(name) { planOrder.append(name) }
             if let idx = merged.firstIndex(where: { $0.exerciseName == name }) {
                 merged[idx] = rx
             } else {
@@ -1933,6 +1942,7 @@ final class WorkoutViewModel {
         loggedSets = []
         currentPrescription = nil
         allPrescriptions = []
+        planOrder = []
         coachNote = nil
         totalTonnage = 0
         setCount = 0

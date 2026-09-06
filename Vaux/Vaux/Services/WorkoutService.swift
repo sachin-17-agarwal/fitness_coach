@@ -468,15 +468,27 @@ final class WorkoutService: Sendable {
         let tonnage = sets.reduce(0.0) { total, set in
             total + ((set.actualWeightKg ?? 0) * Double(set.actualReps ?? 0))
         }
-        try await client.update(
-            "workout_sessions",
-            body: [
-                "status": SessionStatus.finishedStored,
-                "end_time": ISO8601DateFormatter().string(from: Date()),
-                "tonnage_kg": tonnage,
-            ],
-            match: ["id": id.uuidString]
-        )
+        var body: [String: Any] = [
+            "status": SessionStatus.finishedStored,
+            "end_time": ISO8601DateFormatter().string(from: Date()),
+            "tonnage_kg": tonnage,
+        ]
+        // Re-stamp the mesocycle position from the state as it stands NOW.
+        // The row was stamped at the start; a week corrected in Settings
+        // mid-session would otherwise be saved under the wrong one. Read
+        // before `advance()` runs, so this is the week the session belonged to.
+        if let state = try? await MesocycleService(client: client).loadState() {
+            body["mesocycle_week"] = state.week
+            body["mesocycle_day"] = state.day
+        }
+        do {
+            try await client.update("workout_sessions", body: body, match: ["id": id.uuidString])
+        } catch {
+            guard body["mesocycle_week"] != nil else { throw error }
+            body.removeValue(forKey: "mesocycle_week")
+            body.removeValue(forKey: "mesocycle_day")
+            try await client.update("workout_sessions", body: body, match: ["id": id.uuidString])
+        }
     }
 
     /// Recompute and persist a session's tonnage from its sets.

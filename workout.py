@@ -204,6 +204,19 @@ def start_session(session_type: str) -> str:
         log.exception("Failed to start session")
         return ""
 
+def session_status(session_id: str) -> str:
+    """The stored status of a session row, "" when it cannot be read."""
+    try:
+        supabase = get_supabase()
+        if not supabase or not session_id:
+            return ""
+        rows = (supabase.table("workout_sessions").select("status")
+                .eq("id", session_id).limit(1).execute()).data or []
+        return (rows[0].get("status") or "") if rows else ""
+    except Exception:
+        return ""
+
+
 def end_session(session_id: str) -> dict:
     """Mark session complete and calculate summary stats."""
     if not session_id:

@@ -528,6 +528,47 @@ def send_morning_briefing(memory: dict):
     print(f"Morning briefing sent (style={style}).")
 
 
+def _settle_stale_session(memory: dict) -> bool:
+    """Close a session left active from an earlier day. Returns True when
+    the mesocycle was advanced.
+
+    The advance is for a session NOBODY ended — the athlete walked away and
+    the rotation still has to move on. A session the app already completed
+    is different: the app advanced the mesocycle when it ended it and only
+    the memory flag was left behind, so advancing again here moved the wave
+    twice for one training day. Weeks ran ahead of the calendar for exactly
+    this reason. A finished row now clears the flag and nothing else.
+    """
+    from data import is_session_finished  # local: keeps import order flat
+    from workout import session_status  # local: keeps import order flat
+    stale_state = get_workout_state()
+    if stale_state.get("workout_mode") != "active":
+        return False
+    start_time_str = stale_state.get("session_start_time", "")
+    try:
+        if not start_time_str:
+            return False
+        started = datetime.fromisoformat(start_time_str)
+        if started.date() >= now_local().date():
+            return False
+        stale_id = stale_state.get("current_session_id", "")
+        if stale_id and is_session_finished(session_status(stale_id)):
+            set_workout_state({
+                "workout_mode": "inactive", "current_session_id": "",
+                "current_exercise_index": "0", "current_set_number": "0",
+                "current_exercise_name": "", "session_start_time": "",
+            })
+            log.info("Stale flag cleared for %s — the app had already ended it and advanced", stale_id)
+            return False
+        if stale_id:
+            end_session(stale_id)
+        advance_mesocycle(memory)
+        return True
+    except Exception:
+        log.exception("Stale session check failed")
+        return False
+
+
 def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool = True,
                             out_prs: list | None = None,
                             recovery_override: dict | None = None,
@@ -579,23 +620,11 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     # Without this guard, a session that was never explicitly ended stays
     # workout_mode=active forever, causing sets from later days to accumulate
     # on the same session_id and mesocycle to never advance.
-    stale_state = get_workout_state()
-    if stale_state.get("workout_mode") == "active":
-        start_time_str = stale_state.get("session_start_time", "")
-        try:
-            if start_time_str:
-                started = datetime.fromisoformat(start_time_str)
-                if started.date() < now_local().date():
-                    stale_id = stale_state.get("current_session_id", "")
-                    if stale_id:
-                        end_session(stale_id)
-                    advance_mesocycle(memory)
-                    mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
-                    expected_session_type = get_session_type_for_day(
-                        mesocycle_day, memory.get(SESSION_OVERRIDE_KEY)
-                    )
-        except Exception:
-            log.exception("Stale session check failed")
+    if _settle_stale_session(memory):
+        mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
+        expected_session_type = get_session_type_for_day(
+            mesocycle_day, memory.get(SESSION_OVERRIDE_KEY)
+        )
 
     # ── "replay" command ──────────────────────────────────────────────────────
     # Replays prescribe.py (the programme as code) against real logged history
