@@ -639,3 +639,34 @@ class WeakPointHistoryTests(unittest.TestCase):
         self.assertTrue(history[0]["muscles"], "the calf work on the second row of the day counts")
         self.assertTrue(history[1]["muscles"])
         self.assertFalse(history[2]["muscles"], "a day with only ab work carried no block work")
+
+
+class StaleSessionTests(unittest.TestCase):
+    """A session the app already ended must not advance the mesocycle again."""
+
+    def _run(self, status):
+        import coach
+        advanced, ended, cleared = [], [], []
+        state = {"workout_mode": "active", "current_session_id": "sid",
+                 "session_start_time": "2026-09-05T18:00:00+10:00"}
+        with patch("coach.get_workout_state", return_value=state), \
+             patch("coach.set_workout_state", side_effect=lambda d: cleared.append(d)), \
+             patch("coach.end_session", side_effect=lambda sid: ended.append(sid)), \
+             patch("coach.advance_mesocycle", side_effect=lambda m: advanced.append(1)), \
+             patch("workout.session_status", return_value=status), \
+             patch("coach.now_local", return_value=__import__("datetime").datetime(2026, 9, 6, 9, 0)):
+            moved = coach._settle_stale_session({"mesocycle_week": 1, "mesocycle_day": 4})
+        return moved, advanced, ended, cleared
+
+    def test_a_finished_session_only_clears_the_flag(self):
+        moved, advanced, ended, cleared = self._run("completed")
+        self.assertFalse(moved)
+        self.assertEqual(advanced, [])
+        self.assertEqual(ended, [])
+        self.assertEqual(cleared[0]["workout_mode"], "inactive")
+
+    def test_an_abandoned_session_is_ended_and_advanced_once(self):
+        moved, advanced, ended, cleared = self._run("in_progress")
+        self.assertTrue(moved)
+        self.assertEqual(advanced, [1])
+        self.assertEqual(ended, ["sid"])
