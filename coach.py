@@ -533,15 +533,21 @@ def _settle_stale_session(memory: dict) -> bool:
     """Close a session left active from an earlier day. Returns True when
     the mesocycle was advanced.
 
-    The advance is for a session NOBODY ended — the athlete walked away and
-    the rotation still has to move on. A session the app already completed
-    is different: the app advanced the mesocycle when it ended it and only
-    the memory flag was left behind, so advancing again here moved the wave
-    twice for one training day. Weeks ran ahead of the calendar for exactly
-    this reason. A finished row now clears the flag and nothing else.
+    Three cases, decided from the row rather than assumed:
+
+    - The row is already finished: the app ended it and advanced, only the
+      memory flag was left behind. Clear the flag, move nothing.
+    - The row is open and the state still stands on the session's own
+      stamped position: nobody ended it and nobody advanced. End it — at its
+      last logged set, not at this moment — and advance once.
+    - The row is open but the state has already moved past its stamp (END
+      advanced but the completion write failed), or the row carries no stamp
+      to compare: end it and clear the flag, and do NOT advance. Guessing
+      here is how the wave ran ahead; a position that is wrong is fixed in
+      Settings in one tap, a position moved twice is not noticed for a week.
     """
     from data import is_session_finished  # local: keeps import order flat
-    from workout import session_status  # local: keeps import order flat
+    from workout import session_row  # local: keeps import order flat
     stale_state = get_workout_state()
     if stale_state.get("workout_mode") != "active":
         return False
@@ -553,18 +559,29 @@ def _settle_stale_session(memory: dict) -> bool:
         if started.date() >= now_local().date():
             return False
         stale_id = stale_state.get("current_session_id", "")
-        if stale_id and is_session_finished(session_status(stale_id)):
-            set_workout_state({
-                "workout_mode": "inactive", "current_session_id": "",
-                "current_exercise_index": "0", "current_set_number": "0",
-                "current_exercise_name": "", "session_start_time": "",
-            })
+        row = session_row(stale_id) if stale_id else {}
+        cleared = {
+            "workout_mode": "inactive", "current_session_id": "",
+            "current_exercise_index": "0", "current_set_number": "0",
+            "current_exercise_name": "", "session_start_time": "",
+        }
+        if stale_id and is_session_finished(row.get("status")):
+            set_workout_state(cleared)
             log.info("Stale flag cleared for %s — the app had already ended it and advanced", stale_id)
             return False
         if stale_id:
-            end_session(stale_id)
-        advance_mesocycle(memory)
-        return True
+            end_session(stale_id)          # end_session clears the flag itself
+        else:
+            set_workout_state(cleared)
+        stamp = (_safe_int(row.get("mesocycle_week"), 0), _safe_int(row.get("mesocycle_day"), 0))
+        state = (_safe_int(memory.get("mesocycle_week"), 0), _safe_int(memory.get("mesocycle_day"), 0))
+        if stamp == state and stamp != (0, 0):
+            advance_mesocycle(memory)
+            log.info("Stale session %s ended at its last set and the rotation advanced once", stale_id)
+            return True
+        log.warning("Stale session %s ended at its last set; rotation NOT advanced — state %s "
+                    "does not stand on the session's stamp %s", stale_id, state, stamp)
+        return False
     except Exception:
         log.exception("Stale session check failed")
         return False

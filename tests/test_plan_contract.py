@@ -690,31 +690,71 @@ class WeakPointHistoryTests(unittest.TestCase):
 
 
 class StaleSessionTests(unittest.TestCase):
-    """A session the app already ended must not advance the mesocycle again."""
+    """A session left active from an earlier day, settled from the row."""
 
-    def _run(self, status):
+    def _run(self, status, stamp=(1, 4), state=(1, 4)):
         import coach
         advanced, ended, cleared = [], [], []
-        state = {"workout_mode": "active", "current_session_id": "sid",
-                 "session_start_time": "2026-09-05T18:00:00+10:00"}
-        with patch("coach.get_workout_state", return_value=state), \
+        flag = {"workout_mode": "active", "current_session_id": "sid",
+                "session_start_time": "2026-09-05T18:00:00+10:00"}
+        row = {"status": status, "mesocycle_week": stamp[0], "mesocycle_day": stamp[1]}
+        with patch("coach.get_workout_state", return_value=flag), \
              patch("coach.set_workout_state", side_effect=lambda d: cleared.append(d)), \
              patch("coach.end_session", side_effect=lambda sid: ended.append(sid)), \
              patch("coach.advance_mesocycle", side_effect=lambda m: advanced.append(1)), \
-             patch("workout.session_status", return_value=status), \
+             patch("workout.session_row", return_value=row), \
              patch("coach.now_local", return_value=__import__("datetime").datetime(2026, 9, 6, 9, 0)):
-            moved = coach._settle_stale_session({"mesocycle_week": 1, "mesocycle_day": 4})
+            moved = coach._settle_stale_session({"mesocycle_week": state[0], "mesocycle_day": state[1]})
         return moved, advanced, ended, cleared
 
     def test_a_finished_session_only_clears_the_flag(self):
         moved, advanced, ended, cleared = self._run("completed")
         self.assertFalse(moved)
-        self.assertEqual(advanced, [])
-        self.assertEqual(ended, [])
+        self.assertEqual((advanced, ended), ([], []))
         self.assertEqual(cleared[0]["workout_mode"], "inactive")
 
-    def test_an_abandoned_session_is_ended_and_advanced_once(self):
-        moved, advanced, ended, cleared = self._run("in_progress")
+    def test_an_abandoned_session_still_on_its_slot_is_ended_and_advanced_once(self):
+        moved, advanced, ended, cleared = self._run("in_progress", stamp=(1, 4), state=(1, 4))
         self.assertTrue(moved)
-        self.assertEqual(advanced, [1])
+        self.assertEqual((advanced, ended), ([1], ["sid"]))
+
+    def test_a_session_the_state_has_already_moved_past_is_ended_but_not_advanced(self):
+        """END advanced the rotation but the completion write failed: the row
+        is open at W1 D4 while the state stands on W2 D1. Advancing again is
+        the double move."""
+        moved, advanced, ended, cleared = self._run("in_progress", stamp=(1, 4), state=(2, 1))
+        self.assertFalse(moved)
+        self.assertEqual((advanced, ended), ([], ["sid"]))
+
+    def test_an_unstamped_open_session_is_ended_but_not_advanced(self):
+        moved, advanced, ended, cleared = self._run("in_progress", stamp=(None, None), state=(1, 4))
+        self.assertFalse(moved)
         self.assertEqual(ended, ["sid"])
+
+
+class EndSessionTimeTests(unittest.TestCase):
+    def test_a_session_closed_later_ends_at_its_last_logged_set(self):
+        import workout
+        updates = []
+
+        class Q:
+            def __init__(self, rows): self.rows = rows
+            def __getattr__(self, name):
+                return lambda *a, **k: self
+            def update(self, body): updates.append(body); return self
+            def execute(self): return type("R", (), {"data": self.rows})()
+
+        class S:
+            def table(self, name):
+                if name == "workout_sets":
+                    return Q([{"actual_weight_kg": 100, "actual_reps": 10, "is_warmup": False,
+                               "logged_at": "2026-09-05T19:41:00+10:00"},
+                              {"actual_weight_kg": 100, "actual_reps": 9, "is_warmup": False,
+                               "logged_at": "2026-09-05T19:44:00+10:00"}])
+                return Q([])
+
+        with patch.object(workout, "get_supabase", return_value=S()), \
+             patch.object(workout, "set_workout_state", lambda d: None):
+            workout.end_session("sid")
+        self.assertEqual(updates[0]["end_time"], "2026-09-05T19:44:00+10:00")
+        self.assertEqual(updates[0]["tonnage_kg"], 1900.0)

@@ -204,21 +204,32 @@ def start_session(session_type: str) -> str:
         log.exception("Failed to start session")
         return ""
 
-def session_status(session_id: str) -> str:
-    """The stored status of a session row, "" when it cannot be read."""
+def session_row(session_id: str) -> dict:
+    """The session row's status and mesocycle stamp, {} when unreadable."""
     try:
         supabase = get_supabase()
         if not supabase or not session_id:
-            return ""
-        rows = (supabase.table("workout_sessions").select("status")
+            return {}
+        rows = (supabase.table("workout_sessions").select("status, mesocycle_week, mesocycle_day, date")
                 .eq("id", session_id).limit(1).execute()).data or []
-        return (rows[0].get("status") or "") if rows else ""
+        return rows[0] if rows else {}
     except Exception:
-        return ""
+        return {}
 
 
-def end_session(session_id: str) -> dict:
-    """Mark session complete and calculate summary stats."""
+def session_status(session_id: str) -> str:
+    """The stored status of a session row, "" when it cannot be read."""
+    return session_row(session_id).get("status") or ""
+
+
+def end_session(session_id: str, end_at: str | None = None) -> dict:
+    """Mark session complete and calculate summary stats.
+
+    `end_at` is the ISO time the session actually ended. A session closed the
+    next morning by the stale check ends at its LAST LOGGED SET, not at the
+    moment someone noticed — otherwise the history shows an eight-hour
+    Cardio+Abs day.
+    """
     if not session_id:
         print("end_session called with empty session_id — skipping")
         return {}
@@ -226,9 +237,12 @@ def end_session(session_id: str) -> dict:
         supabase = get_supabase()
 
         sets = supabase.table("workout_sets")\
-            .select("actual_weight_kg, actual_reps, is_warmup")\
+            .select("actual_weight_kg, actual_reps, is_warmup, logged_at")\
             .eq("workout_session_id", session_id)\
             .execute()
+        if end_at is None:
+            stamps = sorted(s.get("logged_at") for s in (sets.data or []) if s.get("logged_at"))
+            end_at = stamps[-1] if stamps else now_local().isoformat()
 
         tonnage = sum(
             (s.get("actual_weight_kg") or 0) * (s.get("actual_reps") or 0)
@@ -240,7 +254,7 @@ def end_session(session_id: str) -> dict:
 
         supabase.table("workout_sessions").update({
             "status": SESSION_STATUS_FINISHED,
-            "end_time": now_local().isoformat(),
+            "end_time": end_at,
             "tonnage_kg": round(tonnage, 1)
         }).eq("id", session_id).execute()
 
