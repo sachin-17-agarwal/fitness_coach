@@ -130,6 +130,52 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(any("15-25%" in p for p in self._problems(raw)))
 
 
+class CardioAbsTests(unittest.TestCase):
+    PROMPT = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.PROMPT = _prompt()
+
+    @staticmethod
+    def _plan(with_slots=True):
+        def straight(name, sets, load, reason="programme default"):
+            return {"exercise": name, "decision": "accept", "reason": reason, "warmup": [],
+                    "working": [{"load_kg": load, "reps_low": 12, "reps_high": 15, "rpe": 8}] * sets,
+                    "backoff": [], "tempo": "2-1-2", "rest_seconds": 90, "form_cue": "Brace.", "note": ""}
+        exercises = [straight("Cable Crunch", 3, 25), straight("Hanging Leg Raises", 3, 0),
+                     straight("Ab Wheel Rollout", 2, 0), straight("Pallof Press", 2, 15)]
+        if with_slots:
+            exercises.append({"exercise": "Overhead Cable Extension", "decision": "accept",
+                              "reason": "Weak-point slot: triceps are the lowest muscle this week.",
+                              "warmup": [], "working": [{"load_kg": 30, "reps_low": 8, "reps_high": 12, "rpe": 8}],
+                              "backoff": [{"load_kg": 24, "reps_low": 12, "reps_high": 15, "rpe": 7},
+                                          {"load_kg": 24, "reps_low": 10, "reps_high": 13, "rpe": 7}],
+                              "tempo": "2-1-2", "rest_seconds": 90, "form_cue": "Elbows still.", "note": ""})
+            exercises.append(straight("Machine Calf Raise", 3, 100,
+                                      reason="Weak-point slot: calves sit under their band at 4.5 sets."))
+        return {"opening": "Cardio is in: boxing, 32 min. Now the ab block.", "exercises": exercises, "carried": []}
+
+    def test_a_cardio_abs_plan_with_both_slots_filled_is_clean(self):
+        self.assertEqual(validate(parse_plan(json.dumps(self._plan())), "Cardio+Abs", self.PROMPT), [])
+
+    def test_unfilled_slots_are_named(self):
+        problems = validate(parse_plan(json.dumps(self._plan(with_slots=False))), "Cardio+Abs", self.PROMPT)
+        self.assertTrue(any("weak-point slot(s) unfilled" in p for p in problems))
+
+    def test_a_slot_fill_must_say_which_muscle(self):
+        raw = self._plan()
+        raw["exercises"][4]["reason"] = "extra"
+        problems = validate(parse_plan(json.dumps(raw)), "Cardio+Abs", self.PROMPT)
+        self.assertTrue(any("which muscle" in p for p in problems))
+
+    def test_the_abs_opening_is_a_plan_request(self):
+        self.assertTrue(is_plan_request("Starting the ab work of my Cardio+Abs session. Cardio is done", "Cardio+Abs"))
+        self.assertTrue(is_plan_request("Starting my Cardio+Abs session", "Cardio+Abs"))
+        self.assertTrue(is_plan_request("I've finished cardio for my Cardio+Abs session — it is logged", "Cardio+Abs"))
+        self.assertFalse(is_plan_request("Starting my Yoga session", "Yoga"))
+
+
 class RenderTests(unittest.TestCase):
     def test_the_rendered_plan_parses_back_to_the_same_numbers(self):
         p = parse_plan(json.dumps(_legs_plan()))
@@ -271,7 +317,6 @@ class WiringTests(unittest.TestCase):
         self.assertTrue(is_plan_request("Starting my Legs session. List today's full plan", "Legs"))
         self.assertTrue(is_plan_request("Resend today's Push plan", "Push"))
         self.assertTrue(is_plan_request("starting pull", "Pull"))
-        self.assertFalse(is_plan_request("Starting my Cardio+Abs session", "Cardio+Abs"))
         self.assertFalse(is_plan_request("how did that set look?", "Legs"))
         self.assertFalse(is_plan_request("Leg Press 220kg x8 @8", "Legs"))
 

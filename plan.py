@@ -27,14 +27,19 @@ import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from coach_parsing import (_match_template_key, _normalise_exercise,
-                           _set_shape, parse_session_template)
+from coach_parsing import (_WEAK_POINT_SLOT_RE, _match_template_key,
+                           _normalise_exercise, _set_shape,
+                           parse_session_template)
 from data import get_supabase, now_local
 from prescribe import WAVE, is_bodyweight
 
 log = logging.getLogger(__name__)
 
 STRENGTH_DAYS = ("Pull", "Push", "Legs")
+# Cardio+Abs opens under the contract too: the cardio half is done and imported
+# from the Watch before the athlete taps START ABS, and the ab block plus the
+# two weak-point slots are a regular workout.
+PLAN_DAYS = STRENGTH_DAYS + ("Cardio+Abs",)
 
 # ── The contract ─────────────────────────────────────────────────────────────
 #
@@ -195,8 +200,14 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
     """
     problems: list[str] = []
     pairs, _total = parse_session_template(prompt, session_type)
-    expected = {_normalise_exercise(n): c for n, c in pairs}
+    # The Cardio+Abs template carries two placeholder slots — "Weak-Point
+    # Exercise 1/2", 3 sets each — filled at prescription time with a real
+    # movement for the two lowest muscles. A slot is satisfied by any exercise
+    # not otherwise in the template that carries 3 sets, in either shape.
+    slots = [(n, c) for n, c in pairs if _WEAK_POINT_SLOT_RE.match(n)]
+    expected = {_normalise_exercise(n): c for n, c in pairs if not _WEAK_POINT_SLOT_RE.match(n)}
     seen: dict = {}
+    filled_slots = 0
     proposal = proposal or {}
     proposal_by_key = {_normalise_exercise(k): v for k, v in proposal.items()}
 
@@ -205,7 +216,16 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
         target = expected.get(key)
         if target is None:
             target = _match_template_key(key, expected)
-        if target is None:
+        slot_fill = False
+        if target is None and filled_slots < len(slots):
+            slot_fill = True
+            filled_slots += 1
+            target = slots[filled_slots - 1][1]
+            if len(e.reason) < 20:
+                problems.append(f"{e.exercise}: a weak-point slot — say which muscle it serves and why.")
+            if len(e.working) + len(e.backoff) != target:
+                problems.append(f"{e.exercise}: a weak-point slot is {target} sets, in either shape.")
+        elif target is None:
             if e.decision != "adjust" or len(e.reason) < 20:
                 problems.append(f"{e.exercise}: not in today's template; a substitution must be "
                                 f"marked adjust with the reason.")
@@ -233,7 +253,18 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
             problems.append(f"{e.exercise}: no working set.")
             continue
 
-        if _is_straight(e.exercise, target):
+        if slot_fill:
+            top = e.working[0]
+            if len(e.working) > 1 and e.backoff:
+                problems.append(f"{e.exercise}: either straight sets or one top set with back-offs, not both.")
+            if len({b.load_kg for b in e.backoff}) > 1:
+                problems.append(f"{e.exercise}: back-offs at the SAME load.")
+            if len(e.backoff) > 1 and e.backoff[1].reps_low >= e.backoff[0].reps_low:
+                problems.append(f"{e.exercise}: the second back-off carries fewer reps than the first.")
+            for b in e.backoff:
+                if b.rpe > top.rpe:
+                    problems.append(f"{e.exercise}: a back-off cannot target a higher RPE than the top set.")
+        elif _is_straight(e.exercise, target):
             if e.backoff:
                 problems.append(f"{e.exercise}: ab work is straight sets — no back-off line.")
             if len(e.working) != target:
@@ -277,6 +308,9 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
             name = next(n for n, _ in pairs if _normalise_exercise(n) == key)
             problems.append(f"{name}: in today's template but missing from the plan. Include it, "
                             f"or replace it with a substitution marked adjust and say why.")
+    if filled_slots < len(slots):
+        problems.append(f"{len(slots) - filled_slots} weak-point slot(s) unfilled: {slots[0][1]} sets "
+                        f"each, for the two lowest muscles in WEEKLY VOLUME, named as real movements.")
     return problems
 
 
@@ -354,7 +388,16 @@ How to fill it:
 - `opening` is your voice: recovery read, what today is for, anything carried over.
   `carried` restates earlier decisions still in force (from DECISIONS IN FORCE).
 - Use the template's exercise names. A substitution is an `adjust` with its reason.
+{day_note}
 """.strip()
+
+CARDIO_ABS_NOTE = """
+- Cardio+Abs: cardio is handled on the cardio page and imported from the Watch; the
+  message and the live workout block say whether it is already in. If it is still to
+  come, its instruction goes in `opening` as prose — never as a prescription block.
+  This plan is the AB block and the TWO weak-point slots — 3 sets each, for the two
+  lowest muscles in WEEKLY VOLUME — named as real movements, with the muscle they
+  serve in `reason`.""".strip()
 
 
 def _phase(week: int) -> str:
@@ -373,7 +416,9 @@ def request_session_plan(client, system_blocks: list, messages: list,
     thinking is for.
     """
     notes: list[str] = []
-    instruction = PLAN_INSTRUCTION.format(session_type=session_type, week=week, phase=_phase(week))
+    instruction = PLAN_INSTRUCTION.format(
+        session_type=session_type, week=week, phase=_phase(week),
+        day_note=CARDIO_ABS_NOTE if session_type == "Cardio+Abs" else "").strip()
     system = list(system_blocks) + [{"type": "text", "text": instruction}]
     turns = list(messages)
 
@@ -494,11 +539,11 @@ def format_decisions(rows: list[dict]) -> str:
 
 
 _PLAN_REQUEST_RE = re.compile(
-    r"^\s*(starting my|resend today'?s|resuming my|starting (pull|push|legs)\b|start(ing)? workout|let'?s train)",
+    r"^\s*(starting (my|the)|resend today'?s|resuming my|i'?ve finished cardio|starting (pull|push|legs|cardio)\b|start(ing)? workout|let'?s train)",
     re.IGNORECASE)
 
 
 def is_plan_request(text: str, session_type: str) -> bool:
     """A session-opening message on a strength day: the one reply that is a
     whole plan rather than a conversation."""
-    return session_type in STRENGTH_DAYS and bool(_PLAN_REQUEST_RE.match(text or ""))
+    return session_type in PLAN_DAYS and bool(_PLAN_REQUEST_RE.match(text or ""))
