@@ -208,6 +208,9 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
     # movement for the two lowest muscles. A slot is satisfied by any exercise
     # not otherwise in the template that carries 3 sets, in either shape.
     slots = [(n, c) for n, c in pairs if _WEAK_POINT_SLOT_RE.match(n)]
+    # The block decides how many slots are live: None means it could not be
+    # placed (fill both from the readout); a list means exactly that many.
+    live_slots = len(slots) if weak_points is None else min(len(slots), len(weak_points))
     expected = {_normalise_exercise(n): c for n, c in pairs if not _WEAK_POINT_SLOT_RE.match(n)}
     seen: dict = {}
     filled_slots = 0
@@ -225,6 +228,9 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
             e.slot_fill = True
             filled_slots += 1
             target = slots[filled_slots - 1][1]
+            if weak_points is not None and filled_slots > live_slots and e.decision != "adjust":
+                problems.append(f"{e.exercise}: this block names {'no' if not weak_points else 'one'} "
+                                f"weak point, so this slot stays empty unless marked adjust with the reason.")
             if len(e.reason) < 20:
                 problems.append(f"{e.exercise}: a weak-point slot — say which muscle it serves and why.")
             if weak_points:
@@ -318,9 +324,11 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
             name = next(n for n, _ in pairs if _normalise_exercise(n) == key)
             problems.append(f"{name}: in today's template but missing from the plan. Include it, "
                             f"or replace it with a substitution marked adjust and say why.")
-    if filled_slots < len(slots):
-        problems.append(f"{len(slots) - filled_slots} weak-point slot(s) unfilled: {slots[0][1]} sets "
-                        f"each, for the two lowest muscles in WEEKLY VOLUME, named as real movements.")
+    if filled_slots < live_slots:
+        which = (" and ".join(weak_points) if weak_points
+                 else "the two lowest muscles in WEEKLY VOLUME")
+        problems.append(f"{live_slots - filled_slots} weak-point slot(s) unfilled: {slots[0][1]} sets "
+                        f"each, for {which}, named as real movements.")
     return problems
 
 

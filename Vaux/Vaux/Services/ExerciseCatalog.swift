@@ -183,6 +183,7 @@ final class ExerciseCatalog {
         "leg extension":  ["Quads": 1.0],
         // Hinges are the mirror image.
         "romanian deadlift": ["Hamstrings": 1.0, "Back": 0.5],
+        "back extension": ["Hamstrings": 1.0, "Back": 0.5],
         "leg curl":       ["Hamstrings": 1.0],
     ]
 
@@ -342,7 +343,7 @@ final class ExerciseCatalog {
         "rack pull": "Back",
         "shrug": "Back",
         "shrugs": "Back",
-        "back extension": "Back",
+        "back extension": "Hamstrings",
 
         // Shoulders
         "overhead press": "Shoulders",

@@ -12,7 +12,7 @@ MUSCLE_GROUPS: dict[str, str] = {
     "abductor": "Legs",
     "adductor": "Legs",
     "arnold press": "Shoulders",
-    "back extension": "Back",
+    "back extension": "Hamstrings",
     "barbell curl": "Biceps",
     "barbell row": "Back",
     "bench press": "Chest",
@@ -212,6 +212,7 @@ BODYWEIGHT_MOVEMENTS: tuple[str, ...] = (
 # synergist 0.5, minor 0.25. Used ONLY for volume counting — strength
 # trends deliberately keep single (prime-mover) attribution.
 MUSCLE_CONTRIBUTIONS: dict[str, dict[str, float]] = {
+    "back extension": {"Back": 0.5, "Hamstrings": 1.0},
     "barbell row": {"Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5},
     "bench press": {"Chest": 1.0, "Shoulders": 0.5, "Triceps": 0.5},
     "cable row": {"Back": 1.0, "Biceps": 0.5, "Rear Delts": 0.5},

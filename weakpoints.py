@@ -34,6 +34,7 @@ SLOTS = 2
 ROTATION = len(CYCLE)                 # sessions per week of the block
 BLOCK_SLOTS = ROTATION * 4            # sessions per block
 DECISION_PREFIX = "Weak-point: "
+NONE = "none"                          # stored when no muscle was under its band
 # Muscles that have their own block and never fill a slot.
 EXCLUDED = ("Abs",)
 
@@ -194,6 +195,12 @@ def _stored_pick(supabase, start: str) -> list[dict]:
 
 def _store_pick(supabase, start: str, picks: list[dict], since: str, until: str) -> None:
     rows = []
+    if not picks:
+        rows.append({"date": start, "session_type": "Cardio+Abs", "mesocycle_week": 1,
+                     "exercise": f"{DECISION_PREFIX}{NONE}", "decision": "accept",
+                     "reason": f"Block pick: no muscle ran under its band over the previous block "
+                               f"({since} to {until}); both weak-point slots stay empty.",
+                     "plan": json.dumps({"since": since, "until": until})})
     for p in picks:
         rows.append({
             "date": start, "session_type": "Cardio+Abs", "mesocycle_week": 1,
@@ -238,16 +245,19 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
             return None
 
         stored = _stored_pick(supabase, start)
-        if len(stored) >= SLOTS:
+        if stored:
+            picks = [p for p in stored if p["muscle"] != NONE][:SLOTS]
             return {"block_start": start, "since": stored[0].get("since"), "until": stored[0].get("until"),
-                    "picks": stored[:SLOTS], "ranking": [], "source": "stored"}
+                    "picks": picks, "ranking": [], "source": "stored"}
 
         window = previous_block_range(sessions, start)
         if window is None:
             return None
         since, until = window
         ranking = rank_by_shortfall(volume_between(supabase, since, until), bands)
-        picks = ranking[:SLOTS]
+        # Only a real deficit fills a slot. With the templates covering every
+        # band, most blocks name nothing and the day ends after the ab block.
+        picks = [r for r in ranking[:SLOTS] if r["shortfall"] > 0]
         for p in picks:
             p["reason"] = _reason(p, since, until)
         try:
@@ -263,10 +273,15 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
 
 def format_block_weak_points(info: dict | None) -> str:
     """The block the coach reads before filling the two slots."""
-    if not info or not info.get("picks"):
+    if not info:
         return ("THIS BLOCK'S WEAK POINTS — unavailable (not enough history to place the "
                 "block). Fill the two slots from the two muscles furthest below their bands "
                 "in WEEKLY VOLUME, and say which.")
+    if not info.get("picks"):
+        return (f"THIS BLOCK'S WEAK POINTS — none. Over the previous block "
+                f"({info.get('since')} to {info.get('until')}) no muscle ran under its band, so "
+                f"both weak-point slots stay EMPTY this block and Cardio+Abs ends after the ab "
+                f"block. Filling a slot anyway is an adjust with its reason.")
     lines = [f"THIS BLOCK'S WEAK POINTS — chosen once, at the block's start ({info['block_start']}), "
              f"from the previous block's volume against the bands, and held for every "
              f"Cardio+Abs day this block so the two lifts progress like any other:"]
