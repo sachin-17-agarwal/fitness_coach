@@ -346,15 +346,15 @@ class RegressionTests(unittest.TestCase):
         sunday = datetime(2026, 8, 2, 10, 0)
         monday = datetime(2026, 8, 3, 10, 0)
 
-        # mesocycle_day 2 == Push, the session Sunday must not eat.
+        # No weekday rule: the rotation shows Push every day until Push is
+        # done. A day off holds it because nothing advances it.
         self.assertEqual(data.session_type_for(2, saturday), "Push")
-        self.assertEqual(data.session_type_for(2, sunday), "Rest")
+        self.assertEqual(data.session_type_for(2, sunday), "Push")
         self.assertEqual(data.session_type_for(2, monday), "Push")
-
-        # Tomorrow-facing view: Saturday looks ahead to rest; Sunday looks
-        # ahead to the position it passed over rather than the one after it.
-        self.assertEqual(data.next_session_type_for(2, saturday), "Rest")
-        self.assertEqual(data.next_session_type_for(2, sunday), "Push")
+        # A day marked Rest passes over: tomorrow is the position it held.
+        self.assertEqual(data.session_type_for(2, sunday, "2026-08-02|Rest"), "Rest")
+        self.assertEqual(data.next_session_type_for(2, sunday, "2026-08-02|Rest"), "Push")
+        self.assertEqual(data.next_session_type_for(2, saturday), "Legs")
 
     def test_session_override_replaces_the_computed_type_for_that_day_only(self):
         """A missed day has to be recoverable without editing the rotation.
@@ -368,9 +368,10 @@ class RegressionTests(unittest.TestCase):
         monday = datetime(2026, 8, 10, 10, 0)
         override = "2026-08-09|Legs"
 
-        # Day 3 of the rotation is Legs, which Sunday would otherwise cover.
-        self.assertEqual(data.session_type_for(3, sunday), "Rest")
+        # Day 3 of the rotation is Legs; the override replaces it for the day.
+        self.assertEqual(data.session_type_for(3, sunday), "Legs")
         self.assertEqual(data.session_type_for(3, sunday, override), "Legs")
+        self.assertEqual(data.session_type_for(3, sunday, "2026-08-09|Push"), "Push")
 
         # Stamped for one date only: the next day is back on the schedule.
         self.assertEqual(data.session_type_for(4, monday, override), "Cardio+Abs")
@@ -389,7 +390,7 @@ class RegressionTests(unittest.TestCase):
         ]:
             with self.subTest(raw=raw):
                 self.assertEqual(data.parse_session_override(raw, sunday), "")
-                self.assertEqual(data.session_type_for(3, sunday, raw), "Rest")
+                self.assertEqual(data.session_type_for(3, sunday, raw), "Legs")
 
     def test_override_changes_whether_the_day_consumes_a_rotation_slot(self):
         """Advancing keys off what was trained, not what weekday it is.
@@ -401,12 +402,13 @@ class RegressionTests(unittest.TestCase):
         sunday = datetime(2026, 8, 9, 10, 0)
         monday = datetime(2026, 8, 10, 10, 0)
 
-        # Sunday overridden to Legs: tomorrow steps along to Cardio+Abs
-        # rather than returning the position Sunday would have passed over.
+        # A trained rotation session steps the position along to Cardio+Abs,
+        # whatever the weekday; a day marked Rest holds it.
         self.assertEqual(
             data.next_session_type_for(3, sunday, "2026-08-09|Legs"), "Cardio+Abs"
         )
-        self.assertEqual(data.next_session_type_for(3, sunday), "Legs")
+        self.assertEqual(data.next_session_type_for(3, sunday), "Cardio+Abs")
+        self.assertEqual(data.next_session_type_for(3, sunday, "2026-08-09|Rest"), "Legs")
 
         # Yoga forced onto a Monday leaves the rotation where it is, so the
         # position it passed over is what comes next.

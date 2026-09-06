@@ -71,20 +71,13 @@ struct Config {
     /// Mirrors `YOGA_WEEKDAY` / `is_yoga_day` in data.py.
     static let yogaSessionType = "Yoga"
 
-    /// Sunday is a full rest day since September 2026 — the same non-slot
-    /// semantics yoga had: it overrides the day without moving the rotation.
-    /// "Yoga" stays a recognised type for the history and as an override.
+    /// A rest day is any day the athlete does not train, or marks as Rest.
+    /// Nothing is pinned to a weekday: the rotation moves only when a session
+    /// is completed, so a day off holds it by itself. "Rest" is offered in the
+    /// picker to say so on purpose; "Yoga" stays recognised for the history.
+    /// Neither consumes a slot.
     static let restSessionType = "Rest"
     static var nonSlotSessionTypes: [String] { [restSessionType, yogaSessionType] }
-
-    /// `Calendar` numbers weekdays from 1 = Sunday.
-    static func isRestDay(_ date: Date = Date(), calendar: Calendar = .current) -> Bool {
-        calendar.component(.weekday, from: date) == 1
-    }
-
-    static func isYogaDay(_ date: Date = Date(), calendar: Calendar = .current) -> Bool {
-        isRestDay(date, calendar: calendar)
-    }
 
     // MARK: - Per-day session override
 

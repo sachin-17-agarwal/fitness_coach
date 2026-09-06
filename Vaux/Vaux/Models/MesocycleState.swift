@@ -14,11 +14,11 @@ struct MesocycleState: Sendable {
     /// set one. Outranks both the rotation and the yoga day.
     var todayOverride: String? = nil
 
-    /// Today's session: the rotation, with the yoga day overriding it, and an
-    /// explicit override outranking both.
+    /// Today's session: the rotation, with an explicit override outranking
+    /// it. No weekday rule — a day not trained holds the rotation by itself.
     var sessionType: String {
         if let todayOverride { return todayOverride }
-        return Config.isRestDay() ? Config.restSessionType : rotationSessionType
+        return rotationSessionType
     }
 
     /// Whether today's session is a manual choice rather than the schedule's.
@@ -40,8 +40,6 @@ struct MesocycleState: Sendable {
     /// rotation session consumes the slot and tomorrow steps along normally.
     /// Mirrors `next_session_type_for` in data.py.
     var nextSessionType: String {
-        let tomorrow = Date().addingTimeInterval(24 * 60 * 60)
-        if Config.isRestDay(tomorrow) { return Config.restSessionType }
         if Config.nonSlotSessionTypes.contains(sessionType) { return rotationSessionType }
         return Config.cycle[day % Config.cycle.count]
     }

@@ -524,7 +524,7 @@ PROGRESSION WATCH — top-set load unchanged across 3+ sessions (today excluded)
 
     live = f"""
 TODAY — {today}
-Mesocycle: Week {mesocycle_week} of 4 | Rotation day {mesocycle_day}/4 (Pull→Push→Legs→Cardio+Abs, rolling; Sunday is a rest day, not a slot and does not advance it)
+Mesocycle: Week {mesocycle_week} of 4 | Rotation day {mesocycle_day}/4 (Pull→Push→Legs→Cardio+Abs, rolling; a day with no session holds the position; Rest is not a slot and does not advance it)
 TODAY'S SESSION TYPE: {today_session}
 NEXT SESSION: {next_session}
 
