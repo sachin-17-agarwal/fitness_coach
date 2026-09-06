@@ -71,8 +71,9 @@ PLAN_SCHEMA = {
     "properties": {
         "opening": {
             "type": "string",
-            "description": "The coach's words to open the session: recovery read, what today is for, "
-                           "anything carried from earlier decisions. Plain prose, no exercise blocks.",
+            "description": "The coach's words to open the session, three to five sentences: recovery read, "
+                           "what today is for, one thing to watch. Plain prose, no exercise blocks, no "
+                           "per-exercise reasons (those go in each exercise's reason).",
         },
         "exercises": {
             "type": "array",
@@ -87,8 +88,11 @@ PLAN_SCHEMA = {
                     },
                     "reason": {
                         "type": "string",
-                        "description": "For adjust: why these numbers instead, in one or two sentences the "
-                                       "athlete will read. For accept: the rule being applied, briefly.",
+                        "description": "For adjust: ONE or two sentences, the cause only — the card already "
+                                       "prints the programme's numbers beside yours, so do not restate the "
+                                       "numbers or the shape rule. Lead with the specific fact that drove the "
+                                       "change (last session's set, a machine's step, a joint, a reading). "
+                                       "For accept: the rule being applied, in a few words.",
                     },
                     "warmup": {"type": "array", "items": _WARMUP_SET},
                     "working": {"type": "array", "items": _SET,
@@ -107,7 +111,8 @@ PLAN_SCHEMA = {
         },
         "carried": {
             "type": "array", "items": {"type": "string"},
-            "description": "Decisions from earlier sessions still in force today, restated.",
+            "description": "ONLY entries from DECISIONS IN FORCE in your context that still apply today, "
+                           "one sentence each. Empty when there are none. Never a repeat of the opening.",
         },
     },
     "required": ["opening", "exercises", "carried"],
@@ -350,7 +355,36 @@ def _rest(seconds: int) -> str:
     return f"{seconds // 60}min" if seconds % 60 == 0 else f"{seconds}s"
 
 
-def render_exercise(e: ExercisePlan) -> str:
+def _shape_summary(working: list, backoff: list) -> str:
+    """"95kg x8-12 RPE8 + 2 back-offs" or "3 × 95kg x8-12 RPE8" from parsed or planned sets."""
+    if not working:
+        return "nothing"
+    top = working[0]
+    load = top.get("weight") if isinstance(top, dict) else top.load_kg
+    low = top.get("reps") if isinstance(top, dict) else top.reps_low
+    high = (top.get("reps_high", low) if isinstance(top, dict) else top.reps_high)
+    rpe = top.get("rpe") if isinstance(top, dict) else top.rpe
+    reps = f"x{low}" if high in (None, low) else f"x{low}-{high}"
+    rpe_s = f" RPE{float(rpe):g}" if rpe is not None else ""
+    load_s = f"{float(load or 0):g}kg"
+    if len(working) > 1:
+        return f"{len(working)} × {load_s} {reps}{rpe_s}"
+    if backoff:
+        return f"{load_s} {reps}{rpe_s} + {len(backoff)} back-off{'s' if len(backoff) != 1 else ''}"
+    return f"{load_s} {reps}{rpe_s}"
+
+
+def _delta(e: ExercisePlan, proposal_block: str) -> str:
+    """"programme 95kg x8-12 RPE8 + 2 back-offs → today 3 × 100kg x9 RPE8"."""
+    computed = _proposal_numbers(proposal_block)
+    if not computed.get("working"):
+        return ""
+    before = _shape_summary(computed["working"], computed.get("backoff") or [])
+    after = _shape_summary(e.working, e.backoff)
+    return f"programme {before} → today {after}"
+
+
+def render_exercise(e: ExercisePlan, proposal_block: str = "") -> str:
     lines = [f"*{e.exercise}*"]
     if e.warmup:
         lines.append("Warm-up: " + ", ".join(f"{_load(l, e.exercise)} x{r}" for l, r in e.warmup))
@@ -366,24 +400,30 @@ def render_exercise(e: ExercisePlan) -> str:
     # card shows it under the lift it belongs to when that lift is up — not
     # six reasons at once in the opening note. A slot fill is the programme
     # asking for a movement, not a departure from it, and is labelled so.
+    # The numbers come from the code, so the change is never vague: what the
+    # programme proposed, what today is, then the coach's one-line cause.
     if e.slot_fill and e.reason:
         lines.append(f"Why: Weak-point slot — {e.reason}")
     elif e.decision == "adjust" and e.reason:
-        lines.append(f"Why: Changed from the programme — {e.reason}")
+        delta = _delta(e, proposal_block)
+        lines.append(f"Why: Changed from the programme ({delta}) — {e.reason}" if delta
+                     else f"Why: Changed from the programme — {e.reason}")
     if e.note:
         lines.append(e.note)
     return "\n".join(lines)
 
 
-def render_plan(plan: SessionPlan) -> str:
+def render_plan(plan: SessionPlan, proposal: dict | None = None) -> str:
     """The reply the athlete reads and the card parses. Narrative first, then
     every exercise as a block in the exact format the parser expects."""
+    proposal_by_key = {_normalise_exercise(k): v for k, v in (proposal or {}).items()}
     parts = []
     if plan.opening:
         parts.append(plan.opening)
     if plan.carried:
         parts.append("Still in force from earlier sessions: " + " ".join(plan.carried))
-    parts.extend(render_exercise(e) for e in plan.exercises)
+    parts.extend(render_exercise(e, proposal_by_key.get(_normalise_exercise(e.exercise), ""))
+                 for e in plan.exercises)
     return "\n\n".join(parts)
 
 
@@ -404,8 +444,10 @@ How to fill it:
   is the sentence he will read and the one you will be held to later. When you accept,
   `reason` names the rule briefly.
 - `working` holds ONE top set for top-set/back-off exercises, and EVERY set for
-  straight-set ab work (no back-off there). The template's set counts are facts;
-  the numbers inside them are yours.
+  straight-set work — ab work and the calf raise — with no back-off there. The
+  template's set counts and shapes are facts; the numbers inside them are yours.
+- Be specific. A reason names the set, the reading or the machine that drove it.
+  "Straight sets, not top+back-off" is not a reason — the shape is the template's.
 - `opening` is your voice: recovery read, what today is for, anything carried over.
   `carried` restates earlier decisions still in force (from DECISIONS IN FORCE).
 - Use the template's exercise names. A substitution is an `adjust` with its reason.
@@ -413,9 +455,10 @@ How to fill it:
 """.strip()
 
 CARDIO_ABS_NOTE = """
-- Cardio+Abs: cardio is handled on the cardio page and imported from the Watch; the
-  message and the live workout block say whether it is already in. If it is still to
-  come, its instruction goes in `opening` as prose — never as a prescription block.
+- Cardio+Abs: whether cardio is done is a FACT stated in the LIVE WORKOUT block's
+  "Cardio logged this session" line and in the message. The Apple Watch export feed
+  lags and does not count. If cardio is in, say so and move on; if it is genuinely not,
+  its instruction goes in `opening` as prose — never as a prescription block.
   This plan is the AB block and the TWO weak-point slots — 3 sets each, for the two
   lowest muscles in WEEKLY VOLUME — named as real movements, with the muscle they
   serve in `reason`.""".strip()

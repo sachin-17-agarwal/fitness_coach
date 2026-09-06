@@ -544,7 +544,7 @@ re-derive it from the log:
 
 {programme_proposal}
 
-TODAY'S APPLE WATCH WORKOUTS:
+TODAY'S APPLE WATCH WORKOUTS (the Health Auto Export feed — it can lag by hours; whether cardio is done today is stated in the LIVE WORKOUT block's "Cardio logged this session" line, which wins):
 {apple_workouts_today}
 
 {block_weak_points}

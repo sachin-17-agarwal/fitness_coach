@@ -228,6 +228,11 @@ class RenderTests(unittest.TestCase):
         raw["exercises"][2]["reason"] = "Machine steps in 5kg, so 100 stays and reps carry the progression."
         text = render_plan(parse_plan(json.dumps(raw)))
         self.assertIn("Why: Changed from the programme — Machine steps in 5kg", text)
+        # With the programme's block to hand, the numbers come from the code.
+        proposal = {"Leg Extension": "*Leg Extension*\nWorking Set: 102.5kg x8-12 RPE8 | Rest: 90s\nBack-off: 82kg x12-15 RPE7"}
+        text = render_plan(parse_plan(json.dumps(raw)), proposal)
+        self.assertIn("Why: Changed from the programme (programme 102.5kg x8-12 RPE8 + 1 back-off → "
+                      "today 100kg x6-10 RPE8 + 1 back-off) — Machine steps in 5kg", text)
         card = {c["exercise"]: c for c in parse_all_prescriptions(text)}["Leg Extension"]
         self.assertTrue(card["why"].startswith("Changed from the programme"))
         self.assertNotIn("why", {c["exercise"]: c for c in parse_all_prescriptions(text)}["Leg Press"])
@@ -248,6 +253,50 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Warm-up: BW x8", text)
         self.assertIn("Working Set: BW + 5kg x6-10 RPE8", text)
         self.assertIn("Back-off: BW x10-12 RPE7", text)
+
+
+class LiveWorkoutCardioTests(unittest.TestCase):
+    def test_imported_cardio_is_stated_as_a_fact(self):
+        import workout
+
+        class Q:
+            def __init__(self, rows): self.rows = rows
+            def __getattr__(self, name):
+                return lambda *a, **k: self
+            def execute(self): return type("R", (), {"data": self.rows})()
+
+        class S:
+            def table(self, name):
+                if name == "workout_sessions":
+                    return Q([{"type": "Cardio+Abs"}])
+                return Q([{"exercise": "Boxing", "set_number": 1, "actual_weight_kg": 0, "actual_reps": 32,
+                           "actual_rpe": None, "is_warmup": False, "notes": "cardio · hk:ABC · 310kcal",
+                           "logged_at": "2026-09-06T08:12:00Z"}])
+
+        with patch.object(workout, "get_supabase", return_value=S()), \
+             patch.object(workout, "get_session_duration_minutes", return_value=5):
+            block = workout.get_workout_context({"workout_mode": "active", "current_session_id": "sid"})
+        self.assertIn("Cardio logged this session", block)
+        self.assertIn("Boxing — 32 min — imported from the Watch", block)
+        self.assertIn("Working sets logged this session: 0", block)
+
+    def test_no_cardio_on_a_cardio_day_is_stated_too(self):
+        import workout
+
+        class Q:
+            def __init__(self, rows): self.rows = rows
+            def __getattr__(self, name):
+                return lambda *a, **k: self
+            def execute(self): return type("R", (), {"data": self.rows})()
+
+        class S:
+            def table(self, name):
+                return Q([{"type": "Cardio+Abs"}]) if name == "workout_sessions" else Q([])
+
+        with patch.object(workout, "get_supabase", return_value=S()), \
+             patch.object(workout, "get_session_duration_minutes", return_value=1):
+            block = workout.get_workout_context({"workout_mode": "active", "current_session_id": "sid"})
+        self.assertIn("NONE yet — the cardio half has not been logged or imported", block)
 
 
 class _FakeClient:

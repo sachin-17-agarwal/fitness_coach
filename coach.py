@@ -283,7 +283,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
             for note in plan_notes:
                 log.info("PLAN CONTRACT (%s): %s", today_type, note)
             if plan is not None:
-                assistant_message = render_plan(plan)
+                assistant_message = render_plan(plan, programme_out.get("computed") or {})
                 try:
                     session_id = (get_workout_state() or {}).get("current_session_id") or None
                 except Exception:
