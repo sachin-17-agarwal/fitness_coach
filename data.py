@@ -35,14 +35,17 @@ def get_supabase():
 # straight back into Pull — and is NOT interrupted by yoga.
 CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs"]
 
-# Yoga is active recovery pinned to Sunday, not a rotation position. It used
-# to be the fifth entry in CYCLE, which made it fire every fifth day and drift
-# through the week; the athlete trains daily and takes yoga on Sunday whatever
-# the rotation happens to be showing. Sunday therefore OVERRIDES the session
-# type without consuming a rotation slot: a Saturday Pull is followed by a
-# Monday Push, with the yoga day passing over the top.
-YOGA_WEEKDAY = 6  # Monday=0 … Sunday=6, matching datetime.weekday()
+# Sunday is a REST day, not a rotation position. It overrides the session
+# type without consuming a slot: a Saturday Pull is followed by a Monday Push,
+# with Sunday passing over the top. It was yoga until September 2026, with the
+# same non-slot semantics; "Yoga" stays a recognised type so the sessions in
+# the history keep their meaning, and it can still be chosen as an override.
+REST_WEEKDAY = 6  # Monday=0 … Sunday=6, matching datetime.weekday()
+REST_SESSION_TYPE = "Rest"
 YOGA_SESSION_TYPE = "Yoga"
+YOGA_WEEKDAY = REST_WEEKDAY
+#: Types that pass over the rotation without moving it.
+NON_SLOT_TYPES = (REST_SESSION_TYPE, YOGA_SESSION_TYPE)
 
 
 # ── Session lifecycle ────────────────────────────────────────────────────────
@@ -74,9 +77,14 @@ def is_session_open(status) -> bool:
     return (status or "").strip().lower() in OPEN_SESSION_STATUSES
 
 
+def is_rest_day(when=None) -> bool:
+    """True when the given (or current) local date falls on the rest day."""
+    return (when or now_local()).weekday() == REST_WEEKDAY
+
+
 def is_yoga_day(when=None) -> bool:
-    """True when the given (or current) local date falls on the yoga day."""
-    return (when or now_local()).weekday() == YOGA_WEEKDAY
+    """Kept for callers written when Sunday was yoga; the day is the same."""
+    return is_rest_day(when)
 
 
 # A one-day manual replacement for whatever the schedule computed, stored in
@@ -103,17 +111,17 @@ def parse_session_override(raw, when=None) -> str:
     if date_part.strip() != day:
         return ""
     forced = type_part.strip()
-    return forced if forced in CYCLE or forced == YOGA_SESSION_TYPE else ""
+    return forced if forced in CYCLE or forced in NON_SLOT_TYPES else ""
 
 
 def session_type_for(mesocycle_day: int, when=None, override=None) -> str:
-    """Today's session type: the rotation, with Sunday overriding it, and an
-    explicit per-day override outranking both."""
+    """Today's session type: the rotation, with Sunday's rest overriding it,
+    and an explicit per-day override outranking both."""
     forced = parse_session_override(override, when)
     if forced:
         return forced
-    if is_yoga_day(when):
-        return YOGA_SESSION_TYPE
+    if is_rest_day(when):
+        return REST_SESSION_TYPE
     return CYCLE[(mesocycle_day - 1) % len(CYCLE)]
 
 
@@ -131,10 +139,10 @@ def next_session_type_for(mesocycle_day: int, when=None, override=None) -> str:
     """
     today = when or now_local()
     tomorrow = today + timedelta(days=1)
-    if is_yoga_day(tomorrow):
-        return YOGA_SESSION_TYPE
+    if is_rest_day(tomorrow):
+        return REST_SESSION_TYPE
     today_type = session_type_for(mesocycle_day, today, override)
-    if today_type == YOGA_SESSION_TYPE:
+    if today_type in NON_SLOT_TYPES:
         return CYCLE[(mesocycle_day - 1) % len(CYCLE)]
     return CYCLE[mesocycle_day % len(CYCLE)]
 

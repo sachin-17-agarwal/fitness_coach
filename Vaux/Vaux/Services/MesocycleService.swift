@@ -116,7 +116,7 @@ final class MesocycleService: Sendable {
         // override decides it in both directions: Legs standing in for a
         // Sunday's yoga does consume the slot — otherwise Legs would come up
         // again on Monday — and yoga taken on a Tuesday does not.
-        guard state.sessionType != Config.yogaSessionType else { return state }
+        guard !Config.nonSlotSessionTypes.contains(state.sessionType) else { return state }
 
         var next = state
         if next.day >= Config.cycleLength {

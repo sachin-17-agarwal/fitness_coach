@@ -335,8 +335,8 @@ class RegressionTests(unittest.TestCase):
         end_session_mock.assert_called_once_with("abc")
         advance_mock.assert_called_once_with(memory)
 
-    def test_yoga_overrides_sunday_without_advancing_the_rotation(self):
-        """Sunday shows Yoga but must not consume a rotation slot.
+    def test_rest_overrides_sunday_without_advancing_the_rotation(self):
+        """Sunday shows Rest but must not consume a rotation slot.
 
         The failure this guards against is silent: if Sunday advanced the
         cycle, a Saturday Pull would be followed by a Monday Legs with Push
@@ -348,12 +348,12 @@ class RegressionTests(unittest.TestCase):
 
         # mesocycle_day 2 == Push, the session Sunday must not eat.
         self.assertEqual(data.session_type_for(2, saturday), "Push")
-        self.assertEqual(data.session_type_for(2, sunday), "Yoga")
+        self.assertEqual(data.session_type_for(2, sunday), "Rest")
         self.assertEqual(data.session_type_for(2, monday), "Push")
 
-        # Tomorrow-facing view: Saturday looks ahead to yoga; Sunday looks
+        # Tomorrow-facing view: Saturday looks ahead to rest; Sunday looks
         # ahead to the position it passed over rather than the one after it.
-        self.assertEqual(data.next_session_type_for(2, saturday), "Yoga")
+        self.assertEqual(data.next_session_type_for(2, saturday), "Rest")
         self.assertEqual(data.next_session_type_for(2, sunday), "Push")
 
     def test_session_override_replaces_the_computed_type_for_that_day_only(self):
@@ -369,7 +369,7 @@ class RegressionTests(unittest.TestCase):
         override = "2026-08-09|Legs"
 
         # Day 3 of the rotation is Legs, which Sunday would otherwise cover.
-        self.assertEqual(data.session_type_for(3, sunday), "Yoga")
+        self.assertEqual(data.session_type_for(3, sunday), "Rest")
         self.assertEqual(data.session_type_for(3, sunday, override), "Legs")
 
         # Stamped for one date only: the next day is back on the schedule.
@@ -389,7 +389,7 @@ class RegressionTests(unittest.TestCase):
         ]:
             with self.subTest(raw=raw):
                 self.assertEqual(data.parse_session_override(raw, sunday), "")
-                self.assertEqual(data.session_type_for(3, sunday, raw), "Yoga")
+                self.assertEqual(data.session_type_for(3, sunday, raw), "Rest")
 
     def test_override_changes_whether_the_day_consumes_a_rotation_slot(self):
         """Advancing keys off what was trained, not what weekday it is.
