@@ -50,8 +50,14 @@ date,session,week,exercise,code,detail
 2026-07-29,Push,1,Cable Lateral Raise,backoff_not_descending,"second back-off at 10 reps, not fewer than 10"
 2026-07-29,Push,1,Machine Chest Press,backoff_not_descending,"second back-off at 10 reps, not fewer than 10"
 2026-07-29,Push,1,Machine Shoulder Press,backoff_not_descending,"second back-off at 10 reps, not fewer than 10"
+2026-08-04,Legs,3,Machine Calf Raise,set_count,1 working set(s) against a template of 5
 2026-08-09,Legs,3,Ab Crunch Machine,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
 2026-08-17,Pull,2,Reverse Cable Fly,set_count,3 working set(s) against a template of 2
+2026-08-19,Legs,2,Machine Calf Raise,set_count,1 working set(s) against a template of 5
 2026-08-25,Push,3,Tricep Pushdown,backoff_loads_differ,two back-offs at different loads
 2026-08-26,Legs,3,Ab Crunch Machine,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
+2026-08-26,Legs,3,Machine Calf Raise,set_count,1 working set(s) against a template of 5
 2026-08-29,Push,4,Tricep Pushdown,backoff_loads_differ,two back-offs at different loads
+2026-09-06,Cardio+Abs,2,Machine Calf Raise,rpe_under_target,"top set at RPE6 in week 2, which targets RPE8"
+2026-09-06,Cardio+Abs,2,Machine Calf Raise,reps_below_range,top set at 3 reps against a 8-12 range
+2026-09-06,Cardio+Abs,2,Machine Calf Raise,backoff_drop,"back-off -14% below the top set, outside 15-25%"
