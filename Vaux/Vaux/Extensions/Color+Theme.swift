@@ -165,6 +165,7 @@ enum Gradients {
         case "Legs": return strain
         case "Cardio+Abs": return recovery
         case "Yoga": return cool
+        case "Rest": return recovery
         default: return recovery
         }
     }
@@ -180,6 +181,7 @@ extension Color {
         case "Legs": return .ember
         case "Cardio+Abs": return .mint
         case "Yoga": return .iris
+        case "Rest": return .mint
         default: return .signal
         }
     }

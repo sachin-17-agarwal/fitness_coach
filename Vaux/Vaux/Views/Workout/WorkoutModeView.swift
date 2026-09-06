@@ -67,7 +67,9 @@ struct WorkoutModeView: View {
         ZStack {
             TechBackground(accent: Color.forSession(effectiveSessionType.isEmpty ? "Session" : effectiveSessionType))
 
-            if isNonStrengthDay && !viewModel.isActive && !viewModel.showSummary {
+            if effectiveSessionType == Config.restSessionType && !viewModel.isActive && !viewModel.showSummary {
+                restDayView
+            } else if isNonStrengthDay && !viewModel.isActive && !viewModel.showSummary {
                 CardioYogaLogView(
                     sessionType: effectiveSessionType,
                     blockLine: blockLine,
@@ -742,6 +744,55 @@ struct WorkoutModeView: View {
         .accessibilityLabel("Loading the plan")
     }
 
+    // MARK: - Rest day
+
+    /// Sunday. Nothing to start and nothing to log; the swap action is there
+    /// for the day the athlete wants to train anyway.
+    private var restDayView: some View {
+        ZStack {
+            Color.ink0.ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    EditorialEyebrow(text: isOverridden ? "Train · Today · Changed" : "Train · Today")
+                    Spacer()
+                    SessionSwapButton(
+                        currentType: effectiveSessionType,
+                        isOverridden: isOverridden,
+                        onChange: changeTodaySession
+                    )
+                }
+                .frame(height: 44)
+                .padding(.horizontal, Editorial.gutter)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    if let blockLine {
+                        EditorialEyebrow(text: blockLine, color: .mint, size: 10, kerning: 2.5)
+                    }
+                    Text("REST")
+                        .font(.display(88))
+                        .foregroundStyle(Color.fg0)
+                    EditorialEyebrow(text: "Full day off · Nothing to log", color: Editorial.mid, size: 10.5, kerning: 2.5)
+                }
+                .padding(.horizontal, Editorial.gutter)
+                .padding(.top, 120)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    EditorialEyebrow(text: "Tomorrow", color: Editorial.muted, size: 9, kerning: 1.8)
+                    Text(viewModel.mesocycle.rotationSessionType.uppercased())
+                        .font(.display(28))
+                        .foregroundStyle(Color.fg0)
+                    EditorialEyebrow(text: "The rotation picks up where Saturday left it", color: Editorial.muted, size: 8.5, kerning: 1.2)
+                }
+                .padding(.horizontal, Editorial.gutter)
+                .padding(.top, 36)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Color.line).frame(height: 1).padding(.horizontal, Editorial.gutter).padding(.top, 20)
+                }
+                Spacer()
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private func iconForType(_ type: String) -> String {
@@ -751,6 +802,7 @@ struct WorkoutModeView: View {
         case "Legs": return "figure.strengthtraining.functional"
         case "Cardio+Abs": return "heart.circle.fill"
         case "Yoga": return "figure.mind.and.body"
+        case "Rest": return "moon.zzz"
         default: return "figure.strengthtraining.traditional"
         }
     }
@@ -762,6 +814,7 @@ struct WorkoutModeView: View {
         case "Legs": return "Quads · Hamstrings · Glutes"
         case "Cardio+Abs": return "Zone 2 · Core"
         case "Yoga": return "Mobility · Stretching"
+        case "Rest": return "Full day off"
         default: return "Full body"
         }
     }

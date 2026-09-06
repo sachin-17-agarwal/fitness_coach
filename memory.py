@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 
 from data import (
-    CYCLE, SESSION_OVERRIDE_KEY, YOGA_SESSION_TYPE, get_supabase,
+    CYCLE, SESSION_OVERRIDE_KEY, NON_SLOT_TYPES, YOGA_SESSION_TYPE, get_supabase,
     next_session_type_for, now_local, session_type_for, today_local_str,
 )
 
@@ -215,8 +215,8 @@ def advance_mesocycle(memory: dict):
     trained_type = session_type_for(
         current_day, override=fresh_memory.get(SESSION_OVERRIDE_KEY)
     )
-    if trained_type == YOGA_SESSION_TYPE:
-        print(f"Yoga day ({today}); rotation stays on day {fresh_memory.get('mesocycle_day', 1)}")
+    if trained_type in NON_SLOT_TYPES:
+        print(f"{trained_type} day ({today}); rotation stays on day {fresh_memory.get('mesocycle_day', 1)}")
         fresh_memory["last_advanced_date"] = today
         save_memory(fresh_memory)
         memory["mesocycle_day"] = int(fresh_memory.get("mesocycle_day", 1))

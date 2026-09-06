@@ -18,7 +18,7 @@ struct MesocycleState: Sendable {
     /// explicit override outranking both.
     var sessionType: String {
         if let todayOverride { return todayOverride }
-        return Config.isYogaDay() ? Config.yogaSessionType : rotationSessionType
+        return Config.isRestDay() ? Config.restSessionType : rotationSessionType
     }
 
     /// Whether today's session is a manual choice rather than the schedule's.
@@ -41,8 +41,8 @@ struct MesocycleState: Sendable {
     /// Mirrors `next_session_type_for` in data.py.
     var nextSessionType: String {
         let tomorrow = Date().addingTimeInterval(24 * 60 * 60)
-        if Config.isYogaDay(tomorrow) { return Config.yogaSessionType }
-        if sessionType == Config.yogaSessionType { return rotationSessionType }
+        if Config.isRestDay(tomorrow) { return Config.restSessionType }
+        if Config.nonSlotSessionTypes.contains(sessionType) { return rotationSessionType }
         return Config.cycle[day % Config.cycle.count]
     }
 

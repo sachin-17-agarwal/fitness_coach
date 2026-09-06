@@ -405,7 +405,7 @@ struct DashboardView: View {
             // or step back one slot (yoga never consumed one).
             if let w = finished.mesocycleWeek, let d = finished.mesocycleDay {
                 week = w; day = d
-            } else if finished.type != Config.yogaSessionType {
+            } else if !Config.nonSlotSessionTypes.contains(finished.type) {
                 if meso.day == 1 {
                     day = Config.cycleLength
                     week = meso.week == 1 ? Config.mesocycleWeeks : meso.week - 1
@@ -493,7 +493,7 @@ struct DashboardView: View {
         // the next slot: tomorrow IS the state's current slot (yoga on its
         // day, as ever), not the one after it.
         let tomorrow = Date().addingTimeInterval(24 * 60 * 60)
-        let nextType = Config.isYogaDay(tomorrow) ? Config.yogaSessionType : meso.rotationSessionType
+        let nextType = Config.isRestDay(tomorrow) ? Config.restSessionType : meso.rotationSessionType
         let nextWeek = meso.week
         let nextDay = meso.day
         return VStack(alignment: .leading, spacing: 4) {

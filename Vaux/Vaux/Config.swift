@@ -71,9 +71,19 @@ struct Config {
     /// Mirrors `YOGA_WEEKDAY` / `is_yoga_day` in data.py.
     static let yogaSessionType = "Yoga"
 
+    /// Sunday is a full rest day since September 2026 — the same non-slot
+    /// semantics yoga had: it overrides the day without moving the rotation.
+    /// "Yoga" stays a recognised type for the history and as an override.
+    static let restSessionType = "Rest"
+    static var nonSlotSessionTypes: [String] { [restSessionType, yogaSessionType] }
+
     /// `Calendar` numbers weekdays from 1 = Sunday.
-    static func isYogaDay(_ date: Date = Date(), calendar: Calendar = .current) -> Bool {
+    static func isRestDay(_ date: Date = Date(), calendar: Calendar = .current) -> Bool {
         calendar.component(.weekday, from: date) == 1
+    }
+
+    static func isYogaDay(_ date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        isRestDay(date, calendar: calendar)
     }
 
     // MARK: - Per-day session override
@@ -93,7 +103,7 @@ struct Config {
     static let sessionOverrideKey = "session_override"
 
     /// Every session an athlete can pick for a given day.
-    static var selectableSessionTypes: [String] { cycle + [yogaSessionType] }
+    static var selectableSessionTypes: [String] { cycle + [restSessionType] }
 
     static func isoDay(_ date: Date = Date()) -> String {
         let f = DateFormatter()

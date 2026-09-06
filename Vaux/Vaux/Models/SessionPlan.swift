@@ -25,9 +25,10 @@ enum SessionPlan {
         switch type {
         case "Push": return "19 WORKING SETS · CHEST · SHOULDERS · TRICEPS"
         case "Pull": return "16 WORKING SETS · BACK · REAR DELTS · BICEPS"
-        case "Legs": return "17 WORKING SETS · QUADS · HAMS · CALVES · ABS"
+        case "Legs": return "19 WORKING SETS · QUADS · HAMS · CALVES"
         case "Cardio+Abs": return "25–30 MIN ZONE 2 · 10 AB SETS · WEAK-POINT BLOCK"
         case "Yoga": return "ACTIVE RECOVERY · MOBILITY · NO LOADING"
+        case "Rest": return "FULL REST · NO SESSION · ROTATION RESUMES TOMORROW"
         default: return type.uppercased()
         }
     }
