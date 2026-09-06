@@ -291,6 +291,11 @@ def _recovery_from_override(payload: dict) -> dict:
     }
 
 
+def _recent_decisions() -> list:
+    from plan import load_recent_decisions  # local: keeps import order flat
+    return load_recent_decisions()
+
+
 def build_context_block(memory: dict, athlete_name: str,
                         athlete_current_weight_kg: int,
                         athlete_goal_weight_kg: int,
@@ -315,7 +320,7 @@ def build_context_block(memory: dict, athlete_name: str,
     # timeout. Keep this in step when a fetch is added — it has now drifted
     # three times, most recently when the peak-week and set-comparison fetches
     # landed on separate branches and each bumped the count to eleven.
-    with ThreadPoolExecutor(max_workers=12) as executor:
+    with ThreadPoolExecutor(max_workers=13) as executor:
         futures = {
             executor.submit(get_full_session_history, 30): "session_history",
             executor.submit(get_recovery_history, 30): "recovery_history",
@@ -328,6 +333,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(get_peak_week_loads): "peak_week_loads",
             executor.submit(get_weak_point_history): "weak_point",
             executor.submit(get_set_comparisons): "set_comparisons",
+            executor.submit(_recent_decisions): "decisions",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
         # its own authoritative snapshot.
@@ -463,6 +469,8 @@ def build_context_block(memory: dict, athlete_name: str,
         _proposals, today_session, _safe_int(mesocycle_week),
         _renamed, _ambiguous,
     )
+    from plan import format_decisions  # local: keeps import order flat
+    programme_proposal += "\n" + format_decisions(results.get("decisions") or [])
 
     # Split by volatility, not by topic. Everything that only changes once a
     # day goes in the first block so a cache breakpoint can sit between them;

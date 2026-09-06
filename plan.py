@@ -1,0 +1,504 @@
+"""The session plan as a contract between the coach and the card.
+
+For six months the coach's output was prose, and the prose was the data: the
+model did arithmetic inside a paragraph, a regex read the paragraph back into
+a card, and every guard, fallback and audit existed to police that paragraph.
+A number could be fixed for no reason ("+2.5 at 10 reps, always") or changed
+for no reason ("one back-off today, two tomorrow"), and when asked why, the
+coach had nothing to read back and reversed itself. Both are the same failure:
+a number nobody decided.
+
+Here the coach returns a PLAN, typed. Every exercise carries a decision — the
+programme's default applied on purpose, or a deliberate departure — and a
+departure must carry its reason. The plan is checked against the athlete's
+own rules and handed back once for correction if it breaks them; the model
+fixes the model, and the code never edits a number. The card's block text is
+RENDERED from the plan, so it always parses. And the decisions are stored, so
+when the athlete asks why, the coach reads its own reason rather than
+inventing one — and a departure made on Tuesday is still known on Friday.
+
+The prose stays prose. The coaching, the conversation, the encouragement do
+not change. Only the numbers move into the contract.
+"""
+
+import json
+import logging
+import re
+from dataclasses import dataclass, field
+from datetime import timedelta
+
+from coach_parsing import (_match_template_key, _normalise_exercise,
+                           _set_shape, parse_session_template)
+from data import get_supabase, now_local
+from prescribe import WAVE, is_bodyweight
+
+log = logging.getLogger(__name__)
+
+STRENGTH_DAYS = ("Pull", "Push", "Legs")
+
+# ── The contract ─────────────────────────────────────────────────────────────
+#
+# Written by hand rather than generated, so it stays inside the subset the
+# structured-output validator accepts (no numeric bounds, no string lengths;
+# those are checked in code below) and so every field has one meaning.
+
+_SET = {
+    "type": "object",
+    "properties": {
+        "load_kg": {"type": "number",
+                    "description": "Load in kg. For a bodyweight movement, the ADDED load (0 for bodyweight alone)."},
+        "reps_low": {"type": "integer"},
+        "reps_high": {"type": "integer", "description": "Equal to reps_low for a single target."},
+        "rpe": {"type": "number"},
+    },
+    "required": ["load_kg", "reps_low", "reps_high", "rpe"],
+    "additionalProperties": False,
+}
+_WARMUP_SET = {
+    "type": "object",
+    "properties": {"load_kg": {"type": "number"}, "reps": {"type": "integer"}},
+    "required": ["load_kg", "reps"],
+    "additionalProperties": False,
+}
+
+PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "opening": {
+            "type": "string",
+            "description": "The coach's words to open the session: recovery read, what today is for, "
+                           "anything carried from earlier decisions. Plain prose, no exercise blocks.",
+        },
+        "exercises": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "exercise": {"type": "string", "description": "The template's name for the movement."},
+                    "decision": {
+                        "type": "string", "enum": ["accept", "adjust"],
+                        "description": "accept: the programme's proposal, applied as it stands. "
+                                       "adjust: a deliberate departure from it — reason required.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "For adjust: why these numbers instead, in one or two sentences the "
+                                       "athlete will read. For accept: the rule being applied, briefly.",
+                    },
+                    "warmup": {"type": "array", "items": _WARMUP_SET},
+                    "working": {"type": "array", "items": _SET,
+                                "description": "One top set for top-set/back-off work; every set for straight-set ab work."},
+                    "backoff": {"type": "array", "items": _SET,
+                                "description": "Empty for straight-set ab work."},
+                    "tempo": {"type": "string", "description": "e.g. 3-1-2"},
+                    "rest_seconds": {"type": "integer"},
+                    "form_cue": {"type": "string"},
+                    "note": {"type": "string", "description": "One or two lines of coaching context after the block."},
+                },
+                "required": ["exercise", "decision", "reason", "warmup", "working", "backoff",
+                             "tempo", "rest_seconds", "form_cue", "note"],
+                "additionalProperties": False,
+            },
+        },
+        "carried": {
+            "type": "array", "items": {"type": "string"},
+            "description": "Decisions from earlier sessions still in force today, restated.",
+        },
+    },
+    "required": ["opening", "exercises", "carried"],
+    "additionalProperties": False,
+}
+
+
+@dataclass
+class SetPlan:
+    load_kg: float
+    reps_low: int
+    reps_high: int
+    rpe: float
+
+
+@dataclass
+class ExercisePlan:
+    exercise: str
+    decision: str
+    reason: str
+    warmup: list = field(default_factory=list)      # [(load_kg, reps)]
+    working: list = field(default_factory=list)     # [SetPlan]
+    backoff: list = field(default_factory=list)     # [SetPlan]
+    tempo: str = ""
+    rest_seconds: int = 120
+    form_cue: str = ""
+    note: str = ""
+
+
+@dataclass
+class SessionPlan:
+    opening: str
+    exercises: list
+    carried: list = field(default_factory=list)
+
+
+def parse_plan(text: str) -> SessionPlan:
+    """The model's JSON into the dataclasses. Raises on anything malformed."""
+    raw = json.loads(text)
+    exercises = []
+    for e in raw["exercises"]:
+        exercises.append(ExercisePlan(
+            exercise=str(e["exercise"]).strip(),
+            decision=str(e["decision"]).strip().lower(),
+            reason=str(e.get("reason") or "").strip(),
+            warmup=[(float(w["load_kg"]), int(w["reps"])) for w in e.get("warmup") or []],
+            working=[SetPlan(float(s["load_kg"]), int(s["reps_low"]), int(s["reps_high"]), float(s["rpe"]))
+                     for s in e.get("working") or []],
+            backoff=[SetPlan(float(s["load_kg"]), int(s["reps_low"]), int(s["reps_high"]), float(s["rpe"]))
+                     for s in e.get("backoff") or []],
+            tempo=str(e.get("tempo") or "").strip(),
+            rest_seconds=int(e.get("rest_seconds") or 0),
+            form_cue=str(e.get("form_cue") or "").strip(),
+            note=str(e.get("note") or "").strip(),
+        ))
+    return SessionPlan(opening=str(raw.get("opening") or "").strip(), exercises=exercises,
+                       carried=[str(c) for c in raw.get("carried") or []])
+
+
+# ── Checking the plan against the athlete's rules ────────────────────────────
+
+def _is_straight(exercise: str, sets: int) -> bool:
+    return _set_shape(exercise, sets).startswith(f"{sets} straight")
+
+
+def _proposal_numbers(block: str) -> dict:
+    """The programme's rendered block -> {working: [...], backoff: [...]}, by
+    the same parser the card uses, so 'accept' is compared like for like."""
+    from coach_parsing import parse_all_prescriptions
+    parsed = parse_all_prescriptions(block or "")
+    return parsed[0] if parsed else {}
+
+
+def _same_set(spec: SetPlan, parsed: dict) -> bool:
+    return (abs(spec.load_kg - float(parsed.get("weight") or 0)) < 1e-6
+            and spec.reps_low == parsed.get("reps")
+            and spec.reps_high == parsed.get("reps_high", parsed.get("reps"))
+            and abs(spec.rpe - float(parsed.get("rpe") or 0)) < 1e-6)
+
+
+def validate(plan: SessionPlan, session_type: str, prompt: str,
+             proposal: dict | None = None) -> list[str]:
+    """Every way the plan breaks the programme, as sentences the model can act on.
+
+    Mechanical rules only — set counts from the template, the shape of the
+    back-offs, sane ranges — plus one honesty rule: an exercise marked
+    'accept' must carry the programme's numbers, and one marked 'adjust'
+    must say why. Nothing here judges whether a departure is wise; that is
+    the coach's job, and the reason field is where it is done.
+    """
+    problems: list[str] = []
+    pairs, _total = parse_session_template(prompt, session_type)
+    expected = {_normalise_exercise(n): c for n, c in pairs}
+    seen: dict = {}
+    proposal = proposal or {}
+    proposal_by_key = {_normalise_exercise(k): v for k, v in proposal.items()}
+
+    for e in plan.exercises:
+        key = _normalise_exercise(e.exercise)
+        target = expected.get(key)
+        if target is None:
+            target = _match_template_key(key, expected)
+        if target is None:
+            if e.decision != "adjust" or len(e.reason) < 20:
+                problems.append(f"{e.exercise}: not in today's template; a substitution must be "
+                                f"marked adjust with the reason.")
+            target = len(e.working) + len(e.backoff) or 1
+        if key in seen:
+            problems.append(f"{e.exercise}: listed twice.")
+        seen[key] = True
+
+        if e.decision not in ("accept", "adjust"):
+            problems.append(f"{e.exercise}: decision must be accept or adjust.")
+        if e.decision == "adjust" and len(e.reason) < 20:
+            problems.append(f"{e.exercise}: marked adjust without a reason the athlete can read.")
+
+        for s in e.working + e.backoff:
+            if not (1 <= s.reps_low <= s.reps_high <= 30):
+                problems.append(f"{e.exercise}: reps {s.reps_low}-{s.reps_high} are not a real target.")
+            if not (5 <= s.rpe <= 10):
+                problems.append(f"{e.exercise}: RPE {s.rpe:g} is outside 5-10.")
+            if s.load_kg < 0:
+                problems.append(f"{e.exercise}: negative load.")
+        for load, reps in e.warmup:
+            if load < 0 or not (1 <= reps <= 30):
+                problems.append(f"{e.exercise}: a warm-up set is malformed.")
+        if not e.working:
+            problems.append(f"{e.exercise}: no working set.")
+            continue
+
+        if _is_straight(e.exercise, target):
+            if e.backoff:
+                problems.append(f"{e.exercise}: ab work is straight sets — no back-off line.")
+            if len(e.working) != target:
+                problems.append(f"{e.exercise}: {len(e.working)} sets against a template of {target}, "
+                                f"all on the Working Set line.")
+            if len({s.load_kg for s in e.working}) > 1:
+                problems.append(f"{e.exercise}: straight sets sit at ONE load.")
+        else:
+            if len(e.working) != 1:
+                problems.append(f"{e.exercise}: exactly one top set on the Working Set line; the rest are back-offs.")
+            if len(e.working) + len(e.backoff) != target:
+                problems.append(f"{e.exercise}: {len(e.working) + len(e.backoff)} working sets against a "
+                                f"template of {target} (1 top set + {target - 1} back-off"
+                                f"{'s' if target - 1 != 1 else ''}).")
+            top = e.working[0]
+            if len(e.backoff) > 1:
+                if len({b.load_kg for b in e.backoff}) > 1:
+                    problems.append(f"{e.exercise}: both back-offs at the SAME load.")
+                if e.backoff[1].reps_low >= e.backoff[0].reps_low:
+                    problems.append(f"{e.exercise}: the second back-off carries fewer reps than the first.")
+            if e.backoff and top.load_kg > 0 and not is_bodyweight(e.exercise):
+                drop = 1 - e.backoff[0].load_kg / top.load_kg
+                outside = 0.0 if 0.15 <= drop <= 0.25 else min(abs(drop - 0.15), abs(drop - 0.25))
+                if outside * top.load_kg > 2.5:
+                    problems.append(f"{e.exercise}: back-off {drop:.0%} below the top set; the band is 15-25%.")
+            for b in e.backoff:
+                if b.rpe > top.rpe:
+                    problems.append(f"{e.exercise}: a back-off cannot target a higher RPE than the top set.")
+
+        computed = _proposal_numbers(proposal_by_key.get(key, ""))
+        if e.decision == "accept" and computed.get("working"):
+            same = _same_set(e.working[0], computed["working"][0]) and \
+                len(e.backoff) == len(computed.get("backoff", [])) and \
+                all(_same_set(b, c) for b, c in zip(e.backoff, computed.get("backoff", [])))
+            if not same:
+                problems.append(f"{e.exercise}: marked accept but the numbers differ from the "
+                                f"programme's proposal — either use its numbers or mark adjust and say why.")
+
+    for key, count in expected.items():
+        if key not in seen and not any(_match_template_key(key, {k: 1 for k in seen}) for _ in [0]):
+            name = next(n for n, _ in pairs if _normalise_exercise(n) == key)
+            problems.append(f"{name}: in today's template but missing from the plan. Include it, "
+                            f"or replace it with a substitution marked adjust and say why.")
+    return problems
+
+
+# ── Rendering the plan as the card's text ────────────────────────────────────
+
+def _load(spec_load: float, exercise: str) -> str:
+    if is_bodyweight(exercise):
+        return "BW" if not spec_load else f"BW + {spec_load:g}kg"
+    return f"{spec_load:g}kg"
+
+
+def _reps(s: SetPlan) -> str:
+    return f"x{s.reps_low}" if s.reps_low == s.reps_high else f"x{s.reps_low}-{s.reps_high}"
+
+
+def _rest(seconds: int) -> str:
+    if seconds <= 0:
+        return "2min"
+    return f"{seconds // 60}min" if seconds % 60 == 0 else f"{seconds}s"
+
+
+def render_exercise(e: ExercisePlan) -> str:
+    lines = [f"*{e.exercise}*"]
+    if e.warmup:
+        lines.append("Warm-up: " + ", ".join(f"{_load(l, e.exercise)} x{r}" for l, r in e.warmup))
+    working = ", ".join(f"{_load(s.load_kg, e.exercise)} {_reps(s)} RPE{s.rpe:g}" for s in e.working)
+    tempo = f" | Tempo: {e.tempo}" if e.tempo else ""
+    lines.append(f"Working Set: {working}{tempo} | Rest: {_rest(e.rest_seconds)}")
+    if e.backoff:
+        lines.append("Back-off: " + ", ".join(
+            f"{_load(s.load_kg, e.exercise)} {_reps(s)} RPE{s.rpe:g}" for s in e.backoff))
+    if e.form_cue:
+        lines.append(f"Form: {e.form_cue}")
+    tail = []
+    if e.decision == "adjust" and e.reason:
+        tail.append(f"Changed from the programme: {e.reason}")
+    if e.note:
+        tail.append(e.note)
+    if tail:
+        lines.append(" ".join(tail))
+    return "\n".join(lines)
+
+
+def render_plan(plan: SessionPlan) -> str:
+    """The reply the athlete reads and the card parses. Narrative first, then
+    every exercise as a block in the exact format the parser expects."""
+    parts = []
+    if plan.opening:
+        parts.append(plan.opening)
+    if plan.carried:
+        parts.append("Still in force from earlier sessions: " + " ".join(plan.carried))
+    parts.extend(render_exercise(e) for e in plan.exercises)
+    return "\n\n".join(parts)
+
+
+# ── The call ─────────────────────────────────────────────────────────────────
+
+MODEL = "claude-sonnet-5"
+
+PLAN_INSTRUCTION = """
+You are opening today's {session_type} session, week {week} ({phase}). Return the
+session as the PLAN object described by the schema, not as prose with numbers in it.
+
+How to fill it:
+- The PROGRAMME PROPOSAL in your context is the default for every exercise. For each
+  one decide: `accept` it as it stands, or `adjust` it. Adjusting is coaching, not an
+  exception — do it whenever what you know about him warrants it: the machine's real
+  increments, how the last session actually went, recovery, a joint that is unhappy,
+  a decision you made on an earlier day that still applies. When you adjust, `reason`
+  is the sentence he will read and the one you will be held to later. When you accept,
+  `reason` names the rule briefly.
+- `working` holds ONE top set for top-set/back-off exercises, and EVERY set for
+  straight-set ab work (no back-off there). The template's set counts are facts;
+  the numbers inside them are yours.
+- `opening` is your voice: recovery read, what today is for, anything carried over.
+  `carried` restates earlier decisions still in force (from DECISIONS IN FORCE).
+- Use the template's exercise names. A substitution is an `adjust` with its reason.
+""".strip()
+
+
+def _phase(week: int) -> str:
+    return WAVE.get(week, {}).get("name", "")
+
+
+def request_session_plan(client, system_blocks: list, messages: list,
+                         session_type: str, week: int, prompt: str,
+                         proposal: dict | None = None, model: str = MODEL) -> tuple:
+    """Ask for the plan, check it, hand it back once if it breaks a rule.
+
+    Returns (plan, log_lines). `plan` is None when no valid plan could be had,
+    and the caller falls back to the prose path — the athlete always gets a
+    reply. Thinking is ON for this call: it is one call per session, and
+    weighing a whole day against the athlete's history is exactly the work
+    thinking is for.
+    """
+    notes: list[str] = []
+    instruction = PLAN_INSTRUCTION.format(session_type=session_type, week=week, phase=_phase(week))
+    system = list(system_blocks) + [{"type": "text", "text": instruction}]
+    turns = list(messages)
+
+    for attempt in (1, 2):
+        response = client.messages.create(
+            model=model,
+            max_tokens=16000,
+            thinking={"type": "adaptive"},
+            output_config={"format": {"type": "json_schema", "schema": PLAN_SCHEMA},
+                           "effort": "medium"},
+            system=system,
+            messages=turns,
+        )
+        text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
+        if getattr(response, "stop_reason", None) == "max_tokens" or not text:
+            notes.append(f"attempt {attempt}: no complete plan returned")
+            return None, notes
+        try:
+            plan = parse_plan(text)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            notes.append(f"attempt {attempt}: plan did not parse ({exc})")
+            return None, notes
+        problems = validate(plan, session_type, prompt, proposal)
+        if not problems:
+            notes.append(f"attempt {attempt}: plan accepted")
+            return plan, notes
+        notes.append(f"attempt {attempt}: " + " | ".join(problems))
+        if attempt == 2:
+            break
+        # The model corrects its own plan. The code never edits a number.
+        turns = turns + [
+            {"role": "assistant", "content": text},
+            {"role": "user", "content": "Your plan breaks these rules of the programme:\n- "
+                                        + "\n- ".join(problems)
+                                        + "\nReturn the corrected plan. Keep every decision you "
+                                          "still stand behind and its reason."},
+        ]
+    return None, notes
+
+
+# ── The decision log ─────────────────────────────────────────────────────────
+
+def save_decisions(plan: SessionPlan, session_type: str, week: int,
+                   session_id: str | None = None) -> int:
+    """Write every exercise's decision and reason. Returns rows written; a
+    missing table or a failed write costs a log line, never the reply."""
+    supabase = get_supabase()
+    if not supabase:
+        return 0
+    today = now_local().strftime("%Y-%m-%d")
+    rows = []
+    for e in plan.exercises:
+        top = e.working[0] if e.working else None
+        rows.append({
+            "date": today,
+            "session_id": session_id or None,
+            "session_type": session_type,
+            "mesocycle_week": week,
+            "exercise": e.exercise,
+            "decision": e.decision,
+            "reason": e.reason,
+            "top_load_kg": top.load_kg if top else None,
+            "top_reps": top.reps_low if top else None,
+            "top_rpe": top.rpe if top else None,
+            "plan": json.dumps({
+                "warmup": e.warmup,
+                "working": [s.__dict__ for s in e.working],
+                "backoff": [s.__dict__ for s in e.backoff],
+                "tempo": e.tempo, "rest_seconds": e.rest_seconds,
+            }),
+        })
+    try:
+        supabase.table("prescription_decisions").insert(rows).execute()
+        return len(rows)
+    except Exception:
+        log.exception("Could not store the session's decisions")
+        return 0
+
+
+def load_recent_decisions(days: int = 21) -> list[dict]:
+    """Departures from the programme in the window, newest first."""
+    supabase = get_supabase()
+    if not supabase:
+        return []
+    since = (now_local().date() - timedelta(days=days)).isoformat()
+    try:
+        rows = (
+            supabase.table("prescription_decisions")
+            .select("date, session_type, mesocycle_week, exercise, decision, reason, top_load_kg, top_reps, top_rpe")
+            .gte("date", since)
+            .eq("decision", "adjust")
+            .order("date", desc=True)
+            .limit(40)
+            .execute()
+        ).data or []
+    except Exception:
+        log.warning("Could not read earlier decisions")
+        return []
+    return rows
+
+
+def format_decisions(rows: list[dict]) -> str:
+    """The block the coach reads before it prescribes, and when it is asked why."""
+    if not rows:
+        return ("\nDECISIONS IN FORCE — departures from the programme you made in the last "
+                "three weeks, with the reason you gave. None recorded.\n")
+    lines = ["\nDECISIONS IN FORCE — departures from the programme you made in the last "
+             "three weeks, with the reason you gave. When he asks why a number is what it "
+             "is, this is the answer; do not invent another. Restate any that still apply "
+             "today, or say plainly that it no longer does and why."]
+    for r in rows:
+        top = ""
+        if r.get("top_load_kg") is not None:
+            top = f" ({r['top_load_kg']:g}kg x{r.get('top_reps')} @{r.get('top_rpe'):g})"
+        lines.append(f"- {r.get('date')} {r.get('session_type')} wk{r.get('mesocycle_week')} · "
+                     f"{r.get('exercise')}{top}: {r.get('reason')}")
+    return "\n".join(lines) + "\n"
+
+
+_PLAN_REQUEST_RE = re.compile(
+    r"^\s*(starting my|resend today'?s|resuming my|starting (pull|push|legs)\b|start(ing)? workout|let'?s train)",
+    re.IGNORECASE)
+
+
+def is_plan_request(text: str, session_type: str) -> bool:
+    """A session-opening message on a strength day: the one reply that is a
+    whole plan rather than a conversation."""
+    return session_type in STRENGTH_DAYS and bool(_PLAN_REQUEST_RE.match(text or ""))

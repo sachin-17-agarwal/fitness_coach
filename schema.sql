@@ -174,3 +174,26 @@ CREATE TABLE IF NOT EXISTS apple_workouts (
     source               TEXT,
     UNIQUE (date, workout_type, start_time)
 );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- prescription_decisions: every exercise's decision when a session opened —
+-- the programme's default accepted, or a deliberate departure with its reason.
+-- Read back into the coach's context so "why one back-off?" has an answer the
+-- coach made, and so a departure made on Tuesday is still known on Friday.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS prescription_decisions (
+    id              BIGSERIAL PRIMARY KEY,
+    date            DATE NOT NULL,
+    session_id      UUID,
+    session_type    TEXT NOT NULL,
+    mesocycle_week  INTEGER,
+    exercise        TEXT NOT NULL,
+    decision        TEXT NOT NULL CHECK (decision IN ('accept', 'adjust')),
+    reason          TEXT,
+    top_load_kg     NUMERIC,
+    top_reps        INTEGER,
+    top_rpe         NUMERIC,
+    plan            JSONB,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS prescription_decisions_date_idx ON prescription_decisions (date DESC);
