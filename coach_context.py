@@ -467,8 +467,11 @@ def build_context_block(memory: dict, athlete_name: str,
             # Press"; and the lifts already on the board today, which the
             # substitution must leave to the coach.
             out["aliases"] = {logged: template for template, logged in _renamed.items()}
-            _bwp = results.get("block_weak_points") or {}
-            out["weak_points"] = [p["muscle"] for p in (_bwp.get("picks") or [])]
+            _bwp = results.get("block_weak_points")
+            # None: the block could not be placed, fill from the readout as
+            # before. []: placed, and nothing is under its band — slots empty.
+            out["weak_points"] = ([p["muscle"] for p in (_bwp.get("picks") or [])]
+                                  if _bwp else None)
             out["logged_today"] = sorted({
                 (c.get("exercise") or "").strip()
                 for c in (results.get("set_comparisons") or []) if c.get("exercise")})

@@ -355,7 +355,7 @@ def _set_shape(exercise: str, sets: int) -> str:
     so a renamed or added ab movement is picked up without a list to maintain
     here.
     """
-    if resolve_muscle_group(exercise) == "Abs" or _WEAK_POINT_SLOT_RE.match(exercise or ""):
+    if resolve_muscle_group(exercise) in ("Abs", "Calves") or _WEAK_POINT_SLOT_RE.match(exercise or ""):
         return f"{sets} straight sets at one load, no back-off line"
     backoffs = max(0, sets - 1)
     return "1 top set" + (

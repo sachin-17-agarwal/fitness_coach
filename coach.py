@@ -278,7 +278,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 week=_safe_int(memory.get("mesocycle_week", 1)),
                 prompt=system_prompt,
                 proposal=programme_out.get("computed") or {},
-                weak_points=programme_out.get("weak_points") or None,
+                weak_points=programme_out.get("weak_points"),
             )
             for note in plan_notes:
                 log.info("PLAN CONTRACT (%s): %s", today_type, note)

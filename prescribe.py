@@ -1100,7 +1100,11 @@ def _fmt_rest(seconds: int) -> str:
 
 
 def _is_straight_set(exercise: str) -> bool:
-    """Direct ab work is straight sets at one load, with no back-off line.
+    """Direct ab work and the calf raise are straight sets at one load, no back-off line.
+
+    Calves joined abs here in September 2026 when the calf raise went to five
+    sets: one top set and four back-offs would bleed two reps a set down to
+    nothing, and a 20% drop makes calf work too light. Same load every set.
 
     Same test coach_parsing._set_shape uses, and for the same reason it was
     added there: the shape is a property of the movement, not of the count.
@@ -1108,7 +1112,7 @@ def _is_straight_set(exercise: str) -> bool:
     or added ab movement is picked up without a second list to maintain.
     """
     from volume import resolve_muscle_group
-    return resolve_muscle_group(exercise) == "Abs"
+    return resolve_muscle_group(exercise) in ("Abs", "Calves")
 
 
 def render_block(proposal: "Proposal", tempo: str | None = None) -> str:

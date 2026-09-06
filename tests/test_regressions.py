@@ -1828,12 +1828,18 @@ class SetCountLookupTests(unittest.TestCase):
         back-offs" and then assert "Where they disagree, THIS is right" —
         the one computed authority specifying the wrong shape."""
         from coach_parsing import format_session_template
-        legs = format_session_template(self.prompt, "Legs")
-        ab_line = next(line for line in legs.split("\n")
-                       if line.strip().startswith("Ab Crunch Machine:"))
+        cardio = format_session_template(self.prompt, "Cardio+Abs")
+        ab_line = next(line for line in cardio.split("\n")
+                       if line.strip().startswith("Cable Crunch:"))
         self.assertIn("straight sets", ab_line)
         self.assertIn("no back-off line", ab_line)
         self.assertNotIn("top set", ab_line)
+        # Calves joined abs as straight sets when the calf raise went to five.
+        legs = format_session_template(self.prompt, "Legs")
+        calf_line = next(line for line in legs.split("\n")
+                         if line.strip().startswith("Machine Calf Raise:"))
+        self.assertIn("5 straight sets", calf_line)
+        self.assertNotIn("top set", calf_line)
 
     def test_the_block_spells_out_the_top_and_backoff_split(self):
         """The error was in the SHAPE of the sets, not the total — "2 sets"
@@ -2745,13 +2751,13 @@ class SetCountEnforcementTrimsTests(unittest.TestCase):
     def test_straight_sets_are_trimmed_on_the_working_line(self):
         """Ab work enumerates every set on the working line and has no
         back-off, so the surplus is there instead."""
-        reply = ("*Ab Crunch Machine*\n"
-                 "Working Set: 75kg x12, 75kg x12, 75kg x12, 75kg x12 RPE8 | Rest: 90s\n"
+        reply = ("*Machine Calf Raise*\n"
+                 "Working Set: 90kg x12, 90kg x12, 90kg x12, 90kg x12, 90kg x12, 90kg x12 RPE8 | Rest: 90s\n"
                  "Form: Controlled.\n")
         out, fixes = enforce_set_counts(reply, self.prompt, "Legs")
         self.assertEqual(len(fixes), 1)
         self.assertEqual(fixes[0]["phase"], "working")
-        self.assertIn("75kg x12, 75kg x12, 75kg x12 RPE8", out)
+        self.assertEqual(out.count("90kg x12"), 5)
 
     def test_a_trailing_rpe_survives_the_trim(self):
         """The straight-set format hangs one RPE off the LAST entry. Dropping
@@ -3696,8 +3702,9 @@ class VolumeAttributionBaselineTests(unittest.TestCase):
     """
 
     EXPECTED = {
-    # Generated from the live behaviour on 25 template exercises.
-    'Ab Crunch Machine': {'Abs': 1.0},
+    # Generated from the live behaviour on 25 template exercises; the Legs
+    # finisher moved off and the 45° Back Extension came in, September 2026.
+    '45° Back Extension': {'Hamstrings': 1.0, 'Back': 0.5},
     'Ab Wheel Rollout': {'Abs': 1.0},
     'Cable Chest Fly': {'Chest': 1.0},
     'Cable Crunch': {'Abs': 1.0},
@@ -4725,7 +4732,7 @@ class ComputedSessionRendersAsACardTests(unittest.TestCase):
     LEGS = [{"exercise": n, "load": l, "reps": 10, "rpe": 8.0, "mesocycle_week": 3}
             for n, l in (("Leg Press", 220.0), ("Single Leg Sumo Press", 120.0),
                          ("Leg Extension", 110.0), ("Seated Leg Curl", 100.0),
-                         ("Machine Calf Raise", 101.0), ("Ab Crunch Machine", 90.0))]
+                         ("45° Back Extension", 20.0), ("Machine Calf Raise", 101.0))]
 
     def test_every_rendered_block_parses_back_to_the_same_numbers(self):
         """The card is what the parser makes of the text, so a lossy render is
@@ -4767,13 +4774,14 @@ class ComputedSessionRendersAsACardTests(unittest.TestCase):
         stops being visible to the athlete."""
         import prescribe
         from coach_parsing import parse_all_prescriptions
-        props = self._session(loads=self.LEGS)
+        props = self._session("Cardio+Abs", loads=[{"exercise": "Cable Crunch", "load": 25.0, "reps": 12,
+                                                        "rpe": 8.0, "mesocycle_week": 3}])
         blocks, _ = prescribe.render_session(props)
-        abs_block = [b for b in blocks.split("\n\n") if "Ab Crunch" in b][0]
+        abs_block = [b for b in blocks.split("\n\n") if "Cable Crunch" in b][0]
         self.assertNotIn("Back-off:", abs_block)
         self.assertNotIn("Warm-up:", abs_block)
         card = [q for q in parse_all_prescriptions(blocks)
-                if q["exercise"] == "Ab Crunch Machine"][0]
+                if q["exercise"] == "Cable Crunch"][0]
         self.assertEqual(len(card.get("backoff", [])), 0)
         self.assertEqual(len(card.get("warmup", [])), 0)
         self.assertGreater(len(card["working"]), 1, "every set enumerated")

@@ -29,6 +29,30 @@ class BandTests(unittest.TestCase):
         self.assertEqual(parse_volume_bands("nothing here 10-16."), {})
 
 
+class CatalogTests(unittest.TestCase):
+    def test_the_back_extension_credits_hamstrings(self):
+        from volume import resolve_contributions, resolve_muscle_group
+        self.assertEqual(resolve_muscle_group("45° Back Extension"), "Hamstrings")
+        self.assertEqual(resolve_contributions("45° Back Extension"), {"Hamstrings": 1.0, "Back": 0.5})
+
+    def test_the_templates_now_cover_every_band(self):
+        """The reason the slots became exceptions: nothing is under from the
+        template alone."""
+        from coach_parsing import parse_session_template
+        from volume import resolve_contributions
+        prompt = _prompt()
+        totals = {}
+        for day in ("Push", "Pull", "Legs", "Cardio+Abs"):
+            for name, sets in parse_session_template(prompt, day)[0]:
+                if name.lower().startswith("weak-point"):
+                    continue
+                for m, share in resolve_contributions(name).items():
+                    totals[m] = totals.get(m, 0) + sets * share * 1.5
+        for muscle, (low, high) in parse_volume_bands(prompt).items():
+            with self.subTest(muscle=muscle):
+                self.assertGreaterEqual(totals.get(muscle, 0), low, f"{muscle} under its band from the template")
+
+
 class PickTests(unittest.TestCase):
     BANDS = {"Chest": (10, 16), "Hamstrings": (10, 16), "Calves": (6, 10), "Triceps": (8, 12), "Abs": (10, 16)}
 
@@ -140,9 +164,30 @@ class EndToEndTests(unittest.TestCase):
         picked = [p["muscle"] for p in info["picks"]]
         self.assertNotIn("Calves", picked, "calves are inside their band")
         self.assertNotIn("Chest", picked)
-        self.assertEqual(len(fake.written), 2)
+        self.assertTrue(all(p["shortfall"] > 0 for p in info["picks"]), "only real deficits fill a slot")
+        self.assertEqual(len(fake.written), len(picked))
         self.assertTrue(fake.written[0]["exercise"].startswith("Weak-point: "))
         self.assertIn("previous block (2026-08-05 to 2026-08-20)", fake.written[0]["reason"])
+
+    def test_nothing_under_its_band_is_stored_as_none_and_read_back(self):
+        sets = []
+        for d in range(5, 21):
+            for name in ("Machine Chest Press", "Cable Row", "Leg Press", "Seated Leg Curl", "45° Back Extension",
+                         "Machine Calf Raise", "Machine Shoulder Press", "Tricep Pushdown", "Face Pulls",
+                         "Cable Lateral Raise", "Hammer Curl", "Cable Crunch"):
+                sets += [{"exercise": name, "is_warmup": False, "notes": "", "date": f"2026-08-{d:02d}"}] * 3
+        fake = _FakeSupabase(self._sessions(), sets)
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 8, 25)):
+            info = weakpoints.current_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 1}, _prompt())
+        self.assertEqual(info["picks"], [])
+        self.assertEqual([r["exercise"] for r in fake.written], ["Weak-point: none"])
+        self.assertIn("both weak-point slots stay EMPTY", format_block_weak_points(info))
+        fake2 = _FakeSupabase(self._sessions(), [], decisions=fake.written)
+        with patch.object(weakpoints, "get_supabase", return_value=fake2), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 8, 25)):
+            again = weakpoints.current_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 1}, _prompt())
+        self.assertEqual((again["source"], again["picks"]), ("stored", []))
 
     def test_a_stored_pick_is_read_back_not_recomputed(self):
         stored = [{"date": "2026-08-21", "exercise": "Weak-point: Hamstrings", "reason": "Block pick: ...",

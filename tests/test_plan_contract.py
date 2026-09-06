@@ -37,8 +37,8 @@ def _legs_plan(**overrides):
             ex("Single Leg Sumo Press", 3, 120.0),
             ex("Leg Extension", 2, 100.0),
             ex("Seated Leg Curl", 3, 90.0),
-            ex("Machine Calf Raise", 3, 100.0),
-            ex("Ab Crunch Machine", 3, 90.0, abs_=True),
+            ex("45° Back Extension", 3, 20.0),
+            ex("Machine Calf Raise", 5, 100.0, abs_=True),   # straight sets, like abs
         ],
         "carried": [],
     }
@@ -74,12 +74,17 @@ class SchemaTests(unittest.TestCase):
 class ProposalRenderingTests(unittest.TestCase):
     def test_ab_work_is_shown_to_the_coach_as_straight_sets(self):
         import programme
-        rows = [{"exercise": "Ab Crunch Machine", "load": 90.0, "reps": 10, "rpe": 8.0}]
-        props, _, _ = programme.build_proposal(_prompt(), "Legs", 2, rows)
-        text = programme.format_proposal(props, "Legs", 2, {}, {})
-        line = next(l for l in text.split("\n") if "Ab Crunch Machine —" in l)
+        rows = [{"exercise": "Cable Crunch", "load": 25.0, "reps": 12, "rpe": 8.0},
+                {"exercise": "Machine Calf Raise", "load": 100.0, "reps": 10, "rpe": 8.0}]
+        props, _, _ = programme.build_proposal(_prompt(), "Cardio+Abs", 2, rows)
+        text = programme.format_proposal(props, "Cardio+Abs", 2, {}, {})
+        line = next(l for l in text.split("\n") if "Cable Crunch —" in l)
         self.assertIn("3 straight sets at one load", line)
         self.assertNotIn("back-off", line)
+        props, _, _ = programme.build_proposal(_prompt(), "Legs", 2, rows)
+        text = programme.format_proposal(props, "Legs", 2, {}, {})
+        line = next(l for l in text.split("\n") if "Machine Calf Raise —" in l)
+        self.assertIn("5 straight sets at one load", line, "calves run straight, like abs")
 
 
 class ValidationTests(unittest.TestCase):
@@ -98,7 +103,7 @@ class ValidationTests(unittest.TestCase):
     def test_a_missing_template_exercise_is_named(self):
         raw = _legs_plan()
         raw["exercises"] = raw["exercises"][:-1]
-        self.assertTrue(any("Ab Crunch Machine" in p and "missing" in p for p in self._problems(raw)))
+        self.assertTrue(any("Machine Calf Raise" in p and "missing" in p for p in self._problems(raw)))
 
     def test_the_wrong_set_count_is_named(self):
         raw = _legs_plan()
@@ -115,8 +120,8 @@ class ValidationTests(unittest.TestCase):
 
     def test_ab_work_is_straight_sets(self):
         raw = _legs_plan()
-        raw["exercises"][5]["backoff"] = [{"load_kg": 70, "reps_low": 12, "reps_high": 15, "rpe": 7}]
-        self.assertTrue(any("straight sets" in p for p in self._problems(raw)))
+        raw["exercises"][5]["backoff"] = [{"load_kg": 80, "reps_low": 12, "reps_high": 15, "rpe": 7}]
+        self.assertTrue(any("straight sets" in p for p in self._problems(raw)), "calves are straight sets")
 
     def test_an_adjust_needs_a_reason(self):
         raw = _legs_plan()
@@ -180,6 +185,19 @@ class CardioAbsTests(unittest.TestCase):
         problems = validate(parse_plan(json.dumps(raw)), "Cardio+Abs", self.PROMPT)
         self.assertTrue(any("which muscle" in p for p in problems))
 
+    def test_when_the_block_names_no_weak_point_the_slots_stay_empty(self):
+        no_slots = self._plan(with_slots=False)
+        self.assertEqual(validate(parse_plan(json.dumps(no_slots)), "Cardio+Abs", self.PROMPT, weak_points=[]), [])
+        filled = self._plan()
+        problems = validate(parse_plan(json.dumps(filled)), "Cardio+Abs", self.PROMPT, weak_points=[])
+        self.assertTrue(any("names no weak point" in p for p in problems))
+
+    def test_one_named_weak_point_means_one_live_slot(self):
+        raw = self._plan()
+        raw["exercises"] = raw["exercises"][:5]          # only the triceps fill
+        problems = validate(parse_plan(json.dumps(raw)), "Cardio+Abs", self.PROMPT, weak_points=["Triceps"])
+        self.assertEqual(problems, [])
+
     def test_the_abs_opening_is_a_plan_request(self):
         self.assertTrue(is_plan_request("Starting the ab work of my Cardio+Abs session. Cardio is done", "Cardio+Abs"))
         self.assertTrue(is_plan_request("Starting my Cardio+Abs session", "Cardio+Abs"))
@@ -198,9 +216,10 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(len(press["backoff"]), 2)
         self.assertEqual(press["tempo"], "3-1-2")
         self.assertEqual(len(press["warmup"]), 1)
-        abs_ = cards["Ab Crunch Machine"]
-        self.assertEqual(len(abs_["working"]), 3)
-        self.assertNotIn("backoff", abs_)
+        calves = cards["Machine Calf Raise"]
+        self.assertEqual(len(calves["working"]), 5)
+        self.assertNotIn("backoff", calves)
+        self.assertIn("*45° Back Extension*", text)
         self.assertTrue(text.startswith("HRV is on baseline"))
 
     def test_a_departure_travels_with_its_exercise_as_a_why_line(self):
