@@ -746,8 +746,8 @@ struct WorkoutModeView: View {
 
     // MARK: - Rest day
 
-    /// Sunday. Nothing to start and nothing to log; the swap action is there
-    /// for the day the athlete wants to train anyway.
+    /// A day marked Rest. Nothing to start and nothing to log; the swap
+    /// action is there if he changes his mind.
     private var restDayView: some View {
         ZStack {
             Color.ink0.ignoresSafeArea()
@@ -781,7 +781,7 @@ struct WorkoutModeView: View {
                     Text(viewModel.mesocycle.rotationSessionType.uppercased())
                         .font(.display(28))
                         .foregroundStyle(Color.fg0)
-                    EditorialEyebrow(text: "The rotation picks up where Saturday left it", color: Editorial.muted, size: 8.5, kerning: 1.2)
+                    EditorialEyebrow(text: "The rotation picks up where it left off", color: Editorial.muted, size: 8.5, kerning: 1.2)
                 }
                 .padding(.horizontal, Editorial.gutter)
                 .padding(.top, 36)

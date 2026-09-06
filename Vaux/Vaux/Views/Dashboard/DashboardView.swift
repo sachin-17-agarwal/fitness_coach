@@ -492,8 +492,7 @@ struct DashboardView: View {
         // Shown only after today's session, when the state already points at
         // the next slot: tomorrow IS the state's current slot (yoga on its
         // day, as ever), not the one after it.
-        let tomorrow = Date().addingTimeInterval(24 * 60 * 60)
-        let nextType = Config.isRestDay(tomorrow) ? Config.restSessionType : meso.rotationSessionType
+        let nextType = meso.rotationSessionType
         let nextWeek = meso.week
         let nextDay = meso.day
         return VStack(alignment: .leading, spacing: 4) {
