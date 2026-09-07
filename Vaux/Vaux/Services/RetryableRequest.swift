@@ -24,9 +24,11 @@ enum RetryConfig {
     /// reads that normally complete in <500ms.
     static let defaultTimeout: TimeInterval = 30
 
-    /// Timeout for LLM-backed chat calls — Claude responses occasionally
-    /// take 30-50s on long prompts, so we leave headroom.
-    static let chatTimeout: TimeInterval = 60
+    /// Timeout for LLM-backed chat calls. A session opening is a thinking
+    /// call over a large context with a prose fallback behind it; the
+    /// backend budgets it to stay well inside this, and the extra headroom
+    /// is for the network, not for waiting on a stuck call.
+    static let chatTimeout: TimeInterval = 120
 }
 
 enum RetryableRequestError: LocalizedError {

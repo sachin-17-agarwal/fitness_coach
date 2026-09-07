@@ -846,6 +846,25 @@ final class WorkoutViewModel {
         stopTimers()
         heartRateMonitor.stop()
 
+        // No working set logged means no session happened. Ending it the
+        // normal way advanced the mesocycle past a day that was never
+        // trained — the opener stalled, END was the only way out, and the
+        // next start planned the following session under the old header.
+        // Discard the row instead and leave the rotation exactly where it
+        // stood; the next start opens the same session again.
+        if setCount == 0 {
+            if let session = currentSession, let sessionId = session.id {
+                do {
+                    try await workoutService.discardSession(id: sessionId)
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
+            isActive = false
+            resetState()
+            return
+        }
+
         if let session = currentSession, let sessionId = session.id {
             do {
                 try await workoutService.endSession(id: sessionId)

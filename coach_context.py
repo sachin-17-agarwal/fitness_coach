@@ -305,10 +305,17 @@ def build_context_block(memory: dict, athlete_name: str,
                         athlete_current_weight_kg: int,
                         athlete_goal_weight_kg: int,
                         log, recovery_override: dict | None = None,
-                        system_prompt: str = "", out: dict | None = None) -> str:
+                        system_prompt: str = "", out: dict | None = None,
+                        session_type: str | None = None) -> str:
     """`system_prompt` is passed in rather than loaded here: coach.py imports
     this module, so importing load_system_prompt back would be a cycle. Absent,
-    the programme proposal is skipped and every other block is unaffected."""
+    the programme proposal is skipped and every other block is unaffected.
+
+    `session_type`, when given, is the session the app has actually opened.
+    It outranks the rotation position for everything derived from today's
+    type — the template, the proposal, the weak-point slots — so the plan
+    describes the session the athlete is standing in, not the one the
+    backend's counter points at."""
     today = now_local().strftime("%A %d %B %Y")
     today_iso = now_local().strftime("%Y-%m-%d")
     mesocycle_week = memory.get("mesocycle_week", 1)
@@ -316,7 +323,7 @@ def build_context_block(memory: dict, athlete_name: str,
     # The athlete's per-day override has to reach the prompt, or the coach
     # programmes yoga while the app shows Legs.
     session_override = memory.get(SESSION_OVERRIDE_KEY)
-    today_session = session_type_for(mesocycle_day, override=session_override)
+    today_session = session_type or session_type_for(mesocycle_day, override=session_override)
     next_session = next_session_type_for(mesocycle_day, override=session_override)
 
     # One worker per fetch, counting the conditional recovery fetch below —
