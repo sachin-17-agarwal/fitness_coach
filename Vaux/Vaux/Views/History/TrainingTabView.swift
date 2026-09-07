@@ -218,11 +218,24 @@ struct TrainingTabView: View {
         .accessibilityHint(open ? "Collapses the sets" : "Shows every set")
     }
 
+    /// "90.5×8 · 70.5×12", or "55 × 10 · 11 · 11" when every set shares a
+    /// load. A set at a DIFFERENT load is never folded into the shared form:
+    /// a Pull-Ups top set at +17.5kg followed by a bodyweight back-off used to
+    /// read "17.5 × 5 · 12", as though both carried the plate. Zero on a
+    /// bodyweight movement is a real load and reads "BW"; "BW+17.5" is added.
     private func setLine(_ sets: [WorkoutSet]) -> String {
-        let weights = Set(sets.compactMap { $0.actualWeightKg }.filter { $0 > 0 })
-        let reps = sets.compactMap { $0.actualReps }.map(String.init).joined(separator: " · ")
-        if weights.isEmpty { return reps.isEmpty ? "\(sets.count) sets" : reps }
-        if weights.count == 1, let w = weights.first { return "\(SessionEntry.kg(w)) × \(reps)" }
-        return sets.compactMap { s in s.actualWeightKg.map { "\(SessionEntry.kg($0))×\(s.actualReps ?? 0)" } }.joined(separator: " · ")
+        guard let first = sets.first else { return "" }
+        let bodyweight = ExerciseCatalog.isBodyweight(first.exercise)
+        func load(_ w: Double) -> String {
+            if bodyweight { return w <= 0 ? "BW" : "BW+\(SessionEntry.kg(w))" }
+            return SessionEntry.kg(w)
+        }
+        let loads = sets.map { $0.actualWeightKg ?? 0 }
+        let reps = sets.map { String($0.actualReps ?? 0) }
+        if !bodyweight, loads.allSatisfy({ $0 <= 0 }) {
+            return reps.allSatisfy({ $0 == "0" }) ? "\(sets.count) sets" : reps.joined(separator: " · ")
+        }
+        if Set(loads).count == 1 { return "\(load(loads[0])) × \(reps.joined(separator: " · "))" }
+        return zip(loads, reps).map { "\(load($0))×\($1)" }.joined(separator: " · ")
     }
 }
