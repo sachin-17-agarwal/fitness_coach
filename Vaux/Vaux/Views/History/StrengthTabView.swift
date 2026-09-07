@@ -143,7 +143,9 @@ struct StrengthTabView: View {
                 let subtitle: String = {
                     var s = lift?.name.uppercased() ?? "NO LOADED LIFT"
                     if let d = lift?.deltaPct { s += "  " + Editorial.signedPct(d) }
-                    s += "\n" + String(format: "%.1f sets/wk · band %d–%d", m.setsPerWeek, m.band.lowerBound, m.band.upperBound)
+                    s += "\n" + (m.isSettling
+                        ? String(format: "%.0f sets so far · band %d–%d/wk", m.setsSoFar, m.band.lowerBound, m.band.upperBound)
+                        : String(format: "%.1f sets/wk · band %d–%d", m.setsPerWeek, m.band.lowerBound, m.band.upperBound))
                     return s
                 }()
                 Button {
