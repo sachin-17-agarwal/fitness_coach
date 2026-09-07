@@ -81,10 +81,10 @@ struct TrainingTabView: View {
                     WaveBarsChart.Bar(label: "W\(cur.position.week)", phase: cur.position.phaseLabel + (cur.position == p ? " · NOW" : ""),
                                       value: cur.tonnage, ghost: prev.tonnage, highlight: cur.position == p)
                 })
-                .frame(height: 230)
+                .frame(height: 200)
                 .padding(.horizontal, -Editorial.gutter)
                 .padding(.top, 8)
-                EditorialEyebrow(text: "DASHED = LAST BLOCK, SAME WEEK", color: Editorial.muted, size: 9, kerning: 1.5)
+                EditorialEyebrow(text: "DASHED · LAST BLOCK, SAME WEEK", color: Editorial.muted, size: 9, kerning: 1.5)
                     .padding(.top, 4)
             }
             .padding(.horizontal, Editorial.gutter)

@@ -327,6 +327,15 @@ struct WaveBarsChart: View {
                             .stroke(Color.white.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                             .frame(width: bw + 10, height: gh)
                             .position(x: cx, y: base - gh / 2)
+                        // A dashed outline with no number is a shape, not a
+                        // fact. Where this block has nothing yet, the ghost
+                        // says what last block did at that week.
+                        if b.value <= 0 {
+                            Text(format(g))
+                                .font(.system(size: 10, weight: .bold)).kerning(1.2)
+                                .foregroundStyle(Editorial.muted)
+                                .position(x: cx, y: base - gh - 12)
+                        }
                     }
                     if b.value > 0 {
                         UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4)
@@ -338,7 +347,7 @@ struct WaveBarsChart: View {
                             .font(.display(22))
                             .foregroundStyle(b.highlight ? .white : Editorial.mid)
                             .position(x: cx, y: base - bh - 16)
-                    } else {
+                    } else if b.ghost == nil || b.ghost == 0 {
                         Text("—").font(.display(18)).foregroundStyle(Editorial.muted).position(x: cx, y: base - 16)
                     }
                     Text(b.label)
