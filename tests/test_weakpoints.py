@@ -33,7 +33,8 @@ class CatalogTests(unittest.TestCase):
     def test_the_back_extension_credits_hamstrings(self):
         from volume import resolve_contributions, resolve_muscle_group
         self.assertEqual(resolve_muscle_group("45° Back Extension"), "Hamstrings")
-        self.assertEqual(resolve_contributions("45° Back Extension"), {"Hamstrings": 1.0, "Back": 0.5})
+        self.assertEqual(resolve_contributions("45° Back Extension"), {"Hamstrings": 1.0, "Glutes": 0.5, "Back": 0.5})
+        self.assertEqual(resolve_contributions("Leg Press")["Glutes"], 0.5, "glutes were credited by nothing")
 
     def test_the_templates_now_cover_every_band(self):
         """The reason the slots became exceptions: nothing is under from the

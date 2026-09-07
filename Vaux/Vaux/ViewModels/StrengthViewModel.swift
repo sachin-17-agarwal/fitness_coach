@@ -25,7 +25,12 @@ struct LiftBlockPoint: Hashable {
 
 struct LiftReport: Identifiable, Hashable {
     let name: String
+    /// The muscle carrying the largest share of the lift.
     let muscle: BodyMuscle?
+    /// Every muscle the lift loads substantially (a share of 0.5 or more),
+    /// so a leg press speaks for glutes as well as quads and a leg curl is
+    /// never mistaken for quad work because it happens on Legs day.
+    let muscles: [BodyMuscle]
     let sessionType: String?
     /// Weekly best e1RM per block position (any week that had a set).
     let weekly: [BlockPosition: LiftBlockPoint]
@@ -196,7 +201,8 @@ final class StrengthViewModel {
                 Self.judge(name: name, byPos: byPos, block: b, sessionType: liftSession[name])
             }
             guard lifts.contains(where: { $0.state != StrengthState.none }) else { continue }
-            let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksByBlock[b]), currentBlock: b == calendar.current.block)
+            let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksByBlock[b]), currentBlock: b == calendar.current.block,
+                                             weeksInBlock: weeksByBlock[b]?.count ?? 0)
             let deltas = lifts.compactMap { $0.state == StrengthState.none ? nil : $0.deltaPct }
             snaps.append(BlockSnapshot(judged: BlockPosition(block: b, week: Config.peakWeek), lifts: lifts, muscles: muscles, medianGainPct: ChartMath.median(deltas),
                                        dateRange: calendar.dateRange(ofBlock: b).map(BlockCalendar.shortRange)))
@@ -205,7 +211,8 @@ final class StrengthViewModel {
         // so the muscle map still shows volume and the grey states.
         if snaps.last?.judged.block != calendar.current.block {
             let lifts = weekly.map { name, byPos in Self.judge(name: name, byPos: byPos, block: calendar.current.block, sessionType: liftSession[name]) }
-            let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[calendar.current.block], weeks: weeksByBlock[calendar.current.block]), currentBlock: true)
+            let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[calendar.current.block], weeks: weeksByBlock[calendar.current.block]), currentBlock: true,
+                                             weeksInBlock: weeksByBlock[calendar.current.block]?.count ?? 0)
             snaps.append(BlockSnapshot(judged: BlockPosition(block: calendar.current.block, week: calendar.current.week), lifts: lifts, muscles: muscles, medianGainPct: nil,
                                        dateRange: calendar.dateRange(ofBlock: calendar.current.block).map(BlockCalendar.shortRange)))
         }
@@ -254,7 +261,16 @@ final class StrengthViewModel {
     }
 
     static func judge(name: String, byPos: [BlockPosition: LiftBlockPoint], block: Int, sessionType: String?) -> LiftReport {
-        let muscle = ExerciseCatalog.shared.muscleGroup(for: name).flatMap { bodyMuscle(forGroup: $0) }
+        // From the lift's muscle shares, not its day's group. The group map
+        // files every Legs-day movement under "Legs", which the body map reads
+        // as quads — so Seated Leg Curl was the lift "driving" quads.
+        let shares = ExerciseCatalog.shared.muscleContributions(for: name)
+            .compactMap { group, share in bodyMuscle(forGroup: group).map { ($0, share) } }
+        let muscle = shares.max(by: { $0.1 < $1.1 })?.0
+            ?? ExerciseCatalog.shared.muscleGroup(for: name).flatMap { bodyMuscle(forGroup: $0) }
+        let muscles = shares.filter { $0.1 >= 0.5 }.map(\.0).isEmpty
+            ? [muscle].compactMap { $0 }
+            : shares.filter { $0.1 >= 0.5 }.map(\.0)
         let peak = blockPeak(byPos, block: block)
         let earlier = Set(byPos.keys.map(\.block)).filter { $0 < block }.sorted()
         let priorPeak = earlier.last.flatMap { blockPeak(byPos, block: $0)?.e1rm }
@@ -282,7 +298,7 @@ final class StrengthViewModel {
             else if (sincePR ?? 0) >= stallBlocks { state = .stall }
             else { state = .hold }
         }
-        return LiftReport(name: name, muscle: muscle, sessionType: sessionType, weekly: byPos, judged: BlockPosition(block: block, week: Config.peakWeek),
+        return LiftReport(name: name, muscle: muscle, muscles: muscles, sessionType: sessionType, weekly: byPos, judged: BlockPosition(block: block, week: Config.peakWeek),
                           peak: peak, priorPeak: priorPeak, allTimeBest: allTime, deltaPct: delta, blocksSincePR: sincePR, state: state)
     }
 
@@ -294,9 +310,15 @@ final class StrengthViewModel {
         return sets.mapValues { $0 / n }
     }
 
-    private static func muscleReports(lifts: [LiftReport], setsPerMuscle: [BodyMuscle: Double], currentBlock: Bool) -> [MuscleReport] {
+    /// Weeks a block must have carried sets in before "short on sets" is a
+    /// finding rather than a block that has barely started. Five days into a
+    /// block, one Push session in, chest read 8 sets a week against 10-16.
+    static let weeksBeforeShortIsJudged = 2
+
+    private static func muscleReports(lifts: [LiftReport], setsPerMuscle: [BodyMuscle: Double], currentBlock: Bool,
+                                      weeksInBlock: Int = weeksBeforeShortIsJudged) -> [MuscleReport] {
         BodyMuscle.allCases.map { m in
-            let mine = lifts.filter { $0.muscle == m }
+            let mine = lifts.filter { $0.muscles.contains(m) }
             let driving = mine.sorted { a, b in
                 if a.state.attention != b.state.attention { return a.state.attention < b.state.attention }
                 return (a.peak?.e1rm ?? 0) > (b.peak?.e1rm ?? 0)
@@ -304,7 +326,8 @@ final class StrengthViewModel {
             var state: StrengthState = driving?.state ?? StrengthState.none
             let sets = setsPerMuscle[m] ?? 0
             let band = VolumeBands.targetRange(for: m.rawValue)
-            if currentBlock, sets > 0, sets < Double(band.lowerBound), [StrengthState.up, .hold, StrengthState.none].contains(state) {
+            if currentBlock, weeksInBlock >= weeksBeforeShortIsJudged, sets > 0, sets < Double(band.lowerBound),
+               [StrengthState.up, .hold, StrengthState.none].contains(state) {
                 state = .short
             }
             return MuscleReport(muscle: m, state: state, drivingLift: driving, setsPerWeek: sets, band: band)

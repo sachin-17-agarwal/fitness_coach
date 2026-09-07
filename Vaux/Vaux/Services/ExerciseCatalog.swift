@@ -176,14 +176,18 @@ final class ExerciseCatalog {
         // Quad-dominant pressing gives the hamstrings a little co-contraction,
         // nowhere near a curl. Deliberately 0.25 so it can never make the
         // hamstrings look served by leg pressing alone.
-        "leg press":      ["Quads": 1.0, "Hamstrings": 0.25],
-        "sumo press":     ["Quads": 1.0, "Hamstrings": 0.25],
-        "hack squat":     ["Quads": 1.0, "Hamstrings": 0.25],
-        "squat":          ["Quads": 1.0, "Hamstrings": 0.25],
+        "leg press":      ["Quads": 1.0, "Glutes": 0.5, "Hamstrings": 0.25],
+        "sumo press":     ["Quads": 1.0, "Glutes": 0.5, "Hamstrings": 0.25],
+        "hack squat":     ["Quads": 1.0, "Glutes": 0.5, "Hamstrings": 0.25],
+        "squat":          ["Quads": 1.0, "Glutes": 0.5, "Hamstrings": 0.25],
         "leg extension":  ["Quads": 1.0],
         // Hinges are the mirror image.
-        "romanian deadlift": ["Hamstrings": 1.0, "Back": 0.5],
-        "back extension": ["Hamstrings": 1.0, "Back": 0.5],
+        "romanian deadlift": ["Hamstrings": 1.0, "Glutes": 0.5, "Back": 0.5],
+        "back extension": ["Hamstrings": 1.0, "Glutes": 0.5, "Back": 0.5],
+        "hip thrust":     ["Glutes": 1.0, "Hamstrings": 0.25],
+        "glute bridge":   ["Glutes": 1.0],
+        "glute kickback": ["Glutes": 1.0],
+        "lunge":          ["Quads": 1.0, "Glutes": 0.5],
         "leg curl":       ["Hamstrings": 1.0],
     ]
 

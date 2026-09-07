@@ -3710,7 +3710,7 @@ class VolumeAttributionBaselineTests(unittest.TestCase):
     EXPECTED = {
     # Generated from the live behaviour on 25 template exercises; the Legs
     # finisher moved off and the 45° Back Extension came in, September 2026.
-    '45° Back Extension': {'Hamstrings': 1.0, 'Back': 0.5},
+    '45° Back Extension': {'Hamstrings': 1.0, 'Glutes': 0.5, 'Back': 0.5},
     'Ab Wheel Rollout': {'Abs': 1.0},
     'Cable Chest Fly': {'Chest': 1.0},
     'Cable Crunch': {'Abs': 1.0},
@@ -3723,7 +3723,7 @@ class VolumeAttributionBaselineTests(unittest.TestCase):
     'Incline Press': {'Chest': 1.0, 'Shoulders': 0.5, 'Triceps': 0.5},
     'Lat Pulldown': {'Back': 1.0, 'Biceps': 0.5},
     'Leg Extension': {'Quads': 1.0},
-    'Leg Press': {'Hamstrings': 0.25, 'Quads': 1.0},
+    'Leg Press': {'Glutes': 0.5, 'Hamstrings': 0.25, 'Quads': 1.0},
     'Machine Bicep Curl': {'Biceps': 1.0},
     'Machine Calf Raise': {'Calves': 1.0},
     'Machine Chest Press': {'Chest': 1.0, 'Shoulders': 0.5, 'Triceps': 0.5},
@@ -3732,7 +3732,7 @@ class VolumeAttributionBaselineTests(unittest.TestCase):
     'Pull-Ups': {'Back': 1.0, 'Biceps': 0.5},
     'Reverse Cable Fly': {'Rear Delts': 1.0},
     'Seated Leg Curl': {'Hamstrings': 1.0},
-    'Single Leg Sumo Press': {'Hamstrings': 0.25, 'Quads': 1.0},
+    'Single Leg Sumo Press': {'Glutes': 0.5, 'Hamstrings': 0.25, 'Quads': 1.0},
     'T-Bar Row': {'Back': 1.0, 'Biceps': 0.5, 'Rear Delts': 0.5},
     'Tricep Pushdown': {'Triceps': 1.0},
     }
@@ -4863,7 +4863,7 @@ class FlatPressVariantVolumeTests(unittest.TestCase):
         """The new keys must not swallow a leg or shoulder press."""
         import volume
         self.assertEqual(volume.resolve_contributions("Leg Press"),
-                         {"Quads": 1.0, "Hamstrings": 0.25})
+                         {"Quads": 1.0, "Glutes": 0.5, "Hamstrings": 0.25})
         self.assertEqual(volume.resolve_contributions("Shoulder Press"),
                          {"Shoulders": 1.0, "Triceps": 0.5})
         self.assertEqual(volume.resolve_contributions("Decline Press"),
