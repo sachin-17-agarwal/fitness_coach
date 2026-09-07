@@ -47,7 +47,8 @@ struct StrengthTabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HeroTopBar(left: "STRENGTH", right: heroRight)
                 HistoryTabChips(selected: $tab).padding(.top, 14)
-                EditorialEyebrow(text: "MEDIAN STRENGTH GAIN · PEAK WEEK VS PEAK WEEK", color: Editorial.lime, size: 10, kerning: 2.5)
+                EditorialEyebrow(text: snap?.peakLifted == false ? "PEAK WEEK NOT YET LIFTED · PRS COUNT, VERDICTS WAIT" : "MEDIAN STRENGTH GAIN · PEAK WEEK VS PEAK WEEK",
+                                 color: Editorial.lime, size: 10, kerning: 2.5)
                     .padding(.top, 18)
                 HStack(alignment: .bottom) {
                     if let g = snap?.medianGainPct {
@@ -87,6 +88,13 @@ struct StrengthTabView: View {
 
     private var statLines: [StatStack.Line] {
         guard let s = snap else { return [.init(text: "NO READ YET", color: Editorial.muted)] }
+        if !s.peakLifted {
+            return [
+                .init(text: "WEEK \(s.judged.week) OF \(Config.peakWeek) · BUILDING", color: Editorial.mid),
+                .init(text: "\(s.prCount) ALL-TIME PR\(s.prCount == 1 ? "" : "S") SO FAR"),
+                .init(text: "DROPS AND STALLS JUDGED AT PEAK WEEK", color: Editorial.mid),
+            ]
+        }
         if s.judgedCount == 0 { return [.init(text: "NO READ YET", color: Editorial.muted), .init(text: "\(s.muscles.filter { $0.state == .short }.count) SHORT ON SETS", color: Editorial.amber)] }
         return [
             .init(text: "\(s.upCount) OF \(s.judgedCount) LIFTS UP"),
@@ -112,7 +120,8 @@ struct StrengthTabView: View {
             VStack(spacing: 5) {
                 EditorialEyebrow(text: snap.map { s in s.dateRange.map { "\(s.judged.blockLabel) · \($0)" } ?? s.judged.blockLabel } ?? "", size: 10, kerning: 2)
                 EditorialEyebrow(
-                    text: snap == nil ? "" : (vm.shownIndex <= 0 && canLoadEarlier ? "◂ LOAD EARLIER BLOCKS" : "JUDGED AT PEAK WEEK"),
+                    text: snap == nil ? "" : (vm.shownIndex <= 0 && canLoadEarlier ? "◂ LOAD EARLIER BLOCKS"
+                                              : snap?.peakLifted == false ? "IN PROGRESS · JUDGED WHEN PEAK WEEK IS LIFTED" : "JUDGED AT PEAK WEEK"),
                     color: vm.shownIndex <= 0 && canLoadEarlier ? Editorial.lime : Editorial.muted, size: 8.5, kerning: 1.5)
             }
             Spacer()

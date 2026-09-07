@@ -106,6 +106,10 @@ struct BlockSnapshot: Identifiable, Hashable {
     let medianGainPct: Double?
     /// "12 MAY – 8 JUN": the training dates this block covered.
     var dateRange: String? = nil
+    /// False while the block in progress has not reached its peak week. Its
+    /// best so far is a build-week load, so against last block's peak it can
+    /// only ever read low: PRs still count, drops and stalls wait.
+    var peakLifted: Bool = true
     var id: Int { judged.block }
 
     var upCount: Int { lifts.filter { $0.state == .pr || $0.state == .up }.count }
@@ -215,28 +219,35 @@ final class StrengthViewModel {
         // Blocks that can be judged: any block with a peak AND a prior peak.
         let blocks = Set(weekly.values.flatMap { $0.keys.map(\.block) }).sorted()
         var snaps: [BlockSnapshot] = []
+        // The block in progress is compared at its peak week, and until that
+        // week is lifted its best is a build-week load. Week 1 of this block
+        // read quads and hamstrings as "dropping" against last block's week 3,
+        // with the header saying "judged at peak week" two weeks early.
+        let peakLifted = calendar.current.week >= Config.peakWeek
         for b in blocks {
+            let lifted = b != calendar.current.block || peakLifted
             let lifts = weekly.map { name, byPos in
-                Self.judge(name: name, byPos: byPos, block: b, sessionType: liftSession[name])
+                Self.judge(name: name, byPos: byPos, block: b, sessionType: liftSession[name], peakLifted: lifted)
             }
             guard lifts.contains(where: { $0.state != StrengthState.none }) else { continue }
             let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksSpanned(b)),
                                              setsSoFar: setsByBlock[b] ?? [:], currentBlock: b == calendar.current.block,
                                              weeksInBlock: weeksSpanned(b))
             let deltas = lifts.compactMap { $0.state == StrengthState.none ? nil : $0.deltaPct }
-            snaps.append(BlockSnapshot(judged: BlockPosition(block: b, week: Config.peakWeek), lifts: lifts, muscles: muscles, medianGainPct: ChartMath.median(deltas),
-                                       dateRange: calendar.dateRange(ofBlock: b).map(BlockCalendar.shortRange)))
+            snaps.append(BlockSnapshot(judged: BlockPosition(block: b, week: Config.peakWeek), lifts: lifts, muscles: muscles,
+                                       medianGainPct: lifted ? ChartMath.median(deltas) : nil,
+                                       dateRange: calendar.dateRange(ofBlock: b).map(BlockCalendar.shortRange), peakLifted: lifted))
         }
         // Always offer the current block even when it cannot be judged yet,
         // so the muscle map still shows volume and the grey states.
         if snaps.last?.judged.block != calendar.current.block {
-            let lifts = weekly.map { name, byPos in Self.judge(name: name, byPos: byPos, block: calendar.current.block, sessionType: liftSession[name]) }
+            let lifts = weekly.map { name, byPos in Self.judge(name: name, byPos: byPos, block: calendar.current.block, sessionType: liftSession[name], peakLifted: peakLifted) }
             let b = calendar.current.block
             let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksSpanned(b)),
                                              setsSoFar: setsByBlock[b] ?? [:], currentBlock: true,
                                              weeksInBlock: weeksSpanned(b))
             snaps.append(BlockSnapshot(judged: BlockPosition(block: calendar.current.block, week: calendar.current.week), lifts: lifts, muscles: muscles, medianGainPct: nil,
-                                       dateRange: calendar.dateRange(ofBlock: calendar.current.block).map(BlockCalendar.shortRange)))
+                                       dateRange: calendar.dateRange(ofBlock: calendar.current.block).map(BlockCalendar.shortRange), peakLifted: peakLifted))
         }
         snapshots = snaps
         shownIndex = max(0, snaps.count - 1)
@@ -247,15 +258,25 @@ final class StrengthViewModel {
             // closure's MainActor isolation under SWIFT_DEFAULT_ACTOR_ISOLATION,
             // and BlockPosition's Hashable conformance is MainActor-isolated by
             // that same setting, so keying a dictionary by it needs the actor.
+            //
+            // Of every lift whose name carries the keys, the one trained most
+            // recently speaks for the pair, and only then the heavier. This
+            // was a dictionary scan that returned the first hit, and dictionary
+            // order is arbitrary: "leg curl" landed on the Lying Leg Curl from
+            // blocks ago rather than the Seated Leg Curl in the programme, so
+            // the hamstring side of the ratio was months stale.
             @MainActor
             func find(_ keys: [String]) -> (String, Double)? {
+                var best: (name: String, block: Int, e1rm: Double)?
                 for (name, byPos) in weekly {
                     let lower = name.lowercased()
-                    if keys.allSatisfy({ lower.contains($0) }) {
-                        if let best = Self.latestPeak(byPos) { return (name, best) }
-                    }
+                    guard keys.allSatisfy({ lower.contains($0) }),
+                          let newest = byPos.keys.map(\.block).max(),
+                          let peak = Self.blockPeak(byPos, block: newest) else { continue }
+                    if let b = best, (b.block, b.e1rm) >= (newest, peak.e1rm) { continue }
+                    best = (name, newest, peak.e1rm)
                 }
-                return nil
+                return best.map { ($0.name, $0.e1rm) }
             }
             let l = find(pair.left), r = find(pair.right)
             return BalanceReport(title: pair.title,
@@ -282,7 +303,8 @@ final class StrengthViewModel {
         return nil
     }
 
-    static func judge(name: String, byPos: [BlockPosition: LiftBlockPoint], block: Int, sessionType: String?) -> LiftReport {
+    static func judge(name: String, byPos: [BlockPosition: LiftBlockPoint], block: Int, sessionType: String?,
+                      peakLifted: Bool = true) -> LiftReport {
         // From the lift's muscle shares, not its day's group. The group map
         // files every Legs-day movement under "Legs", which the body map reads
         // as quads — so Seated Leg Curl was the lift "driving" quads.
@@ -315,6 +337,9 @@ final class StrengthViewModel {
             }
             sincePR = lastPR.map { block - $0 }
             if peak.e1rm > bestBefore * 1.005 { state = .pr }
+            // A build-week best beating nothing is not a verdict. It stays
+            // "no read" until the block's peak week has been lifted.
+            else if !peakLifted { state = StrengthState.none }
             else if delta! <= dropPct { state = .drop }
             else if delta! >= progressPct { state = .up }
             else if (sincePR ?? 0) >= stallBlocks { state = .stall }
@@ -380,7 +405,7 @@ final class StrengthViewModel {
             let sets = setsPerMuscle[m] ?? 0
             let band = VolumeBands.targetRange(for: m.rawValue)
             let settling = currentBlock && weeksInBlock < Double(weeksBeforeShortIsJudged)
-            if currentBlock, !settling, sets > 0, sets < Double(band.lowerBound),
+            if currentBlock, !settling, VolumeBands.hasTarget(for: m.rawValue), sets > 0, sets < Double(band.lowerBound),
                [StrengthState.up, .hold, StrengthState.none].contains(state) {
                 state = .short
             }
