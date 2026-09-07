@@ -94,7 +94,11 @@ struct TranscriptTurn: View {
     /// Supabase timestamps arrive with varying fractional-second precision and
     /// sometimes without a zone designator, so both strategies are tried before
     /// giving up. A returned nil just means no timestamp is drawn.
-    static func parseTimestamp(_ iso: String) -> Date? {
+    ///
+    /// `nonisolated`: pure parsing with no shared state, and passed as a
+    /// function value to `compactMap` from static helpers the compiler treats
+    /// as nonisolated — an isolated method cannot be handed over that way.
+    nonisolated static func parseTimestamp(_ iso: String) -> Date? {
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = withFraction.date(from: iso) { return date }
