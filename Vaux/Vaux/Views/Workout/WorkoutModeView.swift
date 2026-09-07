@@ -45,6 +45,16 @@ struct WorkoutModeView: View {
         return sessionType.isEmpty ? resolvedSessionType : sessionType
     }
 
+    /// Where the resistance rotation stands, ignoring today's swap. On a rest
+    /// day this is the session that comes up next, because a day off holds
+    /// the rotation rather than consuming a slot. Derived from the stored
+    /// position `resolveToday` already reads; the view model does not hold
+    /// the mesocycle state.
+    private var rotationSessionType: String {
+        guard let blockDay else { return "" }
+        return MesocycleState(day: blockDay, week: blockWeek ?? 1).rotationSessionType
+    }
+
     /// Persists a swap (or clears it) and re-reads the state, so what shows
     /// here is what was stored rather than what was asked for.
     /// Today's session type, week and override, read fresh from the state.
@@ -792,7 +802,7 @@ struct WorkoutModeView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     EditorialEyebrow(text: "Tomorrow", color: Editorial.muted, size: 9, kerning: 1.8)
-                    Text(viewModel.mesocycle.rotationSessionType.uppercased())
+                    Text(rotationSessionType.uppercased())
                         .font(.display(28))
                         .foregroundStyle(Color.fg0)
                     EditorialEyebrow(text: "The rotation picks up where it left off", color: Editorial.muted, size: 8.5, kerning: 1.2)
