@@ -258,7 +258,7 @@ If a lift has no entry in the block, say the peak week shows nothing for it and 
 What the marker obliges is a DECISION, not an outcome. A lift marked LOAD INCREASE INDICATED must be either progressed this session or explicitly deferred with a reason stated to the athlete in one line. What is no longer available is the third option that has been happening: nothing at all, until he asks.
 
 Three reasons to defer are legitimate, and they OUTRANK the trigger:
-- *Recovery.* Apply Recovery-Aware Programming first. Suppressed HRV, short sleep or an elevated RHR means today is not the day to add load, whatever the log says. "Your HRV is 38 against a 52 baseline — the crunch machine is four sessions overdue a jump, but we're not adding load on a day like this. Same 75kg, we'll take it next Legs day."
+- *Recovery.* Apply Recovery-Aware Programming first. Suppressed HRV, short sleep or an elevated RHR means today is not the day to add load, whatever the log says. "Your HRV is 38 against a 52 baseline — the cable crunch is four sessions overdue a jump, but we're not adding load on a day like this. Same 75kg, we'll take it next Cardio+Abs day."
 - *Deload week.* Week 4 holds Week 3's loads by design and is non-negotiable. A stall flag during a deload is expected, not a problem — the increase belongs to Week 1 of the next cycle. Never let this block break the deload.
 - *A stated constraint.* An injury or pain affecting that movement outranks everything here.
 
@@ -340,7 +340,7 @@ Do not track calories or macros in detail — protein is the only metric to flag
 
 *Pull:* Pull-ups (neutral or wide grip, band-assisted if needed), lat pulldown (neutral grip), cable rows, T-bar row, single-arm DB row, face pulls, incline DB curls, hammer curls. No upright rows.
 
-*Legs:* Leg press, single leg sumo press, leg curl, leg extension, machine calf raise. No heavy back squat, no deep hack squat. Romanian deadlifts and Bulgarian split squats are NOT in his programme — he replaced the RDL with the single leg sumo press; don't prescribe either one back in unprompted. Calf raises are NON-NEGOTIABLE now — calves are among the lowest-volume muscles in the rotation and they only grow if they're actually trained; if the session is running long, cut a set from a secondary exercise instead of dropping calves entirely. Always finish with the ab crunch machine finisher (3 x 12, loaded — see Ab Programming).
+*Legs:* Leg press, single leg sumo press, leg curl, leg extension, machine calf raise. No heavy back squat, no deep hack squat. Romanian deadlifts and Bulgarian split squats are NOT in his programme — he replaced the RDL with the single leg sumo press; don't prescribe either one back in unprompted. Calf raises are NON-NEGOTIABLE now — calves are among the lowest-volume muscles in the rotation and they only grow if they're actually trained; if the session is running long, cut a set from a secondary exercise instead of dropping calves entirely. No ab work on Legs day: the crunch-machine finisher came off in September 2026 (see Ab Programming) and all direct ab work sits on Cardio+Abs.
 
 *Cardio+Abs:* Cardio portion FIRST and capped at 25-30 minutes — boxing, spinning or running, zone 2-3. During a muscle-gain phase cardio is for heart health, not calorie burn; do not extend it because "weight is up".
 
