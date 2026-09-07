@@ -9,6 +9,7 @@
 
 import Foundation
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @State private var mesocycleWeek = 1
@@ -52,6 +53,7 @@ struct SettingsView: View {
                         briefingSection
                         librarySection
                         healthSection
+                        liveActivitySection
                         backendSection
                         aboutSection
                         footer
@@ -350,6 +352,66 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Live Activity
+
+    /// The rest countdown on the Lock Screen has failed silently more than
+    /// once, and every reason it can fail looks the same from the gym floor:
+    /// nothing appears. The controller now records what its last request did;
+    /// this ledger shows it, beside the two facts the request cannot see —
+    /// whether the iOS setting is on and whether the widget extension is in
+    /// the build — and a 30-second test that runs the real path without
+    /// logging a set.
+    private var liveActivitySection: some View {
+        let controller = RestActivityController.shared
+        return VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Live Activity")
+            ledgerRow(first: true, height: 46) {
+                rowLabel("iOS setting")
+                Spacer()
+                rowValue(controller.isAvailable ? "On" : "Off",
+                         color: controller.isAvailable ? .fg0 : .ember)
+            }
+            ledgerRow(height: 46) {
+                rowLabel("Widget extension")
+                Spacer()
+                rowValue(controller.isExtensionInstalled ? "In this build" : "Missing",
+                         color: controller.isExtensionInstalled ? .fg0 : .ember)
+            }
+            ledgerRow(height: 46) {
+                rowLabel("Held by iOS")
+                Spacer()
+                rowValue("\(controller.liveCount)")
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                EditorialEyebrow(text: "Last request", color: Editorial.muted, size: 9.5, kerning: 1.5)
+                Text(controller.lastEvent)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(controller.lastEventWasError ? Color.ember : Color.fg1)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+            .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
+            .padding(.horizontal, Editorial.gutter)
+            HStack {
+                linkButton("Test for 30 seconds →") {
+                    Haptic.light()
+                    controller.startTest()
+                }
+                Spacer()
+                if !controller.isAvailable {
+                    linkButton("Open iOS Settings →", color: .mint) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                }
+            }
+            .frame(height: 44)
+            .padding(.horizontal, Editorial.gutter)
+        }
+    }
+
     // MARK: - About
 
     /// Read from the bundle rather than restated here. The literal this
@@ -427,10 +489,10 @@ struct SettingsView: View {
             .minimumScaleFactor(0.8)
     }
 
-    private func rowValue(_ text: String) -> some View {
+    private func rowValue(_ text: String, color: Color = .fg0) -> some View {
         Text(text)
             .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(Color.fg0)
+            .foregroundStyle(color)
     }
 
     /// Round − / + controls around an Anton figure.
