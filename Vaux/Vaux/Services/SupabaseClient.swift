@@ -111,6 +111,33 @@ final class SupabaseClient: Sendable {
         }
     }
 
+    /// Every row a query matches, paged past PostgREST's response cap.
+    ///
+    /// Supabase caps a single response at 1,000 rows whatever `limit` asks
+    /// for, silently. The Strength tab's sets query asked for 10,000, got the
+    /// newest 1,000 — six to eight weeks — and every block older than that had
+    /// no sets, so "load earlier" widened a window that came back the same
+    /// size. `order` must be deterministic across pages; callers pass a
+    /// tiebreaker.
+    func fetchAll<T: Decodable>(
+        _ table: String,
+        query: [String: String] = [:],
+        select: String = "*",
+        order: String,
+        pageSize: Int = 1000
+    ) async throws -> [T] {
+        var rows: [T] = []
+        var offset = 0
+        while true {
+            var params = query
+            params["offset"] = String(offset)
+            let page: [T] = try await fetch(table, query: params, select: select, order: order, limit: pageSize)
+            rows.append(contentsOf: page)
+            if page.count < pageSize { return rows }
+            offset += pageSize
+        }
+    }
+
     /// Insert a row.  Returns raw response data.
     @discardableResult
     func insert(_ table: String, body: [String: Any]) async throws -> Data {

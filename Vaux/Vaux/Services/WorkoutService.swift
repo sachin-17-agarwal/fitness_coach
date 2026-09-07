@@ -554,16 +554,14 @@ final class WorkoutService: Sendable {
     func fetchSets(since start: Date) async throws -> [WorkoutSet] {
         let f = Self.dateFormatter
         let startStr = f.string(from: start)
-        // Newest-first with an explicit limit: PostgREST silently caps
-        // un-limited responses (default 1000 rows), and with ascending
-        // order that cap would drop the NEWEST sets once the window
-        // outgrows it — making recently trained muscles look neglected.
-        // Callers bucket by date and don't depend on response order.
-        return try await client.fetch(
+        // Paged: PostgREST caps every response at 1,000 rows whatever the
+        // limit asks for, and a 12-block window holds several thousand sets.
+        // Newest first, so a partial failure still favours recent training;
+        // `id` breaks ties so pages never overlap or skip.
+        return try await client.fetchAll(
             "workout_sets",
             query: ["date": "gte.\(startStr)"],
-            order: "date.desc",
-            limit: 10000
+            order: "date.desc,id.asc"
         )
     }
 
@@ -572,10 +570,10 @@ final class WorkoutService: Sendable {
     /// Fetches sessions from the last N calendar days, newest first.
     func fetchSessionHistory(days: Int) async throws -> [WorkoutSession] {
         let since = Self.dateString(daysAgo: days)
-        return try await client.fetch(
+        return try await client.fetchAll(
             "workout_sessions",
             query: ["date": "gte.\(since)"],
-            order: "date.desc"
+            order: "date.desc,id.asc"
         )
     }
 
