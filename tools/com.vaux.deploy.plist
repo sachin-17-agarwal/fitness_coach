@@ -2,9 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <!--
-  Weekly re-sign of Vaux on the phone, so the free provisioning profile
-  never runs out. Sunday 21:00 local time: the phone is usually at home and
-  on the same Wi-Fi as the Mac.
+  Re-sign of Vaux on the phone, so the free provisioning profile never runs
+  out. Fires at 07:30 and 21:00 every day; the script itself decides whether
+  a re-sign is due (three days since the last good one) and exits at once
+  otherwise. So a phone that is out at 21:00 Sunday and home at 07:30 Monday
+  is re-signed Monday morning, and a phone that is home every evening is
+  re-signed about twice a week and left alone in between.
 
   Install (once):
     cp tools/com.vaux.deploy.plist ~/Library/LaunchAgents/
@@ -18,9 +21,9 @@
 
   Log: ~/Library/Logs/vaux-deploy.log
 
-  The Mac has to be awake. System Settings → Energy → Schedule (or
-  `sudo pmset repeat wakeorpoweron U 20:55:00`) wakes it a few minutes
-  before; a job missed while asleep runs when the Mac next wakes.
+  The Mac has to be awake for a slot to fire; a slot missed while asleep
+  runs when the Mac next wakes, and a slot that finds no phone just tries
+  again at the next one.
 -->
 <dict>
     <key>Label</key>
@@ -30,6 +33,7 @@
     <array>
         <string>/bin/bash</string>
         <string>/Users/sachin/Documents/GitHub/fitness_coach/tools/deploy_device.sh</string>
+        <string>--only-if-due</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -46,14 +50,20 @@
     </dict>
 
     <key>StartCalendarInterval</key>
-    <dict>
-        <key>Weekday</key>
-        <integer>0</integer>
-        <key>Hour</key>
-        <integer>21</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>7</integer>
+            <key>Minute</key>
+            <integer>30</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>21</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
 
     <key>StandardOutPath</key>
     <string>/Users/sachin/Library/Logs/vaux-deploy.log</string>
