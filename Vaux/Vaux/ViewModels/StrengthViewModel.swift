@@ -110,6 +110,10 @@ struct BlockSnapshot: Identifiable, Hashable {
     /// best so far is a build-week load, so against last block's peak it can
     /// only ever read low: PRs still count, drops and stalls wait.
     var peakLifted: Bool = true
+    /// The week the block in progress is actually in. `judged.week` is the
+    /// peak week the block will be judged at, which is not the same thing —
+    /// the hero read "week 3 of 3" in week 2.
+    var weekInProgress: Int? = nil
     var id: Int { judged.block }
 
     var upCount: Int { lifts.filter { $0.state == .pr || $0.state == .up }.count }
@@ -236,7 +240,8 @@ final class StrengthViewModel {
             let deltas = lifts.compactMap { $0.state == StrengthState.none ? nil : $0.deltaPct }
             snaps.append(BlockSnapshot(judged: BlockPosition(block: b, week: Config.peakWeek), lifts: lifts, muscles: muscles,
                                        medianGainPct: lifted ? ChartMath.median(deltas) : nil,
-                                       dateRange: calendar.dateRange(ofBlock: b).map(BlockCalendar.shortRange), peakLifted: lifted))
+                                       dateRange: calendar.dateRange(ofBlock: b).map(BlockCalendar.shortRange), peakLifted: lifted,
+                                       weekInProgress: lifted ? nil : calendar.current.week))
         }
         // Always offer the current block even when it cannot be judged yet,
         // so the muscle map still shows volume and the grey states.
@@ -247,7 +252,8 @@ final class StrengthViewModel {
                                              setsSoFar: setsByBlock[b] ?? [:], currentBlock: true,
                                              weeksInBlock: weeksSpanned(b))
             snaps.append(BlockSnapshot(judged: BlockPosition(block: calendar.current.block, week: calendar.current.week), lifts: lifts, muscles: muscles, medianGainPct: nil,
-                                       dateRange: calendar.dateRange(ofBlock: calendar.current.block).map(BlockCalendar.shortRange), peakLifted: peakLifted))
+                                       dateRange: calendar.dateRange(ofBlock: calendar.current.block).map(BlockCalendar.shortRange), peakLifted: peakLifted,
+                                       weekInProgress: peakLifted ? nil : calendar.current.week))
         }
         snapshots = snaps
         shownIndex = max(0, snaps.count - 1)
@@ -461,7 +467,11 @@ final class StrengthViewModel {
         let stalls = snap.lifts.filter { $0.state == .stall }.map(\.name)
         let drops = snap.lifts.filter { $0.state == .drop }.map(\.name)
         let shorts = snap.muscles.filter { $0.state == .short }.map { $0.muscle.rawValue.lowercased() }
-        parts.append(("Peak week against peak week, \(snap.judged.blockLabel.lowercased()) over the one before. ", false))
+        if snap.peakLifted {
+            parts.append(("Peak week against peak week, \(snap.judged.blockLabel.lowercased()) over the one before. ", false))
+        } else {
+            parts.append(("Week \(snap.weekInProgress ?? snap.judged.week) of this block, best so far against last block's peak week. Drops and stalls are judged once peak week is lifted. ", false))
+        }
 
         // Names read as a list — "A, B and C", or the first three "and N
         // more" — never a chain of "and"s. Lifts are bold; muscles are not.
@@ -493,7 +503,9 @@ final class StrengthViewModel {
 
     static func coachPrompt(_ snap: BlockSnapshot?, focus: BodyMuscle?) -> String? {
         guard let snap, snap.judgedCount > 0 else { return nil }
-        var lines = ["Looking at my Strength tab (\(snap.judged.blockLabel.lowercased()), peak week vs the block before):"]
+        var lines = [snap.peakLifted
+                     ? "Looking at my Strength tab (\(snap.judged.blockLabel.lowercased()), peak week vs the block before):"
+                     : "Looking at my Strength tab (this block, week \(snap.weekInProgress ?? snap.judged.week) in progress, best so far vs last block's peak week):"]
         if let g = snap.medianGainPct { lines.append("- median est. 1RM change across \(snap.judgedCount) lifts: \(Editorial.signedPct(g))") }
         let interesting = snap.lifts.filter { [.pr, .stall, .drop].contains($0.state) }.sorted { $0.state.attention < $1.state.attention }
         for l in interesting { lines.append("- \(l.name): \(l.state.label.lowercased()), \(Editorial.signedPct(l.deltaPct ?? 0)), \(l.bestSetLine)") }

@@ -47,18 +47,28 @@ struct StrengthTabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HeroTopBar(left: "STRENGTH", right: heroRight)
                 HistoryTabChips(selected: $tab).padding(.top, 14)
-                EditorialEyebrow(text: snap?.peakLifted == false ? "PEAK WEEK NOT YET LIFTED · PRS COUNT, VERDICTS WAIT" : "MEDIAN STRENGTH GAIN · PEAK WEEK VS PEAK WEEK",
+                EditorialEyebrow(text: snap?.peakLifted == false ? "ALL-TIME PRS SO FAR · PEAK WEEK NOT YET LIFTED" : "MEDIAN STRENGTH GAIN · PEAK WEEK VS PEAK WEEK",
                                  color: Editorial.lime, size: 10, kerning: 2.5)
                     .padding(.top, 18)
                 HStack(alignment: .bottom) {
-                    if let g = snap?.medianGainPct {
+                    if let s = snap, !s.peakLifted {
+                        // Before peak week the honest headline is the PR count,
+                        // not a median that only PRs could feed.
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            CountUpFigure(value: Double(s.prCount), decimals: 0, size: 132)
+                            Text(s.prCount == 1 ? "PR" : "PRS").font(.display(56)).foregroundStyle(Editorial.lime)
+                        }
+                    } else if let g = snap?.medianGainPct {
                         HStack(alignment: .firstTextBaseline, spacing: 2) {
                             Text(g < 0 ? "−" : "").font(.display(60)).foregroundStyle(Editorial.amber)
                             CountUpFigure(value: abs(g), decimals: 1, size: 132)
                             Text("%").font(.display(56)).foregroundStyle(Editorial.lime)
                         }
                     } else {
-                        Text("—").font(.display(132)).foregroundStyle(Editorial.muted)
+                        // System font: the display face has no em dash and drew
+                        // a grey box where the placeholder should be.
+                        Text("—").font(.system(size: 110, weight: .bold)).foregroundStyle(Editorial.muted)
+                            .frame(height: 124)
                     }
                     Spacer()
                     StatStack(lines: statLines).padding(.bottom, 10)
@@ -90,9 +100,9 @@ struct StrengthTabView: View {
         guard let s = snap else { return [.init(text: "NO READ YET", color: Editorial.muted)] }
         if !s.peakLifted {
             return [
-                .init(text: "WEEK \(s.judged.week) OF \(Config.peakWeek) · BUILDING", color: Editorial.mid),
-                .init(text: "\(s.prCount) ALL-TIME PR\(s.prCount == 1 ? "" : "S") SO FAR"),
-                .init(text: "DROPS AND STALLS JUDGED AT PEAK WEEK", color: Editorial.mid),
+                .init(text: "WEEK \(s.weekInProgress ?? s.judged.week) OF \(Config.peakWeek) · BUILDING"),
+                .init(text: "BEST SO FAR VS LAST PEAK WEEK", color: Editorial.mid),
+                .init(text: "VERDICTS AT PEAK WEEK", color: Editorial.mid),
             ]
         }
         if s.judgedCount == 0 { return [.init(text: "NO READ YET", color: Editorial.muted), .init(text: "\(s.muscles.filter { $0.state == .short }.count) SHORT ON SETS", color: Editorial.amber)] }
@@ -121,7 +131,7 @@ struct StrengthTabView: View {
                 EditorialEyebrow(text: snap.map { s in s.dateRange.map { "\(s.judged.blockLabel) · \($0)" } ?? s.judged.blockLabel } ?? "", size: 10, kerning: 2)
                 EditorialEyebrow(
                     text: snap == nil ? "" : (vm.shownIndex <= 0 && canLoadEarlier ? "◂ LOAD EARLIER BLOCKS"
-                                              : snap?.peakLifted == false ? "IN PROGRESS · JUDGED WHEN PEAK WEEK IS LIFTED" : "JUDGED AT PEAK WEEK"),
+                                              : snap?.peakLifted == false ? "IN PROGRESS · JUDGED AT PEAK WEEK" : "JUDGED AT PEAK WEEK"),
                     color: vm.shownIndex <= 0 && canLoadEarlier ? Editorial.lime : Editorial.muted, size: 8.5, kerning: 1.5)
             }
             Spacer()
