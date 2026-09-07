@@ -156,9 +156,9 @@ struct RecoveryTabView: View {
     }
 
     private var sleep: some View {
-        let short = vm.shortNights
+        let short = vm.shortNightsLast7
         let debt = vm.sleepDebtLast7
-        let eyebrow = short > 0 ? "\(short) NIGHT\(short == 1 ? "" : "S") UNDER 7H · −\(SleepBarsChart.hm(debt)) DEBT" : (debt > 0.25 ? "−\(SleepBarsChart.hm(debt)) DEBT THIS WEEK" : "NEED MET ALL WEEK")
+        let eyebrow = short > 0 ? "\(short) NIGHT\(short == 1 ? "" : "S") UNDER 7H THIS WEEK · −\(SleepBarsChart.hm(debt)) DEBT" : (debt > 0.25 ? "−\(SleepBarsChart.hm(debt)) DEBT THIS WEEK" : "NEED MET ALL WEEK")
         return PosterRow(eyebrow: eyebrow, eyebrowColor: short > 0 ? Editorial.amber : Editorial.emerald, title: "SLEEP",
                          subtitle: "bars = nights · line = 7:30 need",
                          value: vm.sleep.latest.map { SleepBarsChart.hm($0) } ?? "—", unit: vm.sleep.latest == nil ? "" : "HRS") {
@@ -168,9 +168,14 @@ struct RecoveryTabView: View {
     }
 
     private var weight: some View {
-        let vals = vm.weight.values.compactMap { $0 }
-        let first7 = vals.prefix(7), last7 = vals.suffix(7)
-        let delta = (first7.isEmpty || last7.isEmpty) ? nil : ChartMath.mean(Array(last7)) - ChartMath.mean(Array(first7))
+        // First and last CALENDAR weeks of the window — the same chunks the
+        // weekly-mean labels are drawn from — so the headline delta agrees
+        // with the labels under it. Taking the first seven readings instead
+        // reached past a gap into week two and read 2.9kg under labels that
+        // ran 76.5 to 80.5.
+        let slots = vm.weight.values
+        let first7 = slots.prefix(7).compactMap { $0 }, last7 = slots.suffix(7).compactMap { $0 }
+        let delta = (first7.isEmpty || last7.isEmpty) ? nil : ChartMath.mean(last7) - ChartMath.mean(first7)
         let eyebrow = delta.map { abs($0) < 0.3 ? "FLAT · RECOMP ON TRACK" : ($0 < 0 ? "▾ \(String(format: "%.1f", abs($0))) KG OVER THE WINDOW" : "▴ \(String(format: "%.1f", $0)) KG OVER THE WINDOW") } ?? "WEIGHT"
         var labels: [(slot: Int, text: String)] = []
         var i = 0

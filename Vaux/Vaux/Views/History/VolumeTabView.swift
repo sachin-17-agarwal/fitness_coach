@@ -15,14 +15,18 @@ struct VolumeTabView: View {
 
     private struct Row: Identifiable {
         let group: String; let sets: Double; let band: ClosedRange<Int>
+        /// False for a muscle with no weekly target (glutes): shown for the
+        /// record, never short, never over, never counted out of band.
+        let banded: Bool
         var id: String { group }
-        var short: Double { max(0, Double(band.lowerBound) - sets) }
-        var over: Double { max(0, sets - Double(band.upperBound)) }
+        var short: Double { banded ? max(0, Double(band.lowerBound) - sets) : 0 }
+        var over: Double { banded ? max(0, sets - Double(band.upperBound)) : 0 }
         var order: Int { short > 0 ? 0 : (over > 0 ? 1 : 2) }
     }
 
     private var rows: [Row] {
-        vm.setsByMuscleGroup.map { Row(group: $0.group, sets: $0.setsPerWeek, band: VolumeBands.targetRange(for: $0.group)) }
+        vm.setsByMuscleGroup.map { Row(group: $0.group, sets: $0.setsPerWeek, band: VolumeBands.targetRange(for: $0.group),
+                                       banded: VolumeBands.hasTarget(for: $0.group)) }
             .sorted { a, b in
                 if a.order != b.order { return a.order < b.order }
                 if a.order == 0 { return a.short > b.short }
@@ -42,11 +46,16 @@ struct VolumeTabView: View {
             ForEach(rows) { r in
                 let out = r.order != 2
                 let col: Color = out ? Editorial.amber : Editorial.emerald
-                let eyebrow = r.short > 0 ? "▾ \(Self.g(r.short)) SHORT" : (r.over > 0 ? "▴ \(Self.g(r.over)) OVER" : "IN BAND")
+                let eyebrow = !r.banded ? "NO TARGET · TRAINED THROUGH PRESSES AND HINGES"
+                    : r.short > 0 ? "▾ \(Self.g(r.short)) SHORT" : (r.over > 0 ? "▴ \(Self.g(r.over)) OVER" : "IN BAND")
                 PosterRow(eyebrow: eyebrow, eyebrowColor: out ? Editorial.amber : Editorial.muted, title: r.group,
-                          value: Self.g(r.sets), unit: "/ \(r.band.lowerBound)–\(r.band.upperBound)") {
-                    BandBar(value: r.sets, band: r.band, color: col)
-                        .padding(.horizontal, Editorial.gutter).padding(.top, 14).padding(.bottom, 18)
+                          value: Self.g(r.sets), unit: r.banded ? "/ \(r.band.lowerBound)–\(r.band.upperBound)" : "SETS/WK") {
+                    if r.banded {
+                        BandBar(value: r.sets, band: r.band, color: col)
+                            .padding(.horizontal, Editorial.gutter).padding(.top, 14).padding(.bottom, 18)
+                    } else {
+                        Color.clear.frame(height: 18)
+                    }
                 }
             }
             if !vm.uncategorizedExercises.isEmpty {
@@ -72,7 +81,7 @@ struct VolumeTabView: View {
                     StatStack(lines: [
                         .init(text: "\(Editorial.tonnage(vm.thisWeekTonnage)) LIFTED"),
                         .init(text: "\(activeDays) OF 7 DAYS"),
-                        .init(text: "\(outOfBand) OF \(rows.count) OUT OF BAND", color: outOfBand > 0 ? Editorial.amber : Editorial.mid),
+                        .init(text: "\(outOfBand) OF \(rows.filter(\.banded).count) OUT OF BAND", color: outOfBand > 0 ? Editorial.amber : Editorial.mid),
                     ]).padding(.bottom, 10)
                 }
                 .frame(height: 124)
@@ -95,8 +104,10 @@ struct VolumeTabView: View {
         let overs = rows.filter { $0.over > 0 }.map { $0.group.lowercased() }
         var parts: [(String, Bool)] = []
         if shorts.isEmpty && overs.isEmpty { parts.append(("Every muscle sits inside its band this fortnight.", false)) }
-        if !shorts.isEmpty { parts.append((Self.list(shorts).capitalized, true)); parts.append((shorts.count == 1 ? " is short of its band. " : " are short of their bands. ", false)) }
-        if !overs.isEmpty { parts.append((Self.list(overs).capitalized, false)); parts.append((overs.count == 1 ? " runs over. " : " run over. ", false)) }
+        // Sentence case, not Title Case: "Glutes And Hamstrings" read as a
+        // headline pasted into a sentence.
+        if !shorts.isEmpty { parts.append((Self.sentence(Self.list(shorts)), true)); parts.append((shorts.count == 1 ? " is short of its band. " : " are short of their bands. ", false)) }
+        if !overs.isEmpty { parts.append((Self.sentence(Self.list(overs)), false)); parts.append((overs.count == 1 ? " runs over. " : " run over. ", false)) }
         if !shorts.isEmpty { parts.append(("The weak-point block on the next Cardio + Abs day is where the short sets go.", false)) }
         return .editorial(parts)
     }
@@ -105,8 +116,14 @@ struct VolumeTabView: View {
         guard !rows.isEmpty else { return nil }
         var lines = ["Looking at my Volume tab (weekly sets, 14-day average):"]
         for r in rows where r.order != 2 { lines.append("- \(r.group): \(Self.g(r.sets)) sets/wk against \(r.band.lowerBound)–\(r.band.upperBound)") }
+        for r in rows where !r.banded { lines.append("- \(r.group): \(Self.g(r.sets)) sets/wk, no target (trained as a synergist)") }
         lines.append("How should the weak-point block be set this week?")
         return lines.joined(separator: "\n")
+    }
+
+    private static func sentence(_ text: String) -> String {
+        guard let first = text.first else { return text }
+        return first.uppercased() + text.dropFirst()
     }
 
     private static func list(_ xs: [String]) -> String {

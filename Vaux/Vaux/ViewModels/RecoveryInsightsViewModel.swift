@@ -55,6 +55,8 @@ final class RecoveryInsightsViewModel {
 
     static let sleepNeed = 7.5
     static let shortNight = 7.0
+    /// A recorded night under this is missing data, not sleep.
+    static let missingSleepBelow = 2.0
 
     private let service = RecoveryService()
 
@@ -125,7 +127,11 @@ final class RecoveryInsightsViewModel {
 
         hrv = series({ $0.hrv }, pad: 4, badBelow: true, bandable: true)
         rhr = series({ $0.restingHr }, pad: 3, badBelow: false, bandable: true)
-        sleep = series({ $0.sleepHours }, pad: 0, badBelow: true, bandable: false)
+        // Under two hours is the watch not being worn, or flat, not a night's
+        // sleep. Kept as a value it drew a sliver of a bar, counted as a night
+        // under 7h and put a full 7:30 on the debt — two such nights were
+        // most of a "−13:52" week.
+        sleep = series({ $0.sleepHours.flatMap { $0 < Self.missingSleepBelow ? nil : $0 } }, pad: 0, badBelow: true, bandable: false)
         sleep.range = 4...9.5
         weight = series({ $0.weightKg }, pad: 0.4, badBelow: false, bandable: false)
 
@@ -163,6 +169,9 @@ final class RecoveryInsightsViewModel {
         return rhr.values.compactMap { $0 }.filter { $0 > b.upperBound }.count
     }
     var shortNights: Int { sleep.values.compactMap { $0 }.filter { $0 < Self.shortNight }.count }
+    /// Short nights in the same seven nights the debt is summed over, so the
+    /// eyebrow's two numbers describe one week rather than a month and a week.
+    var shortNightsLast7: Int { sleep.values.suffix(7).compactMap { $0 }.filter { $0 < Self.shortNight }.count }
     var sleepDebtLast7: Double { sleep.values.suffix(7).compactMap { $0 }.reduce(0) { $0 + max(0, Self.sleepNeed - $1) } }
     var hrv30DayAvg: Double? { let v = hrv.values.compactMap { $0 }; return v.isEmpty ? nil : ChartMath.mean(v) }
     var hrvDeltaVsAvgPct: Double? {
@@ -212,7 +221,7 @@ final class RecoveryInsightsViewModel {
         var lines = ["Looking at my Recovery tab (last \(vm.range.days) days):", "- HRV today \(Int(latest)) ms"]
         if let b = vm.hrv.band { lines.append("- my typical HRV range is \(Int(b.lowerBound))–\(Int(b.upperBound)) ms; \(vm.hrvBelowLast7) of the last 7 days were below it") }
         if let r = vm.rhr.latest { lines.append("- resting HR \(Int(r)) bpm; \(vm.rhrAboveCount) days above my range this window") }
-        lines.append("- \(vm.shortNights) nights under 7h; sleep debt this week \(SleepBarsChart.hm(vm.sleepDebtLast7))")
+        lines.append("- \(vm.shortNightsLast7) nights under 7h this week; sleep debt this week \(SleepBarsChart.hm(vm.sleepDebtLast7))")
         lines.append("How should this shape the next sessions?")
         return lines.joined(separator: "\n")
     }
