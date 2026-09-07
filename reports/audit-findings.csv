@@ -58,6 +58,3 @@ date,session,week,exercise,code,detail
 2026-08-26,Legs,3,Ab Crunch Machine,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
 2026-08-26,Legs,3,Machine Calf Raise,set_count,1 working set(s) against a template of 5
 2026-08-29,Push,4,Tricep Pushdown,backoff_loads_differ,two back-offs at different loads
-2026-09-06,Cardio+Abs,2,Machine Calf Raise,rpe_under_target,"top set at RPE6 in week 2, which targets RPE8"
-2026-09-06,Cardio+Abs,2,Machine Calf Raise,reps_below_range,top set at 3 reps against a 8-12 range
-2026-09-06,Cardio+Abs,2,Machine Calf Raise,backoff_drop,"back-off -14% below the top set, outside 15-25%"
