@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Weekly re-sign of Vaux on the phone, so the free provisioning profile
+  never runs out. Sunday 21:00 local time: the phone is usually at home and
+  on the same Wi-Fi as the Mac.
+
+  Install (once):
+    cp tools/com.vaux.deploy.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.vaux.deploy.plist
+
+  Run it now to test:
+    launchctl kickstart -k gui/$(id -u)/com.vaux.deploy
+
+  Remove:
+    launchctl bootout gui/$(id -u)/com.vaux.deploy
+
+  Log: ~/Library/Logs/vaux-deploy.log
+
+  The Mac has to be awake. System Settings → Energy → Schedule (or
+  `sudo pmset repeat wakeorpoweron U 20:55:00`) wakes it a few minutes
+  before; a job missed while asleep runs when the Mac next wakes.
+-->
+<dict>
+    <key>Label</key>
+    <string>com.vaux.deploy</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/sachin/Documents/GitHub/fitness_coach/tools/deploy_device.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/sachin/Documents/GitHub/fitness_coach</string>
+
+    <!-- xcodebuild and devicectl live under the active Xcode; launchd's
+         default PATH does not include them. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin</string>
+        <key>DEVELOPER_DIR</key>
+        <string>/Applications/Xcode.app/Contents/Developer</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>21</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/sachin/Library/Logs/vaux-deploy.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/sachin/Library/Logs/vaux-deploy.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

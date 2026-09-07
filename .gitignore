@@ -11,3 +11,6 @@ __pycache__/
 # routine event on pull rather than a signal that something real diverged.
 xcuserdata/
 *.xcuserstate
+
+# Local device builds from tools/deploy_device.sh
+build/
