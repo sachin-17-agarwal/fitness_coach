@@ -398,70 +398,69 @@ struct RestTimer: View {
 
     // MARK: - Chat
 
+    /// The composer in the screen's own idiom: a ruled row, an eyebrow, a
+    /// lime text action — the same "↗ ASK THE COACH" link the History
+    /// diagnoses carry. It used to be a rounded card with a circular send
+    /// button, the one element on this screen still drawn in the old
+    /// design language, sitting under a rule-and-eyebrow layout it did not
+    /// share an edge with.
     @ViewBuilder
     private var chatBar: some View {
-        if showChat {
-            HStack(spacing: 10) {
-                TextField("Ask the coach…", text: chatText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .focused($chatFocused)
-                    .lineLimit(1...3)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.fg0)
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.ink2)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(chatFocused ? Color.signal.opacity(0.35) : Color.line,
-                                    lineWidth: 1)
-                    )
+        VStack(spacing: 0) {
+            Rectangle().fill(Color.line).frame(height: 1)
+            if showChat {
+                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                    TextField("Ask the coach…", text: chatText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .focused($chatFocused)
+                        .lineLimit(1...3)
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.fg0)
+                        .tint(Color.signal)
 
+                    Button {
+                        Haptic.light()
+                        send()
+                    } label: {
+                        HStack(spacing: 6) {
+                            EditorialEyebrow(text: "Send", color: canSend ? Color.signal : Color.fg3, size: 9.5, kerning: 2)
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(canSend ? Color.signal : Color.fg3)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    .accessibilityLabel("Send message to coach")
+                }
+                .padding(.vertical, 4)
+                .frame(minHeight: 52)
+                // The rule under the field is the focus state: lime while
+                // typing, hairline otherwise. No box, no ring.
+                Rectangle()
+                    .fill(chatFocused ? Color.signal : Color.line)
+                    .frame(height: 1)
+            } else {
                 Button {
                     Haptic.light()
-                    send()
+                    showChat = true
+                    chatFocused = true
                 } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(canSend ? Color.signalInk : Color.fg2)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(canSend ? Color.signal : Color.ink3))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 9, weight: .bold))
+                        EditorialEyebrow(text: "Ask the coach", color: Color.signal, size: 9.5, kerning: 2)
+                        Spacer()
+                    }
+                    .foregroundStyle(Color.signal)
+                    .frame(height: 48)
+                    .contentShape(Rectangle())
                 }
-                .disabled(!canSend)
-                .accessibilityLabel("Send message to coach")
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens a message to the coach")
             }
-        } else {
-            Button {
-                Haptic.light()
-                showChat = true
-                chatFocused = true
-            } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "message.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.signal)
-                    Text("Ask coach")
-                        .font(.system(size: 13.5, weight: .medium))
-                        .foregroundStyle(Color.fg2)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 46)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.ink2.opacity(0.6))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.line, lineWidth: 1)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            .buttonStyle(PressScaleStyle())
         }
     }
 
