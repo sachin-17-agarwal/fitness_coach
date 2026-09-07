@@ -58,6 +58,11 @@ struct MuscleReport: Identifiable, Hashable {
     /// The lift that decided the state (worst first, then heaviest).
     let drivingLift: LiftReport?
     let setsPerWeek: Double
+    /// Working sets logged for this muscle in the block, unnormalised.
+    var setsSoFar: Double = 0
+    /// True while the current block is younger than `weeksBeforeShortIsJudged`:
+    /// a per-week rate over a few days is noise, so the view shows the count.
+    var isSettling: Bool = false
     let band: ClosedRange<Int>
     var id: BodyMuscle { muscle }
 
@@ -160,7 +165,11 @@ final class StrengthViewModel {
         // the training weeks each block actually had — so "sets/wk" is that
         // block's own average, not the last fortnight zeroed out on older ones.
         var setsByBlock: [Int: [BodyMuscle: Double]] = [:]
-        var weeksByBlock: [Int: Set<Int>] = [:]
+        // Training DATES per block, not week numbers. A block eight days old
+        // touches two calendar weeks; dividing by two halved every rate and
+        // let "short on sets" fire a week early. The span of dates is what
+        // "per week" should be measured over.
+        var datesByBlock: [Int: Set<String>] = [:]
 
         for set in sets where set.isWarmup != true {
             if Self.isCardioOrYoga(set) { continue }
@@ -175,7 +184,7 @@ final class StrengthViewModel {
             else { position = nil }
             guard let pos = position else { continue }
 
-            weeksByBlock[pos.block, default: []].insert(pos.week)
+            if let d = set.date { datesByBlock[pos.block, default: []].insert(d) }
             for (group, share) in ExerciseCatalog.shared.muscleContributions(for: set.exercise) {
                 if let m = Self.bodyMuscle(forGroup: group) { setsByBlock[pos.block, default: [:]][m, default: 0] += share }
             }
@@ -193,6 +202,16 @@ final class StrengthViewModel {
 
         allLiftNames = weekly.keys.sorted()
 
+        // Weeks a block spans: first training date to its last — or to today
+        // for the block in progress, which is still accumulating.
+        let today = Config.isoDay()
+        // Isolated explicitly, like `find` below: a local func does not inherit
+        // the enclosing method's MainActor isolation under the project default.
+        @MainActor
+        func weeksSpanned(_ b: Int) -> Double {
+            Self.weeksSpanned(datesByBlock[b], through: b == calendar.current.block ? today : nil)
+        }
+
         // Blocks that can be judged: any block with a peak AND a prior peak.
         let blocks = Set(weekly.values.flatMap { $0.keys.map(\.block) }).sorted()
         var snaps: [BlockSnapshot] = []
@@ -201,8 +220,9 @@ final class StrengthViewModel {
                 Self.judge(name: name, byPos: byPos, block: b, sessionType: liftSession[name])
             }
             guard lifts.contains(where: { $0.state != StrengthState.none }) else { continue }
-            let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksByBlock[b]), currentBlock: b == calendar.current.block,
-                                             weeksInBlock: weeksByBlock[b]?.count ?? 0)
+            let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksSpanned(b)),
+                                             setsSoFar: setsByBlock[b] ?? [:], currentBlock: b == calendar.current.block,
+                                             weeksInBlock: weeksSpanned(b))
             let deltas = lifts.compactMap { $0.state == StrengthState.none ? nil : $0.deltaPct }
             snaps.append(BlockSnapshot(judged: BlockPosition(block: b, week: Config.peakWeek), lifts: lifts, muscles: muscles, medianGainPct: ChartMath.median(deltas),
                                        dateRange: calendar.dateRange(ofBlock: b).map(BlockCalendar.shortRange)))
@@ -211,8 +231,10 @@ final class StrengthViewModel {
         // so the muscle map still shows volume and the grey states.
         if snaps.last?.judged.block != calendar.current.block {
             let lifts = weekly.map { name, byPos in Self.judge(name: name, byPos: byPos, block: calendar.current.block, sessionType: liftSession[name]) }
-            let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[calendar.current.block], weeks: weeksByBlock[calendar.current.block]), currentBlock: true,
-                                             weeksInBlock: weeksByBlock[calendar.current.block]?.count ?? 0)
+            let b = calendar.current.block
+            let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksSpanned(b)),
+                                             setsSoFar: setsByBlock[b] ?? [:], currentBlock: true,
+                                             weeksInBlock: weeksSpanned(b))
             snaps.append(BlockSnapshot(judged: BlockPosition(block: calendar.current.block, week: calendar.current.week), lifts: lifts, muscles: muscles, medianGainPct: nil,
                                        dateRange: calendar.dateRange(ofBlock: calendar.current.block).map(BlockCalendar.shortRange)))
         }
@@ -304,33 +326,66 @@ final class StrengthViewModel {
 
     /// A block's sets per muscle divided by the training weeks it actually
     /// had, so a block in progress is not judged against four weeks.
-    private static func weeklyVolume(_ sets: [BodyMuscle: Double]?, weeks: Set<Int>?) -> [BodyMuscle: Double] {
-        guard let sets, let weeks, !weeks.isEmpty else { return [:] }
-        let n = Double(weeks.count)
+    /// A block's sets per muscle over the weeks it spans — never less than
+    /// one week, so a block two days old is not read as 28 sets a week.
+    private static func weeklyVolume(_ sets: [BodyMuscle: Double]?, weeks: Double) -> [BodyMuscle: Double] {
+        guard let sets else { return [:] }
+        let n = max(1.0, weeks)
         return sets.mapValues { $0 / n }
     }
 
-    /// Weeks a block must have carried sets in before "short on sets" is a
-    /// finding rather than a block that has barely started. Five days into a
-    /// block, one Push session in, chest read 8 sets a week against 10-16.
+    /// Weeks between a block's first training date and `through` (or its last
+    /// training date), counting both ends. 0 when the block has no dates.
+    static func weeksSpanned(_ dates: Set<String>?, through end: String?) -> Double {
+        guard let dates, let first = dates.min(), let last = dates.max() else { return 0 }
+        let stop = (end.map { max($0, last) }) ?? last
+        return Double(daysBetween(first, stop) + 1) / 7
+    }
+
+    private static func daysBetween(_ a: String, _ b: String) -> Int {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX")
+        guard let da = f.date(from: a), let db = f.date(from: b) else { return 0 }
+        return max(0, Calendar.current.dateComponents([.day], from: da, to: db).day ?? 0)
+    }
+
+    /// Weeks a block must have run before "short on sets" is a finding rather
+    /// than a block that has barely started. Five days into a block, one Push
+    /// session in, chest read 8 sets a week against 10-16 — and after that was
+    /// gated on two calendar weeks, eight days in still counted as two.
     static let weeksBeforeShortIsJudged = 2
 
-    private static func muscleReports(lifts: [LiftReport], setsPerMuscle: [BodyMuscle: Double], currentBlock: Bool,
-                                      weeksInBlock: Int = weeksBeforeShortIsJudged) -> [MuscleReport] {
+    private static func muscleReports(lifts: [LiftReport], setsPerMuscle: [BodyMuscle: Double],
+                                      setsSoFar: [BodyMuscle: Double] = [:], currentBlock: Bool,
+                                      weeksInBlock: Double = Double(weeksBeforeShortIsJudged)) -> [MuscleReport] {
         BodyMuscle.allCases.map { m in
-            let mine = lifts.filter { $0.muscles.contains(m) }
-            let driving = mine.sorted { a, b in
+            // The lift that speaks for a muscle is one it is the PRIME MOVER
+            // of, with sets in this block, and judged if any is. Each of those
+            // was violated on screen: Triceps read "dropping" off the shoulder
+            // press (a 0.5 synergist), and Chest's line was a dumbbell press
+            // with no sets this block, because "no read" sorts ahead of
+            // "holding" in the watch-first order and a nil peak did not
+            // disqualify it. Synergists only stand in when nothing else can.
+            let primary = lifts.filter { $0.muscle == m }
+            let trained = primary.filter { $0.peak != nil }
+            let pool = !trained.isEmpty ? trained
+                     : !primary.isEmpty ? primary
+                     : lifts.filter { $0.muscles.contains(m) }
+            let driving = pool.sorted { a, b in
+                let aRead = a.state != StrengthState.none, bRead = b.state != StrengthState.none
+                if aRead != bRead { return aRead }
                 if a.state.attention != b.state.attention { return a.state.attention < b.state.attention }
                 return (a.peak?.e1rm ?? 0) > (b.peak?.e1rm ?? 0)
             }.first
             var state: StrengthState = driving?.state ?? StrengthState.none
             let sets = setsPerMuscle[m] ?? 0
             let band = VolumeBands.targetRange(for: m.rawValue)
-            if currentBlock, weeksInBlock >= weeksBeforeShortIsJudged, sets > 0, sets < Double(band.lowerBound),
+            let settling = currentBlock && weeksInBlock < Double(weeksBeforeShortIsJudged)
+            if currentBlock, !settling, sets > 0, sets < Double(band.lowerBound),
                [StrengthState.up, .hold, StrengthState.none].contains(state) {
                 state = .short
             }
-            return MuscleReport(muscle: m, state: state, drivingLift: driving, setsPerWeek: sets, band: band)
+            return MuscleReport(muscle: m, state: state, drivingLift: driving, setsPerWeek: sets,
+                                setsSoFar: setsSoFar[m] ?? 0, isSettling: settling, band: band)
         }
     }
 
