@@ -390,6 +390,8 @@
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitnessCoach reads your health data (HRV, sleep, heart rate) for recovery insights.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitnessCoach writes workout data to Apple Health.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -430,6 +432,8 @@
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitnessCoach reads your health data (HRV, sleep, heart rate) for recovery insights.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitnessCoach writes workout data to Apple Health.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
