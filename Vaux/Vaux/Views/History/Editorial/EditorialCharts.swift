@@ -321,20 +321,28 @@ struct WaveBarsChart: View {
                 ForEach(Array(bars.enumerated()), id: \.element.id) { i, b in
                     let cx = Editorial.gutter + slot * CGFloat(i) + slot / 2
                     let bh = CGFloat(b.value / mx) * (base - top)
+                    // Last block's same week, drawn to the SAME width as the
+                    // bar so the two share edges. It used to be 10pt wider,
+                    // which put every bar inside a dashed box and left dashed
+                    // ears poking out under a bar that had overtaken it.
+                    //
+                    // Where last block was taller, it is an outline standing
+                    // above the bar with its number inside the top of the
+                    // outline. Where this block has overtaken it, it is a
+                    // dashed line across the bar at the height it reached,
+                    // numbered just under the line. Every ghost carries its
+                    // number: an outline with no value is a shape, not a fact.
+                    let gh: CGFloat = b.ghost.map { CGFloat($0 / mx) * (base - top) } ?? 0
                     if let g = b.ghost, g > 0 {
-                        let gh = CGFloat(g / mx) * (base - top)
-                        UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4)
-                            .stroke(Color.white.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                            .frame(width: bw + 10, height: gh)
-                            .position(x: cx, y: base - gh / 2)
-                        // A dashed outline with no number is a shape, not a
-                        // fact. Where this block has nothing yet, the ghost
-                        // says what last block did at that week.
-                        if b.value <= 0 {
+                        if gh > bh {
+                            UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4)
+                                .stroke(Color.white.opacity(0.28), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                                .frame(width: bw, height: gh)
+                                .position(x: cx, y: base - gh / 2)
                             Text(format(g))
-                                .font(.system(size: 10, weight: .bold)).kerning(1.2)
+                                .font(.system(size: 9.5, weight: .bold)).kerning(1)
                                 .foregroundStyle(Editorial.muted)
-                                .position(x: cx, y: base - gh - 12)
+                                .position(x: cx, y: base - gh + 11)
                         }
                     }
                     if b.value > 0 {
@@ -343,10 +351,28 @@ struct WaveBarsChart: View {
                             .frame(width: bw, height: max(2, bh))
                             .position(x: cx, y: base - bh / 2)
                             .transition(.scale(scale: 0.2, anchor: .bottom))
+                        if let g = b.ghost, g > 0, gh <= bh {
+                            Path { p in
+                                p.move(to: CGPoint(x: cx - bw / 2 - 4, y: base - gh))
+                                p.addLine(to: CGPoint(x: cx + bw / 2 + 4, y: base - gh))
+                            }
+                            .stroke(Color.white.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            if gh > 22 {
+                                Text(format(g))
+                                    .font(.system(size: 9.5, weight: .bold)).kerning(1)
+                                    .foregroundStyle(Color.white.opacity(0.75))
+                                    .position(x: cx, y: base - gh + 10)
+                            }
+                        }
+                        // The bar's number sits over the bar — unless last
+                        // block's outline stands just above it, where the two
+                        // labels would collide; then the big number clears the
+                        // outline and the small one stays inside its top.
+                        let crowded = gh > bh && gh - bh < 30
                         Text(format(b.value))
                             .font(.display(22))
                             .foregroundStyle(b.highlight ? .white : Editorial.mid)
-                            .position(x: cx, y: base - bh - 16)
+                            .position(x: cx, y: base - (crowded ? gh : bh) - 16)
                     } else if b.ghost == nil || b.ghost == 0 {
                         Text("—").font(.display(18)).foregroundStyle(Editorial.muted).position(x: cx, y: base - 16)
                     }
