@@ -27,35 +27,51 @@ struct WorkoutModeView: View {
     /// "Open in Coach" from the mid-workout sheet.
     var switchToChatTab: (() -> Void)? = nil
 
-    /// Set when today's session is swapped from this screen. Outranks both the
-    /// passed-in type and the resolved one so the view flips immediately —
-    /// picking Legs on a yoga day has to leave the log surface and land on the
-    /// Begin screen in the same tap.
-    @State private var swappedSessionType: String?
     /// Whether today's session is a manual choice rather than the schedule's.
     @State private var isOverridden = false
+    /// The calendar day the session type was last resolved for. A swap made on
+    /// Saturday used to live on in this view's state into Sunday if the app
+    /// was never relaunched, so the tab said CHANGED · CARDIO+ABS on a day
+    /// whose stored override had already expired. The type is re-read when
+    /// the day changes, not only once per view lifetime.
+    @State private var resolvedOn: String = ""
     @State private var blockWeek: Int?
     @State private var blockDay: Int?
     @State private var lastSameSession: WorkoutSession?
     @State private var sessionsThisWeek = 0
 
     private var effectiveSessionType: String {
-        if let swappedSessionType { return swappedSessionType }
+        if isOverridden, !resolvedSessionType.isEmpty { return resolvedSessionType }
         return sessionType.isEmpty ? resolvedSessionType : sessionType
     }
 
     /// Persists a swap (or clears it) and re-reads the state, so what shows
     /// here is what was stored rather than what was asked for.
+    /// Today's session type, week and override, read fresh from the state.
+    private func resolveToday() async {
+        guard let state = try? await MesocycleService().loadState() else { return }
+        isOverridden = state.isOverridden
+        blockWeek = state.week
+        blockDay = state.day
+        if sessionType.isEmpty || state.isOverridden {
+            resolvedSessionType = state.todayType
+        }
+        resolvedOn = Config.isoDay()
+    }
+
     private func changeTodaySession(_ type: String?) {
         Task {
             let service = MesocycleService()
             try? await service.setTodayOverride(type)
             guard let state = try? await service.loadState() else { return }
-            swappedSessionType = state.todayType
+            // The swap outranks a type the Dashboard navigated in with: picking
+            // a strength day from the cardio page has to land on the Begin
+            // screen in the same tap.
             resolvedSessionType = state.todayType
             isOverridden = state.isOverridden
             blockWeek = state.week
             blockDay = state.day
+            resolvedOn = Config.isoDay()
         }
     }
 
@@ -135,14 +151,7 @@ struct WorkoutModeView: View {
             // type is conditional.
             if !didResolveType {
                 didResolveType = true
-                if let state = try? await MesocycleService().loadState() {
-                    isOverridden = state.isOverridden
-                    blockWeek = state.week
-                    blockDay = state.day
-                    if sessionType.isEmpty {
-                        resolvedSessionType = state.todayType
-                    }
-                }
+                await resolveToday()
             }
             // If the user left mid-workout (accidental back-swipe, app
             // backgrounded, etc.) the Supabase session is still `in_progress`
@@ -173,7 +182,18 @@ struct WorkoutModeView: View {
         // for the rest of the session. It resumes from its stored anchor, so
         // this costs nothing when the feed was never interrupted.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { viewModel.heartRateMonitor.resume() }
+            if phase == .active {
+                viewModel.heartRateMonitor.resume()
+                // A new day since the last read: yesterday's swap is over.
+                if resolvedOn != Config.isoDay(), !viewModel.isActive {
+                    Task { await resolveToday() }
+                }
+            }
+        }
+        .onAppear {
+            if didResolveType, resolvedOn != Config.isoDay(), !viewModel.isActive {
+                Task { await resolveToday() }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
             // Settings (or post-workout advance) changed today's session.
@@ -182,13 +202,7 @@ struct WorkoutModeView: View {
             // `sessionType`, that's the workout the user committed to and
             // we shouldn't swap it out mid-flow.
             guard sessionType.isEmpty, !viewModel.isActive else { return }
-            Task {
-                if let state = try? await MesocycleService().loadState() {
-                    resolvedSessionType = state.todayType
-                    blockWeek = state.week
-                    blockDay = state.day
-                }
-            }
+            Task { await resolveToday() }
         }
         .sheet(item: $editingSet) { set in
             EditSetSheet(
