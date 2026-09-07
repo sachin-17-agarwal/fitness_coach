@@ -55,6 +55,14 @@ final class ExerciseCatalog {
             for row in rows {
                 guard let group = row.muscleGroup, !group.isEmpty,
                       !placeholders.contains(group.lowercased()) else { continue }
+                // A coarse region label never coarsens a built-in that knows
+                // the muscle. The library refines the catalog; it does not
+                // blur it.
+                if Self.coarseGroups.contains(group.lowercased()),
+                   let known = Self.resolveGroup(row.name, in: Self.builtinGroups),
+                   !Self.coarseGroups.contains(known.lowercased()) {
+                    continue
+                }
                 map[row.name.lowercased()] = group
                 for alias in row.aliases ?? [] {
                     map[alias.lowercased()] = group
@@ -78,11 +86,17 @@ final class ExerciseCatalog {
     /// this the dictionary iteration order would non-deterministically
     /// match a short generic key first.
     func muscleGroup(for exercise: String) -> String? {
+        Self.resolveGroup(exercise, in: lookup)
+    }
+
+    /// The group a table gives an exercise: exact key first, then the
+    /// longest catalog key the name contains.
+    static func resolveGroup(_ exercise: String, in table: [String: String]) -> String? {
         let key = PrescriptionParser.normalizeExerciseName(exercise).lowercased()
-        if let direct = lookup[key] { return direct }
+        if let direct = table[key] { return direct }
 
         var bestMatch: (length: Int, group: String)?
-        for (catalogKey, group) in lookup where catalogKey.count >= 4 {
+        for (catalogKey, group) in table where catalogKey.count >= 4 {
             // Only the `key.contains(catalogKey)` direction is safe:
             // a longer logged name with extra qualifiers ("incline
             // barbell bench press") should still match the catalog's
@@ -95,6 +109,14 @@ final class ExerciseCatalog {
         }
         return bestMatch?.group
     }
+
+    /// Groups that name a region rather than a muscle. A library row that
+    /// files an exercise under one of these must not shadow a built-in
+    /// entry that knows the muscle: "Machine Calf Raise → Legs" in the
+    /// library exact-matched ahead of the built-in "calf raise → Calves",
+    /// and every calf set since read as quads. Calves showed 0.0 sets a
+    /// week two days after five sets of them.
+    private static let coarseGroups: Set<String> = ["legs", "arms", "upper body", "lower body", "full body", "body"]
 
     // MARK: - Fractional volume attribution
 
