@@ -20,9 +20,17 @@
 #   tools/deploy_device.sh "Sachin's iPhone"
 #   VAUX_DEVICE=00008140-000C78882E01801C tools/deploy_device.sh
 #   tools/deploy_device.sh --launch        # also open the app afterwards
+#   tools/deploy_device.sh --only-if-due   # skip if re-signed < 3 days ago
 #
-# Exit codes: 0 installed, 2 no device found, anything else is the failing
-# tool's own code. Output is plain so launchd's log stays readable.
+# --only-if-due is what the launchd job passes. The job fires twice a day
+# rather than once a week, because the phone is not always on the home
+# Wi-Fi when a single slot comes round; with the stamp file below, the first
+# firing that finds the phone re-signs, and every other firing that week is
+# a no-op. A missed slot costs nothing.
+#
+# Exit codes: 0 installed (or not due), 2 no device found, anything else is
+# the failing tool's own code. Output is plain so launchd's log stays
+# readable.
 
 set -euo pipefail
 
@@ -32,16 +40,31 @@ SCHEME="Vaux"
 BUNDLE_ID="Sachin.Vaux2"
 DERIVED="$REPO/build/DerivedData"
 LAUNCH=0
+ONLY_IF_DUE=0
 WANT="${VAUX_DEVICE:-}"
+STAMP_DIR="$HOME/Library/Application Support/vaux-deploy"
+STAMP="$STAMP_DIR/last-success"
+# Re-sign once the last good install is this old. The profile lasts seven
+# days; three leaves four days of slots for the phone to be home in.
+DUE_AFTER_DAYS=3
 
 for arg in "$@"; do
     case "$arg" in
         --launch) LAUNCH=1 ;;
+        --only-if-due) ONLY_IF_DUE=1 ;;
         *) WANT="$arg" ;;
     esac
 done
 
 log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
+
+if [ "$ONLY_IF_DUE" = 1 ] && [ -f "$STAMP" ]; then
+    AGE_DAYS=$(( ( $(date +%s) - $(stat -f %m "$STAMP") ) / 86400 ))
+    if [ "$AGE_DAYS" -lt "$DUE_AFTER_DAYS" ]; then
+        log "Not due: last re-signed $AGE_DAYS day(s) ago"
+        exit 0
+    fi
+fi
 
 # ── Find the phone ──────────────────────────────────────────────────────────
 # devicectl knows every phone this Mac has paired with; we want one that is
@@ -107,4 +130,5 @@ if [ "$LAUNCH" = 1 ]; then
     xcrun devicectl device process launch --device "$UDID" --terminate-existing "$BUNDLE_ID" || true
 fi
 
+mkdir -p "$STAMP_DIR" && touch "$STAMP"
 log "Done — signature good for another seven days"
