@@ -72,7 +72,12 @@ struct MuscleReport: Identifiable, Hashable {
         case .drop: return "DROPPING · " + Editorial.signedPct(drivingLift?.deltaPct ?? 0)
         case .none:
             guard let lift = drivingLift, lift.peak != nil else { return "NOT TRAINED THIS BLOCK" }
-            return lift.priorPeak == nil ? "FIRST BLOCK · NOTHING TO COMPARE" : "NO READ YET"
+            if lift.priorPeak == nil { return "FIRST BLOCK · NOTHING TO COMPARE" }
+            // Both peaks exist and still no state: the block is before its
+            // peak week, so the lift's best is a build-week load being held
+            // against last block's peak. "No read yet" beside a ▾3.9% read as
+            // a contradiction; this says what is being waited for.
+            return "BUILDING · VERDICT AT PEAK WEEK"
         default: return state.label
         }
     }
