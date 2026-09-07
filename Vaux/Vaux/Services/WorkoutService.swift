@@ -238,12 +238,12 @@ final class WorkoutService: Sendable {
         let sets = try await fetchSets(sessionId: id)
         let now = ISO8601DateFormatter().string(from: Date())
 
-        // Tonnage = sum of (weight * reps) for every logged set
-        let tonnage = sets.reduce(0.0) { total, set in
-            let w = set.actualWeightKg ?? 0
-            let r = Double(set.actualReps ?? 0)
-            return total + (w * r)
-        }
+        // Tonnage = weight × reps over WORKING sets. The backend's end_session
+        // and the in-workout counter both leave warm-ups out; this summed every
+        // row, so a session ended here stored a number a couple of tonnes above
+        // the one the athlete watched during it, and History showed both kinds
+        // side by side.
+        let tonnage = Self.workingTonnage(sets)
 
         // Update session row
         try await client.update(
@@ -482,6 +482,13 @@ final class WorkoutService: Sendable {
         try? await setWorkoutState(inactiveState)
     }
 
+    /// Working-set tonnage, the one definition every writer of `tonnage_kg`
+    /// shares with the backend's `end_session`.
+    static func workingTonnage(_ sets: [WorkoutSet]) -> Double {
+        sets.filter { $0.isWarmup != true }
+            .reduce(0.0) { $0 + ($1.actualWeightKg ?? 0) * Double($1.actualReps ?? 0) }
+    }
+
     /// Close a session without the end-of-workout machinery.
     ///
     /// `endSession` also runs PR detection and resets the workout-state memory
@@ -491,9 +498,7 @@ final class WorkoutService: Sendable {
     /// history as `in_progress` forever waiting for a finish that never comes.
     func completeSession(id: UUID) async throws {
         let sets = try await fetchSets(sessionId: id)
-        let tonnage = sets.reduce(0.0) { total, set in
-            total + ((set.actualWeightKg ?? 0) * Double(set.actualReps ?? 0))
-        }
+        let tonnage = Self.workingTonnage(sets)
         var body: [String: Any] = [
             "status": SessionStatus.finishedStored,
             "end_time": ISO8601DateFormatter().string(from: Date()),

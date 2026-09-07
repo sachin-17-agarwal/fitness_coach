@@ -33,14 +33,33 @@ struct SessionEntry: Identifiable {
         }.count
     }
 
-    /// "1h 22" from the earliest start to the latest end.
+    /// "1h 22": time under the bar, summed across the day's sessions.
+    ///
+    /// Summed, not spanned. A Cardio+Abs day is two rows — the Apple Watch
+    /// import from the morning and the abs session in the evening — and the
+    /// span from the first start to the last end read "8h 17" for about an
+    /// hour of training.
     var durationLine: String? {
-        let starts = sessions.compactMap { $0.startTime.flatMap({ SessionEntry.parse($0) }) }
-        let ends = sessions.compactMap { $0.endTime.flatMap({ SessionEntry.parse($0) }) }
-        guard let s = starts.min(), let e = ends.max(), e > s else { return nil }
-        let mins = Int(e.timeIntervalSince(s) / 60)
+        let mins = sessions.reduce(0) { total, row in
+            guard let s = row.startTime.flatMap({ SessionEntry.parse($0) }),
+                  let e = row.endTime.flatMap({ SessionEntry.parse($0) }), e > s else { return total }
+            return total + Int(e.timeIntervalSince(s) / 60)
+        }
+        guard mins > 0 else { return nil }
         if mins < 60 { return "\(mins) min" }
         return "\(mins / 60)h \(String(format: "%02d", mins % 60))"
+    }
+
+    /// Working-set tonnage: weight × reps over every set that is not a
+    /// warm-up. Computed from the sets rather than read off the session row,
+    /// because the row's `tonnage_kg` has meant two different things: the
+    /// backend and the in-workout counter exclude warm-ups, the app's END
+    /// summed every set. An August Pull read 7.5T above a set list that adds
+    /// to 5.4T; a September one read 6.4T and matched. Same lifting, two
+    /// numbers. This is the one the athlete watched climb during the session.
+    static func workingTonnage(_ sets: [WorkoutSet]) -> Double {
+        sets.filter { $0.isWarmup != true }
+            .reduce(0) { $0 + ($1.actualWeightKg ?? 0) * Double($1.actualReps ?? 0) }
     }
 
     /// Exercises in the order first logged, each with its working sets.
@@ -112,7 +131,7 @@ final class TrainingBlockViewModel {
             let allSets = rows.flatMap { $0.id.flatMap { setsBySession[$0] } ?? [] }
             return SessionEntry(id: key, date: first.date, type: first.type, sessions: rows,
                                 position: calendar.position(of: first),
-                                tonnage: rows.reduce(0) { $0 + ($1.tonnageKg ?? 0) },
+                                tonnage: SessionEntry.workingTonnage(allSets),
                                 sets: allSets,
                                 isOpen: rows.contains { !SessionStatus($0.status).isFinished })
         }
