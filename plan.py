@@ -484,35 +484,51 @@ def _phase(week: int) -> str:
     return WAVE.get(week, {}).get("name", "")
 
 
+# The app waits a bounded time for the opening reply, and the prose fallback
+# still has to fit after this call. A thinking attempt that has already spent
+# this long is not given a second one.
+PLAN_TIME_BUDGET_SECONDS = 30.0
+
+
 def request_session_plan(client, system_blocks: list, messages: list,
                          session_type: str, week: int, prompt: str,
                          proposal: dict | None = None, model: str = MODEL,
-                         weak_points: list | None = None) -> tuple:
+                         weak_points: list | None = None,
+                         budget_seconds: float = PLAN_TIME_BUDGET_SECONDS) -> tuple:
     """Ask for the plan, check it, hand it back once if it breaks a rule.
 
     Returns (plan, log_lines). `plan` is None when no valid plan could be had,
     and the caller falls back to the prose path — the athlete always gets a
     reply. Thinking is ON for this call: it is one call per session, and
     weighing a whole day against the athlete's history is exactly the work
-    thinking is for.
+    thinking is for — but it is capped, in tokens and in time. The first live
+    Pull opening sat on a skeleton card for over two minutes: a long think, a
+    retry, then the prose fallback, each on a 30k-token context, past the
+    app's timeout. max_tokens caps thinking and output together, so 8000
+    leaves ~5000 for reasoning over a ~2500-token plan; the retry runs at low
+    effort; and no retry is attempted once the budget is spent.
     """
+    import time
     notes: list[str] = []
     instruction = PLAN_INSTRUCTION.format(
         session_type=session_type, week=week, phase=_phase(week),
         day_note=CARDIO_ABS_NOTE if session_type == "Cardio+Abs" else "").strip()
     system = list(system_blocks) + [{"type": "text", "text": instruction}]
     turns = list(messages)
+    started = time.monotonic()
 
     for attempt in (1, 2):
         response = client.messages.create(
             model=model,
-            max_tokens=16000,
+            max_tokens=8000,
             thinking={"type": "adaptive"},
             output_config={"format": {"type": "json_schema", "schema": PLAN_SCHEMA},
-                           "effort": "medium"},
+                           "effort": "medium" if attempt == 1 else "low"},
             system=system,
             messages=turns,
         )
+        elapsed = time.monotonic() - started
+        notes.append(f"attempt {attempt}: {elapsed:.1f}s")
         text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
         if getattr(response, "stop_reason", None) == "max_tokens" or not text:
             notes.append(f"attempt {attempt}: no complete plan returned")
@@ -528,6 +544,9 @@ def request_session_plan(client, system_blocks: list, messages: list,
             return plan, notes
         notes.append(f"attempt {attempt}: " + " | ".join(problems))
         if attempt == 2:
+            break
+        if elapsed > budget_seconds:
+            notes.append(f"no retry: {elapsed:.0f}s already spent against a {budget_seconds:.0f}s budget")
             break
         # The model corrects its own plan. The code never edits a number.
         turns = turns + [

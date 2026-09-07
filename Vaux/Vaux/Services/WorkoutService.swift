@@ -456,6 +456,32 @@ final class WorkoutService: Sendable {
         _ = try await client.delete("workout_sets", match: ["id": id.uuidString])
     }
 
+    /// Throw away a session that never became a workout.
+    ///
+    /// A session with no working sets is not a training day: nothing to
+    /// summarise, nothing for the recap, and — the part that bit — nothing
+    /// that should move the rotation. Ending it the ordinary way left a
+    /// finished row with zero sets in history, and `endWorkout` then
+    /// advanced the mesocycle past a session that never happened, so the
+    /// next opener planned Push under a header that still said Pull.
+    ///
+    /// Deletes any stray warm-up rows, then the session row, and marks the
+    /// workout state inactive so the coach's stale check has nothing to
+    /// settle. Any of these can fail independently; the state write is
+    /// best-effort like every other memory write in this service.
+    func discardSession(id: UUID) async throws {
+        _ = try await client.delete("workout_sets", match: ["workout_session_id": id.uuidString])
+        _ = try await client.delete("workout_sessions", match: ["id": id.uuidString])
+        let inactiveState = WorkoutState(
+            workoutMode: "inactive",
+            currentSessionId: "",
+            currentSetNumber: 0,
+            currentExerciseName: "",
+            sessionStartTime: ""
+        )
+        try? await setWorkoutState(inactiveState)
+    }
+
     /// Close a session without the end-of-workout machinery.
     ///
     /// `endSession` also runs PR detection and resets the workout-state memory

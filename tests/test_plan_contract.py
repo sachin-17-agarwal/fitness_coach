@@ -356,8 +356,31 @@ class RequestTests(unittest.TestCase):
         self.assertEqual(req["thinking"], {"type": "adaptive"})
         self.assertEqual(req["output_config"]["format"]["type"], "json_schema")
         self.assertEqual(req["output_config"]["format"]["schema"], PLAN_SCHEMA)
-        self.assertGreaterEqual(req["max_tokens"], 8000)
+        self.assertEqual(req["max_tokens"], 8000, "thinking and output share the cap; the plan is ~2500 tokens")
         self.assertTrue(notes[-1].endswith("plan accepted"))
+
+    def test_a_slow_first_attempt_is_not_given_a_retry(self):
+        import time
+        broken = _legs_plan()
+        broken["exercises"][0]["backoff"] = broken["exercises"][0]["backoff"][:1]
+        client = _FakeClient([json.dumps(broken), json.dumps(_legs_plan())])
+        real = time.monotonic
+        ticks = iter([0.0, 45.0, 46.0, 47.0])
+        with patch("time.monotonic", side_effect=lambda: next(ticks, 48.0)):
+            plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
+                                               "Legs", 2, self.PROMPT)
+        self.assertIsNone(plan, "past the budget, the prose fallback takes over")
+        self.assertEqual(len(client.requests), 1)
+        self.assertTrue(any("no retry" in n for n in notes))
+
+    def test_the_retry_runs_at_low_effort(self):
+        broken = _legs_plan()
+        broken["exercises"][0]["backoff"] = broken["exercises"][0]["backoff"][:1]
+        client = _FakeClient([json.dumps(broken), json.dumps(_legs_plan())])
+        plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
+                                           "Legs", 2, self.PROMPT)
+        self.assertIsNotNone(plan)
+        self.assertEqual([r["output_config"]["effort"] for r in client.requests], ["medium", "low"])
 
     def test_a_broken_plan_is_handed_back_once_and_the_model_fixes_it(self):
         broken = _legs_plan()
@@ -690,7 +713,8 @@ class WeakPointHistoryTests(unittest.TestCase):
 
 
 class StaleSessionTests(unittest.TestCase):
-    """A session left active from an earlier day, settled from the row."""
+    """A session left active from an earlier day, settled from the row. The
+    rotation is never moved here — the app owns it and advances on END."""
 
     def _run(self, status, stamp=(1, 4), state=(1, 4)):
         import coach
@@ -698,38 +722,119 @@ class StaleSessionTests(unittest.TestCase):
         flag = {"workout_mode": "active", "current_session_id": "sid",
                 "session_start_time": "2026-09-05T18:00:00+10:00"}
         row = {"status": status, "mesocycle_week": stamp[0], "mesocycle_day": stamp[1]}
+        memory = {"mesocycle_week": state[0], "mesocycle_day": state[1]}
         with patch("coach.get_workout_state", return_value=flag), \
              patch("coach.set_workout_state", side_effect=lambda d: cleared.append(d)), \
              patch("coach.end_session", side_effect=lambda sid: ended.append(sid)), \
              patch("coach.advance_mesocycle", side_effect=lambda m: advanced.append(1)), \
              patch("workout.session_row", return_value=row), \
              patch("coach.now_local", return_value=__import__("datetime").datetime(2026, 9, 6, 9, 0)):
-            moved = coach._settle_stale_session({"mesocycle_week": state[0], "mesocycle_day": state[1]})
-        return moved, advanced, ended, cleared
+            coach._settle_stale_session(memory)
+        return memory, advanced, ended, cleared
 
     def test_a_finished_session_only_clears_the_flag(self):
-        moved, advanced, ended, cleared = self._run("completed")
-        self.assertFalse(moved)
+        memory, advanced, ended, cleared = self._run("completed")
         self.assertEqual((advanced, ended), ([], []))
         self.assertEqual(cleared[0]["workout_mode"], "inactive")
 
-    def test_an_abandoned_session_still_on_its_slot_is_ended_and_advanced_once(self):
-        moved, advanced, ended, cleared = self._run("in_progress", stamp=(1, 4), state=(1, 4))
-        self.assertTrue(moved)
-        self.assertEqual((advanced, ended), ([1], ["sid"]))
+    def test_an_abandoned_session_on_its_own_slot_is_ended_and_not_advanced(self):
+        """The case that used to advance. The app's END is the only thing
+        that moves the rotation now, so an abandoned row ends where it is."""
+        memory, advanced, ended, cleared = self._run("in_progress", stamp=(1, 4), state=(1, 4))
+        self.assertEqual((advanced, ended), ([], ["sid"]))
+        self.assertEqual((memory["mesocycle_week"], memory["mesocycle_day"]), (1, 4))
 
     def test_a_session_the_state_has_already_moved_past_is_ended_but_not_advanced(self):
-        """END advanced the rotation but the completion write failed: the row
-        is open at W1 D4 while the state stands on W2 D1. Advancing again is
-        the double move."""
-        moved, advanced, ended, cleared = self._run("in_progress", stamp=(1, 4), state=(2, 1))
-        self.assertFalse(moved)
+        memory, advanced, ended, cleared = self._run("in_progress", stamp=(1, 4), state=(2, 1))
         self.assertEqual((advanced, ended), ([], ["sid"]))
 
     def test_an_unstamped_open_session_is_ended_but_not_advanced(self):
-        moved, advanced, ended, cleared = self._run("in_progress", stamp=(None, None), state=(1, 4))
-        self.assertFalse(moved)
-        self.assertEqual(ended, ["sid"])
+        memory, advanced, ended, cleared = self._run("in_progress", stamp=(None, None), state=(1, 4))
+        self.assertEqual((advanced, ended), ([], ["sid"]))
+
+    def test_a_session_started_today_is_left_alone(self):
+        import coach
+        flag = {"workout_mode": "active", "current_session_id": "sid",
+                "session_start_time": "2026-09-06T08:00:00+10:00"}
+        touched = []
+        with patch("coach.get_workout_state", return_value=flag), \
+             patch("coach.set_workout_state", side_effect=lambda d: touched.append(d)), \
+             patch("coach.end_session", side_effect=lambda sid: touched.append(sid)), \
+             patch("coach.now_local", return_value=__import__("datetime").datetime(2026, 9, 6, 9, 0)):
+            coach._settle_stale_session({"mesocycle_week": 1, "mesocycle_day": 4})
+        self.assertEqual(touched, [])
+
+
+class _FakeProse:
+    stop_reason = "end_turn"
+    content = [type("T", (), {"text": "prose"})()]
+
+
+class NamedSessionTests(unittest.TestCase):
+    """The app names the session it opened; that name outranks the rotation."""
+
+    def test_the_openers_the_app_sends_name_their_session(self):
+        from coach_parsing import session_type_named
+        self.assertEqual(session_type_named("Starting my Pull session. List today's full exercise plan"), "Pull")
+        self.assertEqual(session_type_named("Starting my Cardio+Abs session from the abs side"), "Cardio+Abs")
+        self.assertEqual(session_type_named("Resuming my Legs session"), "Legs")
+        self.assertEqual(session_type_named("starting push day"), "Push")
+
+    def test_ordinary_messages_name_nothing(self):
+        from coach_parsing import session_type_named
+        for text in ("Logged working set 2 of 3: Lat Pulldown 80kg x 10",
+                     "how many sets on pull day?", "Starting my day", ""):
+            self.assertIsNone(session_type_named(text), text)
+
+    def test_the_named_session_reaches_the_plan_and_the_context(self):
+        """Rotation on Push (W2 D2) after a stray advance; the app opens Pull.
+        The plan, the template and the context all describe Pull."""
+        import coach
+        seen = {}
+
+        def fake_context(memory, *a, session_type=None, out=None, **k):
+            seen["context_type"] = session_type
+            if out is not None:
+                out["computed"] = {}
+            return "stable", "live"
+
+        def fake_plan(client, **kw):
+            seen["plan_type"] = kw["session_type"]
+            return None, ["stub"]
+
+        memory = {"mesocycle_week": 2, "mesocycle_day": 2}
+        with patch("coach.build_context_block", side_effect=fake_context), \
+             patch("coach.load_system_prompt", return_value=""), \
+             patch("coach.format_session_template", side_effect=lambda p, t: seen.setdefault("template_type", t) or ""), \
+             patch("coach.save_conversation_message", lambda *a, **k: None), \
+             patch("coach.get_settings", return_value=type("S", (), {"plan_contract": True, "programme_substitution": False})()), \
+             patch("coach.get_anthropic_client", return_value=None), \
+             patch("plan.request_session_plan", side_effect=fake_plan), \
+             patch("coach._prose_reply", return_value=_FakeProse()):
+            coach.chat_with_coach("Starting my Pull session. List today's full exercise plan",
+                                  [], memory, plan_request=True, session_type="Pull")
+        self.assertEqual(seen["context_type"], "Pull")
+        self.assertEqual(seen["template_type"], "Pull")
+        self.assertEqual(seen["plan_type"], "Pull")
+
+    def test_without_a_name_the_rotation_decides(self):
+        import coach
+        seen = {}
+
+        def fake_context(memory, *a, session_type=None, out=None, **k):
+            seen["context_type"] = session_type
+            return "stable", "live"
+
+        memory = {"mesocycle_week": 2, "mesocycle_day": 2}
+        with patch("coach.build_context_block", side_effect=fake_context), \
+             patch("coach.load_system_prompt", return_value=""), \
+             patch("coach.format_session_template", side_effect=lambda p, t: seen.setdefault("template_type", t) or ""), \
+             patch("coach.save_conversation_message", lambda *a, **k: None), \
+             patch("coach.get_settings", return_value=type("S", (), {"plan_contract": True, "programme_substitution": False})()), \
+             patch("coach._prose_reply", return_value=_FakeProse()):
+            coach.chat_with_coach("how many sets today?", [], memory)
+        self.assertIsNone(seen["context_type"])
+        self.assertEqual(seen["template_type"], "Push")
 
 
 class EndSessionTimeTests(unittest.TestCase):

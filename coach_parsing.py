@@ -229,6 +229,32 @@ SESSION_TYPE_ALIASES = {
 }
 
 
+_OPENER_TYPE_RE = re.compile(
+    r"^\s*(?:starting|resuming)\s+(?:my|the)?\s*(pull|push|legs?|cardio\s*\+?\s*abs|cardio)\b",
+    re.IGNORECASE)
+
+
+def session_type_named(text: str) -> str | None:
+    """The session the app says it is opening — "Starting my Pull session" —
+    as a canonical type, or None when the message does not open a session.
+
+    The app is the authority on which session the athlete is standing in:
+    its header, its logged rows and its END all carry that type. The
+    backend's own idea of the day is a rotation position it advances on its
+    own signals, and the two drifted once — the header said PULL and the
+    plan came back Push. When the message names the session, that name wins.
+    """
+    m = _OPENER_TYPE_RE.match(text or "")
+    if not m:
+        return None
+    word = re.sub(r"[\s+]", "", m.group(1).lower())
+    if word.startswith("cardio"):
+        return "Cardio+Abs"
+    if word.startswith("leg"):
+        return "Legs"
+    return word.capitalize()
+
+
 def get_session_type_for_day(mesocycle_day: int, override=None) -> str:
     # Delegates so the Sunday yoga override, and the athlete's own per-day
     # override, live in exactly one place.

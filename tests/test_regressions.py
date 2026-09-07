@@ -3143,18 +3143,19 @@ class ReplayCommandTests(unittest.TestCase):
         """The command returns early, so where it sits in the function matters.
 
         A session left workout_mode=active from a previous day has to be closed
-        and the mesocycle advanced whatever today's first message happens to be
-        — otherwise later sets pile onto the old session_id and the mesocycle
-        never advances. Returning ahead of that guard would defer a correctness
-        fix, not just skip some formatting.
+        whatever today's first message happens to be — otherwise later sets
+        pile onto the old session_id. The rotation is left alone: the app owns
+        it and advances on END, and this guard moving it is how the wave ran
+        ahead. Returning ahead of the guard would defer a correctness fix, not
+        just skip some formatting.
         """
         from unittest.mock import patch
         memory = {"mesocycle_day": 1, "mesocycle_week": 1}
         stale = {"workout_mode": "active",
                  "current_session_id": "old-session",
                  "session_start_time": "2020-01-01T10:00:00"}
-        # The row is open and stamped on the slot the state still stands on:
-        # nobody ended it and nobody advanced, so this is the case that moves.
+        # The row is open and stamped on the slot the state still stands on —
+        # the case that used to advance. It is ended and nothing else.
         row = {"status": "in_progress", "mesocycle_week": 1, "mesocycle_day": 1}
         with patch("coach.load_today_conversation", return_value=[]), \
              patch("coach.chat_with_coach", return_value="LLM"), \
@@ -3167,7 +3168,7 @@ class ReplayCommandTests(unittest.TestCase):
             out = handle_incoming_message("replay", memory)
         self.assertEqual(out, "R")
         end.assert_called_once_with("old-session")
-        advance.assert_called_once()
+        advance.assert_not_called()
 
     def test_telegram_gets_the_report_and_ios_does_not_double_send(self):
         """send_reply=False is the iOS path — /api/chat returns the body itself."""

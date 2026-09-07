@@ -61,6 +61,7 @@ from coach_parsing import (
     parse_all_sets_from_message,
     parse_set_from_message,
     resolve_exercise_name,
+    session_type_named,
     _is_valid_exercise,
 )
 
@@ -215,7 +216,11 @@ def _prose_reply(system_prompt: str, stable_context: str, live_context: str,
 def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     recovery_override: dict | None = None,
                     plan_request: bool = False,
-                    set_log_session: str | None = None) -> str:
+                    set_log_session: str | None = None,
+                    session_type: str | None = None) -> str:
+    """`session_type` is the session the app named when it opened — it
+    outranks the rotation for this reply, so the plan is for the session on
+    the athlete's screen even when the backend's day counter has drifted."""
     system_prompt = load_system_prompt()
     programme_out: dict = {}
     stable_context, live_context = build_context_block(
@@ -227,6 +232,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         recovery_override=recovery_override,
         system_prompt=system_prompt,
         out=programme_out,
+        session_type=session_type,
     )
 
     # Appended to the LIVE half deliberately. It is derived from the prompt
@@ -234,7 +240,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # but it has to be read against today's session type, and putting it beside
     # the live workout state is where the coach is already looking when it
     # decides how many sets an exercise gets.
-    today_type = session_type_for(
+    today_type = session_type or session_type_for(
         _safe_int(memory.get("mesocycle_day", 1)),
         override=memory.get(SESSION_OVERRIDE_KEY),
     )
@@ -529,35 +535,31 @@ def send_morning_briefing(memory: dict):
     print(f"Morning briefing sent (style={style}).")
 
 
-def _settle_stale_session(memory: dict) -> bool:
-    """Close a session left active from an earlier day. Returns True when
-    the mesocycle was advanced.
+def _settle_stale_session(memory: dict) -> None:
+    """Close a session left active from an earlier day. Never moves the
+    rotation.
 
-    Three cases, decided from the row rather than assumed:
-
-    - The row is already finished: the app ended it and advanced, only the
-      memory flag was left behind. Clear the flag, move nothing.
-    - The row is open and the state still stands on the session's own
-      stamped position: nobody ended it and nobody advanced. End it — at its
-      last logged set, not at this moment — and advance once.
-    - The row is open but the state has already moved past its stamp (END
-      advanced but the completion write failed), or the row carries no stamp
-      to compare: end it and clear the flag, and do NOT advance. Guessing
-      here is how the wave ran ahead; a position that is wrong is fixed in
-      Settings in one tap, a position moved twice is not noticed for a week.
+    The row decides what closing means: a row the app already finished only
+    needs the leftover memory flag cleared; an open row is ended at its last
+    logged set. Neither case advances the mesocycle. Advancing here is how
+    the wave ran ahead twice — once when this guard and the app's END both
+    moved it, once when END on an empty session moved it and this guard
+    then agreed with the drifted state. The app owns the rotation: it
+    advances on END, and only END. A position that is wrong is fixed in
+    Settings in one tap; a position moved twice is not noticed for a week.
     """
     from data import is_session_finished  # local: keeps import order flat
     from workout import session_row  # local: keeps import order flat
     stale_state = get_workout_state()
     if stale_state.get("workout_mode") != "active":
-        return False
+        return
     start_time_str = stale_state.get("session_start_time", "")
     try:
         if not start_time_str:
-            return False
+            return
         started = datetime.fromisoformat(start_time_str)
         if started.date() >= now_local().date():
-            return False
+            return
         stale_id = stale_state.get("current_session_id", "")
         row = session_row(stale_id) if stale_id else {}
         cleared = {
@@ -567,24 +569,16 @@ def _settle_stale_session(memory: dict) -> bool:
         }
         if stale_id and is_session_finished(row.get("status")):
             set_workout_state(cleared)
-            log.info("Stale flag cleared for %s — the app had already ended it and advanced", stale_id)
-            return False
+            log.info("Stale flag cleared for %s — the app had already ended it", stale_id)
+            return
         if stale_id:
             end_session(stale_id)          # end_session clears the flag itself
         else:
             set_workout_state(cleared)
-        stamp = (_safe_int(row.get("mesocycle_week"), 0), _safe_int(row.get("mesocycle_day"), 0))
-        state = (_safe_int(memory.get("mesocycle_week"), 0), _safe_int(memory.get("mesocycle_day"), 0))
-        if stamp == state and stamp != (0, 0):
-            advance_mesocycle(memory)
-            log.info("Stale session %s ended at its last set and the rotation advanced once", stale_id)
-            return True
-        log.warning("Stale session %s ended at its last set; rotation NOT advanced — state %s "
-                    "does not stand on the session's stamp %s", stale_id, state, stamp)
-        return False
+        log.info("Stale session %s ended at its last set; rotation left where the app put it "
+                 "(state W%s D%s)", stale_id, memory.get("mesocycle_week"), memory.get("mesocycle_day"))
     except Exception:
         log.exception("Stale session check failed")
-        return False
 
 
 def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool = True,
@@ -638,11 +632,7 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     # Without this guard, a session that was never explicitly ended stays
     # workout_mode=active forever, causing sets from later days to accumulate
     # on the same session_id and mesocycle to never advance.
-    if _settle_stale_session(memory):
-        mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
-        expected_session_type = get_session_type_for_day(
-            mesocycle_day, memory.get(SESSION_OVERRIDE_KEY)
-        )
+    _settle_stale_session(memory)
 
     # ── "replay" command ──────────────────────────────────────────────────────
     # Replays prescribe.py (the programme as code) against real logged history
@@ -912,10 +902,20 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             from workout import _find_live_session  # local: keeps import order flat
             live = _find_live_session()
             set_log_session = (live or {}).get("id") or None
+    # The app names the session it opened. That name outranks the rotation
+    # position for this reply: the athlete is standing in the session on
+    # the screen, and a plan for any other day is wrong however well formed.
+    named_type = session_type_named(incoming_text)
+    if named_type and named_type != expected_session_type:
+        log.warning("App opened %s but the rotation stands on %s (W%s D%s); planning %s",
+                    named_type, expected_session_type, memory.get("mesocycle_week"),
+                    memory.get("mesocycle_day"), named_type)
+    reply_type = named_type or expected_session_type
     response = chat_with_coach(incoming_text, conversation_history, memory,
                                recovery_override=recovery_override,
-                               plan_request=is_plan_request(incoming_text, expected_session_type),
-                               set_log_session=set_log_session)
+                               plan_request=is_plan_request(incoming_text, reply_type),
+                               set_log_session=set_log_session,
+                               session_type=named_type)
 
     if inherited_attribution:
         guessed, count = inherited_attribution
