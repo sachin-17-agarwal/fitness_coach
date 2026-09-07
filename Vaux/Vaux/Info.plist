@@ -10,9 +10,6 @@
 	<string></string>
 	<key>CFBundleSignature</key>
 	<string></string>
-	<!-- Required for the rest-timer Live Activity. Without this the app
-	     builds and runs, but Activity.request throws every time and the
-	     Dynamic Island stays empty. -->
 	<!-- Anton (SIL OFL, Resources/Anton-OFL.txt) — the display face for the
 	     rest screen's poster numerals. Falls back to SF Compressed Black in
 	     code if the font fails to register, so a bad path here degrades the
@@ -21,11 +18,12 @@
 	<array>
 		<string>Anton-Regular.ttf</string>
 	</array>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
-	<!-- Lets the rest countdown keep updating while the phone is locked. -->
-	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
-	<true/>
+	<!-- NSSupportsLiveActivities and its FrequentUpdates companion are set
+	     as INFOPLIST_KEY_ build settings on the Vaux target, not here. Declared
+	     in this file they did not reach the installed bundle: the iPhone's
+	     Settings page for Vaux showed no Live Activities toggle, and
+	     ActivityKit refuses every request from an app that does not declare
+	     support. Generated keys are written straight into the bundle's plist. -->
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict/>
