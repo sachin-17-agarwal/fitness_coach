@@ -237,15 +237,20 @@ def end_session(session_id: str, end_at: str | None = None) -> dict:
         supabase = get_supabase()
 
         sets = supabase.table("workout_sets")\
-            .select("actual_weight_kg, actual_reps, is_warmup, logged_at")\
+            .select("exercise, actual_weight_kg, actual_reps, is_warmup, logged_at")\
             .eq("workout_session_id", session_id)\
             .execute()
         if end_at is None:
             stamps = sorted(s.get("logged_at") for s in (sets.data or []) if s.get("logged_at"))
             end_at = stamps[-1] if stamps else now_local().isoformat()
 
+        # Load x reps over working sets, where a bodyweight movement's load
+        # is the plate plus the athlete — the same definition the app uses.
+        from data import latest_bodyweight_kg  # local: keeps import order flat
+        from prescribe import effective_load  # local: keeps import order flat
+        bodyweight = latest_bodyweight_kg()
         tonnage = sum(
-            (s.get("actual_weight_kg") or 0) * (s.get("actual_reps") or 0)
+            effective_load(s.get("actual_weight_kg"), s.get("exercise", ""), bodyweight) * (s.get("actual_reps") or 0)
             for s in (sets.data or [])
             if not s.get("is_warmup")
             and s.get("actual_weight_kg") is not None
@@ -339,13 +344,26 @@ def get_last_logged_exercise(session_id: str) -> str:
 
 # -- PR Detection --------------------------------------------------------------
 
+def bodyweight_fraction_of(exercise: str):
+    from prescribe import bodyweight_fraction  # local: keeps import order flat
+    return bodyweight_fraction(exercise)
+
+
 def check_pr(exercise: str, weight: float, reps: int) -> dict:
-    """Check PR across both workout_sets (new) and sets (historical)."""
+    """Check PR across both workout_sets (new) and sets (historical).
+
+    Loads are effective loads — plate plus bodyweight share for a bodyweight
+    movement — on both sides, so a set of dips at bodyweight is not a zero and
+    a heavier athlete doing the same dip is correctly a stronger one."""
     try:
         supabase = get_supabase()
+        from data import latest_bodyweight_kg  # local: keeps import order flat
+        from prescribe import effective_load  # local: keeps import order flat
+        bodyweight = latest_bodyweight_kg() if bodyweight_fraction_of(exercise) else None
 
         def estimated_1rm(w, r):
-            return w * (1 + r / 30) if w and r else 0
+            load = effective_load(w, exercise, bodyweight)
+            return load * (1 + r / 30) if load and r else 0
 
         current_1rm = estimated_1rm(weight, reps)
 

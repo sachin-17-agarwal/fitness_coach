@@ -41,6 +41,32 @@ final class RecoveryService: Sendable {
         return rows
     }
 
+    // MARK: - Weigh-ins
+
+    /// Every day in the window with a recorded weight, oldest first, for
+    /// scoring bodyweight movements against the body that lifted them.
+    func fetchWeighIns(days: Int) async throws -> WeighInRecord {
+        let since = Self.dateString(daysAgo: days)
+        let rows: [Recovery] = try await client.fetchAll(
+            "recovery",
+            query: ["date": "gte.\(since)", "weight_kg": "not.is.null"],
+            select: "date, weight_kg",
+            order: "date.asc"
+        )
+        return WeighInRecord(entries: rows.compactMap { r in r.weightKg.map { (date: r.date, kg: $0) } })
+    }
+
+    /// The most recent weigh-in on record, whatever its date.
+    func latestBodyweight() async throws -> Double? {
+        let rows: [Recovery] = try await client.fetch(
+            "recovery",
+            query: ["weight_kg": "not.is.null"],
+            order: "date.desc",
+            limit: 1
+        )
+        return rows.first?.weightKg
+    }
+
     // MARK: - 7-day averages
 
     /// Returns the 7-day rolling average for HRV and resting heart rate.

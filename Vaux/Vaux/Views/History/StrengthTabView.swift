@@ -34,7 +34,7 @@ struct StrengthTabView: View {
             byMuscle
             sheet
             balance
-            Text("Est. 1RM is Epley on the best set of ≤\(StrengthViewModel.maxRepsForE1RM) reps. Each block is judged by its peak week; deload weeks are shaded and never count as a drop. Ribbons share one scale: ±8% around each lift's mean.")
+            Text("Est. 1RM is Epley on the best set of ≤\(StrengthViewModel.maxRepsForE1RM) reps. Dips, pull-ups and leg raises count your weigh-in plus the plate. Each block is judged by its peak week; deload weeks are shaded and never count as a drop. Ribbons share one scale: ±8% around each lift's mean.")
                 .font(.system(size: 11)).lineSpacing(3).foregroundStyle(Editorial.muted)
                 .padding(.horizontal, Editorial.gutter).padding(.top, 18)
         }

@@ -34,6 +34,10 @@ final class HistoryViewModel {
 
     private let workoutService = WorkoutService()
     private let mesocycleService = MesocycleService()
+    private let recoveryService = RecoveryService()
+    /// Weigh-ins over the window plus a season of lookback, so the first
+    /// sessions in the window still find a body to score against.
+    private var weighIns = WeighInRecord.empty
 
     func load() async {
         isLoading = true
@@ -44,8 +48,9 @@ final class HistoryViewModel {
         let state = try? await mesocycleService.loadState()
 
         await fetchWindow(state: state)
-        strength.rebuild(sets: sets, sessions: sessions, calendar: calendar)
-        training.rebuild(sets: sets, sessions: sessions, calendar: calendar)
+        weighIns = (try? await recoveryService.fetchWeighIns(days: windowDays + 90)) ?? .empty
+        strength.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
+        training.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
         await recovery.load(sessions: sessions, calendar: calendar)
         await weeklyVolume.load()
     }
@@ -61,8 +66,9 @@ final class HistoryViewModel {
         loadedBlocks = Self.maxBlocks
         let state = try? await mesocycleService.loadState()
         await fetchWindow(state: state)
-        strength.rebuild(sets: sets, sessions: sessions, calendar: calendar)
-        training.rebuild(sets: sets, sessions: sessions, calendar: calendar)
+        weighIns = (try? await recoveryService.fetchWeighIns(days: windowDays + 90)) ?? .empty
+        strength.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
+        training.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
         if let keep { strength.show(block: keep) }
     }
 
