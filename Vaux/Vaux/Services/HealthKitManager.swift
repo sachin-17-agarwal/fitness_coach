@@ -312,13 +312,24 @@ final class HealthKitManager {
         }
     }
 
-    /// Sleep samples that END on the target day. This correctly captures
-    /// sleep sessions that started the previous evening — the common case.
+    /// The night's sleep for `day`: every sleep sample that ENDS between 18:00
+    /// the evening before and 18:00 on the day itself.
+    ///
+    /// It used to be samples ending between midnight and midnight. Health
+    /// records each sleep stage as its own sample, so a Core segment from
+    /// 23:10 to 23:25 the evening before both starts and ends on the wrong
+    /// calendar day and was dropped — Health said 6h 02m, the app said 5h 47m,
+    /// and the coach applied the 5-6h rule (top sets cut 5%) to a night that
+    /// was over six hours. Health itself files sleep by the day it ends with an
+    /// evening boundary; this is the same rule.
+    static let sleepDayBoundaryHour = 18
+
     private func querySleepHours(for day: Date) async throws -> Double? {
         guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
         let calendar = Calendar.current
-        let start = calendar.startOfDay(for: day)
-        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        let dayStart = calendar.startOfDay(for: day)
+        let end = calendar.date(byAdding: .hour, value: Self.sleepDayBoundaryHour, to: dayStart) ?? dayStart
+        let start = calendar.date(byAdding: .day, value: -1, to: end) ?? dayStart
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictEndDate)
 
         return try await withCheckedThrowingContinuation { continuation in
