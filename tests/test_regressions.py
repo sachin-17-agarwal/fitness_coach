@@ -2729,16 +2729,37 @@ class SetCountEnforcementTrimsTests(unittest.TestCase):
         self.assertEqual(fixes, [])
         self.assertEqual(out, reply)
 
-    def test_an_under_count_is_never_filled_in(self):
-        """Adding a set means inventing a load and a rep target the coach did
-        not choose — worse than the wrong count. Report it, don't fix it."""
+    def test_an_under_count_is_filled_by_repeating_the_last_back_off(self):
+        """The reported case: a Machine Shoulder Press block with one back-off
+        against a template of two. The app followed the card, declared the
+        exercise complete after two sets, and the coach disputed its own card.
+        The second back-off is the first one again — nothing is invented."""
         reply = ("*Machine Bicep Curl*\n"
                  "Working Set: 55kg x9 RPE8\n"
-                 "Back-off: 45kg x12 RPE7\n")
+                 "Back-off: 45kg x12 RPE7\n"
+                 "Form: No swinging.\n")
+        out, fixes = enforce_set_counts(reply, self.prompt, "Pull")
+        self.assertEqual(len(fixes), 1)
+        self.assertEqual((fixes[0]["phase"], fixes[0]["added"]), ("backoff", 1))
+        self.assertIn("Back-off: 45kg x12 RPE7, 45kg x12 RPE7\n", out)
+        self.assertIn("Working Set: 55kg x9 RPE8\n", out)
+        self.assertEqual(check_set_counts(out, self.prompt, "Pull")["mismatches"], [])
+
+    def test_a_block_with_no_back_off_line_is_not_given_one(self):
+        """Nothing to repeat: a back-off load would be an invention."""
+        reply = ("*Machine Bicep Curl*\n"
+                 "Working Set: 55kg x9 RPE8\n")
         out, fixes = enforce_set_counts(reply, self.prompt, "Pull")
         self.assertEqual(fixes, [])
         self.assertEqual(out, reply)
-        self.assertEqual(len(check_set_counts(out, self.prompt, "Pull")["mismatches"]), 1)
+
+    def test_a_short_straight_set_line_is_filled_on_the_working_line(self):
+        reply = ("*Machine Calf Raise*\n"
+                 "Working Set: 90kg x12, 90kg x12, 90kg x12 RPE8 | Rest: 90s\n")
+        out, fixes = enforce_set_counts(reply, self.prompt, "Legs")
+        self.assertEqual(len(fixes), 1)
+        self.assertEqual((fixes[0]["phase"], fixes[0]["added"]), ("working", 2))
+        self.assertEqual(check_set_counts(out, self.prompt, "Legs")["mismatches"], [])
 
     def test_a_revised_block_is_left_alone(self):
         """The marker is the coach saying the structure is deliberate."""

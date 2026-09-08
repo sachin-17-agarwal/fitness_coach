@@ -375,20 +375,28 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # one was right; and from the athlete's side the pair is indistinguishable
     # from randomness, which costs the correct reply its authority too.
     #
-    # Only surplus sets are removed. An under-count is left alone and reported,
-    # because filling one means inventing a load and a rep target the coach never
-    # chose.
+    # Surplus sets are removed; an under-count is filled by repeating the
+    # block's own last back-off, so the card the app follows holds the
+    # template's count and the coach never disputes a completion it caused.
     try:
         assistant_message, trimmed = enforce_set_counts(
             assistant_message, system_prompt, today_type,
         )
         for fix in trimmed:
-            log.warning(
-                "SET COUNT TRIMMED (%s): %s had %d surplus %s set(s) against a "
-                "template of %d — removed before sending",
-                today_type, fix["exercise"], fix["dropped"], fix["phase"],
-                fix["target"],
-            )
+            if fix.get("added"):
+                log.warning(
+                    "SET COUNT FILLED (%s): %s had %d %s set(s) too few against a "
+                    "template of %d — last set repeated before sending",
+                    today_type, fix["exercise"], fix["added"], fix["phase"],
+                    fix["target"],
+                )
+            else:
+                log.warning(
+                    "SET COUNT TRIMMED (%s): %s had %d surplus %s set(s) against a "
+                    "template of %d — removed before sending",
+                    today_type, fix["exercise"], fix["dropped"], fix["phase"],
+                    fix["target"],
+                )
     except Exception:
         log.exception("Set-count enforcement failed")
 
