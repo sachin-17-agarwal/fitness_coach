@@ -784,7 +784,10 @@ final class WorkoutService: Sendable {
     /// same dip is correctly a stronger one, and a bodyweight-only set is
     /// not a zero.
     func checkPR(exercise: String, weight: Double, reps: Int, bodyweight: Double? = nil) async throws -> PRResult {
-        let bw = bodyweight ?? (try? await recoveryService.latestBodyweight())
+        // Two statements, not `??`: its right-hand side is an autoclosure and
+        // cannot await.
+        var bw = bodyweight
+        if bw == nil { bw = try? await recoveryService.latestBodyweight() }
         let current1RM = Self.epley1RM(weight: BodyweightLoad.effective(weight, exercise: exercise, bodyweight: bw), reps: reps)
 
         // Fetch all historical sets for this exercise to find the previous best 1RM
