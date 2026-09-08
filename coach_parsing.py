@@ -815,9 +815,16 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
     correctly explained why it is two. The athlete cannot tell which reply to
     trust, so the correct ones stop counting too.
 
-    This removes sets; it never adds one. Adding would mean inventing a load and
-    a rep target the coach did not choose, which is the one thing worse than the
-    wrong count. An UNDER-count is therefore left alone and reported, not filled.
+    It also fills an under-count, by repeating the block's own last back-off
+    set (last working set on a straight-set block). This used to be refused as
+    "inventing a load the coach did not choose" — and then a Machine Shoulder
+    Press block went out with one back-off against a template of two, the app
+    followed the card and declared the exercise complete after two sets, and
+    the coach disputed its own card: "you've only logged one top set and one
+    back-off. That's 2 of 3." Repeating the last back-off invents nothing:
+    the programme's second back-off IS the first one again, same load, and
+    that is the one shape the template asks for. A block with no back-off
+    line at all is still left alone — there is nothing to repeat.
 
     Safe against the app's merge by construction. A block shorter than the one on
     screen never shrinks it — reconciledPhase overlays onto unlogged slots and
@@ -867,6 +874,8 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
             "working": 1, "backoff": target - 1
         }
 
+        counted = {"working": 0, "backoff": 0}
+        last_line = {"working": None, "backoff": None}
         for i in span:
             lower = lines[i].strip().lower()
             if any(lower.startswith(p) for p in _WORKING_PREFIXES):
@@ -884,10 +893,55 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
                     "exercise": block["name"],
                     "phase": phase,
                     "dropped": dropped,
+                    "added": 0,
+                    "target": target,
+                })
+            counted[phase] += _count_sets_on_line(lines[i])
+            last_line[phase] = i
+
+        # The under-count: pad the phase that carries the block's repeats.
+        pad_phase = "working" if straight else "backoff"
+        short = limits[pad_phase] - counted[pad_phase]
+        if short > 0 and last_line[pad_phase] is not None and counted[pad_phase] > 0:
+            i = last_line[pad_phase]
+            padded, added = _pad_set_line(lines[i], short)
+            if added:
+                lines[i] = padded
+                corrections.append({
+                    "exercise": block["name"],
+                    "phase": pad_phase,
+                    "dropped": 0,
+                    "added": added,
                     "target": target,
                 })
 
     return ("\n".join(lines), corrections) if corrections else (reply, [])
+
+
+def _count_sets_on_line(line: str) -> int:
+    """Comma-separated sets on a Working Set: / Back-off: line."""
+    _prefix, sep, rest = line.partition(":")
+    if not sep:
+        return 0
+    return len([s for s in rest.split("|")[0].split(",") if s.strip()])
+
+
+def _pad_set_line(line: str, add: int) -> tuple[str, int]:
+    """Repeat the line's last set `add` times — the same load, reps and RPE.
+
+    Nothing is invented: the programme's extra back-off is the previous one
+    again. The parser reads a trailing RPE per entry, so the copy carries it.
+    """
+    prefix, sep, rest = line.partition(":")
+    if not sep or add < 1:
+        return line, 0
+    segments = rest.split("|")
+    sets = [s.strip() for s in segments[0].split(",") if s.strip()]
+    if not sets:
+        return line, 0
+    sets = sets + [sets[-1]] * add
+    segments[0] = " " + ", ".join(sets) + (" " if len(segments) > 1 else "")
+    return (prefix + ":" + "|".join(segments)).rstrip(), add
 
 
 # ---------------------------------------------------------------------------
