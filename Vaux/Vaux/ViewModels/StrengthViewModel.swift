@@ -46,7 +46,7 @@ struct LiftReport: Identifiable, Hashable {
 
     var bestSetLine: String {
         guard let p = peak else { return "no loaded set yet" }
-        let w = p.weight == p.weight.rounded() ? String(Int(p.weight)) : String(format: "%.1f", p.weight)
+        let w = ExerciseCatalog.setWeightLabel(p.weight, exercise: name)
         let rpe = p.rpe.map { String(format: " @%g", $0) } ?? ""
         return "best \(w) × \(p.reps)\(rpe)"
     }
@@ -169,7 +169,8 @@ final class StrengthViewModel {
 
     /// Recomputes every report from raw rows. Pure, so the same inputs give the
     /// same reading in tests and on device.
-    func rebuild(sets: [WorkoutSet], sessions: [WorkoutSession], calendar: BlockCalendar) {
+    func rebuild(sets: [WorkoutSet], sessions: [WorkoutSession], calendar: BlockCalendar,
+                 weighIns: WeighInRecord = .empty) {
         let sessionById = Dictionary(sessions.compactMap { s in s.id.map { ($0, s) } }, uniquingKeysWith: { a, _ in a })
         // lift → position → best point
         var weekly: [String: [BlockPosition: LiftBlockPoint]] = [:]
@@ -202,10 +203,13 @@ final class StrengthViewModel {
                 if let m = Self.bodyMuscle(forGroup: group) { setsByBlock[pos.block, default: [:]][m, default: 0] += share }
             }
 
+            // The plate is what is displayed; the effective load — plate plus
+            // the athlete for a bodyweight movement — is what is judged.
             let weight = set.actualWeightKg ?? 0
+            let load = BodyweightLoad.effective(weight, exercise: set.exercise, bodyweight: weighIns.kg(on: set.date))
             let reps = set.actualReps ?? 0
-            guard weight > 0, reps > 0, reps <= Self.maxRepsForE1RM else { continue }
-            let e = WorkoutService.epley1RM(weight: weight, reps: reps)
+            guard load > 0, reps > 0, reps <= Self.maxRepsForE1RM else { continue }
+            let e = WorkoutService.epley1RM(weight: load, reps: reps)
             var byPos = weekly[name] ?? [:]
             if (byPos[pos]?.e1rm ?? 0) < e {
                 byPos[pos] = LiftBlockPoint(position: pos, e1rm: e, weight: weight, reps: reps, rpe: set.actualRpe)

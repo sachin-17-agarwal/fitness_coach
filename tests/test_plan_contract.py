@@ -837,6 +837,41 @@ class NamedSessionTests(unittest.TestCase):
         self.assertEqual(seen["template_type"], "Push")
 
 
+class BodyweightLoadTests(unittest.TestCase):
+    """A set of a bodyweight movement lifted the athlete, not just the plate."""
+
+    def test_the_plate_alone_for_stack_lifts(self):
+        from prescribe import effective_load, bodyweight_fraction
+        self.assertIsNone(bodyweight_fraction("Machine Chest Press"))
+        self.assertEqual(effective_load(100, "Machine Chest Press", 80.7), 100)
+
+    def test_dips_and_pull_ups_carry_the_whole_athlete(self):
+        from prescribe import effective_load
+        self.assertAlmostEqual(effective_load(0, "Dips", 80.7), 80.7)
+        self.assertAlmostEqual(effective_load(19, "Dips", 80.7), 99.7)
+        self.assertAlmostEqual(effective_load(17.5, "Pull-Ups", 80.7), 98.2)
+
+    def test_leg_raises_carry_the_legs_and_holds_carry_nothing(self):
+        from prescribe import effective_load, bodyweight_fraction
+        self.assertAlmostEqual(effective_load(0, "Hanging Leg Raises", 80), 28.0)
+        self.assertIsNone(bodyweight_fraction("Ab Wheel Rollout"))
+        self.assertIsNone(bodyweight_fraction("Assisted Dip Machine"))
+
+    def test_no_weigh_in_means_the_plate_alone(self):
+        from prescribe import effective_load
+        self.assertEqual(effective_load(0, "Dips", None), 0)
+        self.assertEqual(effective_load(5, "Dips", 0), 5)
+
+    def test_the_back_off_that_looked_unfair(self):
+        """Bodyweight x13 versus +5 x10 at 80.7kg: the first is more work."""
+        from prescribe import effective_load
+        today = effective_load(0, "Dips", 80.7) * 13
+        last = effective_load(5, "Dips", 80.7) * 10
+        self.assertGreater(today, last)
+        self.assertAlmostEqual(today, 1049.1)
+        self.assertAlmostEqual(last, 857.0)
+
+
 class EndSessionTimeTests(unittest.TestCase):
     def test_a_session_closed_later_ends_at_its_last_logged_set(self):
         import workout
@@ -859,7 +894,35 @@ class EndSessionTimeTests(unittest.TestCase):
                 return Q([])
 
         with patch.object(workout, "get_supabase", return_value=S()), \
-             patch.object(workout, "set_workout_state", lambda d: None):
+             patch.object(workout, "set_workout_state", lambda d: None), \
+             patch("data.latest_bodyweight_kg", return_value=80.0):
             workout.end_session("sid")
         self.assertEqual(updates[0]["end_time"], "2026-09-05T19:44:00+10:00")
         self.assertEqual(updates[0]["tonnage_kg"], 1900.0)
+
+    def test_dips_at_bodyweight_are_counted_as_work(self):
+        import workout
+        updates = []
+
+        class Q:
+            def __init__(self, rows): self.rows = rows
+            def __getattr__(self, name):
+                return lambda *a, **k: self
+            def update(self, body): updates.append(body); return self
+            def execute(self): return type("R", (), {"data": self.rows})()
+
+        class S:
+            def table(self, name):
+                if name == "workout_sets":
+                    return Q([{"exercise": "Dips", "actual_weight_kg": 19, "actual_reps": 9, "is_warmup": False,
+                               "logged_at": "2026-09-08T18:00:00+10:00"},
+                              {"exercise": "Dips", "actual_weight_kg": 0, "actual_reps": 13, "is_warmup": False,
+                               "logged_at": "2026-09-08T18:04:00+10:00"}])
+                return Q([])
+
+        with patch.object(workout, "get_supabase", return_value=S()), \
+             patch.object(workout, "set_workout_state", lambda d: None), \
+             patch("data.latest_bodyweight_kg", return_value=80.0):
+            workout.end_session("sid")
+        # (80+19) x 9 + 80 x 13 = 891 + 1040
+        self.assertEqual(updates[0]["tonnage_kg"], 1931.0)

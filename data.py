@@ -303,3 +303,31 @@ def get_mock_data() -> dict:
         "body_fat_pct": 18.5,
         "vo2_max": 44,
     }
+
+
+def latest_bodyweight_kg() -> float | None:
+    """The most recent weigh-in in the recovery table, whatever its date;
+    the settings' athlete weight when there is none. Used to score bodyweight
+    movements — dips, pull-ups, leg raises — as plate plus athlete."""
+    try:
+        supabase = get_supabase()
+        if supabase:
+            result = (
+                supabase.table("recovery")
+                .select("weight_kg")
+                .not_.is_("weight_kg", "null")
+                .order("date", desc=True)
+                .limit(1)
+                .execute()
+            )
+            for row in result.data or []:
+                if row.get("weight_kg"):
+                    return float(row["weight_kg"])
+    except Exception:
+        pass
+    try:
+        from settings import get_settings  # local: keeps import order flat
+        kg = get_settings().athlete_current_weight_kg
+        return float(kg) if kg else None
+    except Exception:
+        return None

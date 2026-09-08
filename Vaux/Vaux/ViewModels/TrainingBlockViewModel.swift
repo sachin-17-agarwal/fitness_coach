@@ -57,9 +57,16 @@ struct SessionEntry: Identifiable {
     /// summed every set. An August Pull read 7.5T above a set list that adds
     /// to 5.4T; a September one read 6.4T and matched. Same lifting, two
     /// numbers. This is the one the athlete watched climb during the session.
-    static func workingTonnage(_ sets: [WorkoutSet]) -> Double {
+    ///
+    /// A bodyweight movement's load is the plate plus the athlete's share of
+    /// bodyweight on that date (BodyweightLoad), so a set of dips at
+    /// bodyweight is a set of work, not a zero.
+    static func workingTonnage(_ sets: [WorkoutSet], weighIns: WeighInRecord = .empty) -> Double {
         sets.filter { $0.isWarmup != true }
-            .reduce(0) { $0 + ($1.actualWeightKg ?? 0) * Double($1.actualReps ?? 0) }
+            .reduce(0) { total, set in
+                let load = BodyweightLoad.effective(set.actualWeightKg ?? 0, exercise: set.exercise, bodyweight: weighIns.kg(on: set.date))
+                return total + load * Double(set.actualReps ?? 0)
+            }
     }
 
     /// Exercises in the order first logged, each with its working sets.
@@ -114,7 +121,8 @@ final class TrainingBlockViewModel {
 
     static let windowDays = 90
 
-    func rebuild(sets: [WorkoutSet], sessions: [WorkoutSession], calendar: BlockCalendar) {
+    func rebuild(sets: [WorkoutSet], sessions: [WorkoutSession], calendar: BlockCalendar,
+                 weighIns: WeighInRecord = .empty) {
         current = calendar.current
         let setsBySession: [UUID: [WorkoutSet]] = Dictionary(grouping: sets.filter { $0.workoutSessionId != nil }, by: { $0.workoutSessionId! })
 
@@ -131,7 +139,7 @@ final class TrainingBlockViewModel {
             let allSets = rows.flatMap { $0.id.flatMap { setsBySession[$0] } ?? [] }
             return SessionEntry(id: key, date: first.date, type: first.type, sessions: rows,
                                 position: calendar.position(of: first),
-                                tonnage: SessionEntry.workingTonnage(allSets),
+                                tonnage: SessionEntry.workingTonnage(allSets, weighIns: weighIns),
                                 sets: allSets,
                                 isOpen: rows.contains { !SessionStatus($0.status).isFinished })
         }

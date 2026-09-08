@@ -89,6 +89,7 @@ struct WorkoutSet: Codable, Identifiable, Sendable {
 final class WorkoutService: Sendable {
 
     private let client: SupabaseClient
+    private let recoveryService = RecoveryService()
 
     init(client: SupabaseClient = .shared) {
         self.client = client
@@ -238,12 +239,10 @@ final class WorkoutService: Sendable {
         let sets = try await fetchSets(sessionId: id)
         let now = ISO8601DateFormatter().string(from: Date())
 
-        // Tonnage = weight × reps over WORKING sets. The backend's end_session
-        // and the in-workout counter both leave warm-ups out; this summed every
-        // row, so a session ended here stored a number a couple of tonnes above
-        // the one the athlete watched during it, and History showed both kinds
-        // side by side.
-        let tonnage = Self.workingTonnage(sets)
+        // Tonnage = load × reps over WORKING sets, where a bodyweight
+        // movement's load is the plate plus the athlete. The backend's
+        // end_session and the in-workout counter use the same definition.
+        let tonnage = Self.workingTonnage(sets, bodyweight: try? await recoveryService.latestBodyweight())
 
         // Update session row
         try await client.update(
@@ -483,10 +482,14 @@ final class WorkoutService: Sendable {
     }
 
     /// Working-set tonnage, the one definition every writer of `tonnage_kg`
-    /// shares with the backend's `end_session`.
-    static func workingTonnage(_ sets: [WorkoutSet]) -> Double {
+    /// shares with the backend's `end_session`. A bodyweight movement's load
+    /// is the plate plus the athlete's share of bodyweight (BodyweightLoad).
+    static func workingTonnage(_ sets: [WorkoutSet], bodyweight: Double?) -> Double {
         sets.filter { $0.isWarmup != true }
-            .reduce(0.0) { $0 + ($1.actualWeightKg ?? 0) * Double($1.actualReps ?? 0) }
+            .reduce(0.0) { total, set in
+                let load = BodyweightLoad.effective(set.actualWeightKg ?? 0, exercise: set.exercise, bodyweight: bodyweight)
+                return total + load * Double(set.actualReps ?? 0)
+            }
     }
 
     /// Close a session without the end-of-workout machinery.
@@ -498,7 +501,7 @@ final class WorkoutService: Sendable {
     /// history as `in_progress` forever waiting for a finish that never comes.
     func completeSession(id: UUID) async throws {
         let sets = try await fetchSets(sessionId: id)
-        let tonnage = Self.workingTonnage(sets)
+        let tonnage = Self.workingTonnage(sets, bodyweight: try? await recoveryService.latestBodyweight())
         var body: [String: Any] = [
             "status": SessionStatus.finishedStored,
             "end_time": ISO8601DateFormatter().string(from: Date()),
@@ -775,8 +778,14 @@ final class WorkoutService: Sendable {
 
     /// Checks whether the given weight/reps combination represents a new PR
     /// for the exercise using the Epley estimated 1RM formula.
-    func checkPR(exercise: String, weight: Double, reps: Int) async throws -> PRResult {
-        let current1RM = Self.epley1RM(weight: weight, reps: reps)
+    ///
+    /// Loads are the effective load — plate plus bodyweight share for a
+    /// bodyweight movement — on both sides, so a heavier athlete doing the
+    /// same dip is correctly a stronger one, and a bodyweight-only set is
+    /// not a zero.
+    func checkPR(exercise: String, weight: Double, reps: Int, bodyweight: Double? = nil) async throws -> PRResult {
+        let bw = bodyweight ?? (try? await recoveryService.latestBodyweight())
+        let current1RM = Self.epley1RM(weight: BodyweightLoad.effective(weight, exercise: exercise, bodyweight: bw), reps: reps)
 
         // Fetch all historical sets for this exercise to find the previous best 1RM
         let historicalSets: [WorkoutSet] = try await client.fetch(
@@ -787,7 +796,7 @@ final class WorkoutService: Sendable {
 
         var previous1RM = 0.0
         for set in historicalSets {
-            let w = set.actualWeightKg ?? 0
+            let w = BodyweightLoad.effective(set.actualWeightKg ?? 0, exercise: exercise, bodyweight: bw)
             let r = set.actualReps ?? 0
             guard w > 0, r > 0 else { continue }
             let e = Self.epley1RM(weight: w, reps: r)

@@ -182,6 +182,10 @@ final class WorkoutViewModel {
     let heartRateMonitor = HeartRateMonitor()
 
     private let workoutService = WorkoutService()
+    private let recoveryService = RecoveryService()
+    /// The most recent weigh-in, read once per session, so the live tonnage
+    /// scores dips and pull-ups as plate plus athlete like every other total.
+    private var currentBodyweight: Double?
     private let chatService = ChatService()
     private let mesocycleService = MesocycleService()
     private var durationTimer: Timer?
@@ -241,6 +245,7 @@ final class WorkoutViewModel {
         // Ask ahead of the first rest, so permission is settled by the time
         // an alert actually needs to be delivered.
         await RestNotifier.shared.requestAuthorizationIfNeeded()
+        currentBodyweight = try? await recoveryService.latestBodyweight()
         if let existing = await fetchInProgressSession(type: type) {
             await resume(session: existing)
             return
@@ -287,6 +292,7 @@ final class WorkoutViewModel {
     /// today's type, hydrate into it. Does NOT create a new session when
     /// nothing's open — that still requires an explicit "Begin session" tap.
     func resumeIfInProgress(type: String) async {
+        currentBodyweight = try? await recoveryService.latestBodyweight()
         guard !isActive, !showSummary, !type.isEmpty else { return }
         guard let existing = await fetchInProgressSession(type: type) else { return }
         await resume(session: existing)
@@ -367,7 +373,7 @@ final class WorkoutViewModel {
                         warmupCount += 1
                     } else {
                         setCount += 1
-                        let w = set.actualWeightKg ?? 0
+                        let w = BodyweightLoad.effective(set.actualWeightKg ?? 0, exercise: set.exercise, bodyweight: currentBodyweight)
                         let r = Double(set.actualReps ?? 0)
                         totalTonnage += w * r
                     }
@@ -535,7 +541,7 @@ final class WorkoutViewModel {
             loggedSets.append(set)
             exerciseSetsForCurrentExercise.append(set)
             if !isWarmup {
-                totalTonnage += loggedWeight * Double(loggedReps)
+                totalTonnage += BodyweightLoad.effective(loggedWeight, exercise: exercise, bodyweight: currentBodyweight) * Double(loggedReps)
             }
         } catch {
             if !isWarmup { setCount -= 1 } else { warmupCount -= 1 }
@@ -551,7 +557,8 @@ final class WorkoutViewModel {
                 let prResult = try await workoutService.checkPR(
                     exercise: exercise,
                     weight: loggedWeight,
-                    reps: loggedReps
+                    reps: loggedReps,
+                    bodyweight: currentBodyweight
                 )
                 if prResult.isPR {
                     latestPR = prResult
@@ -1270,7 +1277,9 @@ final class WorkoutViewModel {
             // Tonnage counts working sets only, so adjust by the delta rather
             // than rebuilding it from scratch.
             if !wasWarmup {
-                totalTonnage += (weight * Double(reps)) - (oldWeight * Double(oldReps))
+                let newLoad = BodyweightLoad.effective(weight, exercise: set.exercise, bodyweight: currentBodyweight)
+                let oldLoad = BodyweightLoad.effective(oldWeight, exercise: set.exercise, bodyweight: currentBodyweight)
+                totalTonnage += (newLoad * Double(reps)) - (oldLoad * Double(oldReps))
             }
         } catch {
             errorMessage = "Couldn't update the set: \(error.localizedDescription)"
@@ -1307,7 +1316,7 @@ final class WorkoutViewModel {
         } else {
             setCount = max(0, setCount - 1)
             totalTonnage = max(
-                0, totalTonnage - (set.actualWeightKg ?? 0) * Double(set.actualReps ?? 0)
+                0, totalTonnage - BodyweightLoad.effective(set.actualWeightKg ?? 0, exercise: set.exercise, bodyweight: currentBodyweight) * Double(set.actualReps ?? 0)
             )
         }
         // Re-derive from the largest surviving set_number rather than

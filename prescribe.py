@@ -144,6 +144,42 @@ def is_bodyweight(exercise: str) -> bool:
     from muscle_map import BODYWEIGHT_MOVEMENTS  # local: keeps import order flat
     return any(tag in name for tag in BODYWEIGHT_MOVEMENTS)
 
+# Share of the athlete's bodyweight a movement lifts. The whole body hangs
+# from a bar or rests on the dip handles; a hanging leg raise moves roughly
+# the legs, about a third of body mass; rollouts and holds have no meaningful
+# load and stay as the plate alone. A convention, not a measurement — the
+# same one the app applies, so a set is scored identically on both sides.
+_BODYWEIGHT_FRACTIONS = (
+    (("pull-up", "pullup", "pull up", "chin-up", "chinup", "chin up",
+      "muscle-up", "muscle up", "dip", "push-up", "pushup", "push up", "inverted row"), 1.0),
+    (("hanging leg raise", "hanging knee raise", "leg raise", "knee raise"), 0.35),
+    (("nordic",), 0.4),
+)
+
+
+def bodyweight_fraction(exercise: str) -> float | None:
+    """Fraction of bodyweight `exercise` moves, or None for a stack lift."""
+    name = (exercise or "").lower()
+    if "machine" in name or "assisted" in name:
+        return None
+    for tags, fraction in _BODYWEIGHT_FRACTIONS:
+        if any(tag in name for tag in tags):
+            return fraction
+    return None
+
+
+def effective_load(added: float | None, exercise: str, bodyweight: float | None) -> float:
+    """What a set actually lifted: the plate plus the movement's share of the
+    athlete. Tonnage and estimated 1RM built on the plate alone scored a
+    back-off of bodyweight x13 as nothing and +5kg x10 as fifty kilos. With
+    no bodyweight on record the plate alone — never a guessed body."""
+    added = float(added or 0)
+    fraction = bodyweight_fraction(exercise)
+    if fraction is None or not bodyweight or bodyweight <= 0:
+        return added
+    return added + float(bodyweight) * fraction
+
+
 # :63 Working Set 1 — "Compounds 6-10 reps, isolation exercises 8-12 reps".
 # :64 Back-off — "Compounds 10-12 reps, isolation exercises 12-15 reps".
 TOP_SET_RANGE = {COMPOUND: (6, 10), ISOLATION: (8, 12)}
