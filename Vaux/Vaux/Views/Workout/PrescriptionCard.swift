@@ -146,7 +146,23 @@ struct PrescriptionCard: View {
                 Circle().fill(color).frame(width: 6, height: 6)
                 EditorialEyebrow(text: label, color: color, size: 10, kerning: 2.2)
             }
-            HStack(alignment: .center, spacing: 8) {
+            // One or two chips share the row with the last-block panel. Three
+            // or more — the calf raise's five straight sets — take the full
+            // width and the panel moves under them: beside them it squeezed
+            // the chips into a two-column stack with the panel wedged in the
+            // gap.
+            if sets.count <= 2 {
+                HStack(alignment: .center, spacing: 8) {
+                    ChipFlow(spacing: 8) {
+                        ForEach(Array(sets.enumerated()), id: \.offset) { _, target in
+                            setChip(target: target, color: color)
+                        }
+                    }
+                    if let trailing {
+                        lastBlockStack(trailing, against: sets.first)
+                    }
+                }
+            } else {
                 ChipFlow(spacing: 8) {
                     ForEach(Array(sets.enumerated()), id: \.offset) { _, target in
                         setChip(target: target, color: color)
@@ -154,6 +170,7 @@ struct PrescriptionCard: View {
                 }
                 if let trailing {
                     lastBlockStack(trailing, against: sets.first)
+                        .padding(.top, 4)
                 }
             }
         }

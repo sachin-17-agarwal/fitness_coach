@@ -82,12 +82,19 @@ struct SessionEntry: Identifiable {
     }
 
     /// One line for the collapsed row: the two heaviest top sets.
+    /// "TOP · LEG PRESS 230 × 12 · SEATED LEG CURL 100 × 14": the two
+    /// strongest sets of the day by estimated 1RM. It was the two biggest
+    /// by weight × reps, which made a back-off of 185 × 15 the "top" over the
+    /// 230 × 12 it followed, and a Pull day's TOP line showed both back-offs.
     var summaryLine: String {
-        let tops: [(String, Double, Int)] = exercises.compactMap { name, sets in
-            guard let best = sets.filter({ ($0.actualWeightKg ?? 0) > 0 }).max(by: { ($0.actualWeightKg ?? 0) * Double($0.actualReps ?? 0) < ($1.actualWeightKg ?? 0) * Double($1.actualReps ?? 0) }) else { return nil }
-            return (name, best.actualWeightKg ?? 0, best.actualReps ?? 0)
+        func e1rm(_ s: WorkoutSet) -> Double {
+            WorkoutService.epley1RM(weight: s.actualWeightKg ?? 0, reps: s.actualReps ?? 0)
         }
-        let ranked = tops.sorted { $0.1 * Double($0.2) > $1.1 * Double($1.2) }.prefix(2)
+        let tops: [(String, Double, Int, Double)] = exercises.compactMap { name, sets in
+            guard let best = sets.filter({ ($0.actualWeightKg ?? 0) > 0 }).max(by: { e1rm($0) < e1rm($1) }) else { return nil }
+            return (name, best.actualWeightKg ?? 0, best.actualReps ?? 0, e1rm(best))
+        }
+        let ranked = tops.sorted { $0.3 > $1.3 }.prefix(2)
         if ranked.isEmpty {
             let cardio = workingSets.first { ($0.notes ?? "").lowercased().hasPrefix("cardio") }
             if let c = cardio, let mins = c.actualReps { return "CARDIO \(mins) MIN" }

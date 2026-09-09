@@ -464,7 +464,13 @@ final class StrengthViewModel {
         var parts: [(String, Bool)] = []
         if let focus {
             let mine = snap.lifts.filter { $0.muscle == focus && $0.state != StrengthState.none }.sorted { $0.state.attention < $1.state.attention }
-            if mine.isEmpty {
+            // Before peak week a lift with both peaks is waiting, not unread.
+            let waiting = snap.lifts.filter { $0.muscle == focus && $0.state == StrengthState.none && $0.peak != nil && $0.priorPeak != nil }
+            if mine.isEmpty, !snap.peakLifted, !waiting.isEmpty {
+                parts.append((focus.rawValue, true))
+                parts.append((": " + waiting.map { "\($0.name) \(Editorial.signedPct($0.deltaPct ?? 0)) against last block's peak so far" }
+                    .joined(separator: ", ") + ". Verdict at peak week.", false))
+            } else if mine.isEmpty {
                 parts.append(("\(focus.rawValue) has no block-over-block read yet.", false))
             } else {
                 parts.append((focus.rawValue, true)); parts.append((": ", false))
