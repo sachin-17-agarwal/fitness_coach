@@ -1,4 +1,10 @@
 date,session,week,exercise,code,detail
+2026-06-11,Legs,4,Leg Press,rpe_under_target,"top set at RPE6 in week 4, which targets RPE7"
+2026-06-11,Legs,4,Machine Calf Raise,rpe_under_target,"top set at RPE6 in week 4, which targets RPE7"
+2026-06-11,Legs,4,Single Leg Sumo Press,rpe_under_target,"top set at RPE6 in week 4, which targets RPE7"
+2026-06-11,Legs,4,Ab Crunch Machine,rpe_under_target,"top set at RPE6 in week 4, which targets RPE7"
+2026-06-11,Legs,4,Leg Extension,rpe_under_target,"top set at RPE6 in week 4, which targets RPE7"
+2026-06-11,Legs,4,Lying Leg Curl,rpe_under_target,"top set at RPE6 in week 4, which targets RPE7"
 2026-06-13,Pull,1,Incline Dumbbell Curl,reps_below_range,top set at 6 reps against a 8-12 range
 2026-06-13,Pull,1,Hammer Curl,reps_below_range,top set at 6 reps against a 8-12 range
 2026-06-13,Pull,1,Hammer Curl,set_count,2 working set(s) against a template of 3
