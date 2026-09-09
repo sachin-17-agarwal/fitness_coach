@@ -94,18 +94,19 @@ PLAN_SCHEMA = {
                                        "change (last session's set, a machine's step, a joint, a reading). "
                                        "For accept: the rule being applied, in a few words.",
                     },
-                    "warmup": {"type": "array", "items": _WARMUP_SET},
+                    "warmup": {"type": "array", "items": _WARMUP_SET,
+                               "description": "Omit for accept: the programme's ramp is used."},
                     "working": {"type": "array", "items": _SET,
-                                "description": "One top set for top-set/back-off work; every set for straight-set ab work."},
+                                "description": "Omit for accept: the programme's numbers are used. For adjust: one top "
+                                               "set for top-set/back-off work; every set for straight-set work."},
                     "backoff": {"type": "array", "items": _SET,
-                                "description": "Empty for straight-set ab work."},
+                                "description": "Omit for accept. For adjust: empty for straight-set work."},
                     "tempo": {"type": "string", "description": "e.g. 3-1-2"},
                     "rest_seconds": {"type": "integer"},
                     "form_cue": {"type": "string"},
                     "note": {"type": "string", "description": "One or two lines of coaching context after the block."},
                 },
-                "required": ["exercise", "decision", "reason", "warmup", "working", "backoff",
-                             "tempo", "rest_seconds", "form_cue", "note"],
+                "required": ["exercise", "decision", "reason", "tempo", "rest_seconds", "form_cue", "note"],
                 "additionalProperties": False,
             },
         },
@@ -152,12 +153,19 @@ class SessionPlan:
     carried: list = field(default_factory=list)
 
 
-def parse_plan(text: str) -> SessionPlan:
-    """The model's JSON into the dataclasses. Raises on anything malformed."""
+def parse_plan(text: str, proposal: dict | None = None) -> SessionPlan:
+    """The model's JSON into the dataclasses. Raises on anything malformed.
+
+    An `accept` may omit its sets: the programme's numbers are what accept
+    MEANS, so restating them was ~60% of the plan's output tokens for no
+    information — and output tokens are what the athlete waits on. They are
+    filled from `proposal` here, so downstream nothing knows the difference.
+    """
     raw = json.loads(text)
+    proposal_by_key = {_normalise_exercise(k): v for k, v in (proposal or {}).items()}
     exercises = []
     for e in raw["exercises"]:
-        exercises.append(ExercisePlan(
+        plan_e = ExercisePlan(
             exercise=str(e["exercise"]).strip(),
             decision=str(e["decision"]).strip().lower(),
             reason=str(e.get("reason") or "").strip(),
@@ -170,12 +178,120 @@ def parse_plan(text: str) -> SessionPlan:
             rest_seconds=int(e.get("rest_seconds") or 0),
             form_cue=str(e.get("form_cue") or "").strip(),
             note=str(e.get("note") or "").strip(),
-        ))
+        )
+        if plan_e.decision == "accept" and not plan_e.working:
+            block = proposal_by_key.get(_normalise_exercise(plan_e.exercise), "")
+            _fill_sets_from_block(plan_e, block)
+        exercises.append(plan_e)
     return SessionPlan(opening=str(raw.get("opening") or "").strip(), exercises=exercises,
                        carried=[str(c) for c in raw.get("carried") or []])
 
 
+def _rest_seconds(text) -> int:
+    """"2min" / "90s" / "1min30" as the parser hands them -> seconds."""
+    t = str(text or "").strip().lower()
+    m = re.match(r"^(\d+)\s*min(?:\s*(\d+)\s*s?)?$", t)
+    if m:
+        return int(m.group(1)) * 60 + int(m.group(2) or 0)
+    m = re.match(r"^(\d+)\s*s(?:ec)?$", t)
+    if m:
+        return int(m.group(1))
+    return 0
+
+
+def _fill_sets_from_block(e: ExercisePlan, block: str) -> bool:
+    """The programme's rendered block -> this exercise's sets. False when
+    the block has no working set to give."""
+    parsed = _proposal_numbers(block)
+    if not parsed.get("working"):
+        return False
+
+    def sets(rows):
+        return [SetPlan(float(r.get("weight") or 0), int(r.get("reps") or 0),
+                        int(r.get("reps_high") or r.get("reps") or 0), float(r.get("rpe") or 0))
+                for r in rows or []]
+    e.working = sets(parsed.get("working"))
+    e.backoff = sets(parsed.get("backoff"))
+    if not e.warmup:
+        e.warmup = [(float(w.get("weight") or 0), int(w.get("reps") or 0)) for w in parsed.get("warmup") or []]
+    if not e.tempo and parsed.get("tempo"):
+        e.tempo = str(parsed["tempo"])
+    if not e.rest_seconds:
+        e.rest_seconds = _rest_seconds(parsed.get("rest")) or 120
+    return True
+
+
+def fill_from_programme(plan: SessionPlan, problems: list[str], session_type: str, prompt: str,
+                        proposal: dict | None) -> tuple[SessionPlan, list[str], list[str]]:
+    """Replace every exercise a problem names with the programme's own, and
+    add any template exercise the plan left out.
+
+    This is the fallback for an invalid plan. It used to be the PROSE reply:
+    the whole opening thrown away, a second slow call, and blocks written
+    freehand by the model with none of these checks — which is how a Leg
+    Press opened at 207.5kg the week after 230kg x12 @7. Now the coach's
+    valid decisions stand, the invalid ones become the programme's default
+    with the failed rule as their reason, and the athlete is told which.
+
+    Returns (plan, remaining problems, names filled).
+    """
+    proposal_by_key = {_normalise_exercise(k): v for k, v in (proposal or {}).items()}
+    if not proposal_by_key:
+        return plan, problems, []
+    bad_keys = set()
+    reasons: dict = {}
+    for text in problems:
+        name, sep, rest = text.partition(":")
+        if sep:
+            key = _normalise_exercise(name.strip())
+            bad_keys.add(key)
+            reasons.setdefault(key, rest.strip())
+    pairs, _total = parse_session_template(prompt, session_type)
+    template_keys = [_normalise_exercise(n) for n, _ in pairs if not _WEAK_POINT_SLOT_RE.match(n)]
+
+    kept = []
+    filled: list[str] = []
+    present = set()
+    for e in plan.exercises:
+        key = _normalise_exercise(e.exercise)
+        if key not in bad_keys:
+            kept.append(e); present.add(key); continue
+        block = proposal_by_key.get(key) or next(
+            (v for k, v in proposal_by_key.items() if _match_template_key(k, {key: 1}) or _match_template_key(key, {k: 1})), "")
+        replacement = ExercisePlan(exercise=e.exercise, decision="accept",
+                                   reason=f"programme default — the coach's plan for this lift broke a rule ({reasons.get(key, 'see log')})",
+                                   tempo=e.tempo, rest_seconds=e.rest_seconds, form_cue=e.form_cue, note=e.note)
+        if _fill_sets_from_block(replacement, block):
+            kept.append(replacement); present.add(key); filled.append(e.exercise)
+        # A slot fill or substitution with no programme block simply drops:
+        # the template exercises below cover the day.
+    for key in template_keys:
+        if key in present or _match_template_key(key, {k: 1 for k in present}):
+            continue
+        block = proposal_by_key.get(key, "")
+        name = next(n for n, _ in pairs if _normalise_exercise(n) == key)
+        added = ExercisePlan(exercise=name, decision="accept",
+                             reason="programme default — missing from the coach's plan")
+        if _fill_sets_from_block(added, block):
+            kept.append(added); present.add(key); filled.append(name)
+    plan.exercises = kept
+    return plan, validate(plan, session_type, prompt, proposal), filled
+
+
 # ── Checking the plan against the athlete's rules ────────────────────────────
+
+# What a load cut below the programme has to be able to point at. A Leg
+# Press opened 10% under the programme with "hold last week's loads" as the
+# reason — a rule misapplied to the wrong week, not a cause. Cutting load is
+# coaching when it names the recovery reading, the joint, the equipment or
+# the clock; without one of those it is a number nobody decided.
+_CAUSE_RE = re.compile(
+    r"pain|hurt|injur|sore|tight|niggl|tweak|recover|hrv|sleep|fatigue|tired|rhr|resting heart|"
+    r"machine|increment|stack|pin|plate|step|available|busy|occupied|taken|time|late|minutes|"
+    r"deload|sick|ill\b|unwell|travel|jet ?lag|form|technique|grip|belt|spotter|ramp|feel-?out|"
+    r"no (?:logged )?history|first session|new (?:movement|exercise)",
+    re.IGNORECASE)
+
 
 def _is_straight(exercise: str, sets: int) -> bool:
     return _set_shape(exercise, sets).startswith(f"{sets} straight")
@@ -332,6 +448,14 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
             problems.extend(_backoff_problems(e))
 
         computed = _proposal_numbers(proposal_by_key.get(key, ""))
+        if e.decision == "adjust" and computed.get("working") and e.working:
+            programme_top = float(computed["working"][0].get("weight") or 0)
+            if programme_top > 0 and e.working[0].load_kg < programme_top * 0.95 \
+                    and not _CAUSE_RE.search(e.reason):
+                problems.append(f"{e.exercise}: today's top set ({e.working[0].load_kg:g}kg) is under the "
+                                f"programme's ({programme_top:g}kg) and the reason names no cause — say the "
+                                f"recovery reading, the joint, the machine's step or the time that drove it, "
+                                f"or accept the programme's number.")
         if e.decision == "accept" and computed.get("working"):
             same = _same_set(e.working[0], computed["working"][0]) and \
                 len(e.backoff) == len(computed.get("backoff", [])) and \
@@ -484,10 +608,23 @@ def _phase(week: int) -> str:
     return WAVE.get(week, {}).get("name", "")
 
 
-# The app waits a bounded time for the opening reply, and the prose fallback
-# still has to fit after this call. A thinking attempt that has already spent
-# this long is not given a second one.
-PLAN_TIME_BUDGET_SECONDS = 30.0
+# The app waits a bounded time for the opening reply. A first attempt that has
+# already spent this long is not handed back for correction; the programme
+# fills the invalid exercises instead.
+PLAN_TIME_BUDGET_SECONDS = 15.0
+
+
+def _usage_note(response) -> str:
+    u = getattr(response, "usage", None)
+    if not u:
+        return ""
+    parts = []
+    for attr, label in (("input_tokens", "in"), ("cache_read_input_tokens", "cached"),
+                        ("cache_creation_input_tokens", "cache-write"), ("output_tokens", "out")):
+        v = getattr(u, attr, None)
+        if v:
+            parts.append(f"{label} {v}")
+    return " · ".join(parts)
 
 
 def request_session_plan(client, system_blocks: list, messages: list,
@@ -495,18 +632,26 @@ def request_session_plan(client, system_blocks: list, messages: list,
                          proposal: dict | None = None, model: str = MODEL,
                          weak_points: list | None = None,
                          budget_seconds: float = PLAN_TIME_BUDGET_SECONDS) -> tuple:
-    """Ask for the plan, check it, hand it back once if it breaks a rule.
+    """Ask for the plan, check it, and make sure a plan comes back.
 
-    Returns (plan, log_lines). `plan` is None when no valid plan could be had,
-    and the caller falls back to the prose path — the athlete always gets a
-    reply. Thinking is ON for this call: it is one call per session, and
-    weighing a whole day against the athlete's history is exactly the work
-    thinking is for — but it is capped, in tokens and in time. The first live
-    Pull opening sat on a skeleton card for over two minutes: a long think, a
-    retry, then the prose fallback, each on a 30k-token context, past the
-    app's timeout. max_tokens caps thinking and output together, so 8000
-    leaves ~5000 for reasoning over a ~2500-token plan; the retry runs at low
-    effort; and no retry is attempted once the budget is spent.
+    Returns (plan, log_lines). `plan` is None only when the model's output
+    could not be parsed at all AND the programme has nothing to fill from;
+    the caller falls back to prose for that one case.
+
+    Speed is the design constraint here, not an afterthought. The opening
+    plan sat on a skeleton card for two minutes: adaptive thinking spending
+    thousands of tokens over a 30k-token context, a full-size retry, then
+    the prose fallback, each generating ~2,500 tokens at model speed. Three
+    things cut it:
+
+    - No extended thinking. The arithmetic is the programme's, computed
+      before the call; the coach's work is accept-or-adjust with a reason,
+      which the reason field makes it write down anyway.
+    - Accepts carry no numbers (parse_plan fills them), so the output is a
+      fraction of its former size.
+    - One correction round at most, and only inside the budget. An exercise
+      still invalid after that becomes the programme's default, named as
+      such — never a second slow call, never freehand prose.
     """
     import time
     notes: list[str] = []
@@ -517,27 +662,29 @@ def request_session_plan(client, system_blocks: list, messages: list,
     turns = list(messages)
     started = time.monotonic()
 
+    plan = None
+    problems: list[str] = []
     for attempt in (1, 2):
         response = client.messages.create(
             model=model,
-            max_tokens=8000,
-            thinking={"type": "adaptive"},
-            output_config={"format": {"type": "json_schema", "schema": PLAN_SCHEMA},
-                           "effort": "medium" if attempt == 1 else "low"},
+            max_tokens=4000,
+            output_config={"format": {"type": "json_schema", "schema": PLAN_SCHEMA}, "effort": "low"},
             system=system,
             messages=turns,
         )
         elapsed = time.monotonic() - started
-        notes.append(f"attempt {attempt}: {elapsed:.1f}s")
+        usage = _usage_note(response)
+        notes.append(f"attempt {attempt}: {elapsed:.1f}s" + (f" ({usage})" if usage else ""))
         text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
         if getattr(response, "stop_reason", None) == "max_tokens" or not text:
             notes.append(f"attempt {attempt}: no complete plan returned")
-            return None, notes
+            break
         try:
-            plan = parse_plan(text)
+            plan = parse_plan(text, proposal)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             notes.append(f"attempt {attempt}: plan did not parse ({exc})")
-            return None, notes
+            plan = None
+            break
         problems = validate(plan, session_type, prompt, proposal, weak_points)
         if not problems:
             notes.append(f"attempt {attempt}: plan accepted")
@@ -556,7 +703,24 @@ def request_session_plan(client, system_blocks: list, messages: list,
                                         + "\nReturn the corrected plan. Keep every decision you "
                                           "still stand behind and its reason."},
         ]
-    return None, notes
+
+    # The programme stands in for what the coach got wrong, or for all of it.
+    if plan is None:
+        plan = SessionPlan(opening="", exercises=[])
+        problems = validate(plan, session_type, prompt, proposal, weak_points)
+    plan, remaining, filled = fill_from_programme(plan, problems, session_type, prompt, proposal)
+    if filled:
+        notes.append("filled from programme: " + ", ".join(filled))
+        plan.carried = list(plan.carried) + [
+            f"The programme's numbers stand for {', '.join(filled)}; the coach's plan for "
+            f"{'it' if len(filled) == 1 else 'them'} broke a rule and was set aside."]
+    if remaining:
+        notes.append("still invalid after programme fill: " + " | ".join(remaining))
+        return None, notes
+    if not plan.exercises:
+        notes.append("no plan and nothing to fill from")
+        return None, notes
+    return plan, notes
 
 
 # ── The decision log ─────────────────────────────────────────────────────────

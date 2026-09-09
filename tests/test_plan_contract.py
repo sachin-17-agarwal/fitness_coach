@@ -323,6 +323,26 @@ class LiveWorkoutCardioTests(unittest.TestCase):
         self.assertIn("NONE yet — the cardio half has not been logged or imported", block)
 
 
+def _legs_proposal():
+    """The programme's blocks for the same Legs day _legs_plan accepts."""
+    def block(name, load, sets, straight=False):
+        if straight:
+            return (f"*{name}*\nWorking Set: " + ", ".join([f"{load:g}kg x12-15 RPE8"] * sets)
+                    + " | Tempo: 2-1-2 | Rest: 90s\nForm: Full stretch.\n")
+        bo = ", ".join(f"{round(load * 0.8, 1):g}kg x{r}-{r + 2} RPE7" for r in (10, 8)[:sets - 1])
+        return (f"*{name}*\nWarm-up: {round(load * 0.6, 1):g}kg x8\n"
+                f"Working Set: {load:g}kg x6-10 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+                f"Back-off: {bo}\nForm: Drive through the heel.\n")
+    return {
+        "Leg Press": block("Leg Press", 220.0, 3),
+        "Single Leg Sumo Press": block("Single Leg Sumo Press", 120.0, 3),
+        "Leg Extension": block("Leg Extension", 100.0, 2),
+        "Seated Leg Curl": block("Seated Leg Curl", 90.0, 3),
+        "45° Back Extension": block("45° Back Extension", 20.0, 3),
+        "Machine Calf Raise": block("Machine Calf Raise", 100.0, 5, straight=True),
+    }
+
+
 class _FakeClient:
     """Returns canned plan texts in order and records every request."""
 
@@ -346,41 +366,70 @@ class RequestTests(unittest.TestCase):
     def setUpClass(cls):
         cls.PROMPT = _prompt()
 
-    def test_a_valid_plan_is_accepted_on_the_first_call_with_thinking_on(self):
+    def test_a_valid_plan_is_accepted_on_the_first_call_without_extended_thinking(self):
+        """The arithmetic is the programme's; the call is accept-or-adjust
+        with a reason. Thinking was thousands of output tokens the athlete
+        waited on."""
         client = _FakeClient([json.dumps(_legs_plan())])
         plan, notes = request_session_plan(client, [{"type": "text", "text": "S"}],
                                            [{"role": "user", "content": "Starting my Legs session"}],
                                            "Legs", 2, self.PROMPT)
         self.assertIsNotNone(plan)
         req = client.requests[0]
-        self.assertEqual(req["thinking"], {"type": "adaptive"})
+        self.assertNotIn("thinking", req)
         self.assertEqual(req["output_config"]["format"]["type"], "json_schema")
         self.assertEqual(req["output_config"]["format"]["schema"], PLAN_SCHEMA)
-        self.assertEqual(req["max_tokens"], 8000, "thinking and output share the cap; the plan is ~2500 tokens")
+        self.assertEqual(req["output_config"]["effort"], "low")
+        self.assertEqual(req["max_tokens"], 4000)
         self.assertTrue(notes[-1].endswith("plan accepted"))
+
+    def test_an_accept_may_omit_its_sets_and_gets_the_programmes(self):
+        """Restating the programme's numbers on every accept was most of the
+        output; the numbers are what accept means."""
+        raw = _legs_plan()
+        for e in raw["exercises"]:
+            for key in ("warmup", "working", "backoff"):
+                e.pop(key, None)
+        client = _FakeClient([json.dumps(raw)])
+        plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
+                                           "Legs", 2, self.PROMPT, proposal=_legs_proposal())
+        self.assertIsNotNone(plan, notes)
+        lp = next(e for e in plan.exercises if e.exercise == "Leg Press")
+        self.assertEqual((lp.working[0].load_kg, lp.working[0].reps_low, lp.working[0].reps_high, lp.working[0].rpe),
+                         (220.0, 6, 10, 8.0))
+        self.assertEqual([b.load_kg for b in lp.backoff], [176.0, 176.0])
+        self.assertEqual(lp.warmup, [(132.0, 8)])
+        self.assertEqual(lp.rest_seconds, 120)
+        calf = next(e for e in plan.exercises if e.exercise == "Machine Calf Raise")
+        self.assertEqual(len(calf.working), 5)
+        self.assertEqual(calf.rest_seconds, 90)
 
     def test_a_slow_first_attempt_is_not_given_a_retry(self):
         import time
         broken = _legs_plan()
         broken["exercises"][0]["backoff"] = broken["exercises"][0]["backoff"][:1]
         client = _FakeClient([json.dumps(broken), json.dumps(_legs_plan())])
-        real = time.monotonic
         ticks = iter([0.0, 45.0, 46.0, 47.0])
         with patch("time.monotonic", side_effect=lambda: next(ticks, 48.0)):
             plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
-                                               "Legs", 2, self.PROMPT)
-        self.assertIsNone(plan, "past the budget, the prose fallback takes over")
+                                               "Legs", 2, self.PROMPT, proposal=_legs_proposal())
         self.assertEqual(len(client.requests), 1)
         self.assertTrue(any("no retry" in n for n in notes))
+        # And the invalid exercise is the programme's, not a prose fallback.
+        self.assertIsNotNone(plan)
+        lp = next(e for e in plan.exercises if e.exercise == "Leg Press")
+        self.assertEqual(len(lp.backoff), 2)
+        self.assertEqual(lp.decision, "accept")
+        self.assertIn("programme default", lp.reason)
 
-    def test_the_retry_runs_at_low_effort(self):
+    def test_the_retry_also_runs_at_low_effort(self):
         broken = _legs_plan()
         broken["exercises"][0]["backoff"] = broken["exercises"][0]["backoff"][:1]
         client = _FakeClient([json.dumps(broken), json.dumps(_legs_plan())])
         plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
                                            "Legs", 2, self.PROMPT)
         self.assertIsNotNone(plan)
-        self.assertEqual([r["output_config"]["effort"] for r in client.requests], ["medium", "low"])
+        self.assertEqual([r["output_config"]["effort"] for r in client.requests], ["low", "low"])
 
     def test_a_broken_plan_is_handed_back_once_and_the_model_fixes_it(self):
         broken = _legs_plan()
@@ -394,7 +443,7 @@ class RequestTests(unittest.TestCase):
         self.assertIn("template of 3", fix)
         self.assertEqual(client.requests[1]["messages"][-2]["role"], "assistant")
 
-    def test_two_broken_plans_mean_no_plan(self):
+    def test_two_broken_plans_with_no_programme_mean_no_plan(self):
         broken = _legs_plan()
         broken["exercises"] = broken["exercises"][:2]
         client = _FakeClient([json.dumps(broken), json.dumps(broken)])
@@ -403,11 +452,87 @@ class RequestTests(unittest.TestCase):
         self.assertIsNone(plan)
         self.assertEqual(len(client.requests), 2)
 
-    def test_unparseable_output_means_no_plan(self):
+    def test_two_broken_plans_are_completed_by_the_programme(self):
+        """The coach's valid decisions stand; what it left out is the
+        programme's, labelled as such, and the athlete is told."""
+        broken = _legs_plan()
+        broken["exercises"] = broken["exercises"][:2]
+        broken["exercises"][0]["decision"] = "adjust"
+        broken["exercises"][0]["reason"] = "Left knee was sore on the last set last time, holding the load."
+        broken["exercises"][0]["working"][0]["load_kg"] = 215.0
+        client = _FakeClient([json.dumps(broken), json.dumps(broken)])
+        plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
+                                           "Legs", 2, self.PROMPT, proposal=_legs_proposal())
+        self.assertIsNotNone(plan, notes)
+        names = [e.exercise for e in plan.exercises]
+        self.assertEqual(set(names), set(_legs_proposal().keys()))
+        lp = next(e for e in plan.exercises if e.exercise == "Leg Press")
+        self.assertEqual((lp.decision, lp.working[0].load_kg), ("adjust", 215.0))
+        filled = [e for e in plan.exercises if "missing from the coach's plan" in e.reason]
+        self.assertEqual(len(filled), 4)
+        self.assertTrue(any(n.startswith("filled from programme") for n in notes))
+        self.assertTrue(plan.carried and "set aside" in plan.carried[-1])
+        self.assertEqual(validate(plan, "Legs", self.PROMPT, _legs_proposal()), [])
+
+    def test_unparseable_output_with_a_programme_is_the_programme(self):
+        client = _FakeClient(["not json"])
+        plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
+                                           "Legs", 2, self.PROMPT, proposal=_legs_proposal())
+        self.assertIsNotNone(plan, notes)
+        self.assertEqual(len(plan.exercises), 6)
+        self.assertTrue(all(e.decision == "accept" for e in plan.exercises))
+
+    def test_unparseable_output_with_no_programme_means_no_plan(self):
         client = _FakeClient(["not json"])
         plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
                                            "Legs", 2, self.PROMPT)
         self.assertIsNone(plan)
+
+    def test_usage_is_noted_when_the_response_carries_it(self):
+        client = _FakeClient([json.dumps(_legs_plan())])
+        usage = type("U", (), {"input_tokens": 1200, "cache_read_input_tokens": 28000,
+                               "cache_creation_input_tokens": 0, "output_tokens": 900})()
+        real_create = client.messages.create
+
+        def create(**kw):
+            r = real_create(**kw)
+            r.usage = usage
+            return r
+        client.messages.create = create
+        plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
+                                           "Legs", 2, self.PROMPT)
+        self.assertTrue(any("cached 28000" in n and "out 900" in n for n in notes), notes)
+
+
+class DownwardAdjustTests(unittest.TestCase):
+    """The reported case: Leg Press opened at 207.5kg the week after 230kg
+    x12 @7, with "hold last week's loads" as the reason — a rule misapplied,
+    not a cause."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.PROMPT = _prompt()
+
+    def _plan_with(self, load, reason):
+        raw = _legs_plan()
+        raw["exercises"][0]["decision"] = "adjust"
+        raw["exercises"][0]["reason"] = reason
+        raw["exercises"][0]["working"][0]["load_kg"] = load
+        raw["exercises"][0]["backoff"] = [dict(b, load_kg=round(load * 0.8, 1)) for b in raw["exercises"][0]["backoff"]]
+        return parse_plan(json.dumps(raw), _legs_proposal())
+
+    def test_a_cut_below_the_programme_without_a_cause_is_refused(self):
+        plan = self._plan_with(195.0, "Week 2 is volume week, so holding last week's loads and chasing reps.")
+        problems = validate(plan, "Legs", self.PROMPT, _legs_proposal())
+        self.assertTrue(any("names no cause" in p for p in problems), problems)
+
+    def test_a_cut_with_a_cause_stands(self):
+        plan = self._plan_with(195.0, "HRV 35 against a 39 baseline and 5.8h sleep — taking 10% off the top set today.")
+        self.assertEqual(validate(plan, "Legs", self.PROMPT, _legs_proposal()), [])
+
+    def test_a_small_step_for_the_machines_increment_is_not_a_cut(self):
+        plan = self._plan_with(215.0, "Nearest plate on the leg press.")
+        self.assertEqual(validate(plan, "Legs", self.PROMPT, _legs_proposal()), [])
 
 
 class DecisionLogTests(unittest.TestCase):
