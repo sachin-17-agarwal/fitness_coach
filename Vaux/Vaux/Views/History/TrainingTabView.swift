@@ -11,6 +11,7 @@ struct TrainingTabView: View {
     let vm: TrainingBlockViewModel
     let strength: StrengthViewModel
     let recovery: RecoveryInsightsViewModel
+    let volume: WeeklyVolumeViewModel
     @Binding var tab: HistoryView.Tab
     let askCoach: (String) -> Void
 
@@ -46,19 +47,19 @@ struct TrainingTabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HeroTopBar(left: "TRAINING", right: "\(p.blockLabel) · WEEK \(p.week) · \(p.phaseLabel)")
                 HistoryTabChips(selected: $tab).padding(.top, 14)
-                EditorialEyebrow(text: "LIFTED THIS BLOCK", color: Editorial.lime, size: 10, kerning: 2.5).padding(.top, 18)
+                // Hard sets are the headline: they are what the volume
+                // evidence counts, and they do not move when a lift gets
+                // heavier for fewer reps or a slot is skipped on purpose.
+                // Tonnage stays as a supporting line — a sanity check against
+                // the same point last block, not the verdict on the week.
+                EditorialEyebrow(text: "WORKING SETS THIS BLOCK", color: Editorial.lime, size: 10, kerning: 2.5).padding(.top, 18)
                 HStack(alignment: .bottom) {
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        CountUpFigure(value: vm.blockTonnage / 1000, decimals: vm.blockTonnage >= 100_000 ? 0 : 1, size: 132)
-                        Text("T").font(.display(56)).foregroundStyle(Editorial.lime)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        CountUpFigure(value: Double(vm.blockSets), decimals: 0, size: 132)
+                        Text("SETS").font(.display(40)).foregroundStyle(Editorial.lime)
                     }
                     Spacer()
-                    StatStack(lines: [
-                        .init(text: "\(vm.blockSessions) SESSIONS"),
-                        .init(text: "\(vm.blockSets) SETS"),
-                        .init(text: vm.blockDeltaPct.map { Editorial.signedPct($0, decimals: 0) + " VS SAME POINT LAST BLOCK" } ?? "NO PRIOR BLOCK",
-                              color: (vm.blockDeltaPct ?? 0) >= 0 && vm.blockDeltaPct != nil ? Editorial.lime : Editorial.mid),
-                    ]).padding(.bottom, 10)
+                    StatStack(lines: heroLines).padding(.bottom, 10)
                 }
                 .frame(height: 124)
                 HStack {
@@ -86,10 +87,39 @@ struct TrainingTabView: View {
                 .padding(.top, 8)
                 EditorialEyebrow(text: "DASHED · LAST BLOCK, SAME WEEK", color: Editorial.muted, size: 9, kerning: 1.5)
                     .padding(.top, 4)
+                if let change = vm.weekChange {
+                    // Why the week moved: a decision (sets dropped) reads
+                    // differently from fatigue (reps down at the same loads).
+                    EditorialEyebrow(text: change.line, color: Editorial.mid, size: 9, kerning: 1.5)
+                        .padding(.top, 6)
+                }
             }
             .padding(.horizontal, Editorial.gutter)
             .padding(.top, 58)
         }
+    }
+
+    /// Sets in band, the strength read, then tonnage as the supporting line.
+    private var heroLines: [StatStack.Line] {
+        var lines: [StatStack.Line] = []
+        let banded = volume.setsByMuscleGroup.filter { VolumeBands.hasTarget(for: $0.group) }
+        if !banded.isEmpty {
+            let inBand = banded.filter { VolumeBands.targetRange(for: $0.group).contains(Int($0.setsPerWeek.rounded())) }.count
+            lines.append(.init(text: "\(inBand) OF \(banded.count) MUSCLES IN BAND",
+                               color: inBand == banded.count ? Editorial.lime : Editorial.mid))
+        }
+        if let snap = strength.latest {
+            if snap.peakLifted, let g = snap.medianGainPct {
+                lines.append(.init(text: "\(Editorial.signedPct(g)) STRENGTH · PEAK VS PEAK", color: g >= 0 ? Editorial.lime : Editorial.amber))
+            } else {
+                lines.append(.init(text: "\(snap.prCount) ALL-TIME PR\(snap.prCount == 1 ? "" : "S") SO FAR"))
+            }
+        }
+        let tonnage = Editorial.tonnage(vm.blockTonnage)
+        lines.append(.init(text: vm.blockDeltaPct.map { "\(tonnage) · \(Editorial.signedPct($0, decimals: 0)) VS SAME POINT LAST BLOCK" }
+                                ?? "\(tonnage) LIFTED · \(vm.blockSessions) SESSIONS",
+                           color: Editorial.mid))
+        return lines
     }
 
     private var coachPrompt: String? {

@@ -41,7 +41,7 @@ struct HistoryView: View {
                         switch selectedTab {
                         case .training:
                             TrainingTabView(vm: viewModel.training, strength: viewModel.strength, recovery: viewModel.recovery,
-                                            tab: $selectedTab, askCoach: askCoach)
+                                            volume: viewModel.weeklyVolume, tab: $selectedTab, askCoach: askCoach)
                         case .strength:
                             StrengthTabView(vm: viewModel.strength, calendar: viewModel.calendar, tab: $selectedTab, askCoach: askCoach,
                                             canLoadEarlier: viewModel.canLoadEarlier, isLoadingEarlier: viewModel.isLoadingEarlier,
