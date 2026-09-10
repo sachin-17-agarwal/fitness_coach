@@ -497,6 +497,7 @@ def _parse_block(name: str, block: str) -> dict | None:
     backoff = []
     form = None
     why = None
+    note = None
     tempo = None
     rest = None
     revised = False
@@ -528,6 +529,8 @@ def _parse_block(name: str, block: str) -> dict | None:
             form = line.split(":", 1)[1].strip()
         elif lower.startswith("why:"):
             why = line.split(":", 1)[1].strip()
+        elif lower.startswith(("note:", "notes:")):
+            note = line.split(":", 1)[1].strip()
         elif lower.startswith("tempo:"):
             tempo = line.split(":", 1)[1].strip()
         elif lower.startswith("rest:"):
@@ -569,6 +572,8 @@ def _parse_block(name: str, block: str) -> dict | None:
         result["form"] = form
     if why:
         result["why"] = why
+    if note:
+        result["note"] = note
     if tempo:
         result["tempo"] = tempo
     if rest:

@@ -72,7 +72,7 @@ struct PrescriptionCard: View {
             }
             .padding(.top, 8)
 
-            if prescription.tempo != nil || prescription.formCue != nil || prescription.why != nil {
+            if prescription.tempo != nil || prescription.formCue != nil || prescription.why != nil || prescription.note != nil {
                 cuesSection
             }
 
@@ -355,6 +355,23 @@ struct PrescriptionCard: View {
                     if prescription.tempo != nil { Rectangle().fill(Color.line).frame(height: 1) }
                 }
             }
+            if let note = prescription.note, !note.isEmpty {
+                HStack(alignment: .top, spacing: 16) {
+                    EditorialEyebrow(text: "Coach", color: Editorial.muted, size: 9.5, kerning: 2)
+                        .padding(.top, 2)
+                    Text(note)
+                        .font(.system(size: 13.5))
+                        .lineSpacing(3)
+                        .foregroundStyle(Color.fg1)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 12)
+                .overlay(alignment: .top) {
+                    if prescription.tempo != nil || prescription.formCue != nil {
+                        Rectangle().fill(Color.line).frame(height: 1)
+                    }
+                }
+            }
             if let why = prescription.why, !why.isEmpty {
                 HStack(alignment: .top, spacing: 16) {
                     EditorialEyebrow(text: "Why", color: Editorial.muted, size: 9.5, kerning: 2)
@@ -367,7 +384,7 @@ struct PrescriptionCard: View {
                 }
                 .padding(.vertical, 12)
                 .overlay(alignment: .top) {
-                    if prescription.tempo != nil || prescription.formCue != nil {
+                    if prescription.tempo != nil || prescription.formCue != nil || prescription.note != nil {
                         Rectangle().fill(Color.line).frame(height: 1)
                     }
                 }

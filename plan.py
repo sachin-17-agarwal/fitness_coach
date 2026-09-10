@@ -104,7 +104,11 @@ PLAN_SCHEMA = {
                     "tempo": {"type": "string", "description": "e.g. 3-1-2"},
                     "rest_seconds": {"type": "integer"},
                     "form_cue": {"type": "string"},
-                    "note": {"type": "string", "description": "One or two lines of coaching context after the block."},
+                    "note": {"type": "string",
+                             "description": "Coaching context for THIS lift beyond the reason — what to watch today, "
+                                            "a cue for the machine, what a clean top set would trigger next time. It "
+                                            "is shown on the lift's card, never in the opening. Not a restatement of "
+                                            "reason; empty is fine."},
                 },
                 "required": ["exercise", "decision", "reason", "tempo", "rest_seconds", "form_cue", "note"],
                 "additionalProperties": False,
@@ -561,8 +565,11 @@ def render_exercise(e: ExercisePlan, proposal_block: str = "") -> str:
         delta = _delta(e, proposal_block)
         lines.append(f"Why: Changed from the programme ({delta}) — {e.reason}" if delta
                      else f"Why: Changed from the programme — {e.reason}")
+    # Prefixed, so the card keeps it with the lift. Unprefixed, the parser
+    # took the block and left the note behind as prose: six "Week 2 volume
+    # step: ..." paragraphs stacked in the opening with no exercise named.
     if e.note:
-        lines.append(e.note)
+        lines.append(f"Note: {e.note}")
     return "\n".join(lines)
 
 

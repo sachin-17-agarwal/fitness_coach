@@ -38,6 +38,11 @@ struct ExercisePrescription: Identifiable, Sendable {
     /// a departure from the programme, or which muscle a weak-point slot
     /// serves. Shown under the lift it belongs to, not in the opening note.
     var why: String? = nil
+    /// The coach's context for this lift beyond the reason, from a `Note:`
+    /// line — what to watch today, what a clean top set triggers next time.
+    /// Shown on the card with the lift; left as prose it stacked in the
+    /// opening note with no exercise named.
+    var note: String? = nil
 
     var targetWeightKg: Double? { workingSets.first?.weight }
     var targetReps: Int? { workingSets.first?.reps }
@@ -137,6 +142,7 @@ final class PrescriptionParser {
         var backoff: [(weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)] = []
         var formCue: String?
         var why: String?
+        var note: String?
         var tempo: String?
         var restSeconds: Int?
         var isRevision = false
@@ -162,6 +168,8 @@ final class PrescriptionParser {
                 formCue = extractAfterColon(trimmed)
             } else if lower.hasPrefix("why:") {
                 why = extractAfterColon(trimmed)
+            } else if lower.hasPrefix("note:") || lower.hasPrefix("notes:") {
+                note = extractAfterColon(trimmed)
             } else if lower.hasPrefix("tempo:") {
                 tempo = extractAfterColon(trimmed)
             } else if lower.hasPrefix("rest:") {
@@ -204,7 +212,8 @@ final class PrescriptionParser {
             tempo: tempo,
             restSeconds: restSeconds,
             isRevision: isRevision,
-            why: why
+            why: why,
+            note: note
         )
     }
 
@@ -505,7 +514,7 @@ final class PrescriptionParser {
     /// everything that isn't a bold exercise header, Warm-up/Working/Back-off/Form/Rest line.
     static func extractCoachNote(_ text: String) -> String? {
         let structuredPrefixes = warmupPrefixes + workingPrefixes + backoffPrefixes + [
-            "form:", "form cue:", "cue:", "why:",
+            "form:", "form cue:", "cue:", "why:", "note:", "notes:",
             "rest:", "tempo:",
             "revised:", "revision:",
         ]
