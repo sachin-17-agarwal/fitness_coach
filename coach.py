@@ -343,7 +343,11 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         # cached reads separate — so optimisation runs on numbers.
         try:
             from plan import _usage_note  # local: keeps import order flat
-            log.info("CALL prose: %.1fs (%s)", _time.monotonic() - _t0, _usage_note(response) or "no usage")
+            from usage import record_call  # local: keeps import order flat
+            _secs = _time.monotonic() - _t0
+            log.info("CALL prose: %.1fs (%s)", _secs, _usage_note(response) or "no usage")
+            record_call("prose", _secs, response, ok=bool(response.content),
+                        note="plan fallback" if plan_request else "chat")
         except Exception:
             pass
         if not response.content:

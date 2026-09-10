@@ -680,6 +680,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
     system = list(system_blocks) + [{"type": "text", "text": instruction}]
     turns = list(messages)
     started = time.monotonic()
+    _prev = 0.0
 
     plan = None
     problems: list[str] = []
@@ -697,6 +698,11 @@ def request_session_plan(client, system_blocks: list, messages: list,
         usage = _usage_note(response)
         notes.append(f"attempt {attempt}: {elapsed:.1f}s" + (f" ({usage})" if usage else ""))
         text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
+        from usage import record_call  # local: keeps import order flat
+        record_call("plan", elapsed if attempt == 1 else elapsed - _prev, response, attempt=attempt,
+                    ok=bool(text) and getattr(response, "stop_reason", None) != "max_tokens",
+                    note=f"{session_type} wk{week}", model=model)
+        _prev = elapsed
         if getattr(response, "stop_reason", None) == "max_tokens" or not text:
             notes.append(f"attempt {attempt}: no complete plan returned")
             break
@@ -1128,8 +1134,12 @@ def request_set_reply(client, system_blocks: list, messages: list, exercise: str
             messages=turns,
         )
         usage = _usage_note(response)
-        notes.append(f"set reply attempt {attempt}: {time.monotonic() - started:.1f}s" + (f" ({usage})" if usage else ""))
+        elapsed = time.monotonic() - started
+        notes.append(f"set reply attempt {attempt}: {elapsed:.1f}s" + (f" ({usage})" if usage else ""))
         text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
+        from usage import record_call  # local: keeps import order flat
+        record_call("set_reply", elapsed, response, attempt=attempt, ok=bool(text), note=exercise, model=model)
+        started = time.monotonic()
         if not text or getattr(response, "stop_reason", None) == "max_tokens":
             notes.append(f"set reply attempt {attempt}: nothing complete returned")
             return None, notes

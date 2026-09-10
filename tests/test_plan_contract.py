@@ -1072,3 +1072,57 @@ class EndSessionTimeTests(unittest.TestCase):
             workout.end_session("sid")
         # (80+19) x 9 + 80 x 13 = 891 + 1040
         self.assertEqual(updates[0]["tonnage_kg"], 1931.0)
+
+
+class UsageRecordTests(unittest.TestCase):
+    """Every call leaves its cost as a row; the report reads them back."""
+
+    def test_usage_fields_read_the_response_and_default_to_zero(self):
+        from usage import usage_fields
+        u = type("U", (), {"input_tokens": 1200, "cache_read_input_tokens": 28000,
+                           "cache_creation_input_tokens": 0, "output_tokens": 900})()
+        r = type("R", (), {"usage": u})()
+        self.assertEqual(usage_fields(r), {"input_tokens": 1200, "cache_read_tokens": 28000,
+                                           "cache_write_tokens": 0, "output_tokens": 900})
+        self.assertEqual(usage_fields(type("R", (), {"usage": None})())["output_tokens"], 0)
+
+    def test_a_plan_call_records_a_row_and_a_failed_write_never_raises(self):
+        written = []
+
+        class T:
+            def insert(self, row): written.append(row); return self
+            def execute(self): return None
+
+        class S:
+            def table(self, name): assert name == "model_calls"; return T()
+        client = _FakeClient([json.dumps(_legs_plan())])
+        with patch("data.get_supabase", return_value=S()):
+            request_session_plan(client, [], [{"role": "user", "content": "go"}], "Legs", 2, _prompt())
+        self.assertEqual(len(written), 1)
+        self.assertEqual((written[0]["kind"], written[0]["attempt"], written[0]["ok"]), ("plan", 1, True))
+        self.assertIn("Legs wk2", written[0]["note"])
+
+        class Broken:
+            def table(self, name): raise RuntimeError("no table")
+        client = _FakeClient([json.dumps(_legs_plan())])
+        with patch("data.get_supabase", return_value=Broken()):
+            plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}], "Legs", 2, _prompt())
+        self.assertIsNotNone(plan)
+
+    def test_the_report_summarises_by_kind(self):
+        from usage import summarise, format_report
+        rows = [
+            {"kind": "plan", "attempt": 1, "ok": True, "seconds": 22.0, "input_tokens": 900, "cache_read_tokens": 27000, "output_tokens": 1800},
+            {"kind": "plan", "attempt": 2, "ok": True, "seconds": 9.0, "input_tokens": 3000, "cache_read_tokens": 27000, "output_tokens": 700},
+            {"kind": "set_reply", "attempt": 1, "ok": True, "seconds": 4.0, "input_tokens": 500, "cache_read_tokens": 27000, "output_tokens": 200},
+            {"kind": "prose", "attempt": 1, "ok": False, "seconds": 30.0, "input_tokens": 28000, "cache_read_tokens": 0, "output_tokens": 0},
+        ]
+        s = summarise(rows)
+        self.assertEqual(s["plan"]["calls"], 2)
+        self.assertEqual(s["plan"]["retries"], 1)
+        self.assertAlmostEqual(s["plan"]["cache_hit"], 54000 / (54000 + 3900))
+        self.assertEqual(s["prose"]["failed"], 1)
+        self.assertAlmostEqual(s["prose"]["cache_hit"], 0.0)
+        text = format_report(s, 14, "2026-08-27")
+        self.assertIn("| plan | 2 | 1 | 0 |", text)
+        self.assertIn("docs/OPTIMISATION.md", text)

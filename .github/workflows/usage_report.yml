@@ -1,0 +1,44 @@
+# Weekly cost report for the coach's model calls, committed into reports/ so
+# it can be read from the repository without touching Railway or Supabase.
+# The optimisation plan in docs/OPTIMISATION.md is gated on these numbers.
+name: Model call report
+
+on:
+  schedule:
+    - cron: "0 20 * * 0"   # Sunday 20:00 UTC
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "How many days of calls to summarise"
+        default: "14"
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Summarise model calls
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DAYS: ${{ github.event.inputs.days || 14 }}
+        run: python usage.py --report "$DAYS"
+      - name: Commit the report if it changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          if git diff --staged --quiet; then
+            echo "No change; nothing to commit."
+          else
+            git commit -m "Model call report $(date -u +%Y-%m-%d)"
+            git push
+          fi
