@@ -632,10 +632,10 @@ CARDIO_ABS_NOTE = """
   "Cardio logged this session" line and in the message. The Apple Watch export feed
   lags and does not count. If cardio is in, say so and move on; if it is genuinely not,
   its instruction goes in `opening` as prose — never as a prescription block.
-  This plan is the AB block, plus a weak-point slot ONLY for a muscle THIS BLOCK'S
-  WEAK POINTS names — 3 sets, a real movement, the muscle it serves in `reason`.
-  When it names none, the plan is the ab block alone and the day ends there. Do not
-  fill a slot from the rolling WEEKLY VOLUME readout.""".strip()
+  This plan is the AB block, plus ONE weak-point slot ONLY for the muscle THIS BLOCK'S
+  EMPHASIS names — 3 straight sets, a movement that loads it in a way the rotation does
+  not, the muscle it serves in `reason`. When it names none, the plan is the ab block
+  alone and the day ends there. Do not fill a slot from the rolling WEEKLY VOLUME readout.""".strip()
 
 
 def _phase(week: int) -> str:

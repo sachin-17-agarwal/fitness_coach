@@ -177,6 +177,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertNotIn("Calves", picked, "calves are inside their band")
         self.assertNotIn("Chest", picked)
         self.assertTrue(all(p["shortfall"] > 0 for p in info["picks"]), "only real deficits fill a slot")
+        self.assertEqual(len(picked), 1, "one emphasis per block")
         self.assertEqual(len(fake.written), len(picked))
         self.assertTrue(fake.written[0]["exercise"].startswith("Weak-point: "))
         self.assertIn("previous block (2026-08-05 to 2026-08-20)", fake.written[0]["reason"])
@@ -195,6 +196,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(info["picks"], [])
         self.assertEqual([r["exercise"] for r in fake.written], ["Weak-point: none"])
         self.assertIn("both weak-point slots stay EMPTY", format_block_weak_points(info))
+        self.assertIn("no lift stalled", format_block_weak_points(info))
         fake2 = _FakeSupabase(self._sessions(), [], decisions=fake.written)
         with patch.object(weakpoints, "get_supabase", return_value=fake2), \
              patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 8, 25)):
@@ -218,6 +220,7 @@ class EndToEndTests(unittest.TestCase):
         text = format_block_weak_points(info)
         self.assertIn("Hamstrings: 3 sets/week against 10-16 — short by 7", text)
         self.assertIn("held for every Cardio+Abs day this block", text)
+        self.assertIn("ONE slot", text)
 
     def test_no_history_means_the_coach_is_told_so(self):
         self.assertIn("unavailable", format_block_weak_points(None))
@@ -289,3 +292,67 @@ class AthleteOverrideTests(unittest.TestCase):
             msg = weakpoints.set_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 4}, _prompt(), ["forearms"])
         self.assertIn("isn't a muscle with a band", msg)
         self.assertEqual(fake.written, [])
+
+
+class EmphasisTests(unittest.TestCase):
+    """The slot is an emphasis: named, or a deficit, or a stall — else empty."""
+
+    def _sessions(self):
+        types = ["Pull", "Push", "Legs", "Cardio+Abs"] * 6
+        return [{"id": i, "date": f"2026-08-{i + 1:02d}", "type": t, "status": "completed",
+                 "mesocycle_week": None, "mesocycle_day": None} for i, t in enumerate(types)]
+
+    def _full_sets(self, stalled=None):
+        sets = []
+        for d in range(5, 21):
+            for name in ("Machine Chest Press", "Cable Row", "Leg Press", "Seated Leg Curl", "45° Back Extension",
+                         "Machine Calf Raise", "Machine Shoulder Press", "Tricep Pushdown", "Face Pulls",
+                         "Cable Lateral Raise", "Hammer Curl", "Cable Crunch"):
+                load = 37.5 if (name == stalled) else 40 + d
+                sets += [{"exercise": name, "is_warmup": False, "notes": "", "date": f"2026-08-{d:02d}",
+                          "actual_weight_kg": load, "actual_reps": 10, "actual_rpe": 8}] * 3
+        return sets
+
+    def test_a_named_next_emphasis_is_consumed_at_the_block_start(self):
+        pending = [{"id": 9, "date": "2026-08-19", "exercise": "Emphasis-next: Triceps",
+                    "reason": "overhead cable extension", "plan": "{}"}]
+        fake = _FakeSupabase(self._sessions(), self._full_sets(), decisions=pending)
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 8, 25)):
+            info = weakpoints.current_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 1}, _prompt())
+        self.assertEqual([p["muscle"] for p in info["picks"]], ["Triceps"])
+        self.assertIn("named by the athlete on 2026-08-19: overhead cable extension", info["picks"][0]["reason"])
+        self.assertEqual([r["exercise"] for r in fake.written], ["Weak-point: Triceps"])
+        self.assertEqual([r for r in fake.decisions if r["exercise"].startswith("Emphasis-next")], [],
+                         "the pending emphasis is consumed once used")
+        self.assertIn("Triceps: Emphasis this block", format_block_weak_points(info))
+
+    def test_a_stalled_lift_nominates_its_muscle_when_nothing_is_under(self):
+        fake = _FakeSupabase(self._sessions(), self._full_sets(stalled="Tricep Pushdown"))
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 8, 25)):
+            info = weakpoints.current_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 1}, _prompt())
+        self.assertEqual([p["muscle"] for p in info["picks"]], ["Triceps"])
+        self.assertIn("Tricep Pushdown sat at 37.5kg", info["picks"][0]["reason"])
+
+    def test_nothing_under_and_nothing_stalled_is_none(self):
+        fake = _FakeSupabase(self._sessions(), self._full_sets())
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 8, 25)):
+            info = weakpoints.current_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 1}, _prompt())
+        self.assertEqual(info["picks"], [])
+
+    def test_the_next_emphasis_command(self):
+        from weakpoints import parse_emphasis_next, parse_weak_point_command
+        self.assertEqual(parse_emphasis_next("emphasis next: triceps | overhead cable extension"),
+                         {"muscle": "triceps", "note": "overhead cable extension"})
+        self.assertEqual(parse_emphasis_next("weak points next none"), {"muscle": None, "note": ""})
+        self.assertIsNone(parse_emphasis_next("weak points none"))
+        self.assertIsNone(parse_weak_point_command("emphasis next: triceps"))
+        fake = _FakeSupabase([], [], decisions=[])
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 9, 10)):
+            msg = weakpoints.set_next_emphasis(_prompt(), "triceps", "overhead cable extension")
+        self.assertIn("Triceps is the emphasis for the next block", msg)
+        self.assertEqual(fake.written[0]["exercise"], "Emphasis-next: Triceps")
+        self.assertEqual(fake.written[0]["reason"], "overhead cable extension")

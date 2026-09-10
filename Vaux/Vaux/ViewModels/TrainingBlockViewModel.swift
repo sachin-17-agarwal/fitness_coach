@@ -225,3 +225,76 @@ final class TrainingBlockViewModel {
         return .editorial(parts)
     }
 }
+
+
+// MARK: - Why a week moved
+
+/// The change from one week's sessions to the comparable week's, split into
+/// the three things that can move tonnage: sets added or dropped, load, and
+/// reps. Tonnage alone rewards more reps at lighter loads and punishes a
+/// session cut short; this says which one happened.
+struct WeekChange {
+    let againstLabel: String
+    let setsDelta: Int
+    let loadPct: Double?
+    let repsPct: Double?
+
+    var line: String {
+        var parts: [String] = []
+        if setsDelta != 0 { parts.append("\(abs(setsDelta)) \(setsDelta < 0 ? "fewer" : "more") set\(abs(setsDelta) == 1 ? "" : "s")") }
+        if let l = loadPct, abs(l) >= 0.5 { parts.append("loads \(Editorial.signedPct(l, decimals: 0))") }
+        if let r = repsPct, abs(r) >= 0.5 { parts.append("reps \(Editorial.signedPct(r, decimals: 0))") }
+        if parts.isEmpty { parts.append("same sets, loads and reps") }
+        return "VS \(againstLabel.uppercased()) · " + parts.joined(separator: " · ").uppercased()
+    }
+}
+
+extension TrainingBlockViewModel {
+    /// This week's sessions against the previous week of the block (or last
+    /// block's final loading week when this is week 1), matched by session
+    /// type and then by exercise. Per exercise: the set-count difference, and
+    /// on the sets both weeks had, the mean load and mean reps change.
+    var weekChange: WeekChange? {
+        let now = current
+        let against: BlockPosition
+        let label: String
+        if now.week > 1 {
+            against = BlockPosition(block: now.block, week: now.week - 1)
+            label = "W\(now.week - 1)"
+        } else {
+            against = BlockPosition(block: now.block - 1, week: Config.peakWeek)
+            label = "last block W\(Config.peakWeek)"
+        }
+        let mine = entries.filter { $0.position == now }
+        let theirs = entries.filter { $0.position == against }
+        guard !mine.isEmpty, !theirs.isEmpty else { return nil }
+        // Only session types both weeks contain, so a week with Legs still to
+        // come is not read as having dropped every leg set.
+        let types = Set(mine.map(\.type)).intersection(theirs.map(\.type))
+        guard !types.isEmpty else { return nil }
+        func byExercise(_ es: [SessionEntry]) -> [String: [WorkoutSet]] {
+            var out: [String: [WorkoutSet]] = [:]
+            for e in es where types.contains(e.type) {
+                for (name, sets) in e.exercises { out[name, default: []] += sets }
+            }
+            return out
+        }
+        let a = byExercise(mine), b = byExercise(theirs)
+        var setsDelta = 0
+        var loadRatios: [Double] = [], repRatios: [Double] = []
+        for name in Set(a.keys).union(b.keys) {
+            let x = a[name] ?? [], y = b[name] ?? []
+            setsDelta += x.count - y.count
+            guard !x.isEmpty, !y.isEmpty else { continue }
+            let lx = x.map { $0.actualWeightKg ?? 0 }.reduce(0, +) / Double(x.count)
+            let ly = y.map { $0.actualWeightKg ?? 0 }.reduce(0, +) / Double(y.count)
+            let rx = x.map { Double($0.actualReps ?? 0) }.reduce(0, +) / Double(x.count)
+            let ry = y.map { Double($0.actualReps ?? 0) }.reduce(0, +) / Double(y.count)
+            if ly > 0 { loadRatios.append(lx / ly) }
+            if ry > 0 { repRatios.append(rx / ry) }
+        }
+        let loadPct = loadRatios.isEmpty ? nil : (loadRatios.reduce(0, +) / Double(loadRatios.count) - 1) * 100
+        let repsPct = repRatios.isEmpty ? nil : (repRatios.reduce(0, +) / Double(repRatios.count) - 1) * 100
+        return WeekChange(againstLabel: label, setsDelta: setsDelta, loadPct: loadPct, repsPct: repsPct)
+    }
+}

@@ -694,7 +694,20 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     # block's stored pick. Code, not the model: the pick is a decision with a
     # record, and the athlete is the one person allowed to overrule it. Short
     # and free of exercise names, so it is safe in the workout chat.
-    from weakpoints import parse_weak_point_command, set_block_weak_points  # local: import order
+    from weakpoints import (parse_emphasis_next, parse_weak_point_command,  # local: import order
+                            set_block_weak_points, set_next_emphasis)
+    emphasis = parse_emphasis_next(incoming_text)
+    if emphasis is not None:
+        try:
+            message = set_next_emphasis(load_system_prompt(), emphasis["muscle"], emphasis.get("note", ""))
+        except Exception as exc:
+            log.exception("Emphasis command failed")
+            message = f"Couldn't set the next block's emphasis: {exc}"
+        save_conversation_message("user", incoming_text)
+        save_conversation_message("assistant", message)
+        if send_reply:
+            send_telegram_message(message)
+        return message
     wp_names = parse_weak_point_command(incoming_text)
     if wp_names is not None:
         try:
