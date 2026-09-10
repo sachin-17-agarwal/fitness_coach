@@ -301,6 +301,11 @@ def _recent_decisions() -> list:
     return load_recent_decisions()
 
 
+def _standing_constraints() -> list:
+    from constraints import load_active  # local: keeps import order flat
+    return load_active()
+
+
 def build_context_block(memory: dict, athlete_name: str,
                         athlete_current_weight_kg: int,
                         athlete_goal_weight_kg: int,
@@ -346,6 +351,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(get_weak_point_history): "weak_point",
             executor.submit(get_set_comparisons): "set_comparisons",
             executor.submit(_recent_decisions): "decisions",
+            executor.submit(_standing_constraints): "constraints",
             executor.submit(_block_weak_points, memory, system_prompt): "block_weak_points",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
@@ -448,6 +454,7 @@ def build_context_block(memory: dict, athlete_name: str,
         results.get("current_loads") or [],
         recovery=data,
         peak_week_loads=results.get("peak_week_loads") or [],
+        ceilings=__import__("constraints").ceilings(results.get("constraints") or []),
     )
     # Handed back to the caller rather than rendered into the prompt. The
     # numbers are already here — the loads, the week and today's recovery all
@@ -491,6 +498,10 @@ def build_context_block(memory: dict, athlete_name: str,
     )
     from plan import format_decisions  # local: keeps import order flat
     programme_proposal += "\n" + format_decisions(results.get("decisions") or [])
+    from constraints import format_constraints, ceilings as _ceilings  # local: keeps import order flat
+    programme_proposal += format_constraints(results.get("constraints") or [])
+    if out is not None:
+        out["ceilings"] = _ceilings(results.get("constraints") or [])
 
     # Split by volatility, not by topic. Everything that only changes once a
     # day goes in the first block so a cache breakpoint can sit between them;

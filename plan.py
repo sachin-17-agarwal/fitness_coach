@@ -364,7 +364,8 @@ def _backoff_problems(e: ExercisePlan) -> list[str]:
 
 
 def validate(plan: SessionPlan, session_type: str, prompt: str,
-             proposal: dict | None = None, weak_points: list | None = None) -> list[str]:
+             proposal: dict | None = None, weak_points: list | None = None,
+             ceilings: dict | None = None) -> list[str]:
     """Every way the plan breaks the programme, as sentences the model can act on.
 
     Mechanical rules only — set counts from the template, the shape of the
@@ -464,6 +465,15 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
                                 f"{'s' if target - 1 != 1 else ''}).")
             problems.extend(_backoff_problems(e))
 
+        if ceilings:
+            from prescribe import norm_name  # local: keeps import order flat
+            cap = {norm_name(k): v for k, v in ceilings.items()}.get(norm_name(e.exercise))
+            if cap is not None:
+                over = [s for s in e.working + e.backoff if s.load_kg > cap + 1e-6]
+                if over:
+                    problems.append(f"{e.exercise}: {over[0].load_kg:g}kg is over the standing ceiling of "
+                                    f"{cap:g}kg you recorded for this machine — progress by reps and tempo "
+                                    f"at {cap:g}kg, or clear the decision if the machine has changed.")
         computed = _proposal_numbers(proposal_by_key.get(key, ""))
         if e.decision == "adjust" and computed.get("working") and e.working:
             programme_top = float(computed["working"][0].get("weight") or 0)
@@ -651,7 +661,8 @@ def request_session_plan(client, system_blocks: list, messages: list,
                          session_type: str, week: int, prompt: str,
                          proposal: dict | None = None, model: str = MODEL,
                          weak_points: list | None = None,
-                         budget_seconds: float = PLAN_TIME_BUDGET_SECONDS) -> tuple:
+                         budget_seconds: float = PLAN_TIME_BUDGET_SECONDS,
+                         ceilings: dict | None = None) -> tuple:
     """Ask for the plan, check it, and make sure a plan comes back.
 
     Returns (plan, log_lines). `plan` is None only when the model's output
@@ -719,7 +730,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
             notes.append(f"attempt {attempt}: plan did not parse ({exc})")
             plan = None
             break
-        problems = validate(plan, session_type, prompt, proposal, weak_points)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings)
         if not problems:
             notes.append(f"attempt {attempt}: plan accepted")
             return plan, notes
@@ -746,7 +757,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
     # Soft problems are the coach's to keep: they never send a lift to the fill.
     if plan is None:
         plan = SessionPlan(opening="", exercises=[])
-        problems = validate(plan, session_type, prompt, proposal, weak_points)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings)
     soft = [x for x in problems if is_soft(x)]
     if soft:
         notes.append("coach's call stands: " + " | ".join(x[:-len(SOFT)] for x in soft))

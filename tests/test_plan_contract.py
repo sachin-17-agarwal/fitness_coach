@@ -1137,3 +1137,62 @@ class UsageRecordTests(unittest.TestCase):
         text = format_report(s, 14, "2026-08-27")
         self.assertIn("| plan | 2 | 1 | 0 |", text)
         self.assertIn("docs/OPTIMISATION.md", text)
+
+
+class StandingConstraintTests(unittest.TestCase):
+    """A fact stated in chat outlives the session: stored, shown, respected."""
+
+    def test_decision_lines_parse(self):
+        from constraints import parse_decision_lines
+        reply = ("Good call.\n\nDecision: Cable Crunch | max load 105kg | stack tops out; reps to 12-15 @8, then tempo\n"
+                 "Decision: Ab Wheel Rollout | clear\nSee you Thursday.")
+        d = parse_decision_lines(reply)
+        self.assertEqual(d[0], {"exercise": "Cable Crunch", "max_load_kg": 105.0,
+                                "note": "stack tops out; reps to 12-15 @8, then tempo", "clear": False})
+        self.assertEqual(d[1], {"exercise": "Ab Wheel Rollout", "clear": True})
+        self.assertEqual(parse_decision_lines("no decisions here"), [])
+
+    def test_the_programme_caps_at_the_ceiling_and_moves_to_reps(self):
+        from constraints import apply_ceilings
+        from prescribe import Proposal, SetSpec
+        p = Proposal(exercise="Cable Crunch", kind="isolation",
+                     warmup=[], working=[SetSpec(107.5, 8, 12, 8.0)] * 3, backoff=[],
+                     reasons=["week 2 step"])
+        out = apply_ceilings([p], {"cable crunch": 105.0})[0]
+        self.assertEqual([s.weight_kg for s in out.working], [105.0] * 3)
+        self.assertEqual((out.working[0].reps_low, out.working[0].reps_high), (12, 15))
+        self.assertTrue(any("standing decision caps this machine at 105kg" in r for r in out.reasons))
+        # Under the ceiling, nothing changes.
+        q = Proposal(exercise="Cable Crunch", kind="isolation", working=[SetSpec(100.0, 8, 12, 8.0)])
+        self.assertEqual(apply_ceilings([q], {"cable crunch": 105.0})[0].working[0].weight_kg, 100.0)
+
+    def test_a_top_set_with_back_offs_keeps_its_shape_under_the_cap(self):
+        from constraints import apply_ceilings
+        from prescribe import Proposal, SetSpec
+        p = Proposal(exercise="Leg Extension", kind="isolation",
+                     warmup=[SetSpec(60.0, 8, 8, 6.0)], working=[SetSpec(115.0, 8, 12, 8.0)],
+                     backoff=[SetSpec(92.0, 12, 15, 7.0)])
+        out = apply_ceilings([p], {"leg extension": 110.0})[0]
+        self.assertEqual(out.working[0].weight_kg, 110.0)
+        self.assertAlmostEqual(out.backoff[0].weight_kg, 88.0)
+        self.assertAlmostEqual(out.warmup[0].weight_kg, 57.5)
+
+    def test_the_plan_may_not_exceed_a_ceiling(self):
+        raw = _legs_plan()
+        raw["exercises"][2]["decision"] = "adjust"
+        raw["exercises"][2]["reason"] = "Quads felt fresh after the presses, taking the step up today."
+        raw["exercises"][2]["working"][0]["load_kg"] = 112.5
+        raw["exercises"][2]["backoff"][0]["load_kg"] = 90.0
+        plan = parse_plan(json.dumps(raw), _legs_proposal())
+        problems = validate(plan, "Legs", _prompt(), _legs_proposal(), ceilings={"leg extension": 110.0})
+        self.assertTrue(any("standing ceiling of 110kg" in p for p in problems), problems)
+        self.assertEqual(validate(plan, "Legs", _prompt(), _legs_proposal(), ceilings={"leg extension": 115.0}), [])
+
+    def test_constraints_read_back_for_the_coach(self):
+        from constraints import format_constraints, ceilings
+        rows = [{"exercise": "Cable Crunch", "max_load_kg": 105, "note": "stack tops out", "set_on": "2026-09-10"}]
+        text = format_constraints(rows)
+        self.assertIn("Cable Crunch · max load 105kg (since 2026-09-10) — stack tops out", text)
+        from prescribe import norm_name
+        self.assertEqual(ceilings(rows), {norm_name("Cable Crunch"): 105.0})
+        self.assertIn("None recorded", format_constraints([]))
