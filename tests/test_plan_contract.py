@@ -246,6 +246,17 @@ class RenderTests(unittest.TestCase):
         self.assertIn("*45° Back Extension*", text)
         self.assertTrue(text.startswith("HRV is on baseline"))
 
+    def test_the_note_travels_with_its_exercise_as_a_note_line(self):
+        """Six unprefixed notes stacked in the opening as anonymous 'Week 2
+        volume step' paragraphs. Prefixed, the card keeps each with its lift."""
+        raw = _legs_plan()
+        raw["exercises"][0]["note"] = "If 10 comes clean at RPE8, the next session steps to 225."
+        text = render_plan(parse_plan(json.dumps(raw)))
+        self.assertIn("Note: If 10 comes clean at RPE8", text)
+        cards = {c["exercise"]: c for c in parse_all_prescriptions(text)}
+        self.assertEqual(cards["Leg Press"]["note"], "If 10 comes clean at RPE8, the next session steps to 225.")
+        self.assertNotIn("note", cards["Leg Extension"])
+
     def test_a_departure_travels_with_its_exercise_as_a_why_line(self):
         raw = _legs_plan()
         raw["exercises"][2]["decision"] = "adjust"
