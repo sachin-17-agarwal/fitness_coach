@@ -736,10 +736,19 @@ final class WorkoutViewModel {
         // Capture skip intent against the phase the athlete is looking at
         // *now* — applyAIResponse may re-sync the phase from the log below.
         let athleteAskedToSkip = athleteRequestedWarmupSkip(text)
+        let athleteAskedToMove = athleteRequestedExerciseChange(text)
 
         do {
             let response = try await chatService.sendMessage(text)
-            applyAIResponse(response)
+            // A chat reply may not move the card off an unfinished exercise
+            // unless the athlete asked to move. The guard that refuses a
+            // premature exercise change ran only on set-log replies; a
+            // question about the cable crunch's top plate, asked before its
+            // third set, came back with the next exercise's block and the
+            // card jumped to Hanging Leg Raises. The athlete had to ask the
+            // coach to go back. The set the athlete is standing in front of
+            // is ground truth; the coach's prose still reaches the note.
+            applyAIResponse(response, allowExerciseChange: athleteAskedToMove)
             // Only skip when the athlete clearly asked to drop the warm-up
             // AND the coach didn't push back. The coach can't move the iOS
             // phase tracker on its own, but we also won't drop a set on a
@@ -752,6 +761,23 @@ final class WorkoutViewModel {
             errorMessage = error.localizedDescription
         }
         isCoachThinking = false
+    }
+
+    /// True when the athlete's message asks to leave the current exercise:
+    /// skip it, move on, swap it, or reports it cannot be done (machine
+    /// taken, pain). Questions count — "can we skip this?" is a request —
+    /// but negations do not. Anything else holds the card where it is.
+    private func athleteRequestedExerciseChange(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let negations = ["don't skip", "dont skip", "do not skip", "not skip", "never skip",
+                         "don't move", "dont move", "do not move", "not move on",
+                         "don't swap", "dont swap", "do not swap", "no need to"]
+        if negations.contains(where: lower.contains) { return false }
+        let requests = ["skip", "move on", "move to", "next exercise", "swap", "replace", "substitute",
+                        "instead of", "drop this", "leave this", "machine is taken", "machine is busy",
+                        "machine's taken", "is occupied", "someone's on", "can't do", "cant do",
+                        "cannot do", "hurts", "painful", "go back", "back to"]
+        return requests.contains(where: lower.contains)
     }
 
     /// True only when the athlete gave an explicit, affirmative instruction
