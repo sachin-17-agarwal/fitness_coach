@@ -689,6 +689,25 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     # conversations table whenever the chat reappears, so the report would
     # vanish on a tab switch, and a follow-up question would reach the model
     # with no record that a replay ever ran.
+    # ── "weak points ..." command ─────────────────────────────────────────────
+    # "weak points none" / "weak points: rear delts, hamstrings" overwrites this
+    # block's stored pick. Code, not the model: the pick is a decision with a
+    # record, and the athlete is the one person allowed to overrule it. Short
+    # and free of exercise names, so it is safe in the workout chat.
+    from weakpoints import parse_weak_point_command, set_block_weak_points  # local: import order
+    wp_names = parse_weak_point_command(incoming_text)
+    if wp_names is not None:
+        try:
+            message = set_block_weak_points(memory, load_system_prompt(), wp_names)
+        except Exception as exc:
+            log.exception("Weak-point command failed")
+            message = f"Couldn't change the block's weak points: {exc}"
+        save_conversation_message("user", incoming_text)
+        save_conversation_message("assistant", message)
+        if send_reply:
+            send_telegram_message(message)
+        return message
+
     replay_match = re.match(r'^/?replay(?:\s+(\d+))?$', normalised_text)
     if replay_match:
         days = int(replay_match.group(1) or DEFAULT_REPLAY_DAYS)
