@@ -336,7 +336,16 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
             assistant_message = None
 
     if assistant_message is None:
+        import time as _time
+        _t0 = _time.monotonic()
         response = _prose_reply(system_prompt, stable_context, live_context, messages_to_send)
+        # Every model call leaves its cost in the log — seconds and tokens,
+        # cached reads separate — so optimisation runs on numbers.
+        try:
+            from plan import _usage_note  # local: keeps import order flat
+            log.info("CALL prose: %.1fs (%s)", _time.monotonic() - _t0, _usage_note(response) or "no usage")
+        except Exception:
+            pass
         if not response.content:
             assistant_message = "Sorry, I couldn't generate a response. Please try again."
         else:

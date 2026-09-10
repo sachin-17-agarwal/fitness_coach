@@ -293,6 +293,19 @@ _CAUSE_RE = re.compile(
     re.IGNORECASE)
 
 
+# A problem the coach is ASKED about, never overruled on. The cause rule is
+# the one judgement call in validate: a cut below the programme is coaching
+# when the coach can say why, and the code cannot know every why. So it is
+# handed back once for the cause; if the coach stands by the cut, the cut
+# stands and the log records that no cause was given. Quality of coaching
+# outranks tidiness of the rulebook.
+SOFT = " [soft]"
+
+
+def is_soft(problem: str) -> bool:
+    return problem.endswith(SOFT)
+
+
 def _is_straight(exercise: str, sets: int) -> bool:
     return _set_shape(exercise, sets).startswith(f"{sets} straight")
 
@@ -455,7 +468,7 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
                 problems.append(f"{e.exercise}: today's top set ({e.working[0].load_kg:g}kg) is under the "
                                 f"programme's ({programme_top:g}kg) and the reason names no cause — say the "
                                 f"recovery reading, the joint, the machine's step or the time that drove it, "
-                                f"or accept the programme's number.")
+                                f"or accept the programme's number.{SOFT}")
         if e.decision == "accept" and computed.get("working"):
             same = _same_set(e.working[0], computed["working"][0]) and \
                 len(e.backoff) == len(computed.get("backoff", [])) and \
@@ -611,7 +624,7 @@ def _phase(week: int) -> str:
 # The app waits a bounded time for the opening reply. A first attempt that has
 # already spent this long is not handed back for correction; the programme
 # fills the invalid exercises instead.
-PLAN_TIME_BUDGET_SECONDS = 15.0
+PLAN_TIME_BUDGET_SECONDS = 30.0
 
 
 def _usage_note(response) -> str:
@@ -638,20 +651,26 @@ def request_session_plan(client, system_blocks: list, messages: list,
     could not be parsed at all AND the programme has nothing to fill from;
     the caller falls back to prose for that one case.
 
-    Speed is the design constraint here, not an afterthought. The opening
-    plan sat on a skeleton card for two minutes: adaptive thinking spending
-    thousands of tokens over a 30k-token context, a full-size retry, then
-    the prose fallback, each generating ~2,500 tokens at model speed. Three
-    things cut it:
+    Quality first, then speed. The opening plan once sat on a skeleton card
+    for two minutes: thinking over a 30k-token context, a full-size retry,
+    then the prose fallback, each generating ~2,500 tokens. Two things cut
+    that without touching the coaching:
 
-    - No extended thinking. The arithmetic is the programme's, computed
-      before the call; the coach's work is accept-or-adjust with a reason,
-      which the reason field makes it write down anyway.
     - Accepts carry no numbers (parse_plan fills them), so the output is a
-      fraction of its former size.
+      fraction of its former size and the model's tokens go on decisions.
     - One correction round at most, and only inside the budget. An exercise
       still invalid after that becomes the programme's default, named as
       such — never a second slow call, never freehand prose.
+
+    Extended thinking stays ON. Weighing a day against the athlete's history,
+    recovery and earlier decisions is exactly what deliberation is for, and
+    the athlete has said quality outranks latency. It was removed for a day
+    and put back on that instruction. max_tokens caps thinking and output
+    together; with accepts terse, 8000 leaves most of it for the think.
+
+    Problems marked soft (is_soft) are put to the coach once and never
+    overrule it: a cut below the programme without a named cause is queried,
+    and if the coach stands by it, it stands.
     """
     import time
     notes: list[str] = []
@@ -667,8 +686,10 @@ def request_session_plan(client, system_blocks: list, messages: list,
     for attempt in (1, 2):
         response = client.messages.create(
             model=model,
-            max_tokens=4000,
-            output_config={"format": {"type": "json_schema", "schema": PLAN_SCHEMA}, "effort": "low"},
+            max_tokens=8000,
+            thinking={"type": "adaptive"},
+            output_config={"format": {"type": "json_schema", "schema": PLAN_SCHEMA},
+                           "effort": "medium" if attempt == 1 else "low"},
             system=system,
             messages=turns,
         )
@@ -690,6 +711,10 @@ def request_session_plan(client, system_blocks: list, messages: list,
             notes.append(f"attempt {attempt}: plan accepted")
             return plan, notes
         notes.append(f"attempt {attempt}: " + " | ".join(problems))
+        if all(is_soft(x) for x in problems) and attempt == 2:
+            # Asked, answered, and the coach stands by it: its call.
+            notes.append("coach's call stands: " + " | ".join(x[:-len(SOFT)] for x in problems))
+            return plan, notes
         if attempt == 2:
             break
         if elapsed > budget_seconds:
@@ -705,10 +730,16 @@ def request_session_plan(client, system_blocks: list, messages: list,
         ]
 
     # The programme stands in for what the coach got wrong, or for all of it.
+    # Soft problems are the coach's to keep: they never send a lift to the fill.
     if plan is None:
         plan = SessionPlan(opening="", exercises=[])
         problems = validate(plan, session_type, prompt, proposal, weak_points)
-    plan, remaining, filled = fill_from_programme(plan, problems, session_type, prompt, proposal)
+    soft = [x for x in problems if is_soft(x)]
+    if soft:
+        notes.append("coach's call stands: " + " | ".join(x[:-len(SOFT)] for x in soft))
+    plan, remaining, filled = fill_from_programme(plan, [x for x in problems if not is_soft(x)],
+                                                  session_type, prompt, proposal)
+    remaining = [x for x in remaining if not is_soft(x)]
     if filled:
         notes.append("filled from programme: " + ", ".join(filled))
         plan.carried = list(plan.carried) + [
@@ -1084,6 +1115,8 @@ def request_set_reply(client, system_blocks: list, messages: list, exercise: str
     instruction = SET_REPLY_INSTRUCTION.format(exercise=exercise, done=done, total=total)
     system = list(system_blocks) + [{"type": "text", "text": instruction}]
     turns = list(messages)
+    import time
+    started = time.monotonic()
     for attempt in (1, 2):
         response = client.messages.create(
             model=model,
@@ -1094,6 +1127,8 @@ def request_set_reply(client, system_blocks: list, messages: list, exercise: str
             system=system,
             messages=turns,
         )
+        usage = _usage_note(response)
+        notes.append(f"set reply attempt {attempt}: {time.monotonic() - started:.1f}s" + (f" ({usage})" if usage else ""))
         text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
         if not text or getattr(response, "stop_reason", None) == "max_tokens":
             notes.append(f"set reply attempt {attempt}: nothing complete returned")
