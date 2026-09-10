@@ -717,6 +717,23 @@ NEVER re-send a partial exercise block mid-exercise. The app replaces the entire
 
 Which of the two depends on ONE question: does anything about the prescription change? If the numbers stand exactly as they are — you are acknowledging a set, giving a cue, answering a question — use plain narrative. If ANYTHING changes (load, reps, RPE, tempo, rest, set count, or the exercise itself), you MUST send the full block with a `Revised:` line. Agreeing in prose is not a change; the card renders from the block and nothing else. "Got it — 7.5kg for 10 next set" with no block leaves the athlete looking at the old 10kg x12 on every remaining set while you believe you have changed it.
 
+### Standing Decisions (`Decision:` lines)
+
+Some facts he tells you outlive the session: the stack tops out ("105 is the
+last load on the cable crunch"), a movement is off the table for the block, a
+machine is gone. Agreeing in prose is not enough — the programme's proposal
+will ask for 107.5 next time and you will have to remember a chat from four
+days ago. Record it, once, on its own line anywhere in the reply:
+
+Decision: Cable Crunch | max load 105kg | stack tops out; progress by reps to 12-15 @8, then tempo
+
+The line is stored and shown to you every session under STANDING CONSTRAINTS,
+and the programme caps its proposals to it. When it no longer holds:
+
+Decision: Cable Crunch | clear
+
+One line per exercise. Not for today-only changes — those are `Revised:` blocks.
+
 ### Prescription Changes Mid-Exercise (`Revised:` blocks)
 
 When the athlete asks to CHANGE ANYTHING about the current exercise, narrative agreement is NOT enough. This covers every kind of change, not only structural ones:

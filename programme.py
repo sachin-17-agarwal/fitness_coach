@@ -141,7 +141,8 @@ def _history(plan, current_loads: list[dict], week: int | None = None) -> tuple:
 def build_proposal(prompt: str, session_type: str, week: int,
                    current_loads: list[dict],
                    recovery: dict | None = None,
-                   peak_week_loads: list[dict] | None = None) -> tuple:
+                   peak_week_loads: list[dict] | None = None,
+                   ceilings: dict | None = None) -> tuple:
     """The programme's proposal for today.
 
     Returns (proposals, renamed, ambiguous) — empty throughout when it cannot
@@ -158,9 +159,12 @@ def build_proposal(prompt: str, session_type: str, week: int,
             return [], {}, {}
         history, renamed, ambiguous = _history(plan, current_loads)
         peak_history, _r, _a = _history(plan, peak_week_loads or [], week=3)
-        return (prescribe_session(plan, week, history, recovery=recovery,
-                                  peak_history=peak_history),
-                renamed, ambiguous)
+        proposals = prescribe_session(plan, week, history, recovery=recovery,
+                                      peak_history=peak_history)
+        if ceilings:
+            from constraints import apply_ceilings  # local: keeps import order flat
+            proposals = apply_ceilings(proposals, ceilings)
+        return proposals, renamed, ambiguous
     except Exception:
         # A proposal is an aid, never a precondition. The coach has run without
         # one since the programme was written; a failure here must not take the

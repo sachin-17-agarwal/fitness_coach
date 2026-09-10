@@ -286,6 +286,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 prompt=system_prompt,
                 proposal=programme_out.get("computed") or {},
                 weak_points=programme_out.get("weak_points"),
+                ceilings=programme_out.get("ceilings"),
             )
             for note in plan_notes:
                 log.info("PLAN CONTRACT (%s): %s", today_type, note)
@@ -508,6 +509,12 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         log.exception("Set-count check failed")
 
     conversation_history.append({"role": "assistant", "content": assistant_message})
+    # A `Decision:` line in any reply is a standing constraint from now on.
+    try:
+        from constraints import record_decisions  # local: keeps import order flat
+        record_decisions(assistant_message)
+    except Exception:
+        log.exception("Decision line handling failed")
     save_conversation_message("assistant", assistant_message)
 
     return assistant_message
