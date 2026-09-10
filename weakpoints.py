@@ -304,3 +304,75 @@ def format_block_weak_points(info: dict | None) -> str:
 def primary_muscle(exercise: str) -> str:
     shares = resolve_contributions(exercise)
     return max(shares, key=lambda m: shares[m]) if shares else ""
+
+
+# ── The athlete's override ───────────────────────────────────────────────────
+
+_COMMAND_RE = re.compile(r"^/?weak\s*-?\s*points?\s*(?::|=|are|is|->)?\s*(.+?)\s*[.!]?$", re.IGNORECASE)
+_NONE_WORDS = {"none", "no", "clear", "nothing", "empty", "skip"}
+
+
+def parse_weak_point_command(text: str) -> list[str] | None:
+    """"weak points none" -> []; "weak points: rear delts, hamstrings" -> the
+    two names; anything else -> None (not a command)."""
+    m = _COMMAND_RE.match((text or "").strip())
+    if not m:
+        return None
+    body = m.group(1).strip().lower()
+    if body in _NONE_WORDS:
+        return []
+    names = [n.strip() for n in re.split(r",|\band\b|&|/", body) if n.strip()]
+    return names[:SLOTS] if names else None
+
+
+def set_block_weak_points(memory: dict, prompt: str, muscles: list[str]) -> str:
+    """Overwrite this block's stored pick with the athlete's own.
+
+    The pick is made once per block from the block before, so a programme
+    change lands one block late: hamstrings and calves were picked from a
+    Legs day that no longer exists, and on the new template neither is
+    under its band. Rather than a swap the athlete cannot see, this stores
+    the correction as the block's decision, with the reason, exactly where
+    the computed pick would sit. Returns the sentence to show the athlete.
+    """
+    supabase = get_supabase()
+    bands = parse_volume_bands(prompt)
+    if not supabase or not bands:
+        return "I can't reach the block's record right now, so nothing changed."
+    canon = {}
+    for name in muscles:
+        c = _canonical(name)
+        if c not in bands or c in EXCLUDED:
+            return (f"'{name}' isn't a muscle with a band. The bands cover: "
+                    + ", ".join(k for k in bands if k not in EXCLUDED) + ".")
+        canon[c] = True
+    today = now_local().strftime("%Y-%m-%d")
+    week = int(memory.get("mesocycle_week", 1) or 1)
+    day = int(memory.get("mesocycle_day", 1) or 1)
+    sessions = rotation_sessions(supabase)
+    start = block_start(sessions, week, day, today)
+    if start is None:
+        return "I can't place this block yet (not enough stamped sessions), so nothing changed."
+    supabase.table("prescription_decisions").delete().eq("date", start)\
+        .like("exercise", f"{DECISION_PREFIX}%").execute()
+    picks = []
+    for c in canon:
+        low, high = bands[c]
+        picks.append({"muscle": c, "sets": 0, "low": low, "high": high, "shortfall": 0,
+                      "reason": f"Set by the athlete on {today}: {c} fills a weak-point slot for the rest "
+                                f"of this block (band {low}-{high})."})
+    if picks:
+        _store_pick(supabase, start, picks, since="athlete", until=today)
+    else:
+        supabase.table("prescription_decisions").insert([{
+            "date": start, "session_type": "Cardio+Abs", "mesocycle_week": 1,
+            "exercise": f"{DECISION_PREFIX}{NONE}", "decision": "accept",
+            "reason": f"Set by the athlete on {today}: no weak point this block — on the current "
+                      f"programme no muscle is under its band, so both slots stay empty.",
+            "plan": json.dumps({"since": "athlete", "until": today}),
+        }]).execute()
+    if picks:
+        return (f"Done — this block's weak-point slots are now {' and '.join(canon)}, from today until "
+                f"the block ends. The coach reads that every session.")
+    return ("Done — no weak-point slots for the rest of this block. Cardio+Abs ends after the ab "
+            "block. The pick is remade from real numbers when the next block starts.")

@@ -181,9 +181,15 @@ class CardioAbsTests(unittest.TestCase):
     def test_a_cardio_abs_plan_with_both_slots_filled_is_clean(self):
         self.assertEqual(validate(parse_plan(json.dumps(self._plan())), "Cardio+Abs", self.PROMPT), [])
 
-    def test_unfilled_slots_are_named(self):
+    def test_an_unplaced_block_leaves_the_slots_optional(self):
+        """No block pick to hand: an empty slot is the normal day, not a gap."""
         problems = validate(parse_plan(json.dumps(self._plan(with_slots=False))), "Cardio+Abs", self.PROMPT)
-        self.assertTrue(any("weak-point slot(s) unfilled" in p for p in problems))
+        self.assertEqual(problems, [])
+
+    def test_a_named_weak_point_left_unfilled_is_a_problem(self):
+        problems = validate(parse_plan(json.dumps(self._plan(with_slots=False))), "Cardio+Abs", self.PROMPT,
+                            weak_points=["Triceps"])
+        self.assertTrue(any("weak-point slot(s) unfilled" in p and "Triceps" in p for p in problems))
 
     def test_a_slot_fill_must_say_which_muscle(self):
         raw = self._plan()

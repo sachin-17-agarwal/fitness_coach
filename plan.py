@@ -496,9 +496,12 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
             name = next(n for n, _ in pairs if _normalise_exercise(n) == key)
             problems.append(f"{name}: in today's template but missing from the plan. Include it, "
                             f"or replace it with a substitution marked adjust and say why.")
-    if filled_slots < live_slots:
-        which = (" and ".join(weak_points) if weak_points
-                 else "the two lowest muscles in WEEKLY VOLUME")
+    # An unfilled slot is a problem only when the block has NAMED a muscle
+    # for it. A block that could not be placed, or names none, leaves the
+    # slots empty: on the current templates no muscle is under its band, so
+    # an empty slot is the normal day, not a gap to invent a lift for.
+    if weak_points and filled_slots < live_slots:
+        which = " and ".join(weak_points)
         problems.append(f"{live_slots - filled_slots} weak-point slot(s) unfilled: {slots[0][1]} sets "
                         f"each, for {which}, named as real movements.")
     return problems
@@ -629,9 +632,10 @@ CARDIO_ABS_NOTE = """
   "Cardio logged this session" line and in the message. The Apple Watch export feed
   lags and does not count. If cardio is in, say so and move on; if it is genuinely not,
   its instruction goes in `opening` as prose — never as a prescription block.
-  This plan is the AB block and the TWO weak-point slots — 3 sets each, for the two
-  lowest muscles in WEEKLY VOLUME — named as real movements, with the muscle they
-  serve in `reason`.""".strip()
+  This plan is the AB block, plus a weak-point slot ONLY for a muscle THIS BLOCK'S
+  WEAK POINTS names — 3 sets, a real movement, the muscle it serves in `reason`.
+  When it names none, the plan is the ab block alone and the day ends there. Do not
+  fill a slot from the rolling WEEKLY VOLUME readout.""".strip()
 
 
 def _phase(week: int) -> str:

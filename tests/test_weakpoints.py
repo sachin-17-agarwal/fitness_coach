@@ -99,10 +99,12 @@ class _FakeQuery:
         self._filters = []
 
     def __getattr__(self, name):
-        if name in ("select", "gte", "lte", "order", "like", "eq"):
+        if name in ("select", "gte", "lte", "order", "like", "eq", "delete"):
             def method(*args, **kwargs):
                 if name in ("eq", "like"):
                     self._filters.append((name, args))
+                if name == "delete":
+                    self._deleting = True
                 return self
             return method
         raise AttributeError(name)
@@ -113,6 +115,15 @@ class _FakeQuery:
 
     def execute(self):
         rows = self._rows
+        if getattr(self, "_deleting", False):
+            keep = []
+            for r in self._rows:
+                hit = all((r.get(f) == v) if k == "eq" else str(r.get(f, "")).startswith(v.rstrip("%"))
+                          for k, (f, v) in self._filters)
+                if not hit:
+                    keep.append(r)
+            self._rows[:] = keep
+            return type("R", (), {"data": []})()
         for kind, args in self._filters:
             field, value = args
             if kind == "eq":
@@ -229,3 +240,52 @@ class PlanSlotTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AthleteOverrideTests(unittest.TestCase):
+    """The athlete overrules this block's pick with one line of chat."""
+
+    def test_the_command_parses(self):
+        from weakpoints import parse_weak_point_command
+        self.assertEqual(parse_weak_point_command("weak points none"), [])
+        self.assertEqual(parse_weak_point_command("Weak points: clear"), [])
+        self.assertEqual(parse_weak_point_command("weak point = rear delts, hamstrings"), ["rear delts", "hamstrings"])
+        self.assertEqual(parse_weak_point_command("weakpoints rear delts and calves."), ["rear delts", "calves"])
+        self.assertIsNone(parse_weak_point_command("what are my weak points?"))
+        self.assertIsNone(parse_weak_point_command("Logged working set 1 of 3: Cable Crunch 105kg x 12"))
+
+    def _fake(self):
+        sessions = [{"id": f"s{i}", "date": d, "type": t, "status": "completed", "mesocycle_week": w, "mesocycle_day": k}
+                    for i, (d, t, w, k) in enumerate([
+                        ("2026-09-02", "Pull", 1, 1), ("2026-09-03", "Push", 1, 2), ("2026-09-04", "Legs", 1, 3),
+                        ("2026-09-06", "Cardio+Abs", 1, 4), ("2026-09-07", "Pull", 2, 1), ("2026-09-08", "Push", 2, 2),
+                        ("2026-09-09", "Legs", 2, 3)])]
+        stored = [{"date": "2026-09-02", "exercise": "Weak-point: Hamstrings", "reason": "old", "plan": "{}"},
+                  {"date": "2026-09-02", "exercise": "Weak-point: Calves", "reason": "old", "plan": "{}"}]
+        return _FakeSupabase(sessions, [], decisions=stored)
+
+    def test_none_clears_the_stored_pick_for_the_block(self):
+        fake = self._fake()
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 9, 10, 9, 0)):
+            msg = weakpoints.set_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 4}, _prompt(), [])
+        self.assertIn("no weak-point slots", msg)
+        self.assertEqual([r for r in fake.decisions if r["exercise"].startswith("Weak-point")], [])
+        self.assertEqual(len(fake.written), 1)
+        self.assertEqual(fake.written[0]["exercise"], "Weak-point: none")
+        self.assertEqual(fake.written[0]["date"], "2026-09-02")
+
+    def test_named_muscles_replace_the_pick(self):
+        fake = self._fake()
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 9, 10, 9, 0)):
+            msg = weakpoints.set_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 4}, _prompt(), ["rear delts"])
+        self.assertIn("Rear Delts", msg)
+        self.assertEqual([r["exercise"] for r in fake.written], ["Weak-point: Rear Delts"])
+
+    def test_an_unknown_muscle_changes_nothing(self):
+        fake = self._fake()
+        with patch.object(weakpoints, "get_supabase", return_value=fake):
+            msg = weakpoints.set_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 4}, _prompt(), ["forearms"])
+        self.assertIn("isn't a muscle with a band", msg)
+        self.assertEqual(fake.written, [])
