@@ -366,21 +366,21 @@ class RequestTests(unittest.TestCase):
     def setUpClass(cls):
         cls.PROMPT = _prompt()
 
-    def test_a_valid_plan_is_accepted_on_the_first_call_without_extended_thinking(self):
-        """The arithmetic is the programme's; the call is accept-or-adjust
-        with a reason. Thinking was thousands of output tokens the athlete
-        waited on."""
+    def test_a_valid_plan_is_accepted_on_the_first_call_with_thinking_on(self):
+        """Quality first: the coach deliberates over the day. The speed came
+        from terse accepts and the programme fallback, not from removing
+        thought."""
         client = _FakeClient([json.dumps(_legs_plan())])
         plan, notes = request_session_plan(client, [{"type": "text", "text": "S"}],
                                            [{"role": "user", "content": "Starting my Legs session"}],
                                            "Legs", 2, self.PROMPT)
         self.assertIsNotNone(plan)
         req = client.requests[0]
-        self.assertNotIn("thinking", req)
+        self.assertEqual(req["thinking"], {"type": "adaptive"})
         self.assertEqual(req["output_config"]["format"]["type"], "json_schema")
         self.assertEqual(req["output_config"]["format"]["schema"], PLAN_SCHEMA)
-        self.assertEqual(req["output_config"]["effort"], "low")
-        self.assertEqual(req["max_tokens"], 4000)
+        self.assertEqual(req["output_config"]["effort"], "medium")
+        self.assertEqual(req["max_tokens"], 8000)
         self.assertTrue(notes[-1].endswith("plan accepted"))
 
     def test_an_accept_may_omit_its_sets_and_gets_the_programmes(self):
@@ -422,14 +422,14 @@ class RequestTests(unittest.TestCase):
         self.assertEqual(lp.decision, "accept")
         self.assertIn("programme default", lp.reason)
 
-    def test_the_retry_also_runs_at_low_effort(self):
+    def test_the_retry_runs_at_low_effort(self):
         broken = _legs_plan()
         broken["exercises"][0]["backoff"] = broken["exercises"][0]["backoff"][:1]
         client = _FakeClient([json.dumps(broken), json.dumps(_legs_plan())])
         plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
                                            "Legs", 2, self.PROMPT)
         self.assertIsNotNone(plan)
-        self.assertEqual([r["output_config"]["effort"] for r in client.requests], ["low", "low"])
+        self.assertEqual([r["output_config"]["effort"] for r in client.requests], ["medium", "low"])
 
     def test_a_broken_plan_is_handed_back_once_and_the_model_fixes_it(self):
         broken = _legs_plan()
@@ -521,10 +521,31 @@ class DownwardAdjustTests(unittest.TestCase):
         raw["exercises"][0]["backoff"] = [dict(b, load_kg=round(load * 0.8, 1)) for b in raw["exercises"][0]["backoff"]]
         return parse_plan(json.dumps(raw), _legs_proposal())
 
-    def test_a_cut_below_the_programme_without_a_cause_is_refused(self):
+    def test_a_cut_below_the_programme_without_a_cause_is_queried(self):
+        from plan import is_soft
         plan = self._plan_with(195.0, "Week 2 is volume week, so holding last week's loads and chasing reps.")
         problems = validate(plan, "Legs", self.PROMPT, _legs_proposal())
         self.assertTrue(any("names no cause" in p for p in problems), problems)
+        self.assertTrue(all(is_soft(p) for p in problems if "names no cause" in p))
+
+    def test_a_cut_the_coach_stands_by_is_the_coachs_call(self):
+        """Asked once for the cause; the coach repeats its plan; the cut
+        stands and the programme does NOT replace it. Quality of coaching
+        outranks the rulebook."""
+        raw = _legs_plan()
+        raw["exercises"][0]["decision"] = "adjust"
+        raw["exercises"][0]["reason"] = "Week 2 is volume week, so holding last week's loads and chasing reps."
+        raw["exercises"][0]["working"][0]["load_kg"] = 195.0
+        raw["exercises"][0]["backoff"] = [dict(b, load_kg=156.0) for b in raw["exercises"][0]["backoff"]]
+        client = _FakeClient([json.dumps(raw), json.dumps(raw)])
+        plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
+                                           "Legs", 2, self.PROMPT, proposal=_legs_proposal())
+        self.assertIsNotNone(plan, notes)
+        self.assertEqual(len(client.requests), 2)
+        self.assertIn("names no cause", client.requests[1]["messages"][-1]["content"])
+        lp = next(e for e in plan.exercises if e.exercise == "Leg Press")
+        self.assertEqual((lp.decision, lp.working[0].load_kg), ("adjust", 195.0))
+        self.assertTrue(any(n.startswith("coach's call stands") for n in notes), notes)
 
     def test_a_cut_with_a_cause_stands(self):
         plan = self._plan_with(195.0, "HRV 35 against a 39 baseline and 5.8h sleep — taking 10% off the top set today.")
