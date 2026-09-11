@@ -273,11 +273,13 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
         # 3 are the exceptions they were meant to be.
         picks = []
         pending = _pending_emphasis(supabase)
-        if pending and pending["muscle"] in bands:
-            low, high = bands[pending["muscle"]]
-            picks = [{"muscle": pending["muscle"], "sets": 0, "low": low, "high": high, "shortfall": 0,
-                      "reason": f"Emphasis this block, named by the athlete on {pending['set_on']}"
-                                + (f": {pending['note']}" if pending.get("note") else "") + "."}]
+        for named in pending:
+            if named["muscle"] not in bands or any(p["muscle"] == named["muscle"] for p in picks):
+                continue
+            low, high = bands[named["muscle"]]
+            picks.append({"muscle": named["muscle"], "sets": 0, "low": low, "high": high, "shortfall": 0,
+                          "reason": f"Emphasis this block, named by the athlete on {named['set_on']}"
+                                    + (f": {named['note']}" if named.get("note") else "") + "."})
         if not picks:
             picks = [r for r in ranking[:1] if r["shortfall"] > 0]
             for p in picks:
@@ -299,14 +301,16 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
         return None
 
 
-def _pending_emphasis(supabase) -> dict | None:
+def _pending_emphasis(supabase) -> list[dict]:
+    """The athlete's named emphases for the next block, oldest first, at
+    most one per slot."""
     rows = (supabase.table("prescription_decisions").select("id, exercise, reason, date")
             .like("exercise", f"{PENDING_PREFIX}%").order("id").execute()).data or []
-    if not rows:
-        return None
-    row = rows[-1]
-    return {"id": row.get("id"), "muscle": row["exercise"][len(PENDING_PREFIX):],
-            "note": row.get("reason") or "", "set_on": row.get("date")}
+    out = []
+    for row in rows:
+        out.append({"id": row.get("id"), "muscle": row["exercise"][len(PENDING_PREFIX):],
+                    "note": row.get("reason") or "", "set_on": row.get("date")})
+    return out[-SLOTS:]
 
 
 def _consume_pending(supabase) -> None:
@@ -360,10 +364,12 @@ def format_block_weak_points(info: dict | None) -> str:
         state = (f"short by {short:g}" if (short or 0) > 0
                  else "inside the band, least headroom — nothing else was under")
         lines.append(f"  {p['muscle']}: {sets:g} sets/week against {low}-{high} — {state}")
-    lines.append("ONE slot, 3 straight sets, a movement that loads this muscle in a way the rotation "
-                 "does not (for triceps: the overhead cable extension, long head lengthened). The "
-                 "other slot stays empty. The rolling WEEKLY VOLUME readout is information, not the "
-                 "pick; departing from this block's emphasis is an adjust with its reason.")
+    n = len(info["picks"])
+    lines.append(f"{'ONE slot' if n == 1 else 'One slot per muscle above'}, 3 straight sets each, a movement "
+                 f"that loads the muscle in a way the rotation does not (triceps: the overhead cable "
+                 f"extension, long head lengthened; chest: the low-to-high cable fly, upper fibres). "
+                 f"{'The other slot stays empty. ' if n == 1 else ''}The rolling WEEKLY VOLUME readout is "
+                 f"information, not the pick; departing from this block's emphasis is an adjust with its reason.")
     return "\n".join(lines)
 
 
@@ -414,21 +420,33 @@ def set_next_emphasis(prompt: str, muscle: str | None, note: str = "") -> str:
     bands = parse_volume_bands(prompt)
     if not supabase or not bands:
         return "I can't reach the block's record right now, so nothing changed."
-    supabase.table("prescription_decisions").delete().like("exercise", f"{PENDING_PREFIX}%").execute()
     if muscle is None:
+        supabase.table("prescription_decisions").delete().like("exercise", f"{PENDING_PREFIX}%").execute()
         return "Done — no emphasis carried into the next block; it will be picked from the numbers."
     c = _canonical(muscle)
     if c not in bands or c in EXCLUDED:
         return (f"'{muscle}' isn't a muscle with a band. The bands cover: "
                 + ", ".join(k for k in bands if k not in EXCLUDED) + ".")
+    # Two slots, so up to two named muscles. Naming a muscle again replaces
+    # its own entry; a third name drops the oldest.
+    existing = _pending_emphasis(supabase)
+    for e in existing:
+        if e["muscle"] == c:
+            supabase.table("prescription_decisions").delete().eq("id", e["id"]).execute()
+    existing = [e for e in existing if e["muscle"] != c]
+    while len(existing) >= SLOTS:
+        supabase.table("prescription_decisions").delete().eq("id", existing[0]["id"]).execute()
+        existing = existing[1:]
     today = now_local().strftime("%Y-%m-%d")
     supabase.table("prescription_decisions").insert([{
         "date": today, "session_type": "Cardio+Abs", "mesocycle_week": 1,
         "exercise": f"{PENDING_PREFIX}{c}", "decision": "accept", "reason": note or None,
         "plan": json.dumps({"set_on": today}),
     }]).execute()
-    return (f"Done — {c} is the emphasis for the next block" + (f" ({note})" if note else "")
-            + ". It takes the weak-point slot on every Cardio+Abs day of that block, then the slot moves on.")
+    named = [e["muscle"] for e in existing] + [c]
+    return (f"Done — {' and '.join(named)} {'is' if len(named) == 1 else 'are'} the emphasis for the next block"
+            + (f" ({c}: {note})" if note else "")
+            + ". One weak-point slot each on every Cardio+Abs day of that block, then the slots move on.")
 
 
 def set_block_weak_points(memory: dict, prompt: str, muscles: list[str]) -> str:
