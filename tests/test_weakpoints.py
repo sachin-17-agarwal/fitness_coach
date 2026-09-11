@@ -220,7 +220,7 @@ class EndToEndTests(unittest.TestCase):
         text = format_block_weak_points(info)
         self.assertIn("Hamstrings: 3 sets/week against 10-16 — short by 7", text)
         self.assertIn("held for every Cardio+Abs day this block", text)
-        self.assertIn("ONE slot", text)
+        self.assertIn("One slot per muscle above", text)
 
     def test_no_history_means_the_coach_is_told_so(self):
         self.assertIn("unavailable", format_block_weak_points(None))
@@ -356,3 +356,28 @@ class EmphasisTests(unittest.TestCase):
         self.assertIn("Triceps is the emphasis for the next block", msg)
         self.assertEqual(fake.written[0]["exercise"], "Emphasis-next: Triceps")
         self.assertEqual(fake.written[0]["reason"], "overhead cable extension")
+
+    def test_two_named_muscles_take_one_slot_each(self):
+        pending = [{"id": 8, "date": "2026-09-12", "exercise": "Emphasis-next: Triceps",
+                    "reason": "overhead cable extension", "plan": "{}"},
+                   {"id": 9, "date": "2026-09-12", "exercise": "Emphasis-next: Chest",
+                    "reason": "low-to-high cable fly, upper chest", "plan": "{}"}]
+        fake = _FakeSupabase(self._sessions(), self._full_sets(), decisions=pending)
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 8, 25)):
+            info = weakpoints.current_block_weak_points({"mesocycle_week": 2, "mesocycle_day": 1}, _prompt())
+        self.assertEqual([p["muscle"] for p in info["picks"]], ["Triceps", "Chest"])
+        text = format_block_weak_points(info)
+        self.assertIn("One slot per muscle above", text)
+        self.assertIn("low-to-high cable fly", text)
+
+    def test_naming_a_second_muscle_keeps_the_first(self):
+        fake = _FakeSupabase([], [], decisions=[{"id": 1, "date": "2026-09-12", "exercise": "Emphasis-next: Triceps",
+                                                 "reason": "overhead cable extension", "plan": "{}"}])
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=__import__("datetime").datetime(2026, 9, 12)):
+            msg = weakpoints.set_next_emphasis(_prompt(), "chest", "low-to-high cable fly")
+        self.assertIn("Triceps and Chest are the emphasis", msg)
+        self.assertEqual([r["exercise"] for r in fake.decisions if r["exercise"].startswith("Emphasis-next")],
+                         ["Emphasis-next: Triceps"])
+        self.assertEqual(fake.written[0]["exercise"], "Emphasis-next: Chest")
