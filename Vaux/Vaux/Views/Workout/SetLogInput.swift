@@ -115,7 +115,7 @@ struct SetLogInput: View {
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("Done") { weightFieldFocused = false }
+                Button("Done") { weightFieldFocused = false; Keyboard.dismiss() }
                     .font(.system(size: 16, weight: .semibold))
             }
         }

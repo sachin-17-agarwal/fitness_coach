@@ -87,7 +87,7 @@ struct WorkoutDock: View {
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("Done") { weightFocused = false }
+                Button("Done") { weightFocused = false; Keyboard.dismiss() }
                     .font(.system(size: 16, weight: .semibold))
             }
         }
