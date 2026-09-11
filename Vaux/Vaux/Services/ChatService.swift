@@ -176,6 +176,7 @@ final class ChatService: Sendable {
             if let v = rec.respiratoryRate  { snap["respiratory_rate"] = v }
             if let v = rec.vo2Max           { snap["vo2_max"] = v }
             if let v = hrvAvg               { snap["hrv_avg"] = v }
+            if let v = ReadinessStore.today { snap["readiness"] = v }
             if let v = rhrAvg               { snap["resting_hr_baseline"] = v }
             if let score = rec.compositeScore(hrv7DayAvg: hrvAvg, rhr7DayAvg: rhrAvg) {
                 snap["recovery_score"] = score

@@ -186,6 +186,14 @@ final class WorkoutViewModel {
     /// The most recent weigh-in, read once per session, so the live tonnage
     /// scores dips and pull-ups as plate plus athlete like every other total.
     private var currentBodyweight: Double?
+    /// The session-start readiness tap, 1-5. Kept for the day and sent with
+    /// every chat request; saved to today's recovery row on START.
+    var readiness: Int? = ReadinessStore.today
+
+    func setReadiness(_ value: Int?) {
+        readiness = value
+        ReadinessStore.today = value
+    }
     private let chatService = ChatService()
     private let mesocycleService = MesocycleService()
     private var durationTimer: Timer?
@@ -246,6 +254,9 @@ final class WorkoutViewModel {
         // an alert actually needs to be delivered.
         await RestNotifier.shared.requestAuthorizationIfNeeded()
         currentBodyweight = try? await recoveryService.latestBodyweight()
+        if let r = readiness {
+            try? await recoveryService.saveReadiness(r, on: Config.isoDay())
+        }
         if let existing = await fetchInProgressSession(type: type) {
             await resume(session: existing)
             return

@@ -41,6 +41,13 @@ final class RecoveryService: Sendable {
         return rows
     }
 
+    // MARK: - Readiness
+
+    /// The session-start tap, on today's row. Other columns untouched.
+    func saveReadiness(_ value: Int, on date: String) async throws {
+        _ = try await client.upsert("recovery", body: ["date": date, "readiness": value], onConflict: "date")
+    }
+
     // MARK: - Weigh-ins
 
     /// Every day in the window with a recorded weight, oldest first, for

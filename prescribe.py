@@ -387,6 +387,17 @@ def recovery_adjustment(recovery: dict | None) -> RecoveryAdjustment:
     if not recovery:
         return RecoveryAdjustment()
 
+    # The evidence-based read, when the context built one (recovery.py):
+    # rolling HRV against a six-week baseline, sleep on a slide gated by a
+    # second signal, the athlete's own readiness. The percentage rules below
+    # remain only for callers with no history to hand.
+    read = recovery.get("read")
+    if isinstance(read, dict) and "rpe_delta" in read:
+        return RecoveryAdjustment(rpe_delta=float(read.get("rpe_delta") or 0.0),
+                                  load_multiplier=float(read.get("load_multiplier") or 1.0),
+                                  recovery_session=bool(read.get("recovery_session")),
+                                  reasons=tuple(read.get("reasons") or ()))
+
     hrv_down = _pct_below(recovery.get("hrv"), recovery.get("hrv_avg"))
     # Above baseline, so the baseline is the denominator — _pct_below with the
     # arguments swapped divides by the wrong number and under-reports.
