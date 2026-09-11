@@ -569,8 +569,10 @@ struct DashboardView: View {
                 delta: (viewModel.sessionsThisWeek >= viewModel.mesocycle.day) ? ("ON PACE", Color.fg3) : ("BEHIND", Color.amber)
             )
             ledgerDivider
+            // The 7-day average, not last night — that is in the recovery
+            // block above. Unlabelled, the two read as one number disagreeing.
             ledgerColumn(
-                "SLEEP",
+                "SLEEP · 7-DAY",
                 value: viewModel.sleepAvgHours.map({ Self.clock($0) }) ?? "—",
                 delta: sleepDeltaText
             )
@@ -634,7 +636,7 @@ struct DashboardView: View {
 
     private var sleepDeltaText: (String, Color)? {
         guard let minutes = viewModel.sleepDeltaMinutes, abs(minutes) >= 5 else { return nil }
-        let text = String(format: "%@ %d:%02d WK", minutes > 0 ? "▴" : "▾", abs(minutes) / 60, abs(minutes) % 60)
+        let text = String(format: "%@ %d:%02d VS LAST WK", minutes > 0 ? "▴" : "▾", abs(minutes) / 60, abs(minutes) % 60)
         return (text, minutes > 0 ? Color.mint : Color.amber)
     }
 
