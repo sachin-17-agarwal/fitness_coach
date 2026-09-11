@@ -301,6 +301,44 @@ struct WorkoutModeView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Start screen — readiness
+
+    /// How the athlete feels, one tap, 1 to 5. Optional: START works without
+    /// it, and the coach is told the report is missing rather than guessing.
+    private var readinessRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                EditorialEyebrow(text: "How are you today", color: Editorial.muted, size: 9.5, kerning: 2)
+                Spacer()
+                if let r = viewModel.readiness, let label = ReadinessStore.labels[r] {
+                    EditorialEyebrow(text: label, color: .mint, size: 9.5, kerning: 1.5)
+                }
+            }
+            HStack(spacing: 8) {
+                ForEach(1...5, id: \.self) { value in
+                    let selected = viewModel.readiness == value
+                    Button {
+                        Haptic.selection()
+                        withAnimation(Motion.snappy) { viewModel.setReadiness(selected ? nil : value) }
+                    } label: {
+                        Text("\(value)")
+                            .font(.display(20))
+                            .foregroundStyle(selected ? Color.ink0 : Color.fg1)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(selected ? Color.mint : Color.ink2))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(selected ? Color.mint : Color.line, lineWidth: 1))
+                    }
+                    .buttonStyle(PressScaleStyle(scale: 0.95))
+                    .accessibilityLabel("Readiness \(value), \(ReadinessStore.labels[value] ?? "")")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+        }
+    }
+
     // MARK: - Start screen — session brief
 
     /// The Dashboard's session block, on the Train tab: the block position,
@@ -342,6 +380,10 @@ struct WorkoutModeView: View {
             startFacts
                 .padding(.horizontal, Editorial.gutter)
                 .padding(.top, 36)
+
+            readinessRow
+                .padding(.horizontal, Editorial.gutter)
+                .padding(.top, 28)
 
             Spacer()
 

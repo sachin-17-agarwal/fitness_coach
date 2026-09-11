@@ -288,6 +288,7 @@ def _recovery_from_override(payload: dict) -> dict:
         "vo2_max": _g("vo2_max"),
         "recovery_score": _g("recovery_score"),
         "recovery_zone": payload.get("recovery_zone") or "",
+        "readiness": payload.get("readiness"),
     }
 
 
@@ -304,6 +305,17 @@ def _recent_decisions() -> list:
 def _standing_constraints() -> list:
     from constraints import load_active  # local: keeps import order flat
     return load_active()
+
+
+def _recovery_rows(days: int = 56) -> list:
+    """Daily recovery rows for the rolling-vs-baseline read."""
+    supabase = get_supabase()
+    if not supabase:
+        return []
+    since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
+    today = now_local().strftime("%Y-%m-%d")
+    return (supabase.table("recovery").select("date, hrv, resting_hr, sleep_hours, readiness")
+            .gte("date", since).lte("date", today).order("date").execute().data or [])
 
 
 def build_context_block(memory: dict, athlete_name: str,
@@ -352,6 +364,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(get_set_comparisons): "set_comparisons",
             executor.submit(_recent_decisions): "decisions",
             executor.submit(_standing_constraints): "constraints",
+            executor.submit(_recovery_rows): "recovery_rows",
             executor.submit(_block_weak_points, memory, system_prompt): "block_weak_points",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
@@ -381,6 +394,18 @@ def build_context_block(memory: dict, athlete_name: str,
             freshness = "⚠️ STALE: this is yesterday's data — today's Apple Health metrics have not synced yet. Note this to the athlete and don't over-index on it."
         else:
             freshness = f"⚠️ STALE: recovery data is {age} days old — Apple Health has not synced recently. Flag this and program conservatively."
+
+    # The computed read rides inside `data`, so the programme (build_proposal
+    # below) and the coach (TODAY'S RECOVERY READ) act on the same decision.
+    try:
+        from recovery import build_read, format_read, read_as_dict  # local: keeps import order flat
+        _read = build_read(results.get("recovery_rows") or [], today_iso, today_row=data,
+                           readiness=(recovery_override or {}).get("readiness"))
+        data["read"] = read_as_dict(_read)
+        recovery_read_text = format_read(_read)
+    except Exception:
+        log.exception("Recovery read failed; the percentage rules apply")
+        recovery_read_text = "TODAY'S RECOVERY READ: unavailable."
 
     score = data.get("recovery_score")
     zone = data.get("recovery_zone") or ""
@@ -548,8 +573,9 @@ NEXT SESSION: {next_session}
 
 TODAY'S RECOVERY:
 Recovery data date: {data.get('date', 'Unknown')} | Freshness: {freshness}
-{score_line}Sleep: {data.get('sleep_hours', 'N/A')} hrs | HRV: {data.get('hrv', 'N/A')} (7-day avg: {data.get('hrv_avg', 'N/A')}) | Status: {data.get('hrv_status', 'Unknown')}
+{score_line}Sleep: {data.get('sleep_hours', 'N/A')} hrs | HRV: {data.get('hrv', 'N/A')} (7-day avg: {data.get('hrv_avg', 'N/A')})
 Resting HR: {data.get('resting_hr', 'N/A')} bpm (7-day avg: {data.get('resting_hr_baseline', 'N/A')})
+{recovery_read_text}
 Avg HR: {data.get('heart_rate', 'N/A')} bpm | Respiratory rate: {data.get('respiratory_rate', 'N/A')} | Steps: {data.get('steps', 'N/A')} | Active energy: {data.get('active_energy_kcal', 'N/A')} kcal | Exercise minutes: {data.get('exercise_minutes', 'N/A')}
 Body weight: {data.get('weight_kg', 'N/A')}kg | Body fat: {data.get('body_fat_pct', 'N/A')}% | VO2 max: {data.get('vo2_max', 'N/A')}
 

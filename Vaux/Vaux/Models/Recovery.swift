@@ -19,6 +19,10 @@ struct Recovery: Codable, Identifiable, Sendable {
     var exerciseMinutes: Int? = nil
     var respiratoryRate: Double? = nil
     var vo2Max: Double? = nil
+    /// How the athlete said they felt at session start, 1 (wrecked) to 5
+    /// (fresh). Self-report tracks training load more sensitively than the
+    /// watch's readings, and it gates the load cuts.
+    var readiness: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -35,6 +39,7 @@ struct Recovery: Codable, Identifiable, Sendable {
         case exerciseMinutes = "exercise_minutes"
         case respiratoryRate = "respiratory_rate"
         case vo2Max = "vo2_max"
+        case readiness
     }
 }
 
