@@ -1202,3 +1202,13 @@ class StandingConstraintTests(unittest.TestCase):
         from prescribe import norm_name
         self.assertEqual(ceilings(rows), {norm_name("Cable Crunch"): 105.0})
         self.assertIn("None recorded", format_constraints([]))
+
+
+class UsageReportRobustnessTests(unittest.TestCase):
+    def test_a_missing_table_reads_as_no_calls(self):
+        from usage import fetch_rows
+
+        class Broken:
+            def table(self, name): raise RuntimeError("Could not find the table 'public.model_calls'")
+        with patch("data.get_supabase", return_value=Broken()):
+            self.assertEqual(fetch_rows(14), [])

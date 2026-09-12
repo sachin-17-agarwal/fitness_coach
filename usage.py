@@ -108,10 +108,22 @@ def format_report(summary: dict, days: int, since: str) -> str:
 
 
 def fetch_rows(days: int) -> list[dict]:
+    """Rows from model_calls. A missing table — migration 003 not yet run —
+    reads as no calls, so the report says what to do instead of the job
+    failing."""
     from data import get_supabase  # local: keeps import order flat
     supabase = get_supabase()
     if not supabase:
         return []
+    try:
+        return _fetch_rows(supabase, days)
+    except Exception as exc:  # postgrest.APIError for a missing table, network, etc.
+        log.warning("model_calls could not be read: %s", exc)
+        print(f"model_calls could not be read: {exc}")
+        return []
+
+
+def _fetch_rows(supabase, days: int) -> list[dict]:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows: list[dict] = []
     page, offset = 1000, 0
