@@ -1,15 +1,15 @@
-<!-- generated 2026-09-11 · 446 prescriptions · 56 violations -->
+<!-- generated 2026-09-12 · 440 prescriptions · 53 violations -->
 
 **Protocol audit — last 90 days**
 
-- **446** prescriptions checked across **2124** replies on dated training days.
-- **48** of them broke at least one rule.
-- Week known for 299 prescriptions (262 from the coach's own words that day, 37 from the session stamp): every check ran. Week only reconstructed for 147: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 13 of 41 days.
+- **440** prescriptions checked across **2118** replies on dated training days.
+- **46** of them broke at least one rule.
+- Week known for 293 prescriptions (256 from the coach's own words that day, 37 from the session stamp): every check ran. Week only reconstructed for 147: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 12 of 40 days.
 
 **What was broken, and how often**
 
-- Wrong number of working sets — **19**
-- Top set below the exercise's rep range — **15**
+- Wrong number of working sets — **18**
+- Top set below the exercise's rep range — **13**
 - Prescribed below the week's RPE target — **9**
 - Second back-off not fewer reps — **8**
 - Back-off below the week's RPE target — **3**
