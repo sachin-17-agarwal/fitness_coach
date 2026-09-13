@@ -69,13 +69,25 @@ fi
 # ── Find the phone ──────────────────────────────────────────────────────────
 # devicectl knows every phone this Mac has paired with; we want one that is
 # reachable right now, matched by name or UDID when one was given.
+# devicectl and xcodebuild by PATH inside the selected Xcode, not through
+# the xcrun lookup, which failed here with "unable to find utility devicectl"
+# while the binary sat exactly where Xcode puts it.
+DEV_DIR="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || echo /Applications/Xcode.app/Contents/Developer)}"
+DEVICECTL="$DEV_DIR/usr/bin/devicectl"
+XCODEBUILD="$DEV_DIR/usr/bin/xcodebuild"
+if [ ! -x "$DEVICECTL" ]; then
+    log "devicectl not found at $DEVICECTL."
+    log "xcode-select -p says: $(xcode-select -p 2>&1)"
+    log "Xcodes installed: $(ls -d /Applications/Xcode*.app 2>/dev/null | tr '\n' ' ')"
+    log "Point the command line at a full Xcode: sudo xcode-select -s /Applications/Xcode.app"
+    exit 3
+fi
+
 log "Looking for the phone…"
 DEVICES_JSON="$(mktemp)"
 trap 'rm -f "$DEVICES_JSON"' EXIT
-# Never silent. With `set -e` a failing devicectl used to end the script
-# before it had printed a word, which read as "does nothing".
-if ! xcrun devicectl list devices --json-output "$DEVICES_JSON"; then
-    log "xcrun devicectl failed. Is Xcode selected? Try: sudo xcode-select -s /Applications/Xcode.app"
+if ! "$DEVICECTL" list devices --json-output "$DEVICES_JSON"; then
+    log "devicectl failed to list devices."
     exit 3
 fi
 if [ ! -s "$DEVICES_JSON" ]; then
@@ -122,7 +134,7 @@ log "Device $UDID"
 # -allowProvisioningUpdates lets xcodebuild renew the free profile itself,
 # which is the whole point: a fresh signature every run.
 log "Building $SCHEME"
-xcodebuild \
+"$XCODEBUILD" \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
     -configuration Debug \
@@ -141,11 +153,11 @@ fi
 
 # ── Install ─────────────────────────────────────────────────────────────────
 log "Installing"
-xcrun devicectl device install app --device "$UDID" "$APP"
+"$DEVICECTL" device install app --device "$UDID" "$APP"
 
 if [ "$LAUNCH" = 1 ]; then
     log "Launching $BUNDLE_ID"
-    xcrun devicectl device process launch --device "$UDID" --terminate-existing "$BUNDLE_ID" || true
+    "$DEVICECTL" device process launch --device "$UDID" --terminate-existing "$BUNDLE_ID" || true
 fi
 
 mkdir -p "$STAMP_DIR" && touch "$STAMP"
