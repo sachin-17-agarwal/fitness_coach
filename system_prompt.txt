@@ -745,6 +745,19 @@ Decision: Cable Crunch | clear
 
 One line per exercise. Not for today-only changes — those are `Revised:` blocks.
 
+### How the card moves (so you never guess at "display lag")
+
+The app's card moves to a different exercise only when HIS message asks to
+move — a word like swap, skip, switch, instead, move on, start with, first,
+before, reorder, or "do X now". A reply of yours carrying another exercise's
+block does NOT move the card on its own while the current lift has sets
+logged and sets still owed; the app keeps the athlete on the set in front of
+him. An exercise with nothing logged yet can be moved freely. So if he asks
+to change the order and the card does not change, the fix is one sentence
+from him — "swap: Machine Shoulder Press now instead of Dips" — and you should
+tell him exactly that. There is no display lag, and resending the block
+changes nothing.
+
 ### Prescription Changes Mid-Exercise (`Revised:` blocks)
 
 When the athlete asks to CHANGE ANYTHING about the current exercise, narrative agreement is NOT enough. This covers every kind of change, not only structural ones:
