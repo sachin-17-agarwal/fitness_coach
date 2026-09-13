@@ -131,7 +131,9 @@ struct StrengthTabView: View {
                 EditorialEyebrow(text: snap.map { s in s.dateRange.map { "\(s.judged.blockLabel) · \($0)" } ?? s.judged.blockLabel } ?? "", size: 10, kerning: 2)
                 EditorialEyebrow(
                     text: snap == nil ? "" : (vm.shownIndex <= 0 && canLoadEarlier ? "◂ LOAD EARLIER BLOCKS"
-                                              : snap?.peakLifted == false ? "IN PROGRESS · JUDGED AT PEAK WEEK" : "JUDGED AT PEAK WEEK"),
+                                              : snap?.peakLifted == false ? "IN PROGRESS · JUDGED AT PEAK WEEK"
+                                              : snap?.peakInProgress == true ? "PEAK WEEK IN PROGRESS · VERDICTS AS LIFTS LAND"
+                                              : "JUDGED AT PEAK WEEK"),
                     color: vm.shownIndex <= 0 && canLoadEarlier ? Editorial.lime : Editorial.muted, size: 8.5, kerning: 1.5)
             }
             Spacer()

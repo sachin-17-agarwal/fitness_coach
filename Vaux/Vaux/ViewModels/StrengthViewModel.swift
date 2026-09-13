@@ -119,6 +119,11 @@ struct BlockSnapshot: Identifiable, Hashable {
     /// peak week the block will be judged at, which is not the same thing —
     /// the hero read "week 3 of 3" in week 2.
     var weekInProgress: Int? = nil
+    /// True while the block is IN its peak week but some lifts have not yet
+    /// been lifted in it: their verdicts are still waiting even though the
+    /// week has begun. Hamstrings read "dropping 10.9%" on the Sunday of
+    /// peak week with the Legs session still three days away.
+    var peakInProgress: Bool = false
     var id: Int { judged.block }
 
     var upCount: Int { lifts.filter { $0.state == .pr || $0.state == .up }.count }
@@ -237,11 +242,20 @@ final class StrengthViewModel {
         // read quads and hamstrings as "dropping" against last block's week 3,
         // with the header saying "judged at peak week" two weeks early.
         let peakLifted = calendar.current.week >= Config.peakWeek
+        // Per LIFT, not per calendar: a lift in the current block is judged
+        // only once it has a set in the peak week. The week beginning on a
+        // Friday says nothing about a Legs day that falls on the Wednesday.
+        func liftedAtPeak(_ byPos: [BlockPosition: LiftBlockPoint], block b: Int) -> Bool {
+            b != calendar.current.block || (peakLifted && byPos.keys.contains { $0.block == b && $0.isPeak })
+        }
         for b in blocks {
             let lifted = b != calendar.current.block || peakLifted
             let lifts = weekly.map { name, byPos in
-                Self.judge(name: name, byPos: byPos, block: b, sessionType: liftSession[name], peakLifted: lifted)
+                Self.judge(name: name, byPos: byPos, block: b, sessionType: liftSession[name],
+                           peakLifted: liftedAtPeak(byPos, block: b))
             }
+            let waiting = lifted && b == calendar.current.block
+                && lifts.contains { $0.state == StrengthState.none && $0.peak != nil && $0.priorPeak != nil }
             guard lifts.contains(where: { $0.state != StrengthState.none }) else { continue }
             let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksSpanned(b)),
                                              setsSoFar: setsByBlock[b] ?? [:], currentBlock: b == calendar.current.block,
@@ -250,12 +264,13 @@ final class StrengthViewModel {
             snaps.append(BlockSnapshot(judged: BlockPosition(block: b, week: Config.peakWeek), lifts: lifts, muscles: muscles,
                                        medianGainPct: lifted ? ChartMath.median(deltas) : nil,
                                        dateRange: calendar.dateRange(ofBlock: b).map(BlockCalendar.shortRange), peakLifted: lifted,
-                                       weekInProgress: lifted ? nil : calendar.current.week))
+                                       weekInProgress: lifted ? nil : calendar.current.week, peakInProgress: waiting))
         }
         // Always offer the current block even when it cannot be judged yet,
         // so the muscle map still shows volume and the grey states.
         if snaps.last?.judged.block != calendar.current.block {
-            let lifts = weekly.map { name, byPos in Self.judge(name: name, byPos: byPos, block: calendar.current.block, sessionType: liftSession[name], peakLifted: peakLifted) }
+            let lifts = weekly.map { name, byPos in Self.judge(name: name, byPos: byPos, block: calendar.current.block, sessionType: liftSession[name],
+                                                                 peakLifted: liftedAtPeak(byPos, block: calendar.current.block)) }
             let b = calendar.current.block
             let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksSpanned(b)),
                                              setsSoFar: setsByBlock[b] ?? [:], currentBlock: true,
