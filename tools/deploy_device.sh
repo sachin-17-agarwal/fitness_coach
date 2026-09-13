@@ -69,19 +69,44 @@ fi
 # ── Find the phone ──────────────────────────────────────────────────────────
 # devicectl knows every phone this Mac has paired with; we want one that is
 # reachable right now, matched by name or UDID when one was given.
-# devicectl and xcodebuild by PATH inside the selected Xcode, not through
-# the xcrun lookup, which failed here with "unable to find utility devicectl"
-# while the binary sat exactly where Xcode puts it.
-DEV_DIR="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || echo /Applications/Xcode.app/Contents/Developer)}"
+# Which Xcode. The project file is objectVersion 77 (Xcode 16 folder-synced
+# groups), so an older xcodebuild rejects it as "damaged … didn't find
+# classname for 'isa' key", and Xcode 14 and older have no devicectl at all.
+# Both happened here: /Applications/Xcode.app was a stale copy while the
+# Xcode actually used sat next to it. So: honour DEVELOPER_DIR, then
+# xcode-select, but if that Xcode is too old, take the newest one installed.
+MIN_XCODE=16
+xcode_major() { "$1/usr/bin/xcodebuild" -version 2>/dev/null | awk 'NR==1 {print int($2)}'; }
+DEV_DIR="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || true)}"
+CUR_MAJOR="$(xcode_major "$DEV_DIR")"
+if [ -z "$CUR_MAJOR" ] || [ "$CUR_MAJOR" -lt "$MIN_XCODE" ]; then
+    BEST=""; BEST_MAJOR=0
+    for app in /Applications/Xcode*.app "$HOME"/Applications/Xcode*.app; do
+        [ -d "$app" ] || continue
+        v="$(xcode_major "$app/Contents/Developer")"
+        [ -n "$v" ] || continue
+        if [ "$v" -gt "$BEST_MAJOR" ]; then BEST_MAJOR="$v"; BEST="$app/Contents/Developer"; fi
+    done
+    if [ "$BEST_MAJOR" -ge "$MIN_XCODE" ]; then
+        log "Xcode at ${DEV_DIR:-<none>} is version ${CUR_MAJOR:-?}; using $BEST instead"
+        DEV_DIR="$BEST"
+    else
+        log "No Xcode $MIN_XCODE or newer found (selected: ${DEV_DIR:-<none>}, version ${CUR_MAJOR:-?})."
+        log "Install a current Xcode, then:  sudo xcode-select -s /Applications/Xcode.app"
+        exit 3
+    fi
+fi
+export DEVELOPER_DIR="$DEV_DIR"
 XCODEBUILD="$DEV_DIR/usr/bin/xcodebuild"
-# devicectl is NOT inside Xcode.app. It ships with CoreDevice, a component
-# Xcode installs on first launch, under /Library/Developer. Look there first,
-# then wherever xcrun can find it, then the toolchain bin as a last resort.
+log "Using $("$XCODEBUILD" -version | head -1) at $DEV_DIR"
+# devicectl ships inside Xcode 15 and newer; the CoreDevice framework under
+# /Library/Developer carries a copy too once Xcode's first-launch components
+# are installed. Try the selected Xcode first, then those.
 DEVICECTL=""
 for candidate in \
+    "$DEV_DIR/usr/bin/devicectl" \
     /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Resources/bin/devicectl \
-    "$(xcrun --find devicectl 2>/dev/null || true)" \
-    "$DEV_DIR/usr/bin/devicectl"; do
+    "$(xcrun --find devicectl 2>/dev/null || true)"; do
     if [ -n "$candidate" ] && [ -x "$candidate" ]; then DEVICECTL="$candidate"; break; fi
 done
 if [ -z "$DEVICECTL" ]; then
