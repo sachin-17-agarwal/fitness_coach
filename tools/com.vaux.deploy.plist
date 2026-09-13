@@ -39,14 +39,13 @@
     <key>WorkingDirectory</key>
     <string>/Users/sachin/Documents/GitHub/fitness_coach</string>
 
-    <!-- xcodebuild and devicectl live under the active Xcode; launchd's
-         default PATH does not include them. -->
+    <!-- launchd's default PATH is minimal. The script picks the Xcode itself
+         (xcode-select, or the newest installed one when that is too old for
+         the project), so DEVELOPER_DIR is deliberately not pinned here. -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin</string>
-        <key>DEVELOPER_DIR</key>
-        <string>/Applications/Xcode.app/Contents/Developer</string>
     </dict>
 
     <key>StartCalendarInterval</key>
