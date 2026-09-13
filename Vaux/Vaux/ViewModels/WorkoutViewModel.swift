@@ -784,11 +784,16 @@ final class WorkoutViewModel {
                          "don't move", "dont move", "do not move", "not move on",
                          "don't swap", "dont swap", "do not swap", "no need to"]
         if negations.contains(where: lower.contains) { return false }
-        let requests = ["skip", "move on", "move to", "next exercise", "swap", "replace", "substitute",
-                        "instead of", "drop this", "leave this", "machine is taken", "machine is busy",
+        let requests = ["skip", "move on", "move to", "next exercise", "swap", "switch", "replace", "substitute",
+                        "instead of", "instead", "drop this", "leave this", "machine is taken", "machine is busy",
                         "machine's taken", "is occupied", "someone's on", "can't do", "cant do",
-                        "cannot do", "hurts", "painful", "go back", "back to"]
-        return requests.contains(where: lower.contains)
+                        "cannot do", "hurts", "painful", "go back", "back to", "reorder", "change the order",
+                        "start with", "begin with", "first", "before"]
+        if requests.contains(where: lower.contains) { return true }
+        // "do shoulder press now", "shoulder press next", "can I do X now"
+        let pattern = try? NSRegularExpression(pattern: #"\b(do|doing)\b.*\b(now|next)\b|\b(now|next)\b.*\b(do|doing)\b"#)
+        let range = NSRange(lower.startIndex..., in: lower)
+        return pattern?.firstMatch(in: lower, range: range) != nil
     }
 
     /// True only when the athlete gave an explicit, affirmative instruction
@@ -1500,9 +1505,14 @@ final class WorkoutViewModel {
         if !prescriptions.isEmpty {
             let newFirstName = prescriptions.first?.exerciseName
             let wantsDifferentExercise = newFirstName != oldExercise
+            // An exercise with nothing logged yet has nothing to protect:
+            // reordering it costs no set, so a chat reply may move the card.
+            // The guard exists for the back-off still owed on a lift that
+            // has started, not for a card the athlete has only looked at.
             let blockChange = !allowExerciseChange
                 && wantsDifferentExercise
                 && !isCurrentExerciseComplete()
+                && !exerciseSetsForCurrentExercise.isEmpty
             if !blockChange {
                 // Merge new prescriptions into the existing plan instead of
                 // replacing it wholesale. A set-log response typically only
