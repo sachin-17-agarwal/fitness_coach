@@ -46,9 +46,12 @@ struct RecoveryTabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HeroTopBar(left: "RECOVERY", right: "LAST \(vm.range.days) DAYS · \(calendar.current.blockLabel)")
                 HistoryTabChips(selected: $tab).padding(.top, 14)
-                EditorialEyebrow(text: vm.isAggregated ? "HRV · WEEKLY MEAN" : "HRV · TODAY", color: Editorial.lime, size: 10, kerning: 2.5).padding(.top, 18)
+                // Today's reading in every window. The aggregated chart's last
+                // slot is a weekly mean, and the headline once followed it: 90D
+                // read 42 where 30D read 50 for the same morning.
+                EditorialEyebrow(text: "HRV · TODAY", color: Editorial.lime, size: 10, kerning: 2.5).padding(.top, 18)
                 HStack(alignment: .bottom) {
-                    if let v = vm.hrv.latest {
+                    if let v = vm.hrvLatest {
                         HStack(alignment: .firstTextBaseline, spacing: 2) {
                             CountUpFigure(value: v, size: 132)
                             Text("MS").font(.display(56)).foregroundStyle(Editorial.lime)
@@ -87,12 +90,12 @@ struct RecoveryTabView: View {
 
     private var statLines: [StatStack.Line] {
         var lines: [StatStack.Line] = []
-        if let b = vm.hrv.band { lines.append(.init(text: "YOUR RANGE \(Int(b.lowerBound))–\(Int(b.upperBound))")) }
-        if let a = vm.hrv.avg7 { lines.append(.init(text: "7-DAY AVG \(Int(a.rounded()))")) }
-        if vm.hrv.band != nil {
+        if let b = vm.hrvBand { lines.append(.init(text: "YOUR RANGE \(Int(b.lowerBound.rounded()))–\(Int(b.upperBound.rounded()))")) }
+        if let a = vm.hrvAvg7 { lines.append(.init(text: "7-DAY AVG \(Int(a.rounded()))")) }
+        if vm.hrvBand != nil {
             let n = vm.hrvBelowLast10
             lines.append(.init(text: "\(n) OF LAST 10 DAYS BELOW", color: n >= 4 ? Editorial.amber : Editorial.mid))
-        } else if let r = vm.rhr.latest {
+        } else if let r = vm.rhrLatest {
             lines.append(.init(text: "RHR \(Int(r))"))
         }
         return lines.isEmpty ? [.init(text: "NO READINGS", color: Editorial.muted)] : lines
@@ -107,25 +110,48 @@ struct RecoveryTabView: View {
         return t
     }
 
-    /// Week labels where the block position changes.
+    /// Axis labels where the block position changes. Daily windows label
+    /// each week; aggregated windows, where every slot is already a week,
+    /// label only where the BLOCK changes — labelling every week there
+    /// stacked twelve strings into one unreadable smear.
     private func weekAxis(_ s: RecoverySeries) -> some View {
         GeometryReader { geo in
             let n = max(1, s.values.count)
             let step = n > 1 ? (geo.size.width - 40) / CGFloat(n - 1) : 0
+            let minGap: CGFloat = 46
             ZStack(alignment: .topLeading) {
-                ForEach(0..<n, id: \.self) { i in
-                    if let p = s.positions[i], i == 0 || s.positions[i - 1] != p {
-                        let isNow = p == calendar.current
-                        let label = p.block == calendar.current.block ? "W\(p.week)\(p.isPeak ? " PEAK" : "")" : "\(p.shortBlockLabel)·W\(p.week)"
-                        Text(label).font(.system(size: 9, weight: .bold)).kerning(1.5)
-                            .foregroundStyle(isNow ? Editorial.lime : Editorial.muted)
-                            .fixedSize()
-                            .offset(x: CGFloat(i) * step)
-                    }
+                ForEach(Array(axisLabels(s, step: step, minGap: minGap).enumerated()), id: \.offset) { _, item in
+                    Text(item.text).font(.system(size: 9, weight: .bold)).kerning(1.5)
+                        .foregroundStyle(item.now ? Editorial.lime : Editorial.muted)
+                        .fixedSize()
+                        .offset(x: CGFloat(item.slot) * step)
                 }
             }
         }
         .frame(height: 14)
+    }
+
+    private func axisLabels(_ s: RecoverySeries, step: CGFloat, minGap: CGFloat) -> [(slot: Int, text: String, now: Bool)] {
+        var out: [(slot: Int, text: String, now: Bool)] = []
+        var lastX: CGFloat = -.infinity
+        for i in 0..<s.positions.count {
+            guard let p = s.positions[i] else { continue }
+            let prev = i > 0 ? s.positions[i - 1] : nil
+            let changed = vm.isAggregated ? (prev?.block != p.block) : (prev != p)
+            guard i == 0 || changed else { continue }
+            let x = CGFloat(i) * step
+            let isNow = p == calendar.current
+            guard isNow || x - lastX >= minGap else { continue }
+            let text: String
+            if p.block == calendar.current.block {
+                text = vm.isAggregated ? "NOW" : "W\(p.week)\(p.isPeak ? " PEAK" : "")"
+            } else {
+                text = vm.isAggregated ? p.shortBlockLabel : "\(p.shortBlockLabel)·W\(p.week)"
+            }
+            out.append((i, text, isNow || (vm.isAggregated && p.block == calendar.current.block)))
+            lastX = x
+        }
+        return out
     }
 
     // MARK: Panels
@@ -144,10 +170,10 @@ struct RecoveryTabView: View {
 
     private var restingHR: some View {
         let above = vm.rhrAboveCount
-        let eyebrow = vm.rhr.band == nil ? "RANGE NEEDS A WEEK OF READINGS" : (above > 0 ? "\(above) DAY\(above == 1 ? "" : "S") ABOVE RANGE" : "INSIDE RANGE ALL WINDOW")
-        return PosterRow(eyebrow: eyebrow, eyebrowColor: above > 0 ? Editorial.amber : Editorial.emerald, title: "RESTING HR",
-                         subtitle: vm.rhr.band.map { "your range \(Int($0.lowerBound))–\(Int($0.upperBound)) bpm · line = 7-day avg" } ?? "line = 7-day avg",
-                         value: vm.rhr.latest.map { String(Int($0.rounded())) } ?? "—", unit: vm.rhr.latest == nil ? "" : "BPM") {
+        let eyebrow = vm.rhrBand == nil ? "RANGE NEEDS TWO WEEKS OF READINGS" : (above > 0 ? "\(above) OF LAST 10 DAYS ABOVE RANGE" : "INSIDE RANGE · LAST 10 DAYS")
+        return PosterRow(eyebrow: eyebrow, eyebrowColor: above >= 4 ? Editorial.amber : Editorial.emerald, title: "RESTING HR",
+                         subtitle: vm.rhrBand.map { "your range \(Int($0.lowerBound.rounded()))–\(Int($0.upperBound.rounded())) bpm · line = 7-day avg" } ?? "line = 7-day avg",
+                         value: vm.rhrLatest.map { String(Int($0.rounded())) } ?? "—", unit: vm.rhrLatest == nil ? "" : "BPM") {
             DotBandChart(values: vm.rhr.values, color: Editorial.blue, band: vm.rhr.band, badBelow: false,
                          shadedSlots: vm.rhr.slots { $0.block == calendar.current.block && ($0.isPeak || $0.isDeload) },
                          range: vm.rhr.range, ticks: ticks(for: vm.rhr.range))
@@ -158,10 +184,11 @@ struct RecoveryTabView: View {
     private var sleep: some View {
         let short = vm.shortNightsLast7
         let debt = vm.sleepDebtLast7
-        let eyebrow = short > 0 ? "\(short) NIGHT\(short == 1 ? "" : "S") UNDER 7H THIS WEEK · −\(SleepBarsChart.hm(debt)) DEBT" : (debt > 0.25 ? "−\(SleepBarsChart.hm(debt)) DEBT THIS WEEK" : "NEED MET ALL WEEK")
+        // Short enough for one line: the old form truncated to "−4:3…".
+        let eyebrow = short > 0 ? "\(short) SHORT NIGHT\(short == 1 ? "" : "S") · −\(SleepBarsChart.hm(debt)) THIS WK" : (debt > 0.25 ? "−\(SleepBarsChart.hm(debt)) DEBT THIS WK" : "NEED MET ALL WEEK")
         return PosterRow(eyebrow: eyebrow, eyebrowColor: short > 0 ? Editorial.amber : Editorial.emerald, title: "SLEEP",
                          subtitle: "bars = nights · line = 7:30 need",
-                         value: vm.sleep.latest.map { SleepBarsChart.hm($0) } ?? "—", unit: vm.sleep.latest == nil ? "" : "HRS") {
+                         value: vm.sleepLatest.map { SleepBarsChart.hm($0) } ?? "—", unit: vm.sleepLatest == nil ? "" : "HRS") {
             SleepBarsChart(hours: vm.sleep.values, shadedSlots: vm.sleep.slots { $0.block == calendar.current.block && ($0.isPeak || $0.isDeload) })
                 .frame(height: 130).padding(.top, 6).padding(.bottom, 12)
         }
@@ -176,7 +203,11 @@ struct RecoveryTabView: View {
         let slots = vm.weight.values
         let first7 = slots.prefix(7).compactMap { $0 }, last7 = slots.suffix(7).compactMap { $0 }
         let delta = (first7.isEmpty || last7.isEmpty) ? nil : ChartMath.mean(last7) - ChartMath.mean(first7)
-        let eyebrow = delta.map { abs($0) < 0.3 ? "FLAT · RECOMP ON TRACK" : ($0 < 0 ? "▾ \(String(format: "%.1f", abs($0))) KG OVER THE WINDOW" : "▴ \(String(format: "%.1f", $0)) KG OVER THE WINDOW") } ?? "WEIGHT"
+        let eyebrow = delta.map { abs($0) < 0.3 ? "FLAT OVER THE WINDOW" : ($0 < 0 ? "▾ \(String(format: "%.1f", abs($0))) KG OVER THE WINDOW" : "▴ \(String(format: "%.1f", $0)) KG OVER THE WINDOW") } ?? "WEIGHT"
+        // Muscle-gain phase: weight drifting DOWN is the thing to flag, not
+        // to paint green. The cut is over; a 15kg fall over the whole history
+        // read as an achievement on a page whose goal is the opposite.
+        let eyebrowColor: Color = delta.map { $0 < -0.3 ? Editorial.amber : ($0 > 0.3 ? Editorial.emerald : Editorial.muted) } ?? Editorial.muted
         var labels: [(slot: Int, text: String)] = []
         var i = 0
         while i < vm.weight.values.count {
@@ -185,9 +216,9 @@ struct RecoveryTabView: View {
             i += 7
         }
         let weekLabels = vm.isAggregated ? [] : labels
-        return PosterRow(eyebrow: eyebrow, eyebrowColor: Editorial.emerald, title: "WEIGHT",
+        return PosterRow(eyebrow: eyebrow, eyebrowColor: eyebrowColor, title: "WEIGHT",
                          subtitle: "dots daily · line 7-day avg · weekly means",
-                         value: vm.weight.latest.map { String(format: "%.1f", $0) } ?? "—", unit: vm.weight.latest == nil ? "" : "KG") {
+                         value: vm.weightLatest.map { String(format: "%.1f", $0) } ?? "—", unit: vm.weightLatest == nil ? "" : "KG") {
             TrendDotsChart(values: vm.weight.values, color: Editorial.sand, weekLabels: weekLabels, range: vm.weight.range)
                 .frame(height: 110).padding(.top, 6).padding(.bottom, 18)
         }
