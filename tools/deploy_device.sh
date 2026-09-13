@@ -69,9 +69,19 @@ fi
 # ── Find the phone ──────────────────────────────────────────────────────────
 # devicectl knows every phone this Mac has paired with; we want one that is
 # reachable right now, matched by name or UDID when one was given.
+log "Looking for the phone…"
 DEVICES_JSON="$(mktemp)"
 trap 'rm -f "$DEVICES_JSON"' EXIT
-xcrun devicectl list devices --json-output "$DEVICES_JSON" >/dev/null 2>&1
+# Never silent. With `set -e` a failing devicectl used to end the script
+# before it had printed a word, which read as "does nothing".
+if ! xcrun devicectl list devices --json-output "$DEVICES_JSON"; then
+    log "xcrun devicectl failed. Is Xcode selected? Try: sudo xcode-select -s /Applications/Xcode.app"
+    exit 3
+fi
+if [ ! -s "$DEVICES_JSON" ]; then
+    log "devicectl returned no device list."
+    exit 3
+fi
 
 UDID="$(python3 - "$DEVICES_JSON" "$WANT" <<'PY'
 import json, sys
@@ -96,6 +106,14 @@ PY
 
 if [ -z "$UDID" ]; then
     log "No reachable iPhone${WANT:+ matching '$WANT'}. Is it on the same Wi-Fi, unlocked once recently, and paired with this Mac?"
+    log "Devices this Mac knows about:"
+    python3 - "$DEVICES_JSON" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+for d in data.get("result", {}).get("devices", []):
+    hw, props, conn = d.get("hardwareProperties", {}), d.get("deviceProperties", {}), d.get("connectionProperties", {})
+    print(f"  {props.get('name','?')} · {hw.get('platform','?')} · {conn.get('tunnelState','?')} · {hw.get('udid','')}")
+PY
     exit 2
 fi
 log "Device $UDID"
