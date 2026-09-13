@@ -46,7 +46,7 @@ struct VolumeTabView: View {
             ForEach(rows) { r in
                 let out = r.order != 2
                 let col: Color = out ? Editorial.amber : Editorial.emerald
-                let eyebrow = !r.banded ? "NO TARGET · TRAINED THROUGH PRESSES AND HINGES"
+                let eyebrow = !r.banded ? "NO TARGET · SYNERGIST ONLY"
                     : r.short > 0 ? "▾ \(Self.g(r.short)) SHORT" : (r.over > 0 ? "▴ \(Self.g(r.over)) OVER" : "IN BAND")
                 PosterRow(eyebrow: eyebrow, eyebrowColor: out ? Editorial.amber : Editorial.muted, title: r.group,
                           value: Self.g(r.sets), unit: r.banded ? "/ \(r.band.lowerBound)–\(r.band.upperBound)" : "SETS/WK") {
