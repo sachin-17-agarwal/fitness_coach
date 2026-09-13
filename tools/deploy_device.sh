@@ -73,13 +73,21 @@ fi
 # the xcrun lookup, which failed here with "unable to find utility devicectl"
 # while the binary sat exactly where Xcode puts it.
 DEV_DIR="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || echo /Applications/Xcode.app/Contents/Developer)}"
-DEVICECTL="$DEV_DIR/usr/bin/devicectl"
 XCODEBUILD="$DEV_DIR/usr/bin/xcodebuild"
-if [ ! -x "$DEVICECTL" ]; then
-    log "devicectl not found at $DEVICECTL."
+# devicectl is NOT inside Xcode.app. It ships with CoreDevice, a component
+# Xcode installs on first launch, under /Library/Developer. Look there first,
+# then wherever xcrun can find it, then the toolchain bin as a last resort.
+DEVICECTL=""
+for candidate in \
+    /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Resources/bin/devicectl \
+    "$(xcrun --find devicectl 2>/dev/null || true)" \
+    "$DEV_DIR/usr/bin/devicectl"; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then DEVICECTL="$candidate"; break; fi
+done
+if [ -z "$DEVICECTL" ]; then
+    log "devicectl not found. It is installed by Xcode's first-launch components (CoreDevice)."
+    log "Run:  sudo xcodebuild -runFirstLaunch    then try again."
     log "xcode-select -p says: $(xcode-select -p 2>&1)"
-    log "Xcodes installed: $(ls -d /Applications/Xcode*.app 2>/dev/null | tr '\n' ' ')"
-    log "Point the command line at a full Xcode: sudo xcode-select -s /Applications/Xcode.app"
     exit 3
 fi
 
