@@ -141,17 +141,21 @@ deliberate hold. The screen and the coach are telling the wrong story.
 legend entry.
 **Size.** Small to medium. The app already reads the same database.
 
-### 2.3 Rep-overshoot rule in the programme
-**What.** If a top set lands four or more reps over its range (a 16 on an
-8–12 movement), the next prescription of that lift moves the load up so the
-range is reachable, and the card's Why line says so. Today the coach can do
-this; nothing guarantees it.
-**Why.** 110 × 16 on the Seated Leg Curl in a peak week means the load was
-set too light for the whole block. Progressive overload depends on the
-range being honoured in both directions; the prompt already forbids going
-under it.
-**Risk.** Low. One more deterministic rule in `prescribe.py`, tested like the
-others. The coach can still override with a reason.
+### 2.3 Rep-overshoot rule: size the step to the overshoot
+**What the programme does today.** Rule :205 already treats reps above the
+range as an overdue increase: the next prescription adds one increment.
+One increment is 2.5 kg on a compound and 1 kg on an isolation. So after
+110 × 16 on the Seated Leg Curl the deterministic proposal for next block's
+week 1 is 111 kg × 8. The set itself says 10 reps sits near 125 kg.
+**What changes.** When the overshoot is three reps or more, size the step
+from the set (Epley to the middle of the range), capped at +10% a session,
+and put the arithmetic on the card: "Load 122.5: 16 reps at 110 puts 10
+reps near 125; capped at +10%". One- and two-rep overshoots keep the single
+increment. The coach can still adjust with a cause, as now.
+**Why.** A block's load set too light for the whole block is wasted
+progression; the fix should land in one session, not creep 1 kg at a time.
+**Risk.** Low. A deterministic rule in `prescribe.py` with tests; the cap
+keeps a single high-rep set from producing a jump the joint has not seen.
 **Size.** Small.
 
 ### 2.4 Swift tests for the numbers
@@ -201,7 +205,9 @@ that writes a compressed snapshot of the same tables into a private
 **Why.** Six months of logged training exists in one Supabase project. A
 mistaken migration or an account problem loses it. The export is also what
 lets any future analysis run outside the app.
-**Risk.** None. Read-only.
+**Risk.** None to coaching. Privacy: this is health data, so the nightly
+snapshot goes to storage you own (iCloud Drive or an encrypted archive),
+not in clear to a repository.
 **Size.** Small for the export, small for the job.
 
 ### 2.8 Apple Watch: rest timer and set logging
@@ -237,6 +243,11 @@ judged fairly.
 ## Part 3 — Decided
 
 Approved items list their PRs when shipped. Declined items keep the reason.
+
+- **Approved, 14 Sep.** 2.6 Weekly recovery digest. Deterministic text from
+  the recovery facts layer, no model call.
+- **Approved, 14 Sep.** 2.10 Monthly cost line in the Sunday report. Rates
+  kept in one dated table in `usage.py`.
 
 - **Declined, 12 Sep.** Three-stage multi-model pipeline (cheap model for
   parsing, mid for prose, top for the plan). Not clearly better and adds
