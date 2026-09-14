@@ -109,14 +109,20 @@ biggest question is unanswered.
 **What, in order.**
 (a) Measure: record the visible output length per call beside the total,
 so the Sunday report shows thinking and text separately. Tiny, no risk.
-(b) Start earlier, not shorter: fire the plan call when the Train tab
-opens rather than on START, so the wait overlaps the readiness row. Same
-call, same inputs, nothing about the plan changes. The readiness tap must
-then either be applied deterministically to the returned plan or trigger a
-re-run; which one is decided by (a)'s numbers.
-(c) Pre-warm the cache on tab open. Saves 3–5 s at most and costs a cache
-write on every open, including the ones that never start a session. Low
-value on its own; only worth it bundled with (b).
+(b) Pre-plan on a schedule, not on a tap. Opening the Train tab is not a
+signal; the athlete looks at it often without training, and each look
+would cost a full opening (~20–25 cents) or a cache write. Instead the
+backend computes the plan itself on training days, once, about an hour
+before the usual training time from the log, with that morning's HRV and
+sleep. START then finds the plan ready. The readiness tap is compared with
+the read: if it leaves the read's decision unchanged the plan stands; if
+it flips it, the plan is re-run with the tap and the athlete waits as
+today. One call per training day, which is paid anyway; a skipped day
+wastes one.
+(c) Readiness tap as a trigger, as a fallback when no pre-plan exists.
+Tapping a readiness word is a deliberate "about to train"; fire the call
+then. Zero waste, small gain (the seconds between the tap and START). No
+cache pre-warming on tab open at all.
 (d) Plan before prose, as a second streamed call. **Not risk-free.** Today
 the reasoning that picks the numbers also writes the Why line, so the
 reason on the card is the actual reason. A second call explaining
@@ -125,8 +131,8 @@ the prose call is handed the structured causes and phrases them without
 adding any; gated on (a) showing prose is a meaningful share of the output.
 (e) Thinking depth. The largest lever and the only one with real quality
 risk. Not before two more weeks of Stage 2 data and gates 1–3 in place.
-**Risk.** (a) none. (b) none to content; engineering care around the
-readiness tap. (c) none, money only. (d) real, see above. (e) real.
+**Risk.** (a) none. (b) none to content; the tap comparison must be exact.
+(c) none. (d) real, see above. (e) real.
 **Size.** (a) tiny, (b) medium, (c) small, (d) medium, (e) small once gated.
 
 ### 2.2 HELD state for lifts under a standing decision
