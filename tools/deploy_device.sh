@@ -2,11 +2,17 @@
 # deploy_device.sh — build Vaux and install it on the iPhone in one command.
 #
 # Why this exists. The app is signed with a free Apple ID, and a free
-# provisioning profile expires seven days after the build. Every Run from
-# Xcode restarts that clock; a week without a build lets it run out and the
-# app stops launching. This script is the Run button without Xcode open, so
-# a weekly launchd job (tools/com.vaux.deploy.plist) can restart the clock
-# whether or not anything changed that week.
+# provisioning profile expires seven days after it is issued. A week without
+# a fresh one and the app stops launching. This script builds and installs
+# without Xcode open, so a launchd job (tools/com.vaux.deploy.plist) can keep
+# the clock reset whether or not anything changed that week.
+#
+# Note that a plain build does NOT restart the clock: Xcode reuses a managed
+# profile that is still valid, however close to expiry, and only issues a new
+# one when the old has run out. So this script deletes the cached profiles
+# for the app before building, which makes xcodebuild issue new ones dated
+# today, and after the build it reads the expiry out of the installed app
+# and prints it, so the log shows the seven days rather than assumes them.
 #
 # One-time setup on the Mac:
 #   1. Xcode → Settings → Accounts: the Apple ID is signed in.
@@ -171,9 +177,28 @@ PY
 fi
 log "Device $UDID"
 
+# ── Force a fresh profile ───────────────────────────────────────────────────
+# Managed profiles are cached here (Xcode 16+ first, older Xcode second).
+# Removing the ones for this app and its extension makes the build below
+# request new ones; nothing else is touched and Xcode recreates them on
+# demand. The application-identifier inside a profile is TEAMID.bundle, so
+# a fixed-string match on ".Sachin.Vaux2" catches the widget's too.
+REMOVED=0; DAYS_LEFT=""; EXPIRY=""
+for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
+           "$HOME/Library/MobileDevice/Provisioning Profiles"; do
+    [ -d "$dir" ] || continue
+    for f in "$dir"/*.mobileprovision; do
+        [ -f "$f" ] || continue
+        if security cms -D -i "$f" 2>/dev/null | grep -qF ".$BUNDLE_ID"; then
+            rm -f "$f" && REMOVED=$((REMOVED + 1))
+        fi
+    done
+done
+log "Cleared $REMOVED cached profile(s) for $BUNDLE_ID so new seven-day ones are issued"
+
 # ── Build ───────────────────────────────────────────────────────────────────
-# -allowProvisioningUpdates lets xcodebuild renew the free profile itself,
-# which is the whole point: a fresh signature every run.
+# -allowProvisioningUpdates lets xcodebuild talk to Apple and issue the
+# profiles it now finds missing.
 log "Building $SCHEME"
 "$XCODEBUILD" \
     -project "$PROJECT" \
@@ -192,6 +217,20 @@ if [ ! -d "$APP" ]; then
     exit 3
 fi
 
+# What did we actually sign with? Read the expiry out of the built app.
+EXPIRY="$(security cms -D -i "$APP/embedded.mobileprovision" 2>/dev/null \
+          | plutil -extract ExpirationDate raw -o - - 2>/dev/null || true)"
+if [ -n "$EXPIRY" ]; then
+    EXP_S="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$EXPIRY" +%s 2>/dev/null || echo 0)"
+    DAYS_LEFT=$(( (EXP_S - $(date +%s)) / 86400 ))
+    log "Profile expires $EXPIRY ($DAYS_LEFT days)"
+    if [ "$EXP_S" -gt 0 ] && [ "$DAYS_LEFT" -lt 6 ]; then
+        log "WARNING: the profile was reused, not renewed. Open Xcode once, sign out and back in under Settings > Accounts, and run this again."
+    fi
+else
+    log "Could not read the profile expiry from $APP"
+fi
+
 # ── Install ─────────────────────────────────────────────────────────────────
 log "Installing"
 "$DEVICECTL" device install app --device "$UDID" "$APP"
@@ -202,4 +241,4 @@ if [ "$LAUNCH" = 1 ]; then
 fi
 
 mkdir -p "$STAMP_DIR" && touch "$STAMP"
-log "Done — signature good for another seven days"
+log "Done${DAYS_LEFT:+ — app runs until $EXPIRY}"
