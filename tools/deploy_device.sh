@@ -79,20 +79,28 @@ MIN_XCODE=16
 xcode_major() { "$1/usr/bin/xcodebuild" -version 2>/dev/null | awk 'NR==1 {print int($2)}'; }
 DEV_DIR="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || true)}"
 CUR_MAJOR="$(xcode_major "$DEV_DIR")"
+# Every Xcode on the Mac, wherever it was unzipped: the two usual folders,
+# then Spotlight by bundle id, which also finds a copy left in Downloads.
+all_xcodes() {
+    { ls -d /Applications/Xcode*.app "$HOME"/Applications/Xcode*.app 2>/dev/null
+      mdfind "kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'" 2>/dev/null; } | sort -u
+}
 if [ -z "$CUR_MAJOR" ] || [ "$CUR_MAJOR" -lt "$MIN_XCODE" ]; then
-    BEST=""; BEST_MAJOR=0
-    for app in /Applications/Xcode*.app "$HOME"/Applications/Xcode*.app; do
-        [ -d "$app" ] || continue
+    BEST=""; BEST_MAJOR=0; FOUND=""
+    while IFS= read -r app; do
+        [ -n "$app" ] && [ -d "$app" ] || continue
         v="$(xcode_major "$app/Contents/Developer")"
         [ -n "$v" ] || continue
+        FOUND="$FOUND
+    $app  (Xcode $v)"
         if [ "$v" -gt "$BEST_MAJOR" ]; then BEST_MAJOR="$v"; BEST="$app/Contents/Developer"; fi
-    done
+    done <<< "$(all_xcodes)"
     if [ "$BEST_MAJOR" -ge "$MIN_XCODE" ]; then
         log "Xcode at ${DEV_DIR:-<none>} is version ${CUR_MAJOR:-?}; using $BEST instead"
         DEV_DIR="$BEST"
     else
-        log "No Xcode $MIN_XCODE or newer found (selected: ${DEV_DIR:-<none>}, version ${CUR_MAJOR:-?})."
-        log "Install a current Xcode, then:  sudo xcode-select -s /Applications/Xcode.app"
+        log "This project needs Xcode $MIN_XCODE or newer. Xcode found on this Mac:${FOUND:-  none}"
+        log "If the Xcode you build the app with is on another computer, the re-sign job has to run there."
         exit 3
     fi
 fi
