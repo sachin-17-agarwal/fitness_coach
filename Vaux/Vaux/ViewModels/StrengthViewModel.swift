@@ -128,7 +128,8 @@ struct BlockSnapshot: Identifiable, Hashable {
 
     var upCount: Int { lifts.filter { $0.state == .pr || $0.state == .up }.count }
     var prCount: Int { lifts.filter { $0.state == .pr }.count }
-    var stalledCount: Int { lifts.filter { $0.state == .stall || $0.state == .drop }.count }
+    var stalledCount: Int { lifts.filter { $0.state == .stall }.count }
+    var droppingCount: Int { lifts.filter { $0.state == .drop }.count }
     var judgedCount: Int { lifts.filter { $0.state != StrengthState.none }.count }
     var muscleStates: [BodyMuscle: StrengthState] {
         Dictionary(uniqueKeysWithValues: muscles.map { ($0.muscle, $0.state) })
