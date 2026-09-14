@@ -47,8 +47,9 @@ Five stages, four gates. Where each stands on 14 Sep 2026:
 Reading it: in-session replies are fine. The one measured session opening
 took 82 seconds, hit no cache, and produced 7,800 output tokens, most of
 which is thinking. That is the "two minutes to start" complaint, in
-numbers. Two more weeks of data are wanted before acting, but the shape of
-the fix is already visible and is proposed in Part 2 (item 2.1).
+numbers. Output tokens account for ~80 of the 82 seconds, so the fix has to
+shorten output or move it off the critical path; item 2.1 in Part 2 lays
+out the order, measurement first.
 
 **Open follow-ups inside the plan:**
 
@@ -99,18 +100,34 @@ Each item says what, why, the evidence, rough size, and the risk to
 coaching quality. Say "approve 2.3" or "decline 2.3" and it moves to Part 3.
 
 ### 2.1 Faster session opening
-**What.** Three independent pieces, any subset can ship:
-(a) pre-warm the prompt cache when the Train tab opens, with a tiny call
-that shares the plan call's prefix, so the plan call itself reads the
-prompt from cache; (b) build and send the structured plan first, and the
-prose "why" for each exercise as a second, streamed call, so the card
-appears in seconds and the explanation fills in; (c) cap plan thinking by
-measured need rather than a fixed medium.
-**Why.** The one measured opening: 82 s, 0% cache, 7.8k output tokens.
-**Risk.** (a) none to quality. (b) none if the plan is unchanged and only
-the prose is deferred. (c) is the only one that touches reasoning depth and
-is gated on two more weeks of Stage 2 data.
-**Size.** (a) small, (b) medium, (c) small once the data is in.
+**Where the time goes.** The one measured opening produced 7,832 output
+tokens in 82 s, about 95 tokens a second. Output is therefore ~80 of the
+82 seconds; reading the uncached 35,000-token prompt is the rest. Any fix
+has to shorten the output or move it off the critical path. The report
+does not yet split thinking from visible text inside those 7,832, so the
+biggest question is unanswered.
+**What, in order.**
+(a) Measure: record the visible output length per call beside the total,
+so the Sunday report shows thinking and text separately. Tiny, no risk.
+(b) Start earlier, not shorter: fire the plan call when the Train tab
+opens rather than on START, so the wait overlaps the readiness row. Same
+call, same inputs, nothing about the plan changes. The readiness tap must
+then either be applied deterministically to the returned plan or trigger a
+re-run; which one is decided by (a)'s numbers.
+(c) Pre-warm the cache on tab open. Saves 3–5 s at most and costs a cache
+write on every open, including the ones that never start a session. Low
+value on its own; only worth it bundled with (b).
+(d) Plan before prose, as a second streamed call. **Not risk-free.** Today
+the reasoning that picks the numbers also writes the Why line, so the
+reason on the card is the actual reason. A second call explaining
+decisions it did not make can rationalise after the fact. Viable only if
+the prose call is handed the structured causes and phrases them without
+adding any; gated on (a) showing prose is a meaningful share of the output.
+(e) Thinking depth. The largest lever and the only one with real quality
+risk. Not before two more weeks of Stage 2 data and gates 1–3 in place.
+**Risk.** (a) none. (b) none to content; engineering care around the
+readiness tap. (c) none, money only. (d) real, see above. (e) real.
+**Size.** (a) tiny, (b) medium, (c) small, (d) medium, (e) small once gated.
 
 ### 2.2 HELD state for lifts under a standing decision
 **What.** When a `Decision:` caps a lift, the Strength tab shows
