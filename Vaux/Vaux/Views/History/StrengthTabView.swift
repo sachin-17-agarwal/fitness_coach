@@ -34,7 +34,7 @@ struct StrengthTabView: View {
             byMuscle
             sheet
             balance
-            Text("Est. 1RM is Epley on the best set of ≤\(StrengthViewModel.maxRepsForE1RM) reps. Dips, pull-ups and leg raises count your weigh-in plus the plate. Each block is judged by its peak week; deload weeks are shaded and never count as a drop. Ribbons share one scale: ±8% around each lift's mean.")
+            Text("Est. 1RM is Epley on the best set of ≤\(StrengthViewModel.maxRepsForE1RM) reps; a week with only higher-rep sets (to \(StrengthViewModel.maxRepsForLooseE1RM)) uses its best one and says so, as the estimate is looser. Dips, pull-ups and leg raises count your weigh-in plus the plate. Each block is judged by its peak week; deload weeks are shaded and never count as a drop. Ribbons share one scale: ±8% around each lift's mean.")
                 .font(.system(size: 11)).lineSpacing(3).foregroundStyle(Editorial.muted)
                 .padding(.horizontal, Editorial.gutter).padding(.top, 18)
         }
@@ -176,6 +176,7 @@ struct StrengthTabView: View {
                 let subtitle: String = {
                     var s = lift?.name.uppercased() ?? "NO LOADED LIFT"
                     if let d = lift?.deltaPct { s += "  " + Editorial.signedPct(d) }
+                    if let p = lift?.peak, p.loose { s += " · EST. FROM \(p.reps) REPS" }
                     s += "\n" + (m.isSettling
                         ? String(format: "%.0f sets so far · band %d–%d/wk", m.setsSoFar, m.band.lowerBound, m.band.upperBound)
                         : String(format: "%.1f sets/wk · band %d–%d", m.setsPerWeek, m.band.lowerBound, m.band.upperBound))

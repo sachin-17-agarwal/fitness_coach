@@ -21,6 +21,10 @@ struct LiftBlockPoint: Hashable {
     let weight: Double
     let reps: Int
     let rpe: Double?
+    /// True when the week had no set of 12 reps or fewer and this point was
+    /// estimated from a higher-rep set instead. The estimate is looser, and
+    /// the screen says so wherever the number is shown.
+    var loose: Bool = false
 }
 
 struct LiftReport: Identifiable, Hashable {
@@ -48,7 +52,7 @@ struct LiftReport: Identifiable, Hashable {
         guard let p = peak else { return "no loaded set yet" }
         let w = ExerciseCatalog.setWeightLabel(p.weight, exercise: name)
         let rpe = p.rpe.map { String(format: " @%g", $0) } ?? ""
-        return "best \(w) × \(p.reps)\(rpe)"
+        return "best \(w) × \(p.reps)\(rpe)" + (p.loose ? " · estimate from \(p.reps) reps" : "")
     }
 }
 
@@ -165,6 +169,13 @@ final class StrengthViewModel {
     static let dropPct = -5.0
     static let stallBlocks = 2
     static let maxRepsForE1RM = 12
+    /// A week whose only sets on a lift run past 12 reps still counts as
+    /// lifted. Rep-to-1RM formulas drift above 12, so such a set is used
+    /// only when nothing tighter exists for that week, up to this many reps,
+    /// and the point is marked loose. Seated Leg Curl 110 × 16 in a peak week
+    /// left hamstrings on "BUILDING" after Legs day because the set produced
+    /// no estimate at all and the gate never saw it.
+    static let maxRepsForLooseE1RM = 20
     static let windowDays = 16 * 7
 
     private static let balancePairs: [(title: String, left: [String], right: [String], band: ClosedRange<Int>)] = [
@@ -180,6 +191,9 @@ final class StrengthViewModel {
         let sessionById = Dictionary(sessions.compactMap { s in s.id.map { ($0, s) } }, uniquingKeysWith: { a, _ in a })
         // lift → position → best point
         var weekly: [String: [BlockPosition: LiftBlockPoint]] = [:]
+        // Same shape, sets of 13–20 reps; filled into `weekly` only where a
+        // lift has no tighter point for that week.
+        var loose: [String: [BlockPosition: LiftBlockPoint]] = [:]
         var liftSession: [String: String] = [:]
         // Working sets per muscle in each block, fractionally attributed, and
         // the training weeks each block actually had — so "sets/wk" is that
@@ -214,13 +228,19 @@ final class StrengthViewModel {
             let weight = set.actualWeightKg ?? 0
             let load = BodyweightLoad.effective(weight, exercise: set.exercise, bodyweight: weighIns.kg(on: set.date))
             let reps = set.actualReps ?? 0
-            guard load > 0, reps > 0, reps <= Self.maxRepsForE1RM else { continue }
+            guard load > 0, reps > 0, reps <= Self.maxRepsForLooseE1RM else { continue }
             let e = WorkoutService.epley1RM(weight: load, reps: reps)
-            var byPos = weekly[name] ?? [:]
+            let isLoose = reps > Self.maxRepsForE1RM
+            var byPos = (isLoose ? loose[name] : weekly[name]) ?? [:]
             if (byPos[pos]?.e1rm ?? 0) < e {
-                byPos[pos] = LiftBlockPoint(position: pos, e1rm: e, weight: weight, reps: reps, rpe: set.actualRpe)
+                byPos[pos] = LiftBlockPoint(position: pos, e1rm: e, weight: weight, reps: reps, rpe: set.actualRpe, loose: isLoose)
             }
-            weekly[name] = byPos
+            if isLoose { loose[name] = byPos } else { weekly[name] = byPos }
+        }
+        for (name, byPos) in loose {
+            var merged = weekly[name] ?? [:]
+            for (pos, point) in byPos where merged[pos] == nil { merged[pos] = point }
+            weekly[name] = merged
         }
 
         allLiftNames = weekly.keys.sorted()
