@@ -109,8 +109,20 @@ struct StrengthTabView: View {
         return [
             .init(text: "\(s.upCount) OF \(s.judgedCount) LIFTS UP"),
             .init(text: "\(s.prCount) ALL-TIME PR\(s.prCount == 1 ? "" : "S")"),
-            .init(text: "\(s.stalledCount) STALLED", color: s.stalledCount > 0 ? Editorial.amber : Editorial.mid),
+            // A drop is not a stall: the third line names what actually
+            // happened, so the hero and the muscle rows agree. Shoulders read
+            // "DROPPING" below while this line said "1 STALLED".
+            downLine(stalled: s.stalledCount, dropping: s.droppingCount),
         ]
+    }
+
+    private func downLine(stalled: Int, dropping: Int) -> StatStack.Line {
+        switch (stalled, dropping) {
+        case (0, 0): return .init(text: "0 STALLED", color: Editorial.mid)
+        case (_, 0): return .init(text: "\(stalled) STALLED", color: Editorial.amber)
+        case (0, _): return .init(text: "\(dropping) DROPPING", color: Editorial.coral)
+        default:     return .init(text: "\(stalled) STALLED · \(dropping) DROPPING", color: Editorial.coral)
+        }
     }
 
     private var scrubber: some View {
