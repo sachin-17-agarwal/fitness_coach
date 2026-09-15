@@ -167,7 +167,19 @@ def find_current_loads(rows: list[dict]) -> list[dict]:
     return loads
 
 
-def format_current_loads(loads: list[dict]) -> str:
+# What every block says when its lookup could not run. Deliberately not a
+# statement about the training log: the coach must never read a failed
+# lookup as an absence of history and open a lift at a feel-out load.
+LOOKUP_FAILED = ("  LOOKUP UNAVAILABLE — this block could not be read this "
+                 "request. It is NOT a statement that nothing is logged. Do "
+                 "not treat any lift as having no history on the strength of "
+                 "it, and do not open anything at a baseline or feel-out load "
+                 "because of it; ask the athlete for the last load instead.")
+
+
+def format_current_loads(loads: list[dict] | None) -> str:
+    if loads is None:
+        return LOOKUP_FAILED
     if not loads:
         return "  No working sets logged in the window."
     lines = []
@@ -210,7 +222,7 @@ def find_peak_week_loads(rows: list[dict], peak_week: int = PEAK_WEEK) -> list[d
     return find_current_loads(peak_rows)
 
 
-def format_peak_week_loads(loads: list[dict], peak_week: int = PEAK_WEEK) -> str:
+def format_peak_week_loads(loads: list[dict] | None, peak_week: int = PEAK_WEEK) -> str:
     """Render the peak-week block.
 
     The empty case is load-bearing, not cosmetic. Sessions are only stamped with
@@ -219,6 +231,8 @@ def format_peak_week_loads(loads: list[dict], peak_week: int = PEAK_WEEK) -> str
     exactly the sort of gap that gets filled with a remembered number. It says
     what to use instead.
     """
+    if loads is None:
+        return LOOKUP_FAILED
     if not loads:
         return (
             f"  No week-{peak_week} session recorded yet — sessions carry their mesocycle\n"
@@ -286,13 +300,15 @@ def _format_set(row: dict) -> str:
     return text
 
 
-def format_stalls(stalls: list[dict]) -> str:
+def format_stalls(stalls: list[dict] | None) -> str:
     """Render the progression block.
 
     Flagged lifts first, with the evidence inline. The wording separates what
     is measured (the load has not moved; the last session met its target) from
     what is a decision (whether to add weight) — the coach owns the second.
     """
+    if stalls is None:
+        return LOOKUP_FAILED
     if not stalls:
         return "  No lift has held the same top-set load for 3+ sessions."
 
@@ -332,16 +348,34 @@ def _fetch_sets_before_today(days: int) -> list[dict] | None:
             return None
         today = now_local().date()
         since = (today - timedelta(days=days)).isoformat()
-        result = (
-            supabase.table("workout_sets")
-            .select("date, exercise, workout_session_id, is_warmup, notes, "
-                    "actual_weight_kg, actual_reps, actual_rpe, target_reps, "
-                    "target_rpe")
-            .gte("date", since)
-            .lt("date", today.isoformat())
-            .execute()
-        )
-        return result.data or []
+        # Paged and ordered. PostgREST caps an unbounded select at its
+        # max-rows setting (1000 by default) and, with no ORDER BY, which
+        # rows come back is arbitrary — so a silent truncation drops whole
+        # exercises from the lookup at random. Six weeks of training plus
+        # warm-ups and the cardio rows that share this table sits near that
+        # cap, and an exercise trained once a rotation is the likeliest to
+        # vanish. That is how a log with months of ab history read as "no
+        # working sets logged in the window".
+        rows: list[dict] = []
+        page, offset = 1000, 0
+        while True:
+            result = (
+                supabase.table("workout_sets")
+                .select("date, exercise, workout_session_id, is_warmup, notes, "
+                        "actual_weight_kg, actual_reps, actual_rpe, target_reps, "
+                        "target_rpe")
+                .gte("date", since)
+                .lt("date", today.isoformat())
+                .order("date")
+                .range(offset, offset + page - 1)
+                .execute()
+            )
+            chunk = result.data or []
+            rows.extend(chunk)
+            if len(chunk) < page:
+                break
+            offset += page
+        return rows
     except Exception:
         log.exception("Progression fetch failed")
         return None
@@ -381,32 +415,39 @@ def _fetch_session_weeks(days: int) -> dict[str, int]:
         return {}
 
 
-def get_load_stalls(days: int = 42, min_sessions: int = DEFAULT_MIN_SESSIONS) -> list[dict]:
-    """Exercises sitting on the same load. [] when the data can't be read,
-    which callers render as "no readout" rather than "nothing has stalled"."""
+def get_load_stalls(days: int = 42, min_sessions: int = DEFAULT_MIN_SESSIONS) -> list[dict] | None:
+    """Exercises sitting on the same load. None when the data can't be read."""
     rows = _fetch_sets_before_today(days)
     if rows is None:
-        return []
+        return None
     return find_stalls(rows, min_sessions=min_sessions)
 
 
-def get_current_loads(days: int = 42) -> list[dict]:
-    """The load each exercise is currently on, ready to be read off."""
-    rows = _fetch_sets_before_today(days)
-    if rows is None:
-        return []
-    return find_current_loads(rows)
+def get_current_loads(days: int = 42) -> list[dict] | None:
+    """The load each exercise is currently on, ready to be read off.
 
-
-def get_peak_week_loads(days: int = PEAK_WINDOW_DAYS, peak_week: int = PEAK_WEEK) -> list[dict]:
-    """Top set per exercise from the most recent peak-week session.
-
-    [] when the data can't be read or nothing is stamped yet; the formatter
-    renders that as an explicit "no peak week recorded" rather than silence.
+    None when the lookup FAILED, [] when it ran and found nothing. The two
+    were the same value here, and the formatter renders [] as "No working
+    sets logged in the window" — so a failed read told the coach the athlete
+    had never trained these lifts. It prescribed a feel-out on a Cardio+Abs
+    day against months of logged ab work, and threw away a real working load.
+    The distinction the fetch takes trouble to make has to survive the trip.
     """
     rows = _fetch_sets_before_today(days)
     if rows is None:
-        return []
+        return None
+    return find_current_loads(rows)
+
+
+def get_peak_week_loads(days: int = PEAK_WINDOW_DAYS, peak_week: int = PEAK_WEEK) -> list[dict] | None:
+    """Top set per exercise from the most recent peak-week session.
+
+    None when the data can't be read, [] when nothing is stamped yet; the
+    formatter renders those as different sentences.
+    """
+    rows = _fetch_sets_before_today(days)
+    if rows is None:
+        return None
     weeks = _fetch_session_weeks(days)
     if not weeks:
         return []
