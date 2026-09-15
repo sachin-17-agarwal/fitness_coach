@@ -5141,3 +5141,61 @@ class FailedLookupIsNotAnEmptyLogTests(unittest.TestCase):
         self.assertIn("[load]kg", block)
         # And the example's exercise name is a placeholder, not a real lift.
         self.assertNotIn("*Cable Crunch*", block)
+
+
+class OnPaperVolumeMatchesTheTemplatesTests(unittest.TestCase):
+    """The prompt asserts what weekly volume the templates produce, and the
+    weak-point policy is built on that assertion. Sets were added to the Legs
+    template — the 45° Back Extension for hamstrings, two more calf raises —
+    and the table was never recomputed, so it went on naming hamstrings and
+    calves the two under-dosed muscles long after both were in band. The
+    weak-point block aimed at them for blocks on end, and the athlete said so
+    twice before anyone checked the arithmetic.
+
+    So the table is recomputed here from the templates and the contribution
+    factors, and the prompt has to agree with it.
+    """
+
+    RECURRENCE = 1.5   # the prompt's own rotation-recurrence factor
+
+    def _computed(self):
+        from coach_parsing import parse_session_template
+        from volume import resolve_contributions
+        prompt = open("system_prompt.txt", encoding="utf-8").read()
+        totals: dict[str, float] = {}
+        for day in ("Pull", "Push", "Legs", "Cardio+Abs"):
+            pairs, _ = parse_session_template(prompt, day)
+            for name, count in pairs:
+                for muscle, share in resolve_contributions(name).items():
+                    totals[muscle] = totals.get(muscle, 0.0) + count * share * self.RECURRENCE
+        return totals
+
+    def test_the_prompts_table_matches_what_the_templates_produce(self):
+        computed = self._computed()
+        prompt = open("system_prompt.txt", encoding="utf-8").read()
+        line = next(l for l in prompt.splitlines() if l.startswith("Weekly volume this produces on paper"))
+        for muscle, stated in (("chest", 12), ("back", 14.2), ("quads", 12), ("shoulders", 12),
+                               ("biceps", 15), ("triceps", 11.2), ("hamstrings", 11.2),
+                               ("rear delts", 9), ("calves", 7.5), ("abs", 15)):
+            key = {"rear delts": "Rear Delts"}.get(muscle, muscle.capitalize())
+            self.assertAlmostEqual(computed[key], stated, delta=0.06,
+                                   msg=f"{muscle}: templates give {computed[key]:.2f}, prompt says {stated}")
+            self.assertIn(f"{muscle} {stated:g}", line)
+
+    def test_no_muscle_with_a_band_is_under_it_on_the_current_template(self):
+        """The premise of the weak-point block. If this ever fails the
+        programme has a real gap and the slot should be filled by design, not
+        by a stale sentence."""
+        bands = {"Chest": (10, 16), "Back": (10, 16), "Quads": (10, 16), "Hamstrings": (10, 16),
+                 "Shoulders": (8, 12), "Biceps": (8, 12), "Triceps": (8, 12),
+                 "Calves": (6, 10), "Rear Delts": (8, 14), "Abs": (10, 16)}
+        computed = self._computed()
+        under = {m: round(computed.get(m, 0), 1) for m, (low, _) in bands.items()
+                 if computed.get(m, 0) < low}
+        self.assertEqual(under, {}, f"under band on the current template: {under}")
+
+    def test_the_prompt_no_longer_calls_hamstrings_and_calves_under_dosed(self):
+        prompt = open("system_prompt.txt", encoding="utf-8").read()
+        self.assertNotIn("hamstrings 6.8", prompt)
+        self.assertNotIn("calves 4.5", prompt)
+        self.assertNotIn("HAMSTRINGS (6.8", prompt)
