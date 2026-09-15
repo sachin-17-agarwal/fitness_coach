@@ -151,14 +151,41 @@ def _log_cache_usage(response) -> None:
         log.debug("Could not read cache usage", exc_info=True)
 
 
-def _prose_reply(system_prompt: str, stable_context: str, live_context: str,
-                 messages_to_send: list):
+def system_blocks(system_prompt: str, stable_context: str, live_context: str,
+                  live_day: str | None = None, live_set: str | None = None) -> list:
+    """The `system` array every coach call sends, split by volatility with a
+    cache breakpoint after each stable part.
+
+    Three blocks when the context arrives whole; four when build_context_block
+    handed over the live half in two parts. The stable block (a month of log)
+    changes once a day; the day block (today's header, the programme's
+    proposal, the block's emphasis, the session template) changes once a
+    session; the set block (today's rows, comparisons, live workout state)
+    changes on every logged set. Caching is a prefix match, so each block must
+    physically precede anything more volatile than itself — that ordering is
+    load-bearing. Before the day block existed, all of it was re-sent on every
+    set reply: ~13,500 uncached tokens a call, two thirds of its price.
+    """
+    blocks = [
+        {"type": "text", "text": system_prompt},
+        {"type": "text", "text": stable_context,
+         "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+    ]
+    if live_day is not None and live_set is not None and live_day.strip():
+        blocks.append({"type": "text", "text": live_day,
+                       "cache_control": {"type": "ephemeral", "ttl": "1h"}})
+        blocks.append({"type": "text", "text": live_set})
+    else:
+        blocks.append({"type": "text", "text": live_context})
+    return blocks
+
+
+def _prose_reply(blocks: list, messages_to_send: list):
     """The coach's ordinary reply: prose, one call, thinking off.
 
-    Split by volatility, not by topic. Everything that only changes once a
-    day goes in the cached block so a breakpoint can sit after it; everything
-    that moves as sets are logged goes in the live one. The two are
-    concatenated in `system`, so the coach reads one continuous context.
+    `blocks` is the `system` array from system_blocks(): split by volatility,
+    a breakpoint after each stable part, concatenated by the API so the coach
+    reads one continuous context.
     """
     response = get_anthropic_client().messages.create(
         model="claude-sonnet-5",
@@ -193,20 +220,7 @@ def _prose_reply(system_prompt: str, stable_context: str, live_context: str,
         # becomes ~1900 without a word being added, which brushes the old
         # ceiling on exactly the long ab days flagged above.
         max_tokens=4000,
-        # Three blocks, breakpoint after the second. The context used to be
-        # one lump AFTER the only breakpoint, so all ~4k tokens of it were
-        # re-billed on every request — a third of the cost of a logged set.
-        # Splitting it by volatility puts the day-stable part (30-day recovery,
-        # sessions before today, Apple workouts, substitutions) inside the
-        # cached prefix, leaving only today's sets and the live workout state
-        # outside it. Caching is a prefix match, so the stable block must
-        # physically precede the live one — that ordering is load-bearing.
-        system=[
-            {"type": "text", "text": system_prompt},
-            {"type": "text", "text": stable_context,
-             "cache_control": {"type": "ephemeral", "ttl": "1h"}},
-            {"type": "text", "text": live_context},
-        ],
+        system=blocks,
         messages=messages_to_send,
     )
     _log_cache_usage(response)
@@ -244,7 +258,15 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         _safe_int(memory.get("mesocycle_day", 1)),
         override=memory.get(SESSION_OVERRIDE_KEY),
     )
-    live_context += format_session_template(system_prompt, today_type)
+    session_template = format_session_template(system_prompt, today_type)
+    live_context += session_template
+    # The template is read against today's session type and never changes
+    # within a day, so it belongs to the day part of the live half.
+    live_day = programme_out.get("live_day")
+    live_set = programme_out.get("live_set")
+    if live_day is not None:
+        live_day += session_template
+    blocks = system_blocks(system_prompt, stable_context, live_context, live_day, live_set)
 
     conversation_history.append({"role": "user", "content": user_message})
     save_conversation_message("user", user_message)
@@ -274,12 +296,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
             from plan import render_plan, request_session_plan, save_decisions
             plan, plan_notes = request_session_plan(
                 get_anthropic_client(),
-                system_blocks=[
-                    {"type": "text", "text": system_prompt},
-                    {"type": "text", "text": stable_context,
-                     "cache_control": {"type": "ephemeral", "ttl": "1h"}},
-                    {"type": "text", "text": live_context},
-                ],
+                system_blocks=blocks,
                 messages=messages_to_send,
                 session_type=today_type,
                 week=_safe_int(memory.get("mesocycle_week", 1)),
@@ -317,12 +334,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 total = len(stored.get("working") or []) + len(stored.get("backoff") or [])
                 reply, set_notes = request_set_reply(
                     get_anthropic_client(),
-                    system_blocks=[
-                        {"type": "text", "text": system_prompt},
-                        {"type": "text", "text": stable_context,
-                         "cache_control": {"type": "ephemeral", "ttl": "1h"}},
-                        {"type": "text", "text": live_context},
-                    ],
+                    system_blocks=blocks,
                     messages=messages_to_send, exercise=exercise, done=done, total=total,
                     stored=stored,
                 )
@@ -339,7 +351,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     if assistant_message is None:
         import time as _time
         _t0 = _time.monotonic()
-        response = _prose_reply(system_prompt, stable_context, live_context, messages_to_send)
+        response = _prose_reply(blocks, messages_to_send)
         # Every model call leaves its cost in the log — seconds and tokens,
         # cached reads separate — so optimisation runs on numbers.
         try:

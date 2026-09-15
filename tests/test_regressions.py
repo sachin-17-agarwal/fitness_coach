@@ -1213,6 +1213,61 @@ class ModelRequestConfigTests(unittest.TestCase):
         self.assertIn("cache_control", system[1])
         self.assertNotIn("cache_control", system[2])
 
+    def test_the_live_half_splits_into_a_cached_day_block_and_an_uncached_set_block(self):
+        """Every set reply used to re-send ~13,500 uncached tokens: the whole
+        live half, though most of it — the header, the programme's proposal,
+        the block's emphasis, the session template — does not change within
+        a session. With the split, a second breakpoint sits after the day
+        part and only today's rows, the comparisons and the live workout
+        state stay outside every breakpoint. Order is load-bearing: stable,
+        day, set."""
+        blocks = coach_module.system_blocks("SYSTEM", "STABLE", "DAY" + "SET", "DAY", "SET")
+        self.assertEqual([b["text"] for b in blocks], ["SYSTEM", "STABLE", "DAY", "SET"])
+        self.assertNotIn("cache_control", blocks[0])
+        self.assertEqual(blocks[1]["cache_control"], {"type": "ephemeral", "ttl": "1h"})
+        self.assertEqual(blocks[2]["cache_control"], {"type": "ephemeral", "ttl": "1h"})
+        self.assertNotIn("cache_control", blocks[3])
+        # Without the split (an old caller, or a build that could not fill
+        # `out`), the three-block shape is unchanged.
+        three = coach_module.system_blocks("SYSTEM", "STABLE", "LIVE")
+        self.assertEqual([b["text"] for b in three], ["SYSTEM", "STABLE", "LIVE"])
+        # An empty day part is not worth a breakpoint.
+        self.assertEqual(len(coach_module.system_blocks("S", "ST", "L", "  ", "L")), 3)
+
+    def test_build_context_block_hands_over_the_split_and_the_day_part_is_stable_within_a_session(self):
+        """The day part must not carry anything that moves between two logged
+        sets — steps, active energy, today's rows, the Watch feed, the live
+        workout state — or the second breakpoint misses on every call and a
+        2x write replaces a 0.1x read."""
+        import coach_context
+        out = {}
+        with patch.object(coach_context, "get_full_session_history", return_value="No sessions found."), \
+             patch.object(coach_context, "get_recovery_history", return_value=""), \
+             patch.object(coach_context, "get_substitution_history", return_value=""), \
+             patch.object(coach_context, "get_apple_workouts", return_value=""), \
+             patch.object(coach_context, "get_workout_state", return_value={}), \
+             patch.object(coach_context, "get_weekly_volume", return_value={}), \
+             patch.object(coach_context, "get_load_stalls", return_value=[]), \
+             patch.object(coach_context, "get_current_loads", return_value=[]), \
+             patch.object(coach_context, "get_peak_week_loads", return_value=[]), \
+             patch.object(coach_context, "get_weak_point_history", return_value=[]), \
+             patch.object(coach_context, "get_set_comparisons", return_value=[]), \
+             patch.object(coach_context, "_recent_decisions", return_value=[]), \
+             patch.object(coach_context, "_standing_constraints", return_value=[]), \
+             patch.object(coach_context, "_recovery_rows", return_value=[]), \
+             patch.object(coach_context, "_block_weak_points", return_value=None):
+            stable, live = coach_context.build_context_block(
+                {"mesocycle_week": 2, "mesocycle_day": 2}, "Sachin", 78, 75, logging.getLogger("t"),
+                recovery_override={"date": "2026-09-15", "hrv": 44, "steps": 8123}, out=out)
+        self.assertEqual(live, out["live_day"] + out["live_set"])
+        day, set_part = out["live_day"], out["live_set"]
+        for stable_marker in ("TODAY —", "TODAY'S SESSION TYPE", "WEAK-POINT BLOCK"):
+            self.assertIn(stable_marker, day)
+        for moving_marker in ("Steps:", "Active energy", "TODAY'S SESSIONS SO FAR", "TODAY vs LAST SESSION",
+                              "TODAY'S APPLE WATCH WORKOUTS", "WEEKLY VOLUME", "[END CONTEXT]"):
+            self.assertIn(moving_marker, set_part)
+            self.assertNotIn(moving_marker, day)
+
 
 class SessionTemplateTests(unittest.TestCase):
     """The prompt states each session's working-set total AND enumerates the
@@ -1861,7 +1916,9 @@ class SetCountLookupTests(unittest.TestCase):
 
     def test_it_reaches_the_prompt_for_the_session_being_trained(self):
         src = open("coach.py", encoding="utf-8").read()
-        self.assertIn("live_context += format_session_template(system_prompt, today_type)", src)
+        self.assertIn("session_template = format_session_template(system_prompt, today_type)", src)
+        # It rides in the DAY part of the live half, inside the second breakpoint.
+        self.assertIn("live_day += session_template", src)
 
 
 class TelegramSetNumberingTests(unittest.TestCase):
