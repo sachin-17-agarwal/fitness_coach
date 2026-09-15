@@ -335,6 +335,9 @@ start on the programme → 2.2 HELD → 2.3 overshoot step → 2.4 Swift tests �
 2.7 export → 2.9 widget mockups → 2.5 block review (dry run first) → 2.8
 watch, timer stage first. Two weeks after 2.1(b) ships: review 2.1(c).
 
+How each item gets built — files, steps, tests, device checks, and the
+calendar from Thursday 17 Sep — is in `docs/IMPLEMENTATION.md`.
+
 ## How to use this document
 
 - New idea: add it to Part 2 with the five fields. No idea is too small.
