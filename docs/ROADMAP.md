@@ -51,6 +51,25 @@ numbers. Output tokens account for ~80 of the 82 seconds, so the fix has to
 shorten output or move it off the critical path; item 2.1 in Part 2 lays
 out the order, measurement first.
 
+**What the first priced report says (15 Sep, two recorded training days,
+Push 13 Sep and Legs 14 Sep):**
+
+| kind | calls | total | median per call | share |
+|---|---:|---:|---:|---:|
+| plan | 2 | $0.58 | $0.29 | 13% |
+| prose | 20 | $1.46 | $0.04 | 32% |
+| set_reply | 50 | $2.54 | $0.04 | 55% |
+
+A training day costs about $2.30. At five sessions a week that is roughly
+$45 a month; the report's own projection of $83 assumes every day is a
+training day and is an upper bound. Where the money goes: not the opening
+(13%) but the in-session replies, and inside each of those the ~13,500
+uncached input tokens of the live block, two thirds of a set reply's
+price. If the live block were mostly cacheable, set replies and prose
+would each fall from about $0.04 to about $0.015: roughly 40% off the bill
+with no change to what the coach says. That is Stage 5, and it now has a
+number to be judged against.
+
 **Open follow-ups inside the plan:**
 
 - Add the stored plan decisions (adjust rate, reason length, cause named) to
