@@ -9,6 +9,11 @@ costs a log line, not a reply. `report` turns the last N days into the
 summary the weekly Actions job prints and commits, so the figures reach the
 repository without anyone pasting a log.
 
+Every row is also priced. Seconds say what the athlete waited; dollars say
+what the app paid, and the optimisation stages are judged on both. Rates
+live in one dated table below and nowhere else; a model the table does not
+know is reported as unpriced rather than guessed.
+
     python usage.py --report 14
 """
 
@@ -20,6 +25,42 @@ import statistics
 from datetime import datetime, timedelta, timezone
 
 log = logging.getLogger(__name__)
+
+# USD per million tokens, Anthropic first-party API. Cache writes are priced
+# at the ONE-HOUR rate (2× input) because coach.py caches with ttl "1h";
+# cache reads are 0.1× input. Check against the pricing page when a model
+# changes and move the date.
+RATES_AS_OF = "2026-09-15"
+RATES = {
+    "claude-sonnet-5":  {"input": 2.00, "output": 10.00, "cache_read": 0.20, "cache_write": 4.00},
+    "claude-opus-5":    {"input": 5.00, "output": 25.00, "cache_read": 0.50, "cache_write": 10.00},
+    "claude-haiku-4-5": {"input": 1.00, "output": 5.00,  "cache_read": 0.10, "cache_write": 2.00},
+}
+# Rows written before the model column was filled were all Sonnet 5 calls.
+DEFAULT_MODEL = "claude-sonnet-5"
+DAYS_PER_MONTH = 30.44
+
+
+def rates_for(model: str | None) -> dict | None:
+    """The rate row for a model id, matched on prefix so a dated snapshot
+    id prices like its family. None when unknown."""
+    name = model or DEFAULT_MODEL
+    for prefix, r in RATES.items():
+        if name.startswith(prefix):
+            return r
+    return None
+
+
+def cost_usd(row: dict) -> float | None:
+    """Dollars for one model_calls row, or None when the model is unpriced."""
+    r = rates_for(row.get("model"))
+    if r is None:
+        return None
+    m = 1_000_000
+    return (int(row.get("input_tokens") or 0) * r["input"]
+            + int(row.get("cache_read_tokens") or 0) * r["cache_read"]
+            + int(row.get("cache_write_tokens") or 0) * r["cache_write"]
+            + int(row.get("output_tokens") or 0) * r["output"]) / m
 
 
 def usage_fields(response) -> dict:
@@ -73,7 +114,12 @@ def summarise(rows: list[dict]) -> dict:
         cached = [int(r.get("cache_read_tokens") or 0) for r in rs]
         outp = [int(r.get("output_tokens") or 0) for r in rs]
         total_in = sum(inp) + sum(cached)
+        costs = [cost_usd(r) for r in rs]
+        priced = [c for c in costs if c is not None]
         out[kind] = {
+            "cost_total": sum(priced),
+            "cost_median": statistics.median(priced) if priced else 0.0,
+            "unpriced": len(costs) - len(priced),
             "calls": len(rs),
             "failed": sum(1 for r in rs if r.get("ok") is False),
             "retries": sum(1 for r in rs if int(r.get("attempt") or 1) > 1),
@@ -88,7 +134,54 @@ def summarise(rows: list[dict]) -> dict:
     return out
 
 
-def format_report(summary: dict, days: int, since: str) -> str:
+def _parse_when(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def cost_summary(rows: list[dict], days: int, now: datetime | None = None) -> dict:
+    """Dollars over the window, per day, projected to a month, month to date,
+    and per session opening (every `plan` row, retries included, divided by
+    first attempts)."""
+    now = now or datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    total = 0.0
+    mtd = 0.0
+    plan_cost = 0.0
+    openings = 0
+    unpriced = 0
+    for r in rows:
+        c = cost_usd(r)
+        if c is None:
+            unpriced += 1
+            continue
+        total += c
+        when = _parse_when(r.get("called_at"))
+        if when is not None and when >= month_start:
+            mtd += c
+        if (r.get("kind") or "") == "plan":
+            plan_cost += c
+            if int(r.get("attempt") or 1) == 1:
+                openings += 1
+    per_day = total / days if days else 0.0
+    return {
+        "total": total,
+        "per_day": per_day,
+        "month_projection": per_day * DAYS_PER_MONTH,
+        "month_to_date": mtd,
+        # The window reaches back to the 1st only when it is at least that long.
+        "mtd_complete": (now - timedelta(days=days)) <= month_start,
+        "per_opening": (plan_cost / openings) if openings else None,
+        "unpriced": unpriced,
+    }
+
+
+def format_report(summary: dict, days: int, since: str, cost: dict | None = None) -> str:
     lines = [f"# Model calls · last {days} days (since {since})", ""]
     if not summary:
         lines.append("No calls recorded. Has migration 003 been run, and has the backend deployed since?")
@@ -104,6 +197,32 @@ def format_report(summary: dict, days: int, since: str) -> str:
               "prompt cache, `out` the tokens the athlete waited on (thinking included). A low cache hit "
               "on a day with many calls means the stable block changed within the day. See "
               "docs/OPTIMISATION.md for the gates each stage must pass."]
+
+    # ── Cost ────────────────────────────────────────────────────────────────
+    grand = sum(s["cost_total"] for s in summary.values())
+    lines += ["", "## Cost", "",
+              "| kind | calls | total | median per call | share |",
+              "|---|---:|---:|---:|---:|"]
+    for kind, s in summary.items():
+        share = (s["cost_total"] / grand) if grand else 0.0
+        lines.append(f"| {kind} | {s['calls']} | ${s['cost_total']:.2f} | ${s['cost_median']:.3f} | {share:.0%} |")
+    if cost:
+        month_note = "" if cost["mtd_complete"] else " (window shorter than the month; lower bound)"
+        lines += ["",
+                  f"**${cost['total']:.2f} over {days} days** → ${cost['per_day']:.2f} a day → "
+                  f"about **${cost['month_projection']:.0f} a month** at this rate. "
+                  f"Month to date: ${cost['month_to_date']:.2f}{month_note}."]
+        if cost["per_opening"] is not None:
+            lines.append(f"A session opening (the plan call, retries included) costs about "
+                         f"**${cost['per_opening']:.2f}**.")
+        if cost["unpriced"]:
+            lines.append(f"{cost['unpriced']} call(s) on a model the rate table does not know were left out.")
+    sonnet = RATES["claude-sonnet-5"]
+    lines += ["",
+              f"Rates as of {RATES_AS_OF}, first-party API, per million tokens: Sonnet 5 "
+              f"${sonnet['input']:.2f} in / ${sonnet['output']:.2f} out, cache read ${sonnet['cache_read']:.2f}, "
+              f"cache write ${sonnet['cache_write']:.2f} at the one-hour TTL the coach uses. "
+              f"The table is `RATES` in usage.py; move the date when it changes."]
     return "\n".join(lines)
 
 
@@ -145,7 +264,7 @@ def main() -> None:
     args = ap.parse_args()
     rows = fetch_rows(args.report)
     since = (datetime.now(timezone.utc) - timedelta(days=args.report)).strftime("%Y-%m-%d")
-    text = format_report(summarise(rows), args.report, since)
+    text = format_report(summarise(rows), args.report, since, cost_summary(rows, args.report))
     print(text)
     if args.out:
         import os
