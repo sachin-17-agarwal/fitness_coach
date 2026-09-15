@@ -1,25 +1,25 @@
-<!-- generated 2026-09-14 · 441 prescriptions · 50 violations -->
+<!-- generated 2026-09-15 · 448 prescriptions · 51 violations -->
 
 **Protocol audit — last 90 days**
 
-- **441** prescriptions checked across **2124** replies on dated training days.
-- **43** of them broke at least one rule.
-- Week known for 294 prescriptions (257 from the coach's own words that day, 37 from the session stamp): every check ran. Week only reconstructed for 147: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 14 of 40 days.
+- **448** prescriptions checked across **2159** replies on dated training days.
+- **44** of them broke at least one rule.
+- Week known for 301 prescriptions (264 from the coach's own words that day, 37 from the session stamp): every check ran. Week only reconstructed for 147: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 15 of 41 days.
 
 **What was broken, and how often**
 
 - Wrong number of working sets — **18**
+- Prescribed below the week's RPE target — **10**
 - Top set below the exercise's rep range — **9**
-- Prescribed below the week's RPE target — **9**
 - Second back-off not fewer reps — **8**
 - Back-off below the week's RPE target — **3**
 - Two back-offs at different loads — **3**
 
 **The most recent of each**
 
+- 2026-09-15 · Cardio+Abs wk3 · Cable Crunch — top set at RPE8 in week 3, which targets RPE9
 - 2026-09-14 · Legs wk3 · Seated Leg Curl — two back-offs at different loads
 - 2026-08-26 · Legs wk3 · Machine Calf Raise — 1 working set(s) against a template of 5
-- 2026-08-26 · Legs wk3 · Ab Crunch Machine — top set at RPE8 in week 3, which targets RPE9
 - 2026-07-29 · Push wk1 · Machine Shoulder Press — second back-off at 10 reps, not fewer than 10
 - 2026-07-29 · Push wk1 · Cable Lateral Raise — top set at 6 reps against a 8-12 range
 - 2026-07-02 · Cardio+Abs wk3 · Pallof Press — back-off at RPE7 in week 3, which targets RPE8
