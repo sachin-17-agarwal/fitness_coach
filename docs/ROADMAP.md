@@ -34,7 +34,7 @@ Five stages, four gates. Where each stands on 14 Sep 2026:
 | 2 | Measure every model call; Sunday report to `reports/model_calls.md` | **in progress**, first real data landed 14 Sep |
 | 3 | Prompt: keep the rules, remove the history. Target ~15,000 tokens from ~25,800 | gated on Stage 2 |
 | 4 | Context shape: older sessions one line each, last week in full | gated on Stage 3 |
-| 5 | Cache hygiene: nothing that changes intraday in the stable block; and the ~13k uncached tokens every set reply carries | gated on Stage 2 numbers |
+| 5 | Cache hygiene: the live half split into a cached day block and an uncached set block; history caching as a gated second cut | **first cut shipped 15 Sep (#241)**, moved ahead of Stage 3; reading due in the 20 Sep report |
 
 **What the first report says.** Two weeks of calls, 41 in total:
 
@@ -330,8 +330,7 @@ Approved items list their PRs when shipped. Declined items keep the reason.
 
 ## Build order (15 Sep)
 
-~~2.10 cost line~~ (#234) → ~~2.6 recovery digest~~ (#239) → Stage 5 cache hygiene
-(the ~40% saving, zero coaching risk) → 2.1(a) measurement and 2.1(b)
+~~2.10 cost line~~ (#234) → ~~2.6 recovery digest~~ (#239) → ~~Stage 5 first cut~~ (#241; second cut gated on the 20 Sep report) → 2.1(a) measurement and 2.1(b)
 start on the programme → 2.2 HELD → 2.3 overshoot step → 2.4 Swift tests →
 2.7 export → 2.9 widget mockups → 2.5 block review (dry run first) → 2.8
 watch, timer stage first. Two weeks after 2.1(b) ships: review 2.1(c).
