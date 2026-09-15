@@ -74,6 +74,13 @@ number to be judged against.
 
 - Add the stored plan decisions (adjust rate, reason length, cause named) to
   the Sunday report. Promised, not yet built. *in progress*
+- **Decisions agreed in chat must not sit in this file as homework.** Two
+  emphasis commands were agreed on 12 Sep, written here for the athlete to
+  send, and the next block opened without them. The command now supersedes a
+  computed pick when it was named before the block began, and the context
+  says what is queued for the next one (#245) — but the deeper fix is that
+  the coach should offer to record a decision at the moment it is reached,
+  rather than the plan carrying a to-do list. *proposed, needs a design*
 - Audit watch: after nine clean days a rule break landed on 14 Sep (Legs wk3,
   Seated Leg Curl, two back-offs at different loads). One is noise; a second
   this block is a pattern to chase. *watching*
@@ -102,7 +109,12 @@ These are one message each in coach chat; the code is live.
 
 - `Record a decision: Machine Shoulder Press, shoulder niggle, hold at 70 kg, RPE 8 cap, progress by reps only`
 - `emphasis next: triceps | overhead cable extension` and
-  `emphasis next: chest | low-to-high cable fly, upper chest` for next block
+  `emphasis next: chest | low-to-high cable fly, upper chest` for next block.
+  **These were agreed in chat on 12 Sep and left here as a manual step; the
+  block that opened on 15 Sep picked hamstrings from the deficit rule
+  instead.** A decision reached in conversation should not depend on the
+  athlete remembering to type it — see the note under 1.1.
+- `weak points: triceps, chest` to move them to the block in progress
 - `weak points none` for this block if not already sent
 - A third Reverse Cable Fly set. Undecided; either answer is fine.
 
