@@ -20,6 +20,9 @@ final class DashboardViewModel {
     /// Today's coach note, when the briefing flow has already generated one.
     /// Read from cache only — see BriefingService.cachedCoachNoteForToday.
     var briefingNote: String?
+    /// Last week's recovery in two or three sentences, Monday and Tuesday
+    /// only. Built from the log by RecoveryDigest, no model call.
+    var digest: RecoveryDigest?
 
     private let recoveryService = RecoveryService()
     private let mesocycleService = MesocycleService()
@@ -88,6 +91,14 @@ final class DashboardViewModel {
             currentStreak = Self.computeStreak(recentSessions)
             weekTonnage = Self.weekTonnage(recentSessions)
             briefingNote = briefingService.cachedCoachNoteForToday()
+            // The digest needs the 42-day baseline behind last week; fetched
+            // only on the days the card shows, so the other days stay light.
+            if RecoveryDigest.showOnWeekdays.contains(Calendar.current.component(.weekday, from: Date())) {
+                let long = try await recoveryService.fetchHistory(days: RecoveryInsightsViewModel.baselineDays + 14)
+                digest = RecoveryDigest.build(rows: long)
+            } else {
+                digest = nil
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
