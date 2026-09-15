@@ -150,6 +150,13 @@ def cost_summary(rows: list[dict], days: int, now: datetime | None = None) -> di
     first attempts)."""
     now = now or datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # Recording began when migration 003 ran and the backend deployed, which
+    # can be well inside the window. Dividing by the window's days would then
+    # understate the daily rate, so the rate is taken over the days actually
+    # recorded: first row to now, never less than one day.
+    firsts = [w for w in (_parse_when(r.get("called_at")) for r in rows) if w is not None]
+    first = min(firsts) if firsts else None
+    recorded_days = max(1.0, (now - first).total_seconds() / 86400) if first else float(days or 1)
     total = 0.0
     mtd = 0.0
     plan_cost = 0.0
@@ -168,9 +175,11 @@ def cost_summary(rows: list[dict], days: int, now: datetime | None = None) -> di
             plan_cost += c
             if int(r.get("attempt") or 1) == 1:
                 openings += 1
-    per_day = total / days if days else 0.0
+    per_day = total / recorded_days
     return {
         "total": total,
+        "first_recorded": first.strftime("%Y-%m-%d") if first else None,
+        "recorded_days": recorded_days,
         "per_day": per_day,
         "month_projection": per_day * DAYS_PER_MONTH,
         "month_to_date": mtd,
@@ -208,8 +217,10 @@ def format_report(summary: dict, days: int, since: str, cost: dict | None = None
         lines.append(f"| {kind} | {s['calls']} | ${s['cost_total']:.2f} | ${s['cost_median']:.3f} | {share:.0%} |")
     if cost:
         month_note = "" if cost["mtd_complete"] else " (window shorter than the month; lower bound)"
+        span = (f"{cost['recorded_days']:.0f} recorded days (first call {cost['first_recorded']})"
+                if cost.get("first_recorded") else f"{days} days")
         lines += ["",
-                  f"**${cost['total']:.2f} over {days} days** → ${cost['per_day']:.2f} a day → "
+                  f"**${cost['total']:.2f} over {span}** → ${cost['per_day']:.2f} a day → "
                   f"about **${cost['month_projection']:.0f} a month** at this rate. "
                   f"Month to date: ${cost['month_to_date']:.2f}{month_note}."]
         if cost["per_opening"] is not None:
