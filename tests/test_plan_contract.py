@@ -1185,10 +1185,15 @@ class UsageRecordTests(unittest.TestCase):
         self.assertEqual(c["unpriced"], 1)
         self.assertEqual(s["prose"]["unpriced"], 1)
         self.assertFalse(c["mtd_complete"])  # 14 days back from the 15th is 1 Sep noon, past the 1st
-        self.assertAlmostEqual(c["month_projection"], c["total"] / 14 * 30.44)
+        # The rate is over the days actually recorded (first row 30 Aug to
+        # the 15 Sep "now" = 16 days), not the 14-day window asked for.
+        self.assertEqual(c["first_recorded"], "2026-08-30")
+        self.assertAlmostEqual(c["recorded_days"], 16 + 4 / 24)
+        self.assertAlmostEqual(c["month_projection"], c["total"] / c["recorded_days"] * 30.44)
         text = format_report(s, 14, "2026-08-31", c)
         self.assertIn("## Cost", text)
         self.assertIn("A session opening (the plan call, retries included) costs about", text)
+        self.assertIn("recorded days (first call 2026-08-30)", text)
         self.assertIn("1 call(s) on a model the rate table does not know", text)
         self.assertIn("Rates as of", text)
 
