@@ -252,9 +252,42 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
 
         stored = _stored_pick(supabase, start)
         if stored:
+            # The pick is made once per block and held — but "once" used to mean
+            # "at the first coach interaction after the block rolled over",
+            # which is a briefing, or any chat message, and it happens long
+            # before the athlete thinks about the next block. A muscle named
+            # after that moment was never looked at again: the short-circuit
+            # below returned the stored pick and `pending` stayed on the table
+            # until the NEXT block. Two muscles were agreed in chat, named a
+            # day late, and a Cardio+Abs day still went out on the computed
+            # deficit with nothing anywhere saying why.
+            #
+            # So an emphasis named BEFORE this block began now supersedes the
+            # computed pick whenever it is noticed. One named DURING the block
+            # is for the next one, which is what the command says, and
+            # hijacking a block in progress would break the rule that the pick
+            # is chosen once and held so the lift can actually progress. It
+            # never overrides the athlete's own `weak points:` for this block:
+            # that is a deliberate instruction about this block, marked by
+            # since == "athlete".
+            by_athlete = any((p.get("since") or "") == "athlete" for p in stored)
+            pending = [] if by_athlete else _pending_emphasis(supabase)
+            due = [n for n in pending if (n.get("set_on") or "9999") < start]
+            named = _named_picks(due, bands)
+            if named:
+                supabase.table("prescription_decisions").delete().eq("date", start)\
+                    .like("exercise", f"{DECISION_PREFIX}%").execute()
+                _store_pick(supabase, start, named, since="named", until=start)
+                for n in due:
+                    supabase.table("prescription_decisions").delete().eq("id", n["id"]).execute()
+                log.info("Block %s: named emphasis (%s) supersedes the computed pick",
+                         start, ", ".join(p["muscle"] for p in named))
+                return {"block_start": start, "since": "named", "until": start,
+                        "picks": named[:SLOTS], "ranking": [], "source": "named",
+                        "pending": [n for n in pending if n not in due]}
             picks = [p for p in stored if p["muscle"] != NONE][:SLOTS]
             return {"block_start": start, "since": stored[0].get("since"), "until": stored[0].get("until"),
-                    "picks": picks, "ranking": [], "source": "stored"}
+                    "picks": picks, "ranking": [], "source": "stored", "pending": pending}
 
         window = previous_block_range(sessions, start)
         if window is None:
@@ -271,15 +304,8 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
         #   4. nothing, and the day ends after the ab block.
         # One muscle per block. With the templates covering every band, 2 and
         # 3 are the exceptions they were meant to be.
-        picks = []
         pending = _pending_emphasis(supabase)
-        for named in pending:
-            if named["muscle"] not in bands or any(p["muscle"] == named["muscle"] for p in picks):
-                continue
-            low, high = bands[named["muscle"]]
-            picks.append({"muscle": named["muscle"], "sets": 0, "low": low, "high": high, "shortfall": 0,
-                          "reason": f"Emphasis this block, named by the athlete on {named['set_on']}"
-                                    + (f": {named['note']}" if named.get("note") else "") + "."})
+        picks = _named_picks(pending, bands)
         if not picks:
             picks = [r for r in ranking[:1] if r["shortfall"] > 0]
             for p in picks:
@@ -299,6 +325,20 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
     except Exception:
         log.exception("Could not determine this block's weak points")
         return None
+
+
+def _named_picks(pending: list[dict], bands: dict) -> list[dict]:
+    """The athlete's named muscles as block picks, skipping any that is not a
+    muscle with a band."""
+    picks: list[dict] = []
+    for named in pending:
+        if named["muscle"] not in bands or any(p["muscle"] == named["muscle"] for p in picks):
+            continue
+        low, high = bands[named["muscle"]]
+        picks.append({"muscle": named["muscle"], "sets": 0, "low": low, "high": high, "shortfall": 0,
+                      "reason": f"Emphasis this block, named by the athlete on {named['set_on']}"
+                                + (f": {named['note']}" if named.get("note") else "") + "."})
+    return picks
 
 
 def _pending_emphasis(supabase) -> list[dict]:
@@ -342,6 +382,18 @@ def _stalled_muscle(supabase, since: str, until: str, bands: dict) -> dict | Non
     return None
 
 
+def _pending_line(info: dict | None) -> str:
+    """What is queued for the NEXT block. Without it the athlete names a muscle,
+    sees this block unchanged — correctly, the pick is held — and has nothing
+    anywhere telling them it landed."""
+    queued = (info or {}).get("pending") or []
+    if not queued:
+        return ""
+    names = ", ".join(q["muscle"] for q in queued)
+    return (f"\nQueued for the NEXT block, not this one: {names}. If he asks why a muscle he named is "
+            f"not in today's slots, say that, and that `weak points: {names}` moves it to this block.")
+
+
 def format_block_weak_points(info: dict | None) -> str:
     """The block the coach reads before filling a slot."""
     if not info:
@@ -351,7 +403,8 @@ def format_block_weak_points(info: dict | None) -> str:
         return (f"THIS BLOCK'S EMPHASIS — none. Over the previous block "
                 f"({info.get('since')} to {info.get('until')}) no muscle ran under its band, no lift "
                 f"stalled, and he named nothing, so both weak-point slots stay EMPTY this block and "
-                f"Cardio+Abs ends after the ab block. Filling a slot anyway is an adjust with its reason.")
+                f"Cardio+Abs ends after the ab block. Filling a slot anyway is an adjust with its reason."
+                + _pending_line(info))
     lines = [f"THIS BLOCK'S EMPHASIS — chosen once, at the block's start ({info['block_start']}), and "
              f"held for every Cardio+Abs day this block so the lift progresses like any other:"]
     for p in info["picks"]:
@@ -370,7 +423,7 @@ def format_block_weak_points(info: dict | None) -> str:
                  f"extension, long head lengthened; chest: the low-to-high cable fly, upper fibres). "
                  f"{'The other slot stays empty. ' if n == 1 else ''}The rolling WEEKLY VOLUME readout is "
                  f"information, not the pick; departing from this block's emphasis is an adjust with its reason.")
-    return "\n".join(lines)
+    return "\n".join(lines) + _pending_line(info)
 
 
 def primary_muscle(exercise: str) -> str:

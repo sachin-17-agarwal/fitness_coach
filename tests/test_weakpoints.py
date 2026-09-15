@@ -381,3 +381,68 @@ class EmphasisTests(unittest.TestCase):
         self.assertEqual([r["exercise"] for r in fake.decisions if r["exercise"].startswith("Emphasis-next")],
                          ["Emphasis-next: Triceps"])
         self.assertEqual(fake.written[0]["exercise"], "Emphasis-next: Chest")
+
+
+class EmphasisArrivingLateTests(unittest.TestCase):
+    """The pick is made once per block and held. "Once" meant "at the first
+    coach interaction after the block rolled over" — a briefing, or any chat
+    message — and after that the stored pick short-circuited the lookup, so a
+    muscle named later was never read again for that block. Two muscles were
+    agreed in chat, named a day late, and a Cardio+Abs day still went out on
+    the computed deficit with nothing anywhere saying why.
+    """
+
+    def test_an_emphasis_named_before_the_block_supersedes_a_computed_pick(self):
+        from weakpoints import _named_picks
+        bands = {"triceps": (10, 16), "chest": (10, 18), "hamstrings": (10, 16)}
+        pending = [{"id": 1, "muscle": "triceps", "note": "overhead cable extension", "set_on": "2026-09-12"},
+                   {"id": 2, "muscle": "chest", "note": "low-to-high cable fly", "set_on": "2026-09-12"}]
+        start = "2026-09-15"
+        due = [n for n in pending if (n.get("set_on") or "9999") < start]
+        self.assertEqual(len(due), 2)
+        picks = _named_picks(due, bands)
+        self.assertEqual([p["muscle"] for p in picks], ["triceps", "chest"])
+        self.assertIn("named by the athlete on 2026-09-12", picks[0]["reason"])
+        self.assertIn("overhead cable extension", picks[0]["reason"])
+
+    def test_an_emphasis_named_during_the_block_is_left_for_the_next_one(self):
+        """`emphasis next` means next. Hijacking the block in progress would
+        break the rule that the pick is held so the lift can progress."""
+        start = "2026-09-15"
+        pending = [{"id": 3, "muscle": "triceps", "note": "", "set_on": "2026-09-16"}]
+        due = [n for n in pending if (n.get("set_on") or "9999") < start]
+        self.assertEqual(due, [])
+
+    def test_a_muscle_without_a_band_is_skipped_not_stored(self):
+        from weakpoints import _named_picks
+        bands = {"triceps": (10, 16)}
+        picks = _named_picks([{"id": 1, "muscle": "eyebrows", "note": "", "set_on": "2026-09-12"}], bands)
+        self.assertEqual(picks, [])
+
+    def test_the_readout_names_what_is_queued_for_the_next_block(self):
+        from weakpoints import format_block_weak_points
+        info = {"block_start": "2026-09-15", "since": "2026-09-01", "until": "2026-09-14",
+                "picks": [{"muscle": "hamstrings", "sets": 6.7, "low": 10, "high": 16, "shortfall": 3.3,
+                           "reason": "Block pick: hamstrings ran 6.7 sets/week"}],
+                "ranking": [], "source": "stored",
+                "pending": [{"id": 1, "muscle": "triceps", "note": "", "set_on": "2026-09-16"},
+                            {"id": 2, "muscle": "chest", "note": "", "set_on": "2026-09-16"}]}
+        text = format_block_weak_points(info)
+        self.assertIn("hamstrings", text)
+        self.assertIn("Queued for the NEXT block", text)
+        self.assertIn("triceps, chest", text)
+        # And it tells the coach the command that would move it to this block.
+        self.assertIn("weak points: triceps, chest", text)
+
+    def test_nothing_queued_adds_no_line(self):
+        from weakpoints import format_block_weak_points
+        info = {"block_start": "2026-09-15", "since": "2026-09-01", "until": "2026-09-14",
+                "picks": [], "ranking": [], "source": "stored", "pending": []}
+        self.assertNotIn("Queued for the NEXT block", format_block_weak_points(info))
+
+    def test_the_athletes_own_pick_for_this_block_is_never_superseded(self):
+        """`weak points:` is a deliberate instruction about THIS block and
+        outranks anything queued for the next one. It is marked since=athlete."""
+        stored = [{"muscle": "calves", "since": "athlete", "until": "2026-09-16"}]
+        by_athlete = any((p.get("since") or "") == "athlete" for p in stored)
+        self.assertTrue(by_athlete)
