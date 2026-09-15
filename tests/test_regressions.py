@@ -5072,3 +5072,72 @@ class ProgrammeProposalTests(unittest.TestCase):
                       prompt)
         self.assertIn("Departing from it silently", prompt.replace(
             "departing SILENTLY", "Departing from it silently"))
+
+
+class FailedLookupIsNotAnEmptyLogTests(unittest.TestCase):
+    """A Cardio+Abs session opened with "none of today's ab exercises have
+    logged history" against a log holding months of it, prescribed a feel-out
+    at the system prompt's own example load, and threw away a real working
+    load. Two defects met.
+
+    `_fetch_sets_before_today` returns None for "couldn't look" and a list for
+    "looked, found nothing" — and every caller collapsed the two to `[]`,
+    which `format_current_loads` renders as "No working sets logged in the
+    window". The coach believed it. The distinction has to survive from the
+    fetch to the sentence the coach reads.
+    """
+
+    def test_a_failed_read_is_none_not_an_empty_list(self):
+        import progression
+        with patch.object(progression, "_fetch_sets_before_today", return_value=None):
+            self.assertIsNone(progression.get_current_loads())
+            self.assertIsNone(progression.get_load_stalls())
+            self.assertIsNone(progression.get_peak_week_loads())
+
+    def test_a_successful_read_of_an_empty_window_is_still_an_empty_list(self):
+        import progression
+        with patch.object(progression, "_fetch_sets_before_today", return_value=[]):
+            self.assertEqual(progression.get_current_loads(), [])
+            self.assertEqual(progression.get_load_stalls(), [])
+
+    def test_the_three_blocks_say_unavailable_rather_than_nothing_logged(self):
+        from progression import format_current_loads, format_stalls, format_peak_week_loads
+        for text in (format_current_loads(None), format_stalls(None), format_peak_week_loads(None)):
+            self.assertIn("LOOKUP UNAVAILABLE", text)
+            self.assertIn("NOT a statement that nothing is logged", text)
+            # The instruction that matters: do not open a lift at a baseline.
+            self.assertIn("feel-out", text)
+        # The genuinely empty case keeps its own, different sentence.
+        self.assertIn("No working sets logged", format_current_loads([]))
+        self.assertNotIn("LOOKUP UNAVAILABLE", format_current_loads([]))
+
+    def test_the_context_block_renders_the_failure_rather_than_erasing_it(self):
+        """The `or []` on these lines is what erased it."""
+        import coach_context
+        src = open("coach_context.py", encoding="utf-8").read()
+        self.assertIn("format_current_loads(_current_loads)", src)
+        self.assertNotIn('format_current_loads(results.get("current_loads") or [])', src)
+        self.assertNotIn('format_stalls(results.get("load_stalls") or [])', src)
+        self.assertNotIn('format_peak_week_loads(results.get("peak_week_loads") or [])', src)
+
+    def test_the_set_fetch_is_ordered_and_paged(self):
+        """PostgREST caps an unbounded select at its max-rows setting and, with
+        no ORDER BY, which rows survive is arbitrary — so a silent truncation
+        drops whole exercises from the lookup. An exercise trained once a
+        rotation is the likeliest to vanish, which is the ab block."""
+        src = open("progression.py", encoding="utf-8").read()
+        fetch = src[src.index("def _fetch_sets_before_today"):src.index("def _fetch_session_weeks")]
+        self.assertIn('.order("date")', fetch)
+        self.assertIn(".range(offset, offset + page - 1)", fetch)
+
+    def test_the_prompt_carries_no_prescribable_load_in_its_format_example(self):
+        """The straight-set example named a real programme lift and gave it a
+        concrete load, in a file that warns three times never to prescribe a
+        load written into the prompt. The card went out at that load."""
+        prompt = open("system_prompt.txt", encoding="utf-8").read()
+        block = prompt[prompt.index("Straight-set exercises (all ab work)"):
+                       prompt.index("#### NEVER use these loose phrasings")]
+        self.assertNotIn("25kg x12", block)
+        self.assertIn("[load]kg", block)
+        # And the example's exercise name is a placeholder, not a real lift.
+        self.assertNotIn("*Cable Crunch*", block)

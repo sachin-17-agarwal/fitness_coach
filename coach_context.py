@@ -458,9 +458,17 @@ def build_context_block(memory: dict, athlete_name: str,
     weekly_volume = format_weekly_volume(results.get("weekly_volume") or {})
     from weakpoints import format_block_weak_points  # local: keeps import order flat
     block_weak_points = format_block_weak_points(results.get("block_weak_points"))
-    load_stalls = format_stalls(results.get("load_stalls") or [])
-    current_loads = format_current_loads(results.get("current_loads") or [])
-    peak_week_loads = format_peak_week_loads(results.get("peak_week_loads") or [])
+    # None means the lookup could not run — a failed fetch here, or a
+    # progression read that returned None. It is NOT an empty log, and the
+    # `or []` that used to sit on these lines erased the difference: the
+    # coach was handed "No working sets logged in the window" for an athlete
+    # with months of history and opened a lift at a feel-out load. The
+    # formatters now say which case they are in, so pass the value through.
+    _current_loads = results.get("current_loads")
+    _peak_week_loads = results.get("peak_week_loads")
+    load_stalls = format_stalls(results.get("load_stalls"))
+    current_loads = format_current_loads(_current_loads)
+    peak_week_loads = format_peak_week_loads(_peak_week_loads)
     weak_point = format_weak_point_history(results.get("weak_point") or [])
     set_comparisons = format_set_comparisons(results.get("set_comparisons") or [])
 
@@ -476,9 +484,9 @@ def build_context_block(memory: dict, athlete_name: str,
     from prescribe import is_determined, render_block, render_session  # local: import order
     _proposals, _renamed, _ambiguous = ([], {}, {}) if not system_prompt else build_proposal(
         system_prompt, today_session, _safe_int(mesocycle_week),
-        results.get("current_loads") or [],
+        _current_loads or [],
         recovery=data,
-        peak_week_loads=results.get("peak_week_loads") or [],
+        peak_week_loads=_peak_week_loads or [],
         ceilings=__import__("constraints").ceilings(results.get("constraints") or []),
     )
     # Handed back to the caller rather than rendered into the prompt. The
