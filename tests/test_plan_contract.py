@@ -1144,6 +1144,54 @@ class UsageRecordTests(unittest.TestCase):
         self.assertIn("| plan | 2 | 1 | 0 |", text)
         self.assertIn("docs/OPTIMISATION.md", text)
 
+    def test_every_row_is_priced_from_the_dated_rate_table(self):
+        from usage import cost_usd, RATES, rates_for
+        # The opening measured on 14 Sep: 6,926 in, 7,832 out, ~28k written to
+        # the one-hour cache. $0.014 + $0.078 + $0.112.
+        row = {"model": "claude-sonnet-5", "input_tokens": 6926, "cache_read_tokens": 0,
+               "cache_write_tokens": 28000, "output_tokens": 7832}
+        self.assertAlmostEqual(cost_usd(row), 0.013852 + 0.07832 + 0.112, places=5)
+        # A row from before the model column was filled prices as Sonnet 5.
+        self.assertEqual(rates_for(None), RATES["claude-sonnet-5"])
+        # A dated snapshot id prices like its family; an unknown model is
+        # unpriced, never guessed.
+        self.assertEqual(rates_for("claude-sonnet-5-20260901"), RATES["claude-sonnet-5"])
+        self.assertIsNone(cost_usd({"model": "someone-elses-model", "output_tokens": 100}))
+
+    def test_the_cost_section_projects_a_month_and_prices_an_opening(self):
+        from datetime import datetime, timezone
+        from usage import summarise, format_report, cost_summary
+        rows = [
+            {"kind": "plan", "attempt": 1, "ok": True, "seconds": 80.0, "model": "claude-sonnet-5",
+             "input_tokens": 7000, "cache_write_tokens": 28000, "output_tokens": 7800,
+             "called_at": "2026-09-03T08:00:00+00:00"},
+            {"kind": "plan", "attempt": 2, "ok": True, "seconds": 9.0, "model": "claude-sonnet-5",
+             "input_tokens": 1000, "cache_read_tokens": 28000, "output_tokens": 700,
+             "called_at": "2026-09-03T08:02:00+00:00"},
+            {"kind": "set_reply", "attempt": 1, "ok": True, "seconds": 4.0, "model": None,
+             "input_tokens": 13000, "cache_read_tokens": 51000, "output_tokens": 270,
+             "called_at": "2026-08-30T08:00:00+00:00"},
+            {"kind": "prose", "attempt": 1, "ok": True, "seconds": 3.0, "model": "mystery-9",
+             "input_tokens": 10000, "output_tokens": 200, "called_at": "2026-09-01T08:00:00+00:00"},
+        ]
+        now = datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
+        c = cost_summary(rows, 14, now=now)
+        s = summarise(rows)
+        plan_total = s["plan"]["cost_total"]
+        # Both plan rows belong to one opening: retries are part of its price.
+        self.assertAlmostEqual(c["per_opening"], plan_total)
+        # The August row is outside the month; the unknown model is left out.
+        self.assertAlmostEqual(c["month_to_date"], plan_total)
+        self.assertEqual(c["unpriced"], 1)
+        self.assertEqual(s["prose"]["unpriced"], 1)
+        self.assertFalse(c["mtd_complete"])  # 14 days back from the 15th is 1 Sep noon, past the 1st
+        self.assertAlmostEqual(c["month_projection"], c["total"] / 14 * 30.44)
+        text = format_report(s, 14, "2026-08-31", c)
+        self.assertIn("## Cost", text)
+        self.assertIn("A session opening (the plan call, retries included) costs about", text)
+        self.assertIn("1 call(s) on a model the rate table does not know", text)
+        self.assertIn("Rates as of", text)
+
 
 class StandingConstraintTests(unittest.TestCase):
     """A fact stated in chat outlives the session: stored, shown, respected."""
