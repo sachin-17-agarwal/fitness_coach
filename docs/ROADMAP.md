@@ -144,7 +144,8 @@ wakes the app, which sends one "prepare today's session" request; the
 server computes and stores the plan and START finds it ready. One call per
 gym visit. Needs "Always" location permission; location stays on the
 phone, only the arrival is sent. Geofences are good, not perfect, so (b)
-remains the fallback. Build after (b) if (b) alone does not feel instant.
+remains the fallback. **Review date: two weeks after (b) ships**, set
+when it does; the question then is only whether START still feels slow.
 No cache pre-warming on tab open, no scheduled pre-plan.
 (d) Plan before prose, as a second streamed call. **Not risk-free.** Today
 the reasoning that picks the numbers also writes the Why line, so the
@@ -208,6 +209,14 @@ and suggests two or three changes; the athlete replies "yes to 1 and 3";
 those become recorded decisions. Numbers come from code, the coach only
 phrases and proposes, nothing is recorded without the yes, and the first
 block is a dry run.
+**When and where, not after a workout.** "This can't happen right after
+my workout as I feel dead and can't make decisions." The review is
+prepared once the block's last session is logged, but it is shown the
+next morning, on a rest day, as a card on the Home tab and a coach message
+that waits. No timer: it stays until answered, and the coach never raises
+it inside a session. If the new block's first session arrives before an
+answer, week 1 opens on the programme's defaults with no changes, the
+coach says so in one line, and the review stays available.
 **What.** At the end of each block the coach opens with a written review:
 median gain, what set PRs, what held or dropped and the reason on record,
 volume against bands, recovery over the block, and the one or two changes
@@ -286,8 +295,12 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   2.4 Swift tests for the numbers; 2.7 export (backup part optional, to
   storage the athlete owns); 2.8 Apple Watch, staged, mockups first;
   2.9 stats widget, mockups first.
-- **Pending a plainer explanation, 15 Sep.** 2.5 block review; 2.1(b)
-  start-on-programme.
+- **Approved, 15 Sep.** 2.1(b) start on the programme, the coach catches
+  up. 2.1(c) gym geofence is to be reviewed two weeks after (b) ships, not
+  built now.
+- **Approved, 15 Sep.** 2.5 block review, delivered the morning after the
+  block's last session on a rest day via Home and coach chat, never
+  straight after a workout; dry run for the first block.
 - **Approved, 14 Sep.** 2.6 Weekly recovery digest. Deterministic text from
   the recovery facts layer, no model call.
 - **Approved 14 Sep, shipped 15 Sep (#234).** 2.10 Cost line in the Sunday
@@ -314,10 +327,11 @@ Approved items list their PRs when shipped. Declined items keep the reason.
 
 ## Build order (15 Sep)
 
-~~2.10 cost line~~ (#234) → 2.6 recovery digest → 2.2 HELD → 2.3 overshoot step →
-2.4 Swift tests → 2.1(a) measurement and 2.1(b) once approved → 2.7
-export → 2.9 widget mockups → 2.8 watch, timer stage first → 2.5 after a
-plainer explanation is approved.
+~~2.10 cost line~~ (#234) → 2.6 recovery digest → Stage 5 cache hygiene
+(the ~40% saving, zero coaching risk) → 2.1(a) measurement and 2.1(b)
+start on the programme → 2.2 HELD → 2.3 overshoot step → 2.4 Swift tests →
+2.7 export → 2.9 widget mockups → 2.5 block review (dry run first) → 2.8
+watch, timer stage first. Two weeks after 2.1(b) ships: review 2.1(c).
 
 ## How to use this document
 
