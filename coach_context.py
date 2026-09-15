@@ -565,12 +565,31 @@ PROGRESSION WATCH — top-set load unchanged across 3+ sessions (today excluded)
 {load_stalls}
 """
 
-    live = f"""
+    # The live half is itself split by volatility. The first part changes
+    # once a day — the header, the programme's proposal with its decisions and
+    # standing constraints, the block's emphasis, the weak-point history — so
+    # a second cache breakpoint can sit after it and the twenty-odd set
+    # replies of a session read it at 0.1x instead of re-sending it. The
+    # second part moves with every logged set (today's rows, the comparisons,
+    # the live workout state) or every few minutes (steps and active energy
+    # in TODAY'S RECOVERY, the Watch feed), and stays outside every
+    # breakpoint. Same words, same blocks; only the order changed, plan
+    # before progress, and the price of a set reply.
+    live_day = f"""
 TODAY — {today}
 Mesocycle: Week {mesocycle_week} of 4 | Rotation day {mesocycle_day}/4 (Pull→Push→Legs→Cardio+Abs, rolling; a day with no session holds the position; Rest is not a slot and does not advance it)
 TODAY'S SESSION TYPE: {today_session}
 NEXT SESSION: {next_session}
 
+{programme_proposal}
+
+{block_weak_points}
+
+WEAK-POINT BLOCK — what the last Cardio+Abs sessions actually carried:
+{weak_point}
+"""
+
+    live_set = f"""
 TODAY'S RECOVERY:
 Recovery data date: {data.get('date', 'Unknown')} | Freshness: {freshness}
 {score_line}Sleep: {data.get('sleep_hours', 'N/A')} hrs | HRV: {data.get('hrv', 'N/A')} (7-day avg: {data.get('hrv_avg', 'N/A')})
@@ -586,21 +605,18 @@ TODAY vs LAST SESSION — computed per exercise. Read the verdict; do not
 re-derive it from the log:
 {set_comparisons}
 
-{programme_proposal}
-
 TODAY'S APPLE WATCH WORKOUTS (the Health Auto Export feed — it can lag by hours; whether cardio is done today is stated in the LIVE WORKOUT block's "Cardio logged this session" line, which wins):
 {apple_workouts_today}
 
-{block_weak_points}
-
 WEEKLY VOLUME — working sets per week, normalised over 14 days (lowest first):
 {weekly_volume}
-
-WEAK-POINT BLOCK — what the last Cardio+Abs sessions actually carried:
-{weak_point}
 {workout_context}
 [END CONTEXT]
 """
+    live = live_day + live_set
+    if out is not None:
+        out["live_day"] = live_day
+        out["live_set"] = live_set
     return stable, live
 
 

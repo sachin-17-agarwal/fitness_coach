@@ -47,11 +47,24 @@ gates 1–3 checked after each. Target ~15,000 tokens with no rule lost.
 each, the last week stays in full. Gate 2 must still show decisions citing
 the right last set (the accept-honesty rule already checks this).
 
-**5 — Cache hygiene.** Anything in the stable block that changes during the
-day breaks the cache for later calls; it shows in gate 4 as input tokens
-where cached reads should be. Whatever moves goes to the live block.
+**5 — Cache hygiene (moved ahead of Stage 3 on 15 Sep; first cut shipped).**
+The first priced report put 55% of the bill on set replies and two thirds
+of each set reply on ~13,500 uncached input tokens: the whole live half of
+the context, re-sent on every logged set although most of it — today's
+header, the programme's proposal with its decisions and constraints, the
+block's emphasis, the session template — does not change within a session.
+First cut: the live half is split by volatility into a DAY part behind a
+second one-hour cache breakpoint and a SET part (today's rows, the
+comparisons, steps and energy, the Watch feed, the live workout state)
+outside every breakpoint. Same words, same blocks, plan before progress.
+Expected in gate 4: set_reply and prose `in (med)` falling from ~13k
+toward ~5k, cache hit rising. Second cut, gated on that reading: the
+conversation history is the other large uncached part; caching it needs
+the set part moved after the history (into the last user turn), which is
+a prompt-shape change and goes through gates 1–3.
 
 ## Order
 
-Stage 3 does not start until Stage 2's numbers are in. A stage that fails a
-gate is reverted, not tuned.
+Stage 5 runs now, ahead of Stage 3, because it has a number and no coaching
+change. Stage 3 does not start until Stage 2's numbers are in. A stage that
+fails a gate is reverted, not tuned.
