@@ -16,7 +16,7 @@ Reading it: `in` is uncached input tokens per call, `cached` the tokens served f
 | prose | 20 | $1.46 | $0.038 | 32% |
 | set_reply | 50 | $2.54 | $0.041 | 55% |
 
-**$4.58 over 30 days** → $0.15 a day → about **$5 a month** at this rate. Month to date: $4.58.
+**$4.58 over 2 recorded days (first call 2026-09-13)** → $2.74 a day → about **$83 a month** at this rate. Month to date: $4.58.
 A session opening (the plan call, retries included) costs about **$0.29**.
 
 Rates as of 2026-09-15, first-party API, per million tokens: Sonnet 5 $2.00 in / $10.00 out, cache read $0.20, cache write $4.00 at the one-hour TTL the coach uses. The table is `RATES` in usage.py; move the date when it changes.
