@@ -301,8 +301,11 @@ Approved items list their PRs when shipped. Declined items keep the reason.
 - **Approved, 15 Sep.** 2.5 block review, delivered the morning after the
   block's last session on a rest day via Home and coach chat, never
   straight after a workout; dry run for the first block.
-- **Approved, 14 Sep.** 2.6 Weekly recovery digest. Deterministic text from
-  the recovery facts layer, no model call.
+- **Approved 14 Sep, shipped 15 Sep (#239).** 2.6 Weekly recovery digest:
+  a Monday/Tuesday card under the Home ledger, up to three sentences from
+  the log (HRV against the 42-day band, short nights by name and the hours
+  under need, weight against last week, readiness taps against the
+  numbers). No model call. *verify on the phone next Monday.*
 - **Approved 14 Sep, shipped 15 Sep (#234).** 2.10 Cost line in the Sunday
   report: per-kind totals, month projection, month to date, and the price
   of a session opening. Rates in one dated table in `usage.py`. The 14 Sep
@@ -327,7 +330,7 @@ Approved items list their PRs when shipped. Declined items keep the reason.
 
 ## Build order (15 Sep)
 
-~~2.10 cost line~~ (#234) → 2.6 recovery digest → Stage 5 cache hygiene
+~~2.10 cost line~~ (#234) → ~~2.6 recovery digest~~ (#239) → Stage 5 cache hygiene
 (the ~40% saving, zero coaching risk) → 2.1(a) measurement and 2.1(b)
 start on the programme → 2.2 HELD → 2.3 overshoot step → 2.4 Swift tests →
 2.7 export → 2.9 widget mockups → 2.5 block review (dry run first) → 2.8
