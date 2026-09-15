@@ -109,20 +109,24 @@ biggest question is unanswered.
 **What, in order.**
 (a) Measure: record the visible output length per call beside the total,
 so the Sunday report shows thinking and text separately. Tiny, no risk.
-(b) Pre-plan on a schedule, not on a tap. Opening the Train tab is not a
-signal; the athlete looks at it often without training, and each look
-would cost a full opening (~20–25 cents) or a cache write. Instead the
-backend computes the plan itself on training days, once, about an hour
-before the usual training time from the log, with that morning's HRV and
-sleep. START then finds the plan ready. The readiness tap is compared with
-the read: if it leaves the read's decision unchanged the plan stands; if
-it flips it, the plan is re-run with the tap and the athlete waits as
-today. One call per training day, which is paid anyway; a skipped day
-wastes one.
-(c) Readiness tap as a trigger, as a fallback when no pre-plan exists.
-Tapping a readiness word is a deliberate "about to train"; fire the call
-then. Zero waste, small gain (the seconds between the tap and START). No
-cache pre-warming on tab open at all.
+(b) Start on the programme, the coach catches up. The athlete's two
+constraints: no waiting, and no call a session does not use. A schedule
+is inconsistent with real life; a button is no better than START. So:
+the programme's numbers (already computed in code in under a second, with
+the progression rule, the recovery read and standing ceilings applied)
+appear on the card the moment START is pressed, labelled "PROGRAMME ·
+COACH REVIEWING". The coach's review lands as today; where it agrees the
+label changes, where it differs that exercise updates with its Why line
+and a note naming the change and its cause. No extra call. The visible
+cost is an occasional number changing before the athlete reaches that
+exercise; the adjust rate in the Sunday report says how often.
+(c) Gym arrival as an optional trigger on top. A geofence around the gym
+wakes the app, which sends one "prepare today's session" request; the
+server computes and stores the plan and START finds it ready. One call per
+gym visit. Needs "Always" location permission; location stays on the
+phone, only the arrival is sent. Geofences are good, not perfect, so (b)
+remains the fallback. Build after (b) if (b) alone does not feel instant.
+No cache pre-warming on tab open, no scheduled pre-plan.
 (d) Plan before prose, as a second streamed call. **Not risk-free.** Today
 the reasoning that picks the numbers also writes the Why line, so the
 reason on the card is the actual reason. A second call explaining
@@ -131,8 +135,9 @@ the prose call is handed the structured causes and phrases them without
 adding any; gated on (a) showing prose is a meaningful share of the output.
 (e) Thinking depth. The largest lever and the only one with real quality
 risk. Not before two more weeks of Stage 2 data and gates 1–3 in place.
-**Risk.** (a) none. (b) none to content; the tap comparison must be exact.
-(c) none. (d) real, see above. (e) real.
+**Risk.** (a) none. (b) none to content; a number the athlete has seen may
+change, always with the cause shown. (c) none; reliability only. (d) real,
+see above. (e) real.
 **Size.** (a) tiny, (b) medium, (c) small, (d) medium, (e) small once gated.
 
 ### 2.2 HELD state for lifts under a standing decision
@@ -179,6 +184,11 @@ has none.
 later but not needed to start.
 
 ### 2.5 Block report as a coach conversation
+**In one breath.** At the end of each block the coach writes the review
+and suggests two or three changes; the athlete replies "yes to 1 and 3";
+those become recorded decisions. Numbers come from code, the coach only
+phrases and proposes, nothing is recorded without the yes, and the first
+block is a dry run.
 **What.** At the end of each block the coach opens with a written review:
 median gain, what set PRs, what held or dropped and the reason on record,
 volume against bands, recovery over the block, and the one or two changes
@@ -226,14 +236,17 @@ you and its haptics beat a lock-screen glance.
 target to sign and deploy.
 **Size.** Large. Would be built in stages: timer first.
 
-### 2.9 Home-screen widget
-**What.** Today's session, readiness read, and the rest of the week's
-rotation on a small and a medium widget.
-**Why.** The START screen has it; a glance before leaving the house is
-earlier and cheaper.
-**Risk.** None.
-**Size.** Small to medium; the widget extension already exists for the Live
-Activity.
+### 2.9 Home-screen widget: the day's stats, beautifully
+**What.** Not a workout widget; a glanceable read of where training stands,
+for the hours you are not in the gym. Medium: block progress (week 2 of
+3), median strength gain so far, last night's HRV against the baseline
+band, sleep, next session. Large: adds the body map. Values are what the
+app already computes, written to a shared container and refreshed each
+morning after Health sync; the widget makes no network calls.
+**Why.** "A home screen widget would be nice not during workout but if
+during the day it's showing my stats in a beautiful way."
+**Risk.** None. Mockups of both sizes before building, per the house rule.
+**Size.** Small to medium; the widget extension exists.
 
 ### 2.10 Monthly cost line in the Sunday report
 **What.** Convert the model-call tokens to a cost estimate per kind and per
@@ -250,6 +263,12 @@ judged fairly.
 
 Approved items list their PRs when shipped. Declined items keep the reason.
 
+- **Approved, 15 Sep.** 2.2 HELD state; 2.3 rep-overshoot step sizing;
+  2.4 Swift tests for the numbers; 2.7 export (backup part optional, to
+  storage the athlete owns); 2.8 Apple Watch, staged, mockups first;
+  2.9 stats widget, mockups first.
+- **Pending a plainer explanation, 15 Sep.** 2.5 block review; 2.1(b)
+  start-on-programme.
 - **Approved, 14 Sep.** 2.6 Weekly recovery digest. Deterministic text from
   the recovery facts layer, no model call.
 - **Approved, 14 Sep.** 2.10 Monthly cost line in the Sunday report. Rates
@@ -269,6 +288,13 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   automatic re-sign (#200, #220–#228).
 
 ---
+
+## Build order (15 Sep)
+
+2.10 cost line → 2.6 recovery digest → 2.2 HELD → 2.3 overshoot step →
+2.4 Swift tests → 2.1(a) measurement and 2.1(b) once approved → 2.7
+export → 2.9 widget mockups → 2.8 watch, timer stage first → 2.5 after a
+plainer explanation is approved.
 
 ## How to use this document
 
