@@ -131,6 +131,12 @@ struct DashboardView: View {
                     .padding(.top, 16)
                     .riseIn(delay: 0.2)
 
+                if let digest = viewModel.digest {
+                    digestCard(digest)
+                        .padding(.top, 22)
+                        .riseIn(delay: 0.24)
+                }
+
                 Spacer(minLength: 12)
             }
             .padding(.horizontal, 22)
@@ -550,6 +556,35 @@ struct DashboardView: View {
                 .lineLimit(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    // MARK: - Last week
+
+    /// Monday's read of the week just gone: two or three sentences from the
+    /// log, no chart, no model. The Recovery tab has the numbers; this is
+    /// the line that changes bedtime.
+    private func digestCard(_ digest: RecoveryDigest) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("LAST WEEK · \(digest.rangeLabel)")
+                .font(.system(size: 9, weight: .semibold))
+                .kerning(2)
+                .foregroundStyle(Color.fg3)
+            Text(digest.sentences.joined(separator: " "))
+                .font(.system(size: 14))
+                .foregroundStyle(Color.fg1)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.ink2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.line, lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Ledger
