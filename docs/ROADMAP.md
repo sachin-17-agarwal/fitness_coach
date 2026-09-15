@@ -34,7 +34,7 @@ Five stages, four gates. Where each stands on 14 Sep 2026:
 | 2 | Measure every model call; Sunday report to `reports/model_calls.md` | **in progress**, first real data landed 14 Sep |
 | 3 | Prompt: keep the rules, remove the history. Target ~15,000 tokens from ~25,800 | gated on Stage 2 |
 | 4 | Context shape: older sessions one line each, last week in full | gated on Stage 3 |
-| 5 | Cache hygiene: nothing that changes intraday in the stable block | gated on Stage 2 numbers |
+| 5 | Cache hygiene: nothing that changes intraday in the stable block; and the ~13k uncached tokens every set reply carries | gated on Stage 2 numbers |
 
 **What the first report says.** Two weeks of calls, 41 in total:
 
@@ -271,8 +271,12 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   start-on-programme.
 - **Approved, 14 Sep.** 2.6 Weekly recovery digest. Deterministic text from
   the recovery facts layer, no model call.
-- **Approved, 14 Sep.** 2.10 Monthly cost line in the Sunday report. Rates
-  kept in one dated table in `usage.py`.
+- **Approved 14 Sep, shipped 15 Sep (#234).** 2.10 Cost line in the Sunday
+  report: per-kind totals, month projection, month to date, and the price
+  of a session opening. Rates in one dated table in `usage.py`. The 14 Sep
+  opening prices at about $0.20; a set reply at about $0.04, two thirds of
+  it the ~13k uncached tokens of the live block — the first number for
+  Stage 5.
 
 - **Declined, 12 Sep.** Three-stage multi-model pipeline (cheap model for
   parsing, mid for prose, top for the plan). Not clearly better and adds
@@ -291,7 +295,7 @@ Approved items list their PRs when shipped. Declined items keep the reason.
 
 ## Build order (15 Sep)
 
-2.10 cost line → 2.6 recovery digest → 2.2 HELD → 2.3 overshoot step →
+~~2.10 cost line~~ (#234) → 2.6 recovery digest → 2.2 HELD → 2.3 overshoot step →
 2.4 Swift tests → 2.1(a) measurement and 2.1(b) once approved → 2.7
 export → 2.9 widget mockups → 2.8 watch, timer stage first → 2.5 after a
 plainer explanation is approved.
