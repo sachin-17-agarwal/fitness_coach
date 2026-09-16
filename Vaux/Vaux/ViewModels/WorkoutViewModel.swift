@@ -72,6 +72,19 @@ final class WorkoutViewModel {
     // Coach feedback
     var coachNote: String?
     var isCoachThinking = false
+    /// Whose numbers are on the card. The opening shows the programme's at
+    /// once while the coach reviews on the server; the review lands into the
+    /// card and the label changes. If the review fails, the programme stands.
+    enum PlanSource { case coach, programmeReviewing, programme }
+    var planSource: PlanSource = .coach
+    /// What the coach's review changed against the programme, per exercise,
+    /// with the coach's reason — shown on the exercise it concerns.
+    var planChanges: [PlanChange] = []
+    private var reviewTask: Task<Void, Never>?
+    /// How long the card waits for the review before settling on the
+    /// programme. The opening has taken up to ~90 s; three minutes is ample.
+    static let reviewPollSeconds: UInt64 = 5
+    static let reviewMaxPolls = 36
 
     // True from the moment a Log tap is accepted until the set is persisted
     // and the phase tracker has advanced. Guards logSet against reentry and
@@ -232,8 +245,23 @@ final class WorkoutViewModel {
             } else {
                 prompt = "Starting my \(type) session. List today's full exercise plan first (every exercise with sets/reps/weight/RPE in the strict format), then prescribe the first exercise in detail so I can warm up."
             }
-            let response = try await chatService.sendMessage(prompt)
-            applyAIResponse(response)
+            // The programme's card first, at once; the coach's review lands
+            // into it. Only if the programme has nothing computed does the
+            // opening wait on the coach, as it always used to.
+            let opened = try? await chatService.openSession(
+                type: type, message: prompt, sessionId: currentSession?.id?.uuidString)
+            if let opened, opened.status == "reviewing", let text = opened.response {
+                planSource = .programmeReviewing
+                planChanges = []
+                applyAIResponse(ChatResponse(response: text, mesocycleDay: opened.mesocycleDay,
+                                             mesocycleWeek: opened.mesocycleWeek, prescription: nil, prs: nil))
+                coachNote = "Programme plan. The coach is reviewing it now; the card updates where the review differs."
+                startReviewPolling()
+            } else {
+                planSource = .coach
+                let response = try await chatService.sendMessage(prompt)
+                applyAIResponse(response)
+            }
         } catch {
             issues.append("Coach didn't respond (\(error.localizedDescription)). Pull down or tap End and try again.")
         }
@@ -242,6 +270,46 @@ final class WorkoutViewModel {
             errorMessage = issues.joined(separator: " ")
         }
         isLoading = false
+    }
+
+    /// Polls the server for the coach's review of the opening and lands it
+    /// into the card. A block for an exercise already started is merged onto
+    /// its unlogged sets, never over the logged ones; a plan that would move
+    /// the card off a started exercise is not allowed to.
+    private func startReviewPolling() {
+        reviewTask?.cancel()
+        reviewTask = Task { [weak self] in
+            for _ in 0..<Self.reviewMaxPolls {
+                try? await Task.sleep(nanoseconds: Self.reviewPollSeconds * 1_000_000_000)
+                guard let self, !Task.isCancelled, self.isActive else { return }
+                guard let status = try? await self.chatService.sessionStatus() else { continue }
+                switch status.status {
+                case "reviewed":
+                    if let text = status.response {
+                        let untouched = self.exerciseSetsForCurrentExercise.isEmpty
+                        self.applyAIResponse(ChatResponse(response: text, mesocycleDay: nil, mesocycleWeek: nil,
+                                                          prescription: nil, prs: nil),
+                                             allowExerciseChange: untouched)
+                    }
+                    self.planChanges = status.changes ?? []
+                    self.planSource = .coach
+                    return
+                case "failed":
+                    self.planSource = .programme
+                    return
+                default:
+                    continue
+                }
+            }
+            guard let self, !Task.isCancelled else { return }
+            if self.planSource == .programmeReviewing { self.planSource = .programme }
+        }
+    }
+
+    /// The coach's change to the exercise on the card, if the review made one.
+    var changeForCurrentExercise: PlanChange? {
+        guard let name = currentPrescription?.exerciseName else { return nil }
+        return planChanges.first { PrescriptionParser.normalizeExerciseName($0.exercise) == name }
     }
 
     /// Reuses an in-progress session for `type` if one already exists today
@@ -892,6 +960,10 @@ final class WorkoutViewModel {
     }
 
     func endWorkout() async {
+        reviewTask?.cancel()
+        reviewTask = nil
+        planSource = .coach
+        planChanges = []
         stopTimers()
         heartRateMonitor.stop()
 

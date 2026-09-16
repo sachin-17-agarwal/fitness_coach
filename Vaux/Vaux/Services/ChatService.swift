@@ -25,6 +25,40 @@ struct ChatResponse: Codable, Sendable {
     }
 }
 
+/// `/api/session/open`: the programme's card at once, the coach's review to
+/// follow. `status` is "reviewing" (response carries the programme's plan) or
+/// "unavailable" (open through /api/chat as before).
+struct SessionOpenResponse: Codable, Sendable {
+    let status: String
+    let response: String?
+    let mesocycleDay: Int?
+    let mesocycleWeek: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case status, response
+        case mesocycleDay = "mesocycle_day"
+        case mesocycleWeek = "mesocycle_week"
+    }
+}
+
+/// One exercise the coach's review changed against the programme, with the
+/// coach's own reason.
+struct PlanChange: Codable, Sendable, Hashable {
+    let exercise: String
+    let change: String
+    let from: String?
+    let to: String?
+    let why: String?
+}
+
+/// `/api/session/status`: none | reviewing | reviewed (+response, changes) | failed.
+struct SessionStatusResponse: Codable, Sendable {
+    let status: String
+    let response: String?
+    let changes: [PlanChange]?
+    let error: String?
+}
+
 /// A personal-record event flagged by the backend when a logged set beats
 /// the historical estimated 1RM. One PRInfo per set that PR'd in this
 /// message (a "warm-up 100 x 8, working 110 x 8" might emit two).
@@ -300,6 +334,52 @@ final class ChatService: Sendable {
     // MARK: - Backend call
 
     /// Sends a POST request to the Flask backend's `/api/chat` endpoint.
+    /// Base URL without a pasted /api/chat suffix; every endpoint shares it.
+    private var backendBase: String {
+        var raw = Config.backendURL
+        if let r = raw.range(of: "/api/chat") { raw = String(raw[..<r.lowerBound]) }
+        return raw.hasSuffix("/") ? String(raw.dropLast()) : raw
+    }
+
+    /// START pressed: the programme's plan at once. The coach's review runs
+    /// on the server; poll `sessionStatus()` for it.
+    func openSession(type: String, message: String, sessionId: String?) async throws -> SessionOpenResponse {
+        let urlString = "\(backendBase)/api/session/open"
+        guard let url = URL(string: urlString) else { throw ChatServiceError.invalidURL(urlString) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 30
+        var payload: [String: Any] = ["session_type": type, "message": message]
+        if let sessionId { payload["session_id"] = sessionId }
+        if let recovery = await recoverySnapshot() { payload["recovery"] = recovery }
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw ChatServiceError.backendError(statusCode: http.statusCode,
+                                                body: String(data: data, encoding: .utf8) ?? "(no body)")
+        }
+        do { return try JSONDecoder().decode(SessionOpenResponse.self, from: data) }
+        catch { throw ChatServiceError.decodingFailed(error) }
+    }
+
+    /// Where the coach's review of today's opening stands.
+    func sessionStatus() async throws -> SessionStatusResponse {
+        let urlString = "\(backendBase)/api/session/status"
+        guard let url = URL(string: urlString) else { throw ChatServiceError.invalidURL(urlString) }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw ChatServiceError.backendError(statusCode: http.statusCode,
+                                                body: String(data: data, encoding: .utf8) ?? "(no body)")
+        }
+        do { return try JSONDecoder().decode(SessionStatusResponse.self, from: data) }
+        catch { throw ChatServiceError.decodingFailed(error) }
+    }
+
     private func callBackend(_ message: String) async throws -> ChatResponse {
         let rawURL = Config.backendURL
         let token = Config.appAPIToken

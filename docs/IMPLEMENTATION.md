@@ -17,8 +17,8 @@ Anything that changes what the coach says goes behind a gate in
 |---|---|---|
 | ~~Thu 17 Sep~~ shipped Wed 16 Sep | ~~2.1(a) output measurement · 2.3 overshoot step~~ | run migration 006 (report shows `?` until then) |
 | ~~Fri 18 Sep~~ shipped Wed 16 Sep | ~~2.2 HELD state (app)~~ | a build; screenshot of the Shoulders row; the shoulder-press decision in chat |
-| Sat 19 – Sun 20 Sep | 2.1(b) backend: open, review, diff, storage · raise the context fetch ceiling and log per-query timings (item 4) · read the 20 Sep report for Stage 5 | — |
-| Mon 21 – Tue 22 Sep | 2.1(b) app: instant card, review poll, per-exercise update | a build; try it on Push and Pull |
+| ~~Sat 19 – Sun 20 Sep~~ shipped Wed 16 Sep | ~~2.1(b) backend~~ (#252) · raise the context fetch ceiling and log per-query timings (item 4) · read the 20 Sep report for Stage 5 | — |
+| ~~Mon 21 – Tue 22 Sep~~ shipped Wed 16 Sep | ~~2.1(b) app~~ (#253) | a build; try it on Push and Pull |
 | Wed 23 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes, steps below) |
 | Thu 24 Sep | 2.7 export | a build; export once and open the CSV |
 | Fri 25 Sep | 2.9 widget mockups | pick one of two mockups |

@@ -535,6 +535,16 @@ struct WorkoutModeView: View {
                             .padding(.top, 12)
                     }
 
+                    if viewModel.planSource != .coach {
+                        planSourceStrip
+                            .padding(.horizontal, Editorial.gutter)
+                            .padding(.top, 14)
+                    } else if let change = viewModel.changeForCurrentExercise {
+                        planChangeStrip(change)
+                            .padding(.horizontal, Editorial.gutter)
+                            .padding(.top, 14)
+                    }
+
                     Group {
                         if viewModel.isLoading && viewModel.currentPrescription == nil {
                             prescriptionPlaceholder
@@ -742,6 +752,37 @@ struct WorkoutModeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("Coach is writing")
+    }
+
+    /// Whose numbers are on the card while the coach's review is out, or
+    /// when it never came back. Gone once the review has landed.
+    private var planSourceStrip: some View {
+        HStack(spacing: 10) {
+            EditorialEyebrow(
+                text: viewModel.planSource == .programmeReviewing ? "Programme · coach reviewing" : "Programme · coach unavailable",
+                color: viewModel.planSource == .programmeReviewing ? Editorial.blue : Editorial.muted,
+                size: 9.5, kerning: 1.8)
+            if viewModel.planSource == .programmeReviewing { CoachTypingDots() }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel(viewModel.planSource == .programmeReviewing
+                            ? "Programme plan, coach reviewing" : "Programme plan, coach unavailable")
+    }
+
+    /// The coach changed this exercise against the programme: what and why,
+    /// in one line, on the exercise it concerns.
+    private func planChangeStrip(_ change: PlanChange) -> some View {
+        let movement = [change.from, change.to].compactMap { $0 }.joined(separator: " → ")
+        let why = (change.why ?? "").replacingOccurrences(of: "Changed from the programme", with: "").trimmingCharacters(in: CharacterSet(charactersIn: " —-()"))
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            EditorialEyebrow(text: "Coach changed", color: Editorial.blue, size: 9.5, kerning: 1.8)
+            Text(movement + (why.isEmpty ? "" : " · \(why)"))
+                .font(.system(size: 12.5))
+                .foregroundStyle(Color.fg1)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func errorStrip(_ message: String) -> some View {
