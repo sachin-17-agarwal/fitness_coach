@@ -40,6 +40,12 @@ struct SettingsView: View {
         let isError: Bool
     }
 
+    // Export: the training log as CSV, one file per table, via the share
+    // sheet. The state is the status line and the files to share.
+    @State private var exportStatus: StatusMessage?
+    @State private var exportFiles: [URL] = []
+    @State private var isExporting = false
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -52,6 +58,7 @@ struct SettingsView: View {
                         blockSection
                         briefingSection
                         librarySection
+                        exportSection
                         healthSection
                         liveActivitySection
                         backendSection
@@ -350,6 +357,60 @@ struct SettingsView: View {
             .frame(height: 44)
             .padding(.horizontal, Editorial.gutter)
         }
+    }
+
+    // MARK: - Export
+
+    /// Every table the training log lives in, as CSV, for the share sheet.
+    /// Six months of training sits in one database; this is the copy the
+    /// athlete owns, and what any analysis outside the app starts from.
+    private var exportSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Export")
+            Text("Sessions, sets, recovery, standing decisions and plan decisions, one CSV each. Chat history is not included.")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.fg2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Editorial.gutter)
+                .padding(.top, 12)
+            HStack {
+                if let status = exportStatus { statusLabel(status) }
+                Spacer()
+                if !exportFiles.isEmpty {
+                    ShareLink(items: exportFiles) {
+                        Text("Share \(exportFiles.count) files →")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.signal)
+                    }
+                } else {
+                    linkButton(isExporting ? "Exporting…" : "Export training log →") {
+                        guard !isExporting else { return }
+                        Haptic.light()
+                        Task { await runExport() }
+                    }
+                    .disabled(isExporting)
+                }
+            }
+            .frame(height: 44)
+            .padding(.horizontal, Editorial.gutter)
+        }
+    }
+
+    private func runExport() async {
+        isExporting = true
+        exportFiles = []
+        exportStatus = StatusMessage(text: "Reading…", isError: false)
+        do {
+            let result = try await ExportService().exportAll { table in
+                exportStatus = StatusMessage(text: "Reading \(table)…", isError: false)
+            }
+            let total = result.rowCounts.values.reduce(0, +)
+            exportFiles = result.files
+            exportStatus = StatusMessage(text: "\(total) rows in \(result.files.count) files", isError: false)
+        } catch {
+            exportStatus = StatusMessage(text: "Export failed: \(error.localizedDescription)", isError: true)
+        }
+        isExporting = false
     }
 
     // MARK: - Live Activity

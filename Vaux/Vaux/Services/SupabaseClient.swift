@@ -138,6 +138,21 @@ final class SupabaseClient: Sendable {
         }
     }
 
+    /// One page of a table as raw JSON bytes, for the export: the tables are
+    /// written as they are, every column, without a Swift model per table.
+    func fetchRawPage(_ table: String, order: String, offset: Int, pageSize: Int = 1000) async throws -> Data {
+        let url = try buildURL(table: table, params: ["select": "*", "order": order,
+                                                     "offset": String(offset), "limit": String(pageSize)])
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        applyHeaders(to: &req)
+        let request = req
+        let session = self.session
+        let (data, response) = try await withRetry { try await session.data(for: request) }
+        try validate(response: response, data: data)
+        return data
+    }
+
     /// Insert a row.  Returns raw response data.
     @discardableResult
     func insert(_ table: String, body: [String: Any]) async throws -> Data {

@@ -20,7 +20,7 @@ Anything that changes what the coach says goes behind a gate in
 | ~~Sat 19 – Sun 20 Sep~~ shipped Wed 16 Sep | ~~2.1(b) backend~~ (#252) · raise the context fetch ceiling and log per-query timings (item 4) · read the 20 Sep report for Stage 5 | — |
 | ~~Mon 21 – Tue 22 Sep~~ shipped Wed 16 Sep | ~~2.1(b) app~~ (#253) | a build; try it on Push and Pull |
 | Wed 23 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes, steps below) |
-| Thu 24 Sep | 2.7 export | a build; export once and open the CSV |
+| ~~Thu 24 Sep~~ shipped Wed 16 Sep | ~~2.7 export~~ (#254) | a build; export once and open the CSV |
 | Fri 25 Sep | 2.9 widget mockups | pick one of two mockups |
 | Week of 28 Sep | 2.9 widget build · 2.5 fact sheet and dry-run plumbing · design for decisions captured when reached (item 3) | — |
 | Week of 5 Oct | 2.5 dry run on the block ending then · review 2.1(c) geofence (two weeks after 2.1(b) ships) | read the dry-run review, say what you would have decided |
