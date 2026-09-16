@@ -22,7 +22,7 @@ Anything that changes what the coach says goes behind a gate in
 | Wed 23 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes, steps below) |
 | ~~Thu 24 Sep~~ shipped Wed 16 Sep | ~~2.7 export~~ (#254) | a build; export once and open the CSV |
 | Fri 25 Sep | 2.9 widget mockups | pick one of two mockups |
-| Week of 28 Sep | 2.9 widget build · 2.5 fact sheet and dry-run plumbing · design for decisions captured when reached (item 3) | — |
+| Week of 28 Sep | 2.9 widget build · ~~2.5 fact sheet and dry-run plumbing~~ (shipped 16 Sep, #255; needs migration 007) · design for decisions captured when reached (item 3) | run migration 007 |
 | Week of 5 Oct | 2.5 dry run on the block ending then · review 2.1(c) geofence (two weeks after 2.1(b) ships) | read the dry-run review, say what you would have decided |
 | After | 2.8 watch, timer stage first | mockups approval |
 

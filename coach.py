@@ -739,6 +739,46 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             send_telegram_message(message)
         return message
 
+    # ── block review ──────────────────────────────────────────────────────────
+    # "block review" writes the review of the block just ended (or in
+    # progress) from the computed fact sheet and shows it; an answer to a
+    # shown review ("yes to 1 and 3", "approve all", "no") is recorded and,
+    # outside the dry run, applied through the same paths a chat decision
+    # uses. Never inside a session: the review names every lift and would
+    # move the card.
+    if re.match(r'^/?block\s*review\b', normalised_text):
+        from block_review import prepare_block_review, render_review  # local: import order
+        if get_workout_state().get("workout_mode") == "active":
+            message = ("You're mid-session, so I'm holding the block review — it names every lift "
+                       "and would move your card. Finish the session; it will be on Home in the morning.")
+        else:
+            try:
+                row = prepare_block_review(memory, load_system_prompt(), get_anthropic_client())
+                message = render_review(row) if row else "I can't place this block yet (not enough stamped sessions), so there is nothing to review."
+            except Exception as exc:
+                log.exception("Block review failed")
+                message = f"Couldn't write the block review: {exc}"
+        save_conversation_message("user", incoming_text)
+        save_conversation_message("assistant", message)
+        if send_reply:
+            send_telegram_message(message)
+        return message
+    if re.match(r'^\s*(yes|approve|ok|okay|no|decline|reject)\b', normalised_text):
+        from block_review import answer_block_review, latest_block_review, parse_answer  # local: import order
+        review = latest_block_review()
+        if review and review.get("status") == "shown" \
+                and parse_answer(incoming_text, len(review.get("proposals_list") or [])) is not None:
+            try:
+                message = answer_block_review(review, incoming_text, load_system_prompt())
+            except Exception as exc:
+                log.exception("Block review answer failed")
+                message = f"Couldn't record that answer: {exc}"
+            save_conversation_message("user", incoming_text)
+            save_conversation_message("assistant", message)
+            if send_reply:
+                send_telegram_message(message)
+            return message
+
     replay_match = re.match(r'^/?replay(?:\s+(\d+))?$', normalised_text)
     if replay_match:
         days = int(replay_match.group(1) or DEFAULT_REPLAY_DAYS)

@@ -1,0 +1,151 @@
+"""The block review as a coach conversation (roadmap 2.5): numbers from
+code, the model phrases and proposes, nothing recorded without a yes, the
+first block a dry run."""
+
+import json
+import unittest
+from unittest.mock import patch
+
+import block_review as br
+
+
+def _set(date, ex, w, reps, sid):
+    return {"date": date, "exercise": ex, "workout_session_id": sid, "is_warmup": False,
+            "actual_weight_kg": w, "actual_reps": reps, "actual_rpe": 8}
+
+
+class WindowTests(unittest.TestCase):
+    SESSIONS = [{"date": f"2026-08-{d:02d}", "mesocycle_week": None, "mesocycle_day": None} for d in range(1, 17)] + \
+               [{"date": f"2026-09-{d:02d}", "mesocycle_week": None, "mesocycle_day": None} for d in range(1, 15)]
+
+    def test_the_morning_after_rollover_reviews_the_block_just_ended(self):
+        sessions = list(self.SESSIONS)
+        sessions[16]["mesocycle_week"], sessions[16]["mesocycle_day"] = 1, 1   # 1 Sep opened the last block
+        w = br.review_window(sessions, {"mesocycle_week": 1, "mesocycle_day": 1}, "2026-09-16")
+        # Week 1 day 1 with no new session stamped: block_start still names
+        # the block that just ended, so [1 Sep, today] is it, complete, and the
+        # sixteen sessions before it are the previous block.
+        self.assertTrue(w["complete"])
+        self.assertEqual((w["since"], w["until"]), ("2026-09-01", "2026-09-16"))
+        self.assertEqual((w["prev_since"], w["prev_until"]), ("2026-08-01", "2026-08-16"))
+
+    def test_mid_block_reviews_the_block_in_progress(self):
+        sessions = list(self.SESSIONS)
+        sessions[16]["mesocycle_week"], sessions[16]["mesocycle_day"] = 1, 1
+        w = br.review_window(sessions, {"mesocycle_week": 3, "mesocycle_day": 2}, "2026-09-16")
+        self.assertFalse(w["complete"])
+        self.assertEqual(w["since"], "2026-09-01")
+        self.assertEqual(w["until"], "2026-09-16")
+
+
+class FactTests(unittest.TestCase):
+    WINDOW = {"since": "2026-09-01", "until": "2026-09-14", "prev_since": "2026-08-16", "prev_until": "2026-08-31"}
+
+    def test_strength_is_peak_week_against_peak_week_with_a_verdict(self):
+        rows = [_set("2026-08-28", "Leg Press", 200, 10, "p3"), _set("2026-08-20", "Leg Press", 220, 8, "p1"),
+                _set("2026-09-12", "Leg Press", 230, 10, "t3"), _set("2026-09-04", "Leg Press", 240, 6, "t1"),
+                _set("2026-09-12", "Seated Leg Curl", 110, 16, "t3"), _set("2026-09-05", "Seated Leg Curl", 105, 11, "t1")]
+        weeks = {"p3": 3, "p1": 1, "t3": 3, "t1": 1}
+        facts = {f["exercise"]: f for f in br.strength_facts(rows, weeks, self.WINDOW)}
+        lp = facts["Leg Press"]
+        self.assertEqual((lp["this_set"], lp["prev_set"]), ("230kg x10", "200kg x10"))   # peak weeks, not block bests
+        self.assertEqual(lp["delta_pct"], 15.0)
+        self.assertEqual(lp["verdict"], "up")
+        # A 16-rep set is past the estimate's range: the block best stands in, and the sheet says so.
+        slc = facts["Seated Leg Curl"]
+        self.assertEqual(slc["this_set"], "105kg x11")
+        self.assertFalse(slc["this_from_peak_week"])
+        self.assertEqual(slc["verdict"], "first block")
+
+    def test_recovery_is_the_block_mean_against_the_42_days_before(self):
+        rows = [{"date": "2026-08-01", "hrv": 40, "resting_hr": 60, "sleep_hours": 7.5},
+                {"date": "2026-08-20", "hrv": 44, "resting_hr": 58, "sleep_hours": 6.0},
+                {"date": "2026-09-03", "hrv": 50, "resting_hr": 56, "sleep_hours": 6.5, "readiness": 4},
+                {"date": "2026-09-10", "hrv": 46, "resting_hr": 58, "sleep_hours": 8.0, "readiness": 5}]
+        r = br.recovery_facts(rows, self.WINDOW)
+        self.assertEqual(r["hrv_block_mean"], 48.0)
+        self.assertEqual(r["hrv_baseline_mean"], 42.0)
+        self.assertEqual(r["short_nights"], 1)
+        self.assertEqual(r["nights_recorded"], 2)
+        self.assertEqual((r["readiness_taps"], r["readiness_mean"]), (2, 4.5))
+
+    def test_the_sheet_reads_as_lines_the_model_can_quote(self):
+        facts = {"window": {**self.WINDOW, "complete": True},
+                 "strength": [{"exercise": "Leg Press", "this_e1rm": 306.7, "this_set": "230kg x10", "prev_e1rm": 266.7,
+                               "prev_set": "200kg x10", "delta_pct": 15.0, "verdict": "up", "this_from_peak_week": True}],
+                 "volume": [{"muscle": "Hamstrings", "sets_per_week": 8.1, "band": "10-16", "under_by": 1.9}],
+                 "recovery": {"hrv_block_mean": 48.0, "hrv_baseline_mean": 42.0, "short_nights": 1, "nights_recorded": 2},
+                 "emphasis": ["triceps"], "standing_constraints": "", "adjustments": []}
+        text = br.format_facts(facts)
+        self.assertIn("Leg Press: 306.7kg (230kg x10) vs 266.7kg (200kg x10) = +15% — up", text)
+        self.assertIn("Hamstrings: 8.1 against 10-16 — UNDER by 1.9", text)
+        self.assertIn("HRV: 48.0 vs baseline 42.0", text)
+        self.assertIn("THIS BLOCK'S EMPHASIS: triceps", text)
+
+
+class NarrativeChecksTests(unittest.TestCase):
+
+    def test_a_number_the_sheet_lacks_is_caught_and_small_counts_are_allowed(self):
+        sheet = "Leg Press: 306.7kg vs 266.7kg = +15% — up\nHRV: 48.0 vs baseline 42.0"
+        self.assertEqual(br.numbers_not_in_sheet("Leg press up 15% to 306.7kg; HRV 48.0. Two lifts held.", sheet), [])
+        self.assertEqual(br.numbers_not_in_sheet("Leg press up 17% to 310kg", sheet), ["17", "310"])
+
+    def test_only_recordable_lines_survive_as_proposals(self):
+        props = [{"line": "Decision: Machine Shoulder Press | max load 70kg | shoulder niggle", "rationale": "held"},
+                 {"line": "Emphasis-next: triceps | overhead cable extension", "rationale": "band top"},
+                 {"line": "Add a fifth set of curls", "rationale": "vibes"},
+                 {"line": "Decision: Cable Crunch | clear", "rationale": "stack changed"},
+                 {"line": "Emphasis-next: chest | fly", "rationale": "x"}]
+        kept = [p["line"] for p in br.valid_proposals(props)]
+        self.assertEqual(len(kept), 3)
+        self.assertNotIn("Add a fifth set of curls", kept)
+
+
+class AnswerTests(unittest.TestCase):
+
+    def test_parse_answer_forms(self):
+        self.assertEqual(br.parse_answer("yes to 1 and 3", 3), [1, 3])
+        self.assertEqual(br.parse_answer("Approve all", 3), [1, 2, 3])
+        self.assertEqual(br.parse_answer("yes", 1), [1])
+        self.assertEqual(br.parse_answer("no", 3), [])
+        self.assertIsNone(br.parse_answer("yes to 7", 3))
+        self.assertIsNone(br.parse_answer("what about the leg curl?", 3))
+
+    def test_a_dry_run_answer_records_nothing_and_says_so(self):
+        row = {"id": 1, "dry_run": True, "proposals_list": [
+            {"line": "Decision: Machine Shoulder Press | max load 70kg | shoulder niggle", "rationale": ""},
+            {"line": "Emphasis-next: triceps | overhead cable extension", "rationale": ""}]}
+        with patch("constraints.record_decisions") as rec, patch("weakpoints.set_next_emphasis") as emph, \
+             patch("block_review.get_supabase", return_value=None):
+            msg = br.answer_block_review(row, "yes to 1 and 2", "PROMPT")
+        self.assertFalse(rec.called)
+        self.assertFalse(emph.called)
+        self.assertIn("dry run", msg)
+        self.assertIn("Machine Shoulder Press", msg)
+
+    def test_a_live_answer_applies_each_line_through_the_existing_path(self):
+        row = {"id": 1, "dry_run": False, "proposals_list": [
+            {"line": "Decision: Machine Shoulder Press | max load 70kg | shoulder niggle", "rationale": ""},
+            {"line": "Emphasis-next: triceps | overhead cable extension", "rationale": ""}]}
+        with patch("constraints.record_decisions") as rec, patch("weakpoints.set_next_emphasis") as emph, \
+             patch("block_review.get_supabase", return_value=None):
+            msg = br.answer_block_review(row, "approve all", "PROMPT")
+        rec.assert_called_once_with("Decision: Machine Shoulder Press | max load 70kg | shoulder niggle")
+        emph.assert_called_once_with("PROMPT", "triceps", "overhead cable extension")
+        self.assertIn("Recorded for next block", msg)
+
+    def test_render_numbers_the_proposals_and_flags_the_dry_run(self):
+        row = {"narrative": "A good block.", "dry_run": True,
+               "proposals_list": [{"line": "Emphasis-next: chest | low-to-high fly", "rationale": "band has room"}]}
+        text = br.render_review(row)
+        self.assertIn("1. Emphasis-next: chest | low-to-high fly", text)
+        self.assertIn("yes to 1 and 3", text)
+        self.assertIn("Dry run", text)
+
+
+class PrepareIfDueTests(unittest.TestCase):
+
+    def test_nothing_is_prepared_mid_block_or_mid_session(self):
+        self.assertIsNone(br.prepare_if_due({"mesocycle_week": 2, "mesocycle_day": 3}, "P", None))
+        with patch("workout.get_workout_state", return_value={"workout_mode": "active"}):
+            self.assertIsNone(br.prepare_if_due({"mesocycle_week": 1, "mesocycle_day": 1}, "P", None))
