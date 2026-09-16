@@ -1,5 +1,4 @@
 date,session,week,exercise,code,detail
-2026-06-17,Legs,1,Lying Leg Curl,reps_below_range,top set at 6 reps against a 8-12 range
 2026-06-29,Push,3,Machine Shoulder Press,reps_below_range,top set at 4 reps against a 6-10 range
 2026-06-30,Legs,3,Lying Leg Curl,reps_below_range,top set at 6 reps against a 8-12 range
 2026-07-02,Cardio+Abs,3,Cable Crunch,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"
@@ -49,4 +48,3 @@ date,session,week,exercise,code,detail
 2026-08-26,Legs,3,Machine Calf Raise,set_count,1 working set(s) against a template of 5
 2026-08-29,Push,4,Tricep Pushdown,backoff_loads_differ,two back-offs at different loads
 2026-09-14,Legs,3,Seated Leg Curl,backoff_loads_differ,two back-offs at different loads
-2026-09-15,Cardio+Abs,3,Cable Crunch,rpe_under_target,"top set at RPE8 in week 3, which targets RPE9"

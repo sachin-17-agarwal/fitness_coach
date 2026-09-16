@@ -1,32 +1,31 @@
-<!-- generated 2026-09-15 · 448 prescriptions · 51 violations -->
+<!-- generated 2026-09-16 · 448 prescriptions · 49 violations -->
 
 **Protocol audit — last 90 days**
 
-- **448** prescriptions checked across **2159** replies on dated training days.
-- **44** of them broke at least one rule.
-- Week known for 301 prescriptions (264 from the coach's own words that day, 37 from the session stamp): every check ran. Week only reconstructed for 147: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 15 of 41 days.
+- **448** prescriptions checked across **2167** replies on dated training days.
+- **42** of them broke at least one rule.
+- Week known for 301 prescriptions (264 from the coach's own words that day, 37 from the session stamp): every check ran. Week only reconstructed for 147: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 16 of 41 days.
 
 **What was broken, and how often**
 
 - Wrong number of working sets — **18**
-- Prescribed below the week's RPE target — **10**
-- Top set below the exercise's rep range — **9**
+- Prescribed below the week's RPE target — **9**
+- Top set below the exercise's rep range — **8**
 - Second back-off not fewer reps — **8**
 - Back-off below the week's RPE target — **3**
 - Two back-offs at different loads — **3**
 
 **The most recent of each**
 
-- 2026-09-15 · Cardio+Abs wk3 · Cable Crunch — top set at RPE8 in week 3, which targets RPE9
 - 2026-09-14 · Legs wk3 · Seated Leg Curl — two back-offs at different loads
 - 2026-08-26 · Legs wk3 · Machine Calf Raise — 1 working set(s) against a template of 5
+- 2026-08-26 · Legs wk3 · Ab Crunch Machine — top set at RPE8 in week 3, which targets RPE9
 - 2026-07-29 · Push wk1 · Machine Shoulder Press — second back-off at 10 reps, not fewer than 10
 - 2026-07-29 · Push wk1 · Cable Lateral Raise — top set at 6 reps against a 8-12 range
 - 2026-07-02 · Cardio+Abs wk3 · Pallof Press — back-off at RPE7 in week 3, which targets RPE8
 
 **Where the coach's stated week and the session row disagree (sample)**
 
-- 2026-06-17 · Legs · row says wk2, coach says wk1 — “rly, but you'll warm into it. Week 1 baseline — lock in the weights and RPE targets. These numbers become your reference point for the”
 - 2026-06-25 · Legs · row says wk3, coach says wk4 — “it 109kg x7 RPE6 — that was a deload week. Today is Week 2, push for 10-12 reps at RPE8 💪”
 - 2026-06-29 · Push · row says wk4, coach says wk3 — “Week 3 Peak Intensity — HRV up, sleep solid, you're fully loaded for this. Hardest week of the cycle,”
 - 2026-06-30 · Legs · row says wk4, coach says wk3 — “tiable today. *TODAY: LEGS — Week 3 of 4 (Peak Intensity)* Week 3 target: RPE 9 on working sets. Reach it by adding load vs Week 2 wher”
@@ -38,5 +37,6 @@
 - 2026-07-08 · Pull · row says wk2, coach says wk1 — “is the session that sets the Week 1 baseline — you're nailing it. *T-Bar Row* Warm-up: 30kg x8 Working Set: 52.5kg x6-8 RPE8 | Tempo:”
 - 2026-07-09 · Push · row says wk2, coach says wk1 — “at this pace. *TODAY: PUSH — Week 1 Baseline* Context: Last Push was 07/04 (Week 4 deload). Before that, 06/29 (Week 3 peak). Week 1”
 - 2026-07-10 · Legs · row says wk2, coach says wk1 — “. We're correcting that now. Week 1 baseline. Last Legs was 06 July — RPE6-7 across the board, well below target. Today we push to RPE”
+- 2026-07-11 · Cardio+Abs · row says wk2, coach says wk1 — “ay, 30% above your 7-day avg. Week 1 baseline, so we're locking in reference weights across all ab work. Today's the day to find where”
 
 - Every check is decidable from the prescription and the week — no load history is reconstructed and nothing is a judgement call. These are the coach disagreeing with the protocol in your own prompt.
