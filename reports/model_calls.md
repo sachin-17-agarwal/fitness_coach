@@ -23,7 +23,9 @@ Rates as of 2026-09-15, first-party API, per million tokens: Sonnet 5 $2.00 in /
 
 ## Decisions — the coach against the programme
 
-Over 8 openings the coach decided 78 exercises and adjusted **35** of them (**45%**); of the adjusts, **46%** named a cause (recovery reading, joint, machine, time). The rest took the programme's numbers.
+Over 8 openings the coach decided 78 exercises and adjusted **35** of them (**45%**). Why: 15 named a cause (recovery, joint, machine, time), 7 progression (a stall, reps over the range), 7 shape (the proposal's set structure), 6 other. The rest took the programme's numbers.
+
+A shape count this high says the programme's proposal and the coach disagree about how these exercises are structured. That is a programme defect to fix, not a coaching decision, and each one inflates the adjust rate.
 
 | lift | adjusted | reasons |
 |---|---:|---|
@@ -37,4 +39,4 @@ Over 8 openings the coach decided 78 exercises and adjusted **35** of them (**45
 
 Not recorded yet (migration 008).
 
-Reading it: the adjust rate is how often the coach departs from the programme at the opening; the cause rate is whether it says why. The shadow counts replies outside the plan contract — prose and set replies — whose numbers the programme would have replaced. The substitution flag stays off while the adjust rate is low and the cause rate high; a rising shadow count on prose replies is the case for turning it on.
+Reading it: the adjust rate is how often the coach departs from the programme at the opening, and the buckets say why. The shadow counts replies outside the plan contract — prose and set replies — whose numbers the programme would have replaced. The substitution flag stays off while the adjust rate is low and the cause rate high; a rising shadow count on prose replies is the case for turning it on.
