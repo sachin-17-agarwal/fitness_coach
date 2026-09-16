@@ -38,6 +38,8 @@ final class HistoryViewModel {
     /// Weigh-ins over the window plus a season of lookback, so the first
     /// sessions in the window still find a body to score against.
     private var weighIns = WeighInRecord.empty
+    /// Standing decisions, so a lift held on purpose reads HELD, not DROPPING.
+    private var constraints: [StandingConstraint] = []
 
     func load() async {
         isLoading = true
@@ -49,7 +51,8 @@ final class HistoryViewModel {
 
         await fetchWindow(state: state)
         weighIns = (try? await recoveryService.fetchWeighIns(days: windowDays + 90)) ?? .empty
-        strength.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
+        constraints = (try? await workoutService.fetchStandingConstraints()) ?? []
+        strength.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns, constraints: constraints)
         training.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
         await recovery.load(sessions: sessions, calendar: calendar)
         await weeklyVolume.load()
@@ -67,7 +70,7 @@ final class HistoryViewModel {
         let state = try? await mesocycleService.loadState()
         await fetchWindow(state: state)
         weighIns = (try? await recoveryService.fetchWeighIns(days: windowDays + 90)) ?? .empty
-        strength.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
+        strength.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns, constraints: constraints)
         training.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
         if let keep { strength.show(block: keep) }
     }
