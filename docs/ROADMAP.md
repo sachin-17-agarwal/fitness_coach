@@ -72,8 +72,10 @@ number to be judged against.
 
 **Open follow-ups inside the plan:**
 
-- Add the stored plan decisions (adjust rate, reason length, cause named) to
-  the Sunday report. Promised, not yet built. *in progress*
+- ~~Add the stored plan decisions to the Sunday report.~~ Shipped 16 Sep
+  (#257): a Decisions section with the adjust rate, the cause rate and the
+  most-adjusted lifts, plus the programme shadow as a table
+  (`programme_shadow`, migration 008) instead of a Railway log line.
 - **Decisions agreed in chat must not sit in this file as homework.** Two
   emphasis commands were agreed on 12 Sep, written here for the athlete to
   send, and the next block opened without them. The command now supersedes a

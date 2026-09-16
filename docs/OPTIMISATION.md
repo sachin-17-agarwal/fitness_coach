@@ -18,8 +18,12 @@ not judged.
 
 1. **Audit rule-break rate** (`reports/` from `.github/workflows/audit.yml`).
    Must not rise over a block.
-2. **Stored plan decisions** (`prescription_decisions`): adjust rate, reason
-   length, and whether reasons name a cause. Compared block over block.
+2. **Stored plan decisions** (`prescription_decisions`): adjust rate and
+   whether reasons name a cause, printed in the Sunday report's Decisions
+   section since 16 Sep (#257), with the programme shadow — replies outside
+   the contract whose numbers the programme would have replaced — recorded
+   to `programme_shadow` and counted beside it. The substitution flag is
+   judged on these two numbers, not on a log.
 3. **Regression tests** that assert the prompt still carries specific rules.
 4. **Model call costs** (`model_calls`, reported weekly to
    `reports/model_calls.md`): seconds, tokens, cache hit rate per call kind.
