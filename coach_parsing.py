@@ -837,8 +837,9 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
     inert on a mid-exercise re-send and takes effect on the first prescription of
     an exercise, which is where the count is actually set.
 
-    Blocks carrying a `Revised:` line are never touched: that marker is the
-    coach saying the structure is deliberate.
+    Blocks carrying a `Revised:` line are never trimmed: that marker is the
+    coach saying the numbers are deliberate. Their under-count is still filled
+    unless the revision names a cause (see the loop below).
     """
     pairs, _total = parse_session_template(prompt, session_type)
     expected = {_normalise_exercise(name): count for name, count in pairs}
@@ -862,8 +863,19 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
     for block in blocks:
         span = range(block["start"] + 1, block["end"])
         body = [lines[i] for i in span]
-        if any(l.strip().lower().startswith(("revised:", "revision:")) for l in body):
+        # A `Revised:` block is the coach saying the numbers are deliberate,
+        # so its surplus is never trimmed. It is NOT a licence to owe fewer
+        # sets. On a deload Pull the coach revised the Hammer Curl by load
+        # and re-sent one back-off against a template of two; this exemption
+        # let it through, the app took the revised block verbatim, the card
+        # read complete after the first back-off, and the second was never
+        # done. A revision that drops a set for a stated CAUSE — pain, the
+        # joint, the machine, the clock — is coaching and stands; one that
+        # merely re-sends the next set is padded like any other block.
+        revision = next((l for l in body if l.strip().lower().startswith(("revised:", "revision:"))), None)
+        if revision is not None and _revision_names_a_cause(revision):
             continue
+        trim_allowed = revision is None
 
         key = _normalise_exercise(block["name"])
         target = expected.get(key)
@@ -891,7 +903,7 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
                 continue
             if limits[phase] < 1:
                 continue
-            trimmed, dropped = _trim_set_line(lines[i], limits[phase])
+            trimmed, dropped = _trim_set_line(lines[i], limits[phase]) if trim_allowed else (lines[i], 0)
             if dropped:
                 lines[i] = trimmed
                 corrections.append({
@@ -921,6 +933,24 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
                 })
 
     return ("\n".join(lines), corrections) if corrections else (reply, [])
+
+
+# What can justify owing FEWER SETS. Narrower than the plan contract's cause
+# vocabulary for a load cut: a deload or a poor recovery read changes the
+# load and the RPE, never the count ("Deload weeks follow the same structure
+# ... keep the set count"), so neither appears here. Pain, the joint, the
+# equipment, the clock and illness do.
+_SET_DROP_CAUSE_RE = re.compile(
+    r"pain|hurt|injur|sore|tight|niggl|tweak|strain|cramp|spasm|elbow|shoulder|knee|wrist|back\b|"
+    r"machine|equipment|cable|stack|available|busy|occupied|taken|broken|"
+    r"time|late|minutes|clock|closing|sick|ill\b|unwell|nausea|dizzy",
+    re.IGNORECASE)
+
+
+def _revision_names_a_cause(line: str) -> bool:
+    """Whether a `Revised:` line carries a cause that can justify owing fewer
+    sets. A deload is not one: it lowers load and RPE and keeps the count."""
+    return bool(_SET_DROP_CAUSE_RE.search(line.partition(":")[2]))
 
 
 def _count_sets_on_line(line: str) -> int:

@@ -5199,3 +5199,55 @@ class OnPaperVolumeMatchesTheTemplatesTests(unittest.TestCase):
         self.assertNotIn("hamstrings 6.8", prompt)
         self.assertNotIn("calves 4.5", prompt)
         self.assertNotIn("HAMSTRINGS (6.8", prompt)
+
+
+
+class RevisedBlockStillOwesItsSetsTests(unittest.TestCase):
+    """On a deload Pull the coach revised the Hammer Curl by load and re-sent
+    one back-off against a template of two. `Revised:` blocks were exempt from
+    the set-count enforcement, the app applies a revised block verbatim, the
+    card read complete after the first back-off, and the second was skipped.
+    A revision changes numbers; it does not shrink what is owed unless it
+    names a cause."""
+
+    def setUp(self):
+        self.prompt = open("system_prompt.txt", encoding="utf-8").read()
+
+    def test_a_revision_without_a_cause_is_padded_to_the_template(self):
+        from coach_parsing import enforce_set_counts
+        text = ("Deload.\n\n*Hammer Curl*\nRevised: deload by load, holding week 3 reps\n"
+                "Working Set: 20kg x10 RPE7 | Tempo: 2-1-2 | Rest: 90s\nBack-off: 16kg x12 RPE6\nForm: pinned")
+        fixed, changes = enforce_set_counts(text, self.prompt, "Pull")
+        self.assertEqual(changes, [{"exercise": "Hammer Curl", "phase": "backoff", "dropped": 0, "added": 1, "target": 3}])
+        self.assertIn("Back-off: 16kg x12 RPE6, 16kg x12 RPE6", fixed)
+        self.assertIn("Revised: deload by load", fixed)
+
+    def test_a_revision_naming_a_cause_may_owe_fewer_sets(self):
+        from coach_parsing import enforce_set_counts
+        text = ("*Hammer Curl*\nRevised: elbow pain on the second back-off last time, one back-off today\n"
+                "Working Set: 20kg x10 RPE7 | Tempo: 2-1-2 | Rest: 90s\nBack-off: 16kg x12 RPE6\nForm: pinned")
+        fixed, changes = enforce_set_counts(text, self.prompt, "Pull")
+        self.assertEqual(changes, [])
+        self.assertEqual(fixed, text)
+
+    def test_a_revision_is_still_never_trimmed(self):
+        from coach_parsing import enforce_set_counts
+        text = ("*Reverse Cable Fly*\nRevised: a third set today, rear delts named this block\n"
+                "Working Set: 10kg x15, 10kg x15, 10kg x15 RPE8 | Tempo: 2-1-2 | Rest: 90s\nForm: lead with the pinkies")
+        fixed, changes = enforce_set_counts(text, self.prompt, "Pull")
+        self.assertEqual(changes, [])
+        self.assertEqual(fixed, text)
+
+    def test_an_ordinary_block_is_still_trimmed(self):
+        from coach_parsing import enforce_set_counts
+        text = ("*Cable Crunch*\nWorking Set: 90kg x12, 90kg x12, 90kg x12, 90kg x12 RPE8 | Tempo: 2-1-2 | Rest: 90s\nForm: ribs to hips")
+        _fixed, changes = enforce_set_counts(text, self.prompt, "Cardio+Abs")
+        self.assertEqual(changes[0]["dropped"], 1)
+
+    def test_a_deload_is_not_a_reason_to_owe_fewer_sets(self):
+        from coach_parsing import _revision_names_a_cause
+        self.assertFalse(_revision_names_a_cause("Revised: deload by load, week 4"))
+        self.assertFalse(_revision_names_a_cause("Revised: HRV low this morning, easing off"))
+        self.assertTrue(_revision_names_a_cause("Revised: elbow pain on the last back-off"))
+        self.assertTrue(_revision_names_a_cause("Revised: machine taken, one back-off on the dumbbells"))
+        self.assertTrue(_revision_names_a_cause("Revised: out of time, gym closing"))

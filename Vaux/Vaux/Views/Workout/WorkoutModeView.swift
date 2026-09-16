@@ -630,9 +630,12 @@ struct WorkoutModeView: View {
         guard let rx = viewModel.currentPrescription else { return viewModel.currentPhase.rawValue }
         let i = viewModel.phaseSetIndex + 1
         switch viewModel.currentPhase {
-        case .warmup: return "Warm-up \(i) of \(max(rx.warmupSets.count, i))"
-        case .working: return "Working set \(i) of \(max(rx.workingSets.count, i))"
-        case .backoff: return "Back-off \(i) of \(max(rx.backoffSets.count, i))"
+        // Past the plan's last set the label used to pad the total to the
+        // index ("back-off 3 of 3" on a plan of one), which read as if the plan
+        // had grown. Say what is true: this set is beyond the plan.
+        case .warmup: return i > rx.warmupSets.count ? "Extra warm-up · plan had \(rx.warmupSets.count)" : "Warm-up \(i) of \(rx.warmupSets.count)"
+        case .working: return i > rx.workingSets.count ? "Extra working set · plan had \(rx.workingSets.count)" : "Working set \(i) of \(rx.workingSets.count)"
+        case .backoff: return i > rx.backoffSets.count ? "Extra back-off · plan had \(rx.backoffSets.count)" : "Back-off \(i) of \(rx.backoffSets.count)"
         }
     }
 
