@@ -14,7 +14,7 @@ Anything that changes what the coach says goes behind a gate in
 ## Calendar
 
 Status on the evening of Wednesday 16 September. The deload week was used
-to ship the queue early; migrations 006 and 007 have been run.
+to ship the queue early; migrations 006, 007 and 008 have been run.
 
 **Shipped 16 Sep**
 
@@ -36,7 +36,7 @@ to ship the queue early; migrations 006 and 007 have been run.
 |---|---|---|
 | Thu 17 Sep | Verify on the phone: START opening on Push or Pull, HELD row, export, reference line, logger label · read the first `text`/`thinking` split after the opening | a build; screenshots |
 | Fri 18 Sep | Item 4: raise the context fetch ceiling, log per-query timings | — |
-| Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate for 2.1(b), first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate | the band decision |
+| Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate and its four buckets, first shadow rows, first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate · 2.11 bodyweight progression if the shadow confirms it | the band decision |
 | Mon 21 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes) |
 | Tue 23 Sep | 2.9 widget mockups | pick one of two |
 | Week of 28 Sep | 2.9 widget build · design for decisions captured when reached (item 3) · block review: read the dry run when it lands, answer it, compare | read the review the morning it appears |
@@ -44,21 +44,6 @@ to ship the queue early; migrations 006 and 007 have been run.
 | After | 2.5 goes live (dry_run off) once the first review has been compared · 2.8 watch, timer stage first | mockups approval |
 
 Two days of slack remain; an item that overruns takes the next slot.
-
----|---|---|
-| ~~Thu 17 Sep~~ shipped Wed 16 Sep | ~~2.1(a) output measurement · 2.3 overshoot step~~ | run migration 006 (report shows `?` until then) |
-| ~~Fri 18 Sep~~ shipped Wed 16 Sep | ~~2.2 HELD state (app)~~ | a build; screenshot of the Shoulders row; the shoulder-press decision in chat |
-| ~~Sat 19 – Sun 20 Sep~~ shipped Wed 16 Sep | ~~2.1(b) backend~~ (#252) · raise the context fetch ceiling and log per-query timings (item 4) · read the 20 Sep report for Stage 5 | — |
-| ~~Mon 21 – Tue 22 Sep~~ shipped Wed 16 Sep | ~~2.1(b) app~~ (#253) | a build; try it on Push and Pull |
-| Wed 23 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes, steps below) |
-| ~~Thu 24 Sep~~ shipped Wed 16 Sep | ~~2.7 export~~ (#254) | a build; export once and open the CSV |
-| Fri 25 Sep | 2.9 widget mockups | pick one of two mockups |
-| Week of 28 Sep | 2.9 widget build · ~~2.5 fact sheet and dry-run plumbing~~ (shipped 16 Sep, #255; needs migration 007) · design for decisions captured when reached (item 3) | run migration 007 |
-| Week of 5 Oct | 2.5 dry run on the block ending then · review 2.1(c) geofence (two weeks after 2.1(b) ships) | read the dry-run review, say what you would have decided |
-| After | 2.8 watch, timer stage first | mockups approval |
-
-Two days of slack are built in: an item that overruns takes the next slot
-and everything shifts; nothing is skipped to hold a date.
 
 ---
 

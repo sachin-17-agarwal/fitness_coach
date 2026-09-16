@@ -124,8 +124,8 @@ even discussed:
    range (add load, then reps; or tempo/range). The coach has been doing
    this by hand. *proposed as 2.11: bodyweight progression in prescribe.py.*
 
-The programme shadow is recorded from tonight (migration 008 pending) and
-will appear in the 20 Sep report.
+Migration 008 run 16 Sep: the programme shadow records from the next coach
+reply and appears in the 20 Sep report.
 
 ### 1.2 Shipped this week, confirm on the phone
 
