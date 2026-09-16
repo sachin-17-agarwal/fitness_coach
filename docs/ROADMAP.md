@@ -342,9 +342,15 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   card, a changed exercise carries "Coach changed 80kg → 75kg · HRV below
   baseline"; a failed review leaves the programme standing. *verify on
   Push and Pull.* **2.1(c) geofence review date: 30 Sep.**
-- **Approved, 15 Sep.** 2.5 block review, delivered the morning after the
-  block's last session on a rest day via Home and coach chat, never
-  straight after a workout; dry run for the first block.
+- **Approved 15 Sep, shipped 16 Sep (#255) as a DRY RUN.** 2.5 block review:
+  the first morning after a block rolls over, the briefing carries the
+  review — strength peak week against peak week, volume against bands,
+  recovery against the 42 days before, the departures on record — with up
+  to three proposals in the recordable grammar. "block review" in chat
+  writes one on demand (never mid-session). "yes to 1 and 3" answers it;
+  this block nothing is recorded and the answer is kept for comparison.
+  Needs migration 007. Every number is computed; a narrative citing a
+  number the sheet lacks is rejected.
 - **Approved 14 Sep, shipped 15 Sep (#239).** 2.6 Weekly recovery digest:
   a Monday/Tuesday card under the Home ledger, up to three sentences from
   the log (HRV against the 42-day band, short nights by name and the hours

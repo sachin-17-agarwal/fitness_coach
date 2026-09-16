@@ -252,12 +252,27 @@ def api_briefing():
         except (TypeError, ValueError):
             return default
 
+    # The block review lands here, the first morning after a block rolls
+    # over, ahead of the briefing: a rest morning, never inside or straight
+    # after a session. Prepared once; answered in chat.
+    review_text = None
+    try:
+        from block_review import prepare_if_due, render_review  # local: keeps import order flat
+        from coach import get_anthropic_client
+        row = prepare_if_due(memory, load_system_prompt_for_review(), get_anthropic_client())
+        if row:
+            review_text = render_review(row)
+    except Exception:
+        traceback.print_exc()
+
     result = {
-        "response": response,
+        "response": (f"BLOCK REVIEW\n\n{review_text}\n\n———\n\n{response}" if review_text else response),
         "mesocycle_day": _int_or_default(memory.get("mesocycle_day"), 1),
         "mesocycle_week": _int_or_default(memory.get("mesocycle_week"), 1),
         "style": style,
     }
+    if review_text:
+        result["block_review"] = review_text
     if prs:
         result["prs"] = prs
     return jsonify(result)
@@ -330,6 +345,26 @@ def api_chat():
         result["prs"] = prs
 
     return jsonify(result)
+
+def load_system_prompt_for_review() -> str:
+    from coach import load_system_prompt  # local: keeps import order flat
+    return load_system_prompt()
+
+
+@app.route("/api/block-review", methods=["GET"])
+def api_block_review():
+    """The latest block review as the athlete reads it, with its status, so
+    the app can show it on Home until it is answered."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    from block_review import latest_block_review, render_review  # local: keeps import order flat
+    row = latest_block_review()
+    if not row:
+        return jsonify({"status": "none"})
+    return jsonify({"status": row.get("status"), "block_start": str(row.get("block_start")),
+                    "dry_run": bool(row.get("dry_run")), "text": render_review(row),
+                    "proposals": row.get("proposals_list") or []})
+
 
 def _app_authorised() -> bool:
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
