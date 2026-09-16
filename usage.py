@@ -278,6 +278,146 @@ def format_report(summary: dict, days: int, since: str, cost: dict | None = None
     return "\n".join(lines)
 
 
+# ── The shadow, read from tables ────────────────────────────────────────────
+#
+# "How often does the coach depart from the programme, and does it say why"
+# has had a table answering it since the plan contract: prescription_decisions
+# stores every exercise of every opening as accept or adjust with its reason.
+# The older programme shadow — what the programme would have prescribed
+# against what the coach sent, on every reply — was a Railway log line nobody
+# read; record_shadow writes it as a row. Both are aggregated here so the
+# substitution flag is judged on numbers.
+
+# Rows in prescription_decisions that are not the coach's decisions.
+_NOT_A_DECISION_PREFIXES = ("Weak-point: ", "Emphasis-next: ")
+_PROGRAMME_REASON_PREFIX = "programme — coach reviewing"
+
+
+def record_shadow(date: str, session_type: str | None, week, kind: str, exercise: str,
+                  sent: dict, computed: dict) -> None:
+    """Best-effort: one row per exercise the programme would have changed."""
+    try:
+        import json
+        from data import get_supabase  # local: keeps import order flat
+        supabase = get_supabase()
+        if not supabase:
+            return
+        supabase.table("programme_shadow").insert({
+            "date": date, "session_type": session_type,
+            "mesocycle_week": int(week) if str(week).isdigit() else None,
+            "kind": kind, "exercise": exercise,
+            "sent": json.dumps({"working": sent.get("working"), "backoff": sent.get("backoff")}),
+            "computed": json.dumps({"working": computed.get("working"), "backoff": computed.get("backoff")}),
+        }).execute()
+    except Exception:
+        log.warning("programme_shadow write failed (%s)", exercise, exc_info=True)
+
+
+def is_coach_decision(row: dict) -> bool:
+    ex = row.get("exercise") or ""
+    reason = row.get("reason") or ""
+    return not ex.startswith(_NOT_A_DECISION_PREFIXES) and not reason.startswith(_PROGRAMME_REASON_PREFIX)
+
+
+def summarise_decisions(rows: list[dict]) -> dict:
+    """Per opening: exercises decided, adjusts, adjusts that name a cause, the
+    lifts most often adjusted with a sample reason each."""
+    from plan import _CAUSE_RE  # local: keeps import order flat
+    rows = [r for r in rows if is_coach_decision(r)]
+    sessions = {(r.get("date"), r.get("session_type")) for r in rows}
+    adjusts = [r for r in rows if (r.get("decision") or "") == "adjust"]
+    with_cause = [r for r in adjusts if _CAUSE_RE.search(r.get("reason") or "")]
+    by_lift: dict = {}
+    for r in adjusts:
+        entry = by_lift.setdefault(r.get("exercise") or "?", {"count": 0, "reasons": []})
+        entry["count"] += 1
+        if len(entry["reasons"]) < 2 and r.get("reason"):
+            entry["reasons"].append((r.get("reason") or "")[:90])
+    top = sorted(by_lift.items(), key=lambda kv: (-kv[1]["count"], kv[0]))[:5]
+    return {
+        "sessions": len(sessions),
+        "exercises": len(rows),
+        "adjusts": len(adjusts),
+        "adjust_rate": (len(adjusts) / len(rows)) if rows else 0.0,
+        "cause_rate": (len(with_cause) / len(adjusts)) if adjusts else None,
+        "top_adjusted": [{"exercise": k, **v} for k, v in top],
+    }
+
+
+def summarise_shadow(rows: list[dict]) -> dict:
+    """Per reply kind: how many exercises the programme would have changed,
+    and which most often."""
+    by_kind: dict = {}
+    by_lift: dict = {}
+    for r in rows:
+        by_kind[r.get("kind") or "?"] = by_kind.get(r.get("kind") or "?", 0) + 1
+        by_lift[r.get("exercise") or "?"] = by_lift.get(r.get("exercise") or "?", 0) + 1
+    top = sorted(by_lift.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    return {"total": len(rows), "by_kind": by_kind, "top": top,
+            "days": len({r.get("date") for r in rows})}
+
+
+def format_decisions(d: dict, shadow: dict | None, days: int) -> str:
+    lines = ["", "## Decisions — the coach against the programme", ""]
+    if not d["exercises"]:
+        lines.append("No opening decisions recorded in the window.")
+    else:
+        cause = "—" if d["cause_rate"] is None else f"{d['cause_rate']:.0%}"
+        lines.append(f"Over {d['sessions']} openings the coach decided {d['exercises']} exercises and adjusted "
+                     f"**{d['adjusts']}** of them (**{d['adjust_rate']:.0%}**); of the adjusts, **{cause}** named a "
+                     f"cause (recovery reading, joint, machine, time). The rest took the programme's numbers.")
+        if d["top_adjusted"]:
+            lines += ["", "| lift | adjusted | reasons |", "|---|---:|---|"]
+            for t in d["top_adjusted"]:
+                lines.append(f"| {t['exercise']} | {t['count']} | {' · '.join(t['reasons']) or '—'} |")
+    lines += ["", "### Programme shadow — replies the programme would have changed", ""]
+    if shadow is None:
+        lines.append("Not recorded yet (migration 008).")
+    elif not shadow["total"]:
+        lines.append(f"None in {days} days: every block the coach sent matched what the programme computed, "
+                     f"or the difference was already an adjust with its reason.")
+    else:
+        kinds = ", ".join(f"{k} {v}" for k, v in sorted(shadow["by_kind"].items()))
+        lines.append(f"**{shadow['total']}** exercise blocks on {shadow['days']} days differed from the programme's "
+                     f"computation ({kinds}). Most often: " + ", ".join(f"{n} ×{c}" for n, c in shadow["top"]) + ".")
+    lines += ["", "Reading it: the adjust rate is how often the coach departs from the programme at the "
+              "opening; the cause rate is whether it says why. The shadow counts replies outside the plan "
+              "contract — prose and set replies — whose numbers the programme would have replaced. The "
+              "substitution flag stays off while the adjust rate is low and the cause rate high; a rising "
+              "shadow count on prose replies is the case for turning it on."]
+    return "\n".join(lines)
+
+
+def fetch_decisions(days: int) -> list[dict]:
+    from data import get_supabase  # local: keeps import order flat
+    supabase = get_supabase()
+    if not supabase:
+        return []
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    try:
+        return (supabase.table("prescription_decisions")
+                .select("date, session_type, exercise, decision, reason")
+                .gte("date", since).order("date").order("id").range(0, 4999).execute()).data or []
+    except Exception as exc:
+        log.warning("prescription_decisions could not be read: %s", exc)
+        return []
+
+
+def fetch_shadow(days: int) -> list[dict] | None:
+    """None when the table does not exist yet (migration 008), [] when empty."""
+    from data import get_supabase  # local: keeps import order flat
+    supabase = get_supabase()
+    if not supabase:
+        return None
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    try:
+        return (supabase.table("programme_shadow").select("date, kind, exercise")
+                .gte("date", since).order("date").range(0, 4999).execute()).data or []
+    except Exception as exc:
+        log.warning("programme_shadow could not be read: %s", exc)
+        return None
+
+
 def fetch_rows(days: int) -> list[dict]:
     """Rows from model_calls. A missing table — migration 003 not yet run —
     reads as no calls, so the report says what to do instead of the job
@@ -317,6 +457,10 @@ def main() -> None:
     rows = fetch_rows(args.report)
     since = (datetime.now(timezone.utc) - timedelta(days=args.report)).strftime("%Y-%m-%d")
     text = format_report(summarise(rows), args.report, since, cost_summary(rows, args.report))
+    shadow_rows = fetch_shadow(args.report)
+    text += "\n" + format_decisions(summarise_decisions(fetch_decisions(args.report)),
+                                     None if shadow_rows is None else summarise_shadow(shadow_rows),
+                                     args.report)
     print(text)
     if args.out:
         import os

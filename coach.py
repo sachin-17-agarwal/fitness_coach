@@ -297,6 +297,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # always gets an answer.
     assistant_message = None
     response = None
+    reply_kind = "prose"   # which path produced the reply, for the shadow row
     if plan_request and get_settings().plan_contract:
         try:
             from plan import render_plan, request_session_plan, save_decisions
@@ -315,6 +316,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 log.info("PLAN CONTRACT (%s): %s", today_type, note)
             if plan is not None:
                 assistant_message = render_plan(plan, programme_out.get("computed") or {})
+                reply_kind = "plan"
                 try:
                     session_id = (get_workout_state() or {}).get("current_session_id") or None
                 except Exception:
@@ -348,6 +350,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     log.info("SET CONTRACT (%s): %s", exercise, note)
                 if reply is not None:
                     assistant_message = render_set_reply(reply, exercise, stored, done)
+                    reply_kind = "set_reply"
             else:
                 log.info("SET CONTRACT: no stored plan for %r today; prose reply", exercise)
         except Exception:
@@ -465,6 +468,11 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                         name, a.get("working"), a.get("backoff"),
                         b.get("working"), b.get("backoff"),
                     )
+                    # A row, not only a log line: the Sunday report aggregates
+                    # these so the substitution flag is judged on numbers.
+                    from usage import record_shadow  # local: keeps import order flat
+                    record_shadow(now_local().strftime("%Y-%m-%d"), programme_out.get("session_type"),
+                                  programme_out.get("week"), reply_kind, name, a, b)
             for name in programme_out.get("open") or []:
                 log.info("PROGRAMME SHADOW: %s left to the coach (no computed answer)", name)
     except Exception:
