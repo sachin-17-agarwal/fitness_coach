@@ -360,3 +360,56 @@ class MesocycleWeekReconstructionTests(unittest.TestCase):
         types = ["Pull", "Push", "Legs", "Cardio+Abs"] * 4
         weeks = infer_session_weeks(types, next_week=1, next_day=1)
         self.assertEqual(weeks, [1]*4 + [2]*4 + [3]*4 + [4]*4)
+
+
+
+class OvershootStepTests(unittest.TestCase):
+    """:205 sized to the miss. One increment is 1kg on an isolation, so 110 x 16
+    on an 8-12 range proposed 111 next: a block's worth of progression creeping
+    back a kilo a session. From three reps over, the step is read off the set."""
+
+    def _top(self, load, reps, kind, week, rpe=8.0):
+        from prescribe import next_top_set, PriorSet
+        reasons, deferred = [], []
+        spec = next_top_set("Seated Leg Curl" if kind == ISOLATION else "Leg Press", kind, week,
+                            PriorSet(load, reps, rpe, week=3 if week == 1 else week - 1), reasons, deferred)
+        return spec, " ".join(reasons)
+
+    def test_four_over_is_sized_from_the_set_and_capped_at_ten_percent(self):
+        from prescribe import TOP_SET_RANGE
+        low, high = TOP_SET_RANGE[ISOLATION]
+        spec, why = self._top(110.0, high + 4, ISOLATION, 3)
+        # Epley 110 x 16 = 168.7; mid-range reps sit near 126.5; +10% caps at 121.
+        self.assertEqual(spec.weight_kg, 121.0)
+        self.assertIn("capped at +10%", why)
+        self.assertIn("(:205)", why)
+
+    def test_three_over_inside_the_cap_lands_at_the_mid_range_load(self):
+        from prescribe import TOP_SET_RANGE
+        low, high = TOP_SET_RANGE[ISOLATION]
+        spec, why = self._top(100.0, high + 3, ISOLATION, 3)
+        # 100 x 15 -> e1RM 150 -> 10 reps near 112.5; +10% cap = 110.
+        self.assertEqual(spec.weight_kg, 110.0)
+
+    def test_one_or_two_over_keeps_the_single_increment(self):
+        from prescribe import TOP_SET_RANGE, INCREMENT
+        low, high = TOP_SET_RANGE[ISOLATION]
+        spec, why = self._top(100.0, high + 1, ISOLATION, 3)
+        self.assertEqual(spec.weight_kg, 100.0 + INCREMENT[ISOLATION])
+        spec, why = self._top(100.0, high + 2, ISOLATION, 3)
+        self.assertEqual(spec.weight_kg, 100.0 + INCREMENT[ISOLATION])
+        self.assertNotIn("sized to the miss", why)
+
+    def test_week_two_and_week_one_openings_use_the_sized_step_too(self):
+        from prescribe import TOP_SET_RANGE
+        low, high = TOP_SET_RANGE[ISOLATION]
+        for week in (1, 2):
+            spec, why = self._top(110.0, high + 4, ISOLATION, week)
+            self.assertEqual(spec.weight_kg, 121.0, f"week {week}")
+            self.assertIn("sized to the miss", why)
+
+    def test_a_compound_never_steps_below_its_own_increment(self):
+        from prescribe import TOP_SET_RANGE, INCREMENT
+        low, high = TOP_SET_RANGE[COMPOUND]
+        spec, why = self._top(20.0, high + 3, COMPOUND, 3)
+        self.assertGreaterEqual(spec.weight_kg, 20.0 + INCREMENT[COMPOUND])

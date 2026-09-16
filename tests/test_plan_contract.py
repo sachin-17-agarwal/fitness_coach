@@ -1144,6 +1144,51 @@ class UsageRecordTests(unittest.TestCase):
         self.assertIn("| plan | 2 | 1 | 0 |", text)
         self.assertIn("docs/OPTIMISATION.md", text)
 
+    def test_visible_text_is_recorded_and_split_from_thinking_in_the_report(self):
+        from usage import visible_chars, summarise, format_report
+        class B:
+            def __init__(self, t, text=""): self.type, self.text = t, text
+        class R:
+            content = [B("thinking"), B("text", "x" * 4000), B("text", "y" * 400)]
+        self.assertEqual(visible_chars(R()), 4400)
+        self.assertIsNone(visible_chars(object()))
+        rows = [{"kind": "plan", "attempt": 1, "ok": True, "seconds": 80.0, "output_tokens": 7800, "visible_chars": 6000},
+                {"kind": "plan", "attempt": 1, "ok": True, "seconds": 70.0, "output_tokens": 7000, "visible_chars": 6000},
+                {"kind": "prose", "attempt": 1, "ok": True, "seconds": 3.0, "output_tokens": 200}]
+        s = summarise(rows)
+        self.assertAlmostEqual(s["plan"]["text_median"], 1500.0)
+        self.assertAlmostEqual(s["plan"]["thinking_median"], 7400 - 1500)
+        self.assertIsNone(s["prose"]["text_median"])
+        text = format_report(s, 14, "2026-09-01")
+        self.assertIn("| plan | 2 | 0 | 0 |", text)
+        self.assertIn("| 1500 | 5900 |", text)
+        self.assertIn("| ? | ? |", text)
+
+    def test_a_missing_visible_chars_column_costs_only_that_field(self):
+        """Before migration 006 the insert must still land."""
+        from usage import record_call
+        attempts = []
+        class Table:
+            def insert(self, row):
+                attempts.append(dict(row))
+                class X:
+                    def execute(inner):
+                        if "visible_chars" in row:
+                            raise RuntimeError("column visible_chars does not exist")
+                return X()
+        class SB:
+            def table(self, name): return Table()
+        class B:
+            type, text = "text", "hello"
+        class R:
+            content = [B()]
+            usage = None
+        with patch("data.get_supabase", return_value=SB()):
+            record_call("prose", 1.0, R())
+        self.assertEqual(len(attempts), 2)
+        self.assertIn("visible_chars", attempts[0])
+        self.assertNotIn("visible_chars", attempts[1])
+
     def test_every_row_is_priced_from_the_dated_rate_table(self):
         from usage import cost_usd, RATES, rates_for
         # The opening measured on 14 Sep: 6,926 in, 7,832 out, ~28k written to

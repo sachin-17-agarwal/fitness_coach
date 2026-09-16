@@ -85,6 +85,20 @@ number to be judged against.
   Seated Leg Curl, two back-offs at different loads). One is noise; a second
   this block is a pattern to chase. *watching*
 
+### 1.1b Surfaced 15–16 Sep, decided 16 Sep
+
+1. **Card reference line** ("LAST BLOCK · WK 3"): hardcoded 21–35 day
+   window, labelled with today's week. Two ways to fix; explained in chat,
+   *decision pending*.
+2. **Band per calendar week or per rotation**: the template gives hamstrings
+   11.2/week only at 1.5 rotations a week; the log over a 13-day block with
+   two Legs days gives ~8.1. Recommendation given in chat, *decision pending*.
+3. **Decisions captured when reached**: the coach offers to record a
+   decision at the moment it is agreed, instead of the plan carrying a to-do
+   list. *Approved 16 Sep*; designed with 2.5.
+4. **Context fetch ceiling**: the ten-second per-query limit that turned a
+   slow read into "no history". *Approved 16 Sep*; folded into 2.1(b).
+
 ### 1.2 Shipped this week, confirm on the phone
 
 - Set counts: a `Revised:` block is no longer a licence to owe fewer sets.

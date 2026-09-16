@@ -77,9 +77,25 @@ def usage_fields(response) -> dict:
     }
 
 
+def visible_chars(response) -> int | None:
+    """Length of the text the athlete actually received — every text block,
+    thinking excluded. None when the response carries no content list."""
+    content = getattr(response, "content", None)
+    if not isinstance(content, (list, tuple)):
+        return None
+    return sum(len(getattr(b, "text", "") or "") for b in content if getattr(b, "type", "") == "text")
+
+
+CHARS_PER_TOKEN = 4.0
+
+
 def record_call(kind: str, seconds: float, response=None, attempt: int = 1,
                 ok: bool = True, note: str = "", model: str | None = None) -> None:
-    """Best-effort: one row in model_calls. Never raises."""
+    """Best-effort: one row in model_calls. Never raises.
+
+    `visible_chars` is written when migration 006 has run; before that the
+    insert is retried without it, so a missing column costs nothing but the
+    one field."""
     try:
         from data import get_supabase  # local: keeps import order flat
         supabase = get_supabase()
@@ -88,7 +104,17 @@ def record_call(kind: str, seconds: float, response=None, attempt: int = 1,
         row = {"kind": kind, "attempt": attempt, "ok": ok, "seconds": round(float(seconds), 2),
                "note": (note or "")[:500], "model": model}
         row.update(usage_fields(response))
-        supabase.table("model_calls").insert(row).execute()
+        vis = visible_chars(response)
+        if vis is not None:
+            row["visible_chars"] = vis
+        try:
+            supabase.table("model_calls").insert(row).execute()
+        except Exception:
+            if "visible_chars" not in row:
+                raise
+            row.pop("visible_chars")
+            log.info("model_calls has no visible_chars column yet (migration 006); recorded without it")
+            supabase.table("model_calls").insert(row).execute()
     except Exception:
         log.warning("model_calls write failed (%s)", kind, exc_info=True)
 
@@ -114,6 +140,15 @@ def summarise(rows: list[dict]) -> dict:
         cached = [int(r.get("cache_read_tokens") or 0) for r in rs]
         outp = [int(r.get("output_tokens") or 0) for r in rs]
         total_in = sum(inp) + sum(cached)
+        # Text the athlete saw, as tokens, and thinking as the remainder.
+        # Rows from before migration 006 have no visible_chars and are left
+        # out of both, so the two medians describe the same calls.
+        vis_tokens = [int(r["visible_chars"]) / CHARS_PER_TOKEN for r in rs
+                      if r.get("visible_chars") is not None]
+        vis_out = [int(r.get("output_tokens") or 0) for r in rs if r.get("visible_chars") is not None]
+        text_median = statistics.median(vis_tokens) if vis_tokens else None
+        thinking_median = (max(0.0, statistics.median(vis_out) - text_median)
+                           if vis_tokens else None)
         costs = [cost_usd(r) for r in rs]
         priced = [c for c in costs if c is not None]
         out[kind] = {
@@ -129,6 +164,8 @@ def summarise(rows: list[dict]) -> dict:
             "in_median": statistics.median(inp) if inp else 0,
             "cached_median": statistics.median(cached) if cached else 0,
             "out_median": statistics.median(outp) if outp else 0,
+            "text_median": text_median,
+            "thinking_median": thinking_median,
             "cache_hit": (sum(cached) / total_in) if total_in else 0.0,
         }
     return out
@@ -195,15 +232,19 @@ def format_report(summary: dict, days: int, since: str, cost: dict | None = None
     if not summary:
         lines.append("No calls recorded. Has migration 003 been run, and has the backend deployed since?")
         return "\n".join(lines)
-    lines.append("| kind | calls | retries | failed | median s | p90 s | max s | in (med) | cached (med) | out (med) | cache hit |")
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append("| kind | calls | retries | failed | median s | p90 s | max s | in (med) | cached (med) | out (med) | text (med) | thinking (med) | cache hit |")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for kind, s in summary.items():
+        text_c = "?" if s.get("text_median") is None else f"{s['text_median']:.0f}"
+        think_c = "?" if s.get("thinking_median") is None else f"{s['thinking_median']:.0f}"
         lines.append(f"| {kind} | {s['calls']} | {s['retries']} | {s['failed']} | {s['sec_median']:.1f} | "
                      f"{s['sec_p90']:.1f} | {s['sec_max']:.1f} | {s['in_median']:.0f} | {s['cached_median']:.0f} | "
-                     f"{s['out_median']:.0f} | {s['cache_hit']:.0%} |")
+                     f"{s['out_median']:.0f} | {text_c} | {think_c} | {s['cache_hit']:.0%} |")
     lines += ["",
               "Reading it: `in` is uncached input tokens per call, `cached` the tokens served from the "
-              "prompt cache, `out` the tokens the athlete waited on (thinking included). A low cache hit "
+              "prompt cache, `out` the tokens the athlete waited on (thinking included), `text` the part "
+              "of `out` the athlete actually received and `thinking` the rest (`?` until migration 006 "
+              "has rows). A low cache hit "
               "on a day with many calls means the stable block changed within the day. See "
               "docs/OPTIMISATION.md for the gates each stage must pass."]
 
