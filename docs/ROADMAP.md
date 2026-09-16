@@ -337,9 +337,12 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   2.4 Swift tests for the numbers; 2.7 export (backup part optional, to
   storage the athlete owns); 2.8 Apple Watch, staged, mockups first;
   2.9 stats widget, mockups first.
-- **Approved, 15 Sep.** 2.1(b) start on the programme, the coach catches
-  up. 2.1(c) gym geofence is to be reviewed two weeks after (b) ships, not
-  built now.
+- **Approved 15 Sep, shipped 16 Sep (#252 backend, #253 app).** 2.1(b) start
+  on the programme, the coach catches up: START shows the programme's card
+  at once under "PROGRAMME · COACH REVIEWING"; the review lands into the
+  card, a changed exercise carries "Coach changed 80kg → 75kg · HRV below
+  baseline"; a failed review leaves the programme standing. *verify on
+  Push and Pull.* **2.1(c) geofence review date: 30 Sep.**
 - **Approved, 15 Sep.** 2.5 block review, delivered the morning after the
   block's last session on a rest day via Home and coach chat, never
   straight after a workout; dry run for the first block.
