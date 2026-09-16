@@ -331,6 +331,49 @@ def api_chat():
 
     return jsonify(result)
 
+def _app_authorised() -> bool:
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    expected = get_settings().app_api_token
+    return bool(expected) and secrets.compare_digest(token, expected)
+
+
+@app.route("/api/session/open", methods=["POST"])
+def api_session_open():
+    """START pressed: the programme's card at once, the coach's review on a
+    thread. Body: {session_type, message, recovery?, session_id?}. Returns
+    {status: reviewing, response} or {status: unavailable} — the app then
+    opens through /api/chat as before."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json(force=True) or {}
+    session_type = (data.get("session_type") or "").strip()
+    message = (data.get("message") or "").strip()
+    if not session_type or not message:
+        return jsonify({"error": "session_type and message are required"}), 400
+    try:
+        from session_open import open_session  # local: keeps import order flat
+        memory = load_memory()
+        result = open_session(session_type, memory, message,
+                              recovery_override=_recovery_override_from(data),
+                              session_id=data.get("session_id"))
+        result["mesocycle_day"] = int(memory.get("mesocycle_day") or 1)
+        result["mesocycle_week"] = int(memory.get("mesocycle_week") or 1)
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "open_failed", "message": f"{type(e).__name__}: {e}"}), 502
+
+
+@app.route("/api/session/status", methods=["GET"])
+def api_session_status():
+    """What the review is doing: none | reviewing | reviewed (+response,
+    changes) | failed."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    from session_open import session_status  # local: keeps import order flat
+    return jsonify(session_status(load_memory()))
+
+
 # ── Prescription parser ──────────────────────────────────────────────────────
 #
 # The implementation now lives in coach_parsing so coach.py can reach it too —
