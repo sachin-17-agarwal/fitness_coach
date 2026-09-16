@@ -87,6 +87,16 @@ number to be judged against.
 
 ### 1.2 Shipped this week, confirm on the phone
 
+- Set counts: a `Revised:` block is no longer a licence to owe fewer sets.
+  On the 16 Sep deload Pull the coach revised the Hammer Curl by load and
+  re-sent one back-off against a template of two; the exemption let it
+  through, the card read complete after the first back-off, and the second
+  was skipped. Causeless revisions are now padded to the template; a
+  revision naming pain, the joint, the equipment or the clock still stands.
+  *shipped, backend*
+- Logger label past the plan's last set reads "Extra back-off · plan had 2"
+  instead of padding the total to the index ("3 of 3" on a plan of one).
+  *verify on the next build*
 - Strength: a week whose only set on a lift runs past 12 reps still counts
   as lifted, marked "EST. FROM N REPS" (#226). Hamstrings should read a PR
   after the 110 × 16 leg curl. *verify*
