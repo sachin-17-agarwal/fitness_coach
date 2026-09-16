@@ -94,9 +94,16 @@ number to be judged against.
    session on that lift, labelled by date* — the set progression works
    from, so card and coach agree by construction. Shipped; *verify on the
    next build*.
-2. **Band per calendar week or per rotation**: the template gives hamstrings
-   11.2/week only at 1.5 rotations a week; the log over a 13-day block with
-   two Legs days gives ~8.1. Recommendation given in chat, *decision pending*.
+2. **Band per calendar week or per rotation**: *settled from the exported
+   log on 17 Sep.* Legs has come round every 5.0 days since July (1.4 a
+   week). Over the block 2–16 Sep the log carries 22.5 hamstring sets — 12
+   Seated Leg Curl, 6 back extension, 4.5 from the presses — which is 10.5
+   a calendar week, inside 10–16. The coach's "3.3 under" was computed over
+   the previous block's window, before the back extension was in the
+   template. Every banded muscle sits inside its band at the measured 1.4
+   rate (hamstrings 10.5, calves 7.0, rear delts 8.4, triceps 10.5). The
+   band is judged per calendar week from the log, as now; the on-paper
+   table stays a reference and the WEEKLY VOLUME block is the number.
 3. **Decisions captured when reached**: the coach offers to record a
    decision at the moment it is agreed, instead of the plan carrying a to-do
    list. *Approved 16 Sep*; designed with 2.5.
@@ -110,12 +117,13 @@ number to be judged against.
 programme defects follow, both to fix before the substitution flag is
 even discussed:
 
-1. **Ab-work shape.** Seven adjusts say the proposal carried a
-   top-set/back-off structure for straight-set ab work. `render_block`
-   renders abs straight today, so either the coach is reading the older
-   PROGRAMME PROPOSAL text or the claim is stale; the next Cardio+Abs
-   opening's 2.1(b) diff shows exactly what the coach changed against the
-   programme card. *check on the next Cardio+Abs.*
+1. **Ab-work shape.** *Closed 17 Sep from the exported log.* All seven
+   shape adjusts are from 6 Sep, before the programme rendered ab work as
+   straight sets; on 15 Sep the coach ACCEPTED Cable Crunch, Pallof Press
+   and Hanging Leg Raises as three straight sets. Historical, fixed. The
+   6 Sep opening was also stored three times (a retried opening), which
+   alone lifted the adjust rate from 38% to 45%; the report now counts one
+   row per exercise per opening (#263).
 2. **Bodyweight and straight-set progression.** Ab Wheel Rollout stuck at
    bodyweight × 8 for seven sessions at RPE 6–7; Hanging Leg Raises held at
    +5 kg; Pallof Press three sessions at 40 kg with reps over the range. The
@@ -125,7 +133,20 @@ even discussed:
    this by hand. *proposed as 2.11: bodyweight progression in prescribe.py.*
 
 Migration 008 run 16 Sep: the programme shadow records from the next coach
-reply and appears in the 20 Sep report.
+reply and appears in the 20 Sep report. Deduplicated adjust rate over the
+same eight openings: 21 of 56 (38%): 8 cause, 5 progression, 3 shape, 5
+other.
+
+### 1.1d Data hygiene, seen in the export (17 Sep)
+
+- 35 days carry more than one session row; a Cardio+Abs day often has an
+  empty cardio-logger row beside the real one, and 6 Sep has three.
+- `status` is spelled both `complete` and `completed`; 10 sessions have a
+  blank type and 2 from April read `Unknown`.
+- None of it breaks a number today (the readers filter on sets, not
+  sessions), but `rotation_sessions` and the block calendar walk this list.
+  *Proposed as 2.12: one session row per type per day, one status word, a
+  backfill for the blanks.*
 
 ### 1.2 Shipped this week, confirm on the phone
 
@@ -373,7 +394,7 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   hero "1 HELD", shoulders row HELD; the decision itself was re-recorded
   after #261 so the 70 kg cap is on the row.
 - **Approved, 15 Sep.** 2.3 rep-overshoot step sizing (shipped #249);
-  2.4 Swift tests for the numbers; 2.7 export **(shipped 16 Sep, #254: Settings → Export, five CSVs via the share sheet; backup job not built)**; 2.8 Apple Watch, staged, mockups first;
+  2.4 Swift tests for the numbers; 2.7 export **(shipped 16 Sep, #254; verified 17 Sep — five CSVs came back and settled the hamstring question)**; 2.8 Apple Watch, staged, mockups first;
   2.9 stats widget, mockups first.
 - **Approved 15 Sep, shipped 16 Sep (#252 backend, #253 app).** 2.1(b) start
   on the programme, the coach catches up: START shows the programme's card
