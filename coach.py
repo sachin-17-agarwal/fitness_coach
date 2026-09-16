@@ -231,10 +231,15 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     recovery_override: dict | None = None,
                     plan_request: bool = False,
                     set_log_session: str | None = None,
-                    session_type: str | None = None) -> str:
+                    session_type: str | None = None,
+                    record_user_message: bool = True) -> str:
     """`session_type` is the session the app named when it opened — it
     outranks the rotation for this reply, so the plan is for the session on
-    the athlete's screen even when the backend's day counter has drifted."""
+    the athlete's screen even when the backend's day counter has drifted.
+
+    `record_user_message=False` is for session_open.review_session: the
+    opening message was already saved when the programme card went out, and
+    the history passed in already carries it."""
     system_prompt = load_system_prompt()
     programme_out: dict = {}
     stable_context, live_context = build_context_block(
@@ -268,8 +273,9 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         live_day += session_template
     blocks = system_blocks(system_prompt, stable_context, live_context, live_day, live_set)
 
-    conversation_history.append({"role": "user", "content": user_message})
-    save_conversation_message("user", user_message)
+    if record_user_message:
+        conversation_history.append({"role": "user", "content": user_message})
+        save_conversation_message("user", user_message)
 
     messages_to_send = _truncate_history(conversation_history)
 

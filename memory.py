@@ -81,6 +81,21 @@ def save_memory(memory: dict):
         log.exception("Supabase memory save failed")
 
 
+def set_memory_value(key: str, value: str) -> None:
+    """Upsert ONE memory row. save_memory writes the mesocycle keys together
+    and is called from the request thread; a background review must not race
+    it over the whole table, so it writes only its own key."""
+    supabase = get_supabase()
+    if not supabase:
+        return
+    try:
+        supabase.table("memory").upsert(
+            [{"key": key, "value": value, "updated_at": now_local().isoformat()}],
+            on_conflict="key").execute()
+    except Exception:
+        log.exception("Supabase memory write failed for %s", key)
+
+
 def save_conversation_message(role: str, content: str):
     """Save a single message to the conversations table."""
     supabase = get_supabase()
