@@ -35,6 +35,7 @@ class DecisionsSummaryTests(unittest.TestCase):
         self.assertEqual(d["adjusts"], 3)
         self.assertAlmostEqual(d["adjust_rate"], 0.6)
         self.assertAlmostEqual(d["cause_rate"], 2 / 3)      # "felt like it" names no cause
+        self.assertEqual(d["buckets"], {"cause": 2, "progression": 0, "shape": 0, "other": 1})
         self.assertEqual(d["top_adjusted"][0]["exercise"], "Machine Shoulder Press")
         self.assertEqual(d["top_adjusted"][0]["count"], 2)
 
@@ -45,7 +46,8 @@ class DecisionsSummaryTests(unittest.TestCase):
                                    {"date": "2026-09-15", "kind": "set_reply", "exercise": "Hammer Curl"}])
         text = format_decisions(d, shadow, 14)
         self.assertIn("adjusted **3** of them (**60%**)", text)
-        self.assertIn("**67%** named a cause", text)
+        self.assertIn("2 named a cause", text)
+        self.assertIn("1 other", text)
         self.assertIn("| Machine Shoulder Press | 2 |", text)
         self.assertIn("**3** exercise blocks on 2 days", text)
         self.assertIn("prose 2, set_reply 1", text)
@@ -57,6 +59,26 @@ class DecisionsSummaryTests(unittest.TestCase):
         self.assertIn("migration 008", text)
         text = format_decisions(summarise_decisions([]), summarise_shadow([]), 14)
         self.assertIn("None in 14 days", text)
+
+
+class ReasonBucketTests(unittest.TestCase):
+
+    def test_reasons_fall_into_cause_progression_shape_or_other(self):
+        from usage import reason_bucket
+        self.assertEqual(reason_bucket("HRV below baseline this morning, holding load"), "cause")
+        self.assertEqual(reason_bucket("shoulder niggle — hold at 70kg"), "cause")
+        self.assertEqual(reason_bucket("Stuck at bodyweight x8 for seven sessions at RPE6-7"), "progression")
+        self.assertEqual(reason_bucket("Three sessions at 40kg with reps at or above the top of the range"), "progression")
+        self.assertEqual(reason_bucket("Direct ab work runs as straight sets, not top-set/back-off"), "shape")
+        self.assertEqual(reason_bucket("felt like it"), "other")
+
+    def test_a_shape_heavy_report_names_the_programme_defect(self):
+        from usage import format_decisions, summarise_decisions
+        rows = [{"date": "d", "session_type": "Cardio+Abs", "exercise": f"E{i}", "decision": "adjust",
+                 "reason": "abs are straight sets, converting the proposal's back-off line"} for i in range(3)]
+        text = format_decisions(summarise_decisions(rows), None, 14)
+        self.assertIn("3 shape", text)
+        self.assertIn("programme defect", text)
 
 
 class RecordShadowTests(unittest.TestCase):

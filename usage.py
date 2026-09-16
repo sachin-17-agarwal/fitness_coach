@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import statistics
 from datetime import datetime, timedelta, timezone
 
@@ -319,14 +320,38 @@ def is_coach_decision(row: dict) -> bool:
     return not ex.startswith(_NOT_A_DECISION_PREFIXES) and not reason.startswith(_PROGRAMME_REASON_PREFIX)
 
 
-def summarise_decisions(rows: list[dict]) -> dict:
-    """Per opening: exercises decided, adjusts, adjusts that name a cause, the
-    lifts most often adjusted with a sample reason each."""
+# Why the coach departed. A load CUT has to name a cause (the plan contract's
+# rule); an increase is justified by progression; a shape change is the
+# programme's proposal being the wrong shape. One "cause rate" over all
+# three hid the split: 46% "named a cause" read as the coach being vague,
+# when most of the rest were stalls and straight-set conversions.
+_PROGRESSION_RE = re.compile(r"stall|stuck|held .* for|above the top|over the (top|range)|overdue|"
+                             r"top of the .*range|reps .*(drift|sitting)|progress", re.IGNORECASE)
+_SHAPE_RE = re.compile(r"straight set|back-off line|top-set/back-off|top\+back-off|convert", re.IGNORECASE)
+
+
+def reason_bucket(reason: str) -> str:
     from plan import _CAUSE_RE  # local: keeps import order flat
+    text = reason or ""
+    if _SHAPE_RE.search(text):
+        return "shape"
+    if _CAUSE_RE.search(text):
+        return "cause"
+    if _PROGRESSION_RE.search(text):
+        return "progression"
+    return "other"
+
+
+def summarise_decisions(rows: list[dict]) -> dict:
+    """Per opening: exercises decided, adjusts, why (cause / progression /
+    shape / other), the lifts most often adjusted with a sample reason each."""
     rows = [r for r in rows if is_coach_decision(r)]
     sessions = {(r.get("date"), r.get("session_type")) for r in rows}
     adjusts = [r for r in rows if (r.get("decision") or "") == "adjust"]
-    with_cause = [r for r in adjusts if _CAUSE_RE.search(r.get("reason") or "")]
+    buckets: dict = {"cause": 0, "progression": 0, "shape": 0, "other": 0}
+    for r in adjusts:
+        buckets[reason_bucket(r.get("reason") or "")] += 1
+    with_cause = [r for r in adjusts if reason_bucket(r.get("reason") or "") == "cause"]
     by_lift: dict = {}
     for r in adjusts:
         entry = by_lift.setdefault(r.get("exercise") or "?", {"count": 0, "reasons": []})
@@ -340,6 +365,7 @@ def summarise_decisions(rows: list[dict]) -> dict:
         "adjusts": len(adjusts),
         "adjust_rate": (len(adjusts) / len(rows)) if rows else 0.0,
         "cause_rate": (len(with_cause) / len(adjusts)) if adjusts else None,
+        "buckets": buckets,
         "top_adjusted": [{"exercise": k, **v} for k, v in top],
     }
 
@@ -362,10 +388,18 @@ def format_decisions(d: dict, shadow: dict | None, days: int) -> str:
     if not d["exercises"]:
         lines.append("No opening decisions recorded in the window.")
     else:
-        cause = "—" if d["cause_rate"] is None else f"{d['cause_rate']:.0%}"
+        b = d.get("buckets") or {}
         lines.append(f"Over {d['sessions']} openings the coach decided {d['exercises']} exercises and adjusted "
-                     f"**{d['adjusts']}** of them (**{d['adjust_rate']:.0%}**); of the adjusts, **{cause}** named a "
-                     f"cause (recovery reading, joint, machine, time). The rest took the programme's numbers.")
+                     f"**{d['adjusts']}** of them (**{d['adjust_rate']:.0%}**). Why: "
+                     f"{b.get('cause', 0)} named a cause (recovery, joint, machine, time), "
+                     f"{b.get('progression', 0)} progression (a stall, reps over the range), "
+                     f"{b.get('shape', 0)} shape (the proposal's set structure), {b.get('other', 0)} other. "
+                     f"The rest took the programme's numbers.")
+        if b.get("shape", 0) >= 3:
+            lines.append("")
+            lines.append("A shape count this high says the programme's proposal and the coach disagree about "
+                         "how these exercises are structured. That is a programme defect to fix, not a coaching "
+                         "decision, and each one inflates the adjust rate.")
         if d["top_adjusted"]:
             lines += ["", "| lift | adjusted | reasons |", "|---|---:|---|"]
             for t in d["top_adjusted"]:
@@ -381,7 +415,7 @@ def format_decisions(d: dict, shadow: dict | None, days: int) -> str:
         lines.append(f"**{shadow['total']}** exercise blocks on {shadow['days']} days differed from the programme's "
                      f"computation ({kinds}). Most often: " + ", ".join(f"{n} ×{c}" for n, c in shadow["top"]) + ".")
     lines += ["", "Reading it: the adjust rate is how often the coach departs from the programme at the "
-              "opening; the cause rate is whether it says why. The shadow counts replies outside the plan "
+              "opening, and the buckets say why. The shadow counts replies outside the plan "
               "contract — prose and set replies — whose numbers the programme would have replaced. The "
               "substitution flag stays off while the adjust rate is low and the cause rate high; a rising "
               "shadow count on prose replies is the case for turning it on."]
