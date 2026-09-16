@@ -28,6 +28,15 @@ class DecisionsSummaryTests(unittest.TestCase):
         kept = [r for r in self.ROWS if is_coach_decision(r)]
         self.assertEqual(len(kept), 5)
 
+    def test_a_re_sent_opening_counts_once_and_the_last_copy_wins(self):
+        rows = [{"date": "d", "session_type": "Cardio+Abs", "exercise": "Cable Crunch", "decision": "adjust", "reason": "shape: straight sets"},
+                {"date": "d", "session_type": "Cardio+Abs", "exercise": "Cable Crunch", "decision": "adjust", "reason": "shape: straight sets"},
+                {"date": "d", "session_type": "Cardio+Abs", "exercise": "Cable Crunch", "decision": "accept", "reason": "programme"},
+                {"date": "d", "session_type": "Cardio+Abs", "exercise": "Pallof Press", "decision": "adjust", "reason": "elbow pain"}]
+        d = summarise_decisions(rows)
+        self.assertEqual(d["exercises"], 2)
+        self.assertEqual(d["adjusts"], 1)          # the crunch's last copy is an accept
+
     def test_adjust_rate_cause_rate_and_top_lifts(self):
         d = summarise_decisions(self.ROWS)
         self.assertEqual(d["sessions"], 2)
@@ -58,7 +67,8 @@ class DecisionsSummaryTests(unittest.TestCase):
         self.assertIn("No opening decisions recorded", text)
         self.assertIn("migration 008", text)
         text = format_decisions(summarise_decisions([]), summarise_shadow([]), 14)
-        self.assertIn("None in 14 days", text)
+        self.assertIn("No rows in 14 days", text)
+        self.assertIn("migration 008 ran", text)
 
 
 class ReasonBucketTests(unittest.TestCase):

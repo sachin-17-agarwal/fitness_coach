@@ -346,6 +346,14 @@ def summarise_decisions(rows: list[dict]) -> dict:
     """Per opening: exercises decided, adjusts, why (cause / progression /
     shape / other), the lifts most often adjusted with a sample reason each."""
     rows = [r for r in rows if is_coach_decision(r)]
+    # One row per exercise per opening, the LAST one. An opening that retried
+    # or was re-sent stores its decisions again: 6 Sep's Cardio+Abs held three
+    # copies of the same six exercises and alone lifted the adjust rate from
+    # 38% to 45%. Rows arrive ordered by date then id, so last wins.
+    latest: dict = {}
+    for r in rows:
+        latest[(r.get("date"), r.get("session_type"), (r.get("exercise") or "").strip().lower())] = r
+    rows = list(latest.values())
     sessions = {(r.get("date"), r.get("session_type")) for r in rows}
     adjusts = [r for r in rows if (r.get("decision") or "") == "adjust"]
     buckets: dict = {"cause": 0, "progression": 0, "shape": 0, "other": 0}
@@ -408,8 +416,9 @@ def format_decisions(d: dict, shadow: dict | None, days: int) -> str:
     if shadow is None:
         lines.append("Not recorded yet (migration 008).")
     elif not shadow["total"]:
-        lines.append(f"None in {days} days: every block the coach sent matched what the programme computed, "
-                     f"or the difference was already an adjust with its reason.")
+        lines.append(f"No rows in {days} days. Recording began when migration 008 ran (16 Sep), so a zero on "
+                     f"the first reports after it says nothing yet; from then on it means every block the "
+                     f"coach sent outside the plan contract matched what the programme computed.")
     else:
         kinds = ", ".join(f"{k} {v}" for k, v in sorted(shadow["by_kind"].items()))
         lines.append(f"**{shadow['total']}** exercise blocks on {shadow['days']} days differed from the programme's "
