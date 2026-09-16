@@ -886,6 +886,17 @@ final class WorkoutService: Sendable {
         )
     }
 
+    /// The coach's standing decisions still in force — a cap on a machine, a
+    /// lift held for a niggle — keyed by the exercise name as recorded.
+    func fetchStandingConstraints() async throws -> [StandingConstraint] {
+        try await client.fetch(
+            "exercise_constraints",
+            query: ["active": "eq.true"],
+            select: "exercise, max_load_kg, note, set_on",
+            order: "set_on.desc"
+        )
+    }
+
     func getDistinctExercises(days: Int = 90) async throws -> [String] {
         let since = Self.dateString(daysAgo: days)
         let sets: [WorkoutSet] = try await client.fetch(

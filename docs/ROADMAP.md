@@ -329,7 +329,11 @@ judged fairly.
 
 Approved items list their PRs when shipped. Declined items keep the reason.
 
-- **Approved, 15 Sep.** 2.2 HELD state; 2.3 rep-overshoot step sizing;
+- **Approved 15 Sep, shipped 16 Sep (#251).** 2.2 HELD state: a lift under a
+  standing decision reads "HELD · CAP 70 KG · SINCE 13 SEP", paints blue on
+  the map, sits outside the dropping count and is explained, not judged, in
+  the coach hand-off. A PR still reads PR. *verify on the next build.*
+- **Approved, 15 Sep.** 2.3 rep-overshoot step sizing (shipped #249);
   2.4 Swift tests for the numbers; 2.7 export (backup part optional, to
   storage the athlete owns); 2.8 Apple Watch, staged, mockups first;
   2.9 stats widget, mockups first.

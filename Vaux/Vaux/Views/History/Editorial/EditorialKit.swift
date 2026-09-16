@@ -464,6 +464,9 @@ struct NoReadNote: View {
 /// only an all-time PR is allowed to be bright.
 enum StrengthState: Int, CaseIterable, Comparable {
     case none = 0, hold, up, pr, short, stall, drop
+    /// Held at a load on purpose by a standing decision (a niggle, a machine's
+    /// top plate). Not a verdict on strength, so it never reads as a drop.
+    case held
 
     static func < (a: StrengthState, b: StrengthState) -> Bool { a.rawValue < b.rawValue }
 
@@ -475,6 +478,7 @@ enum StrengthState: Int, CaseIterable, Comparable {
         case .stall: return "STALLED"
         case .drop: return "DROPPING"
         case .short: return "SHORT ON SETS"
+        case .held: return "HELD"
         case .none: return "NO READ"
         }
     }
@@ -487,6 +491,7 @@ enum StrengthState: Int, CaseIterable, Comparable {
         case .stall: return Color(hex: "C9A15A")
         case .drop: return Color(hex: "B8614F")
         case .short: return Color(hex: "6F7BA3")
+        case .held: return Color(hex: "5B8FB9")
         case .none: return Color(hex: "182521")
         }
     }
@@ -502,7 +507,7 @@ enum StrengthState: Int, CaseIterable, Comparable {
     }
 
     /// Legend order, best to worst then the two non-strength states.
-    static let legendOrder: [StrengthState] = [.pr, .up, .hold, .stall, .drop, .short, .none]
+    static let legendOrder: [StrengthState] = [.pr, .up, .hold, .held, .stall, .drop, .short, .none]
 
     /// Sort order for "watch first" lists.
     var attention: Int {
@@ -514,6 +519,7 @@ enum StrengthState: Int, CaseIterable, Comparable {
         case .pr: return 4
         case .up: return 5
         case .hold: return 6
+        case .held: return 7
         }
     }
 }

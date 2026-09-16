@@ -112,17 +112,18 @@ struct StrengthTabView: View {
             // A drop is not a stall: the third line names what actually
             // happened, so the hero and the muscle rows agree. Shoulders read
             // "DROPPING" below while this line said "1 STALLED".
-            downLine(stalled: s.stalledCount, dropping: s.droppingCount),
+            downLine(stalled: s.stalledCount, dropping: s.droppingCount, held: s.heldCount),
         ]
     }
 
-    private func downLine(stalled: Int, dropping: Int) -> StatStack.Line {
-        switch (stalled, dropping) {
-        case (0, 0): return .init(text: "0 STALLED", color: Editorial.mid)
-        case (_, 0): return .init(text: "\(stalled) STALLED", color: Editorial.amber)
-        case (0, _): return .init(text: "\(dropping) DROPPING", color: Editorial.coral)
-        default:     return .init(text: "\(stalled) STALLED · \(dropping) DROPPING", color: Editorial.coral)
-        }
+    private func downLine(stalled: Int, dropping: Int, held: Int = 0) -> StatStack.Line {
+        var words: [String] = []
+        if stalled > 0 { words.append("\(stalled) STALLED") }
+        if dropping > 0 { words.append("\(dropping) DROPPING") }
+        if held > 0 { words.append("\(held) HELD") }
+        if words.isEmpty { return .init(text: "0 STALLED", color: Editorial.mid) }
+        let color: Color = dropping > 0 ? Editorial.coral : (stalled > 0 ? Editorial.amber : Editorial.blue)
+        return .init(text: words.joined(separator: " · "), color: color)
     }
 
     private var scrubber: some View {
@@ -177,6 +178,7 @@ struct StrengthTabView: View {
                     var s = lift?.name.uppercased() ?? "NO LOADED LIFT"
                     if let d = lift?.deltaPct { s += "  " + Editorial.signedPct(d) }
                     if let p = lift?.peak, p.loose { s += " · EST. FROM \(p.reps) REPS" }
+                    if let c = lift?.held, let note = c.note, !note.isEmpty { s += " · " + note.uppercased() }
                     s += "\n" + (m.isSettling
                         ? String(format: "%.0f sets so far · band %d–%d/wk", m.setsSoFar, m.band.lowerBound, m.band.upperBound)
                         : String(format: "%.1f sets/wk · band %d–%d", m.setsPerWeek, m.band.lowerBound, m.band.upperBound))

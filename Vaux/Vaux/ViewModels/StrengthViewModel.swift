@@ -46,6 +46,8 @@ struct LiftReport: Identifiable, Hashable {
     let deltaPct: Double?
     let blocksSincePR: Int?
     let state: StrengthState
+    /// The standing decision holding this lift, when `state == .held`.
+    var held: StandingConstraint? = nil
     var id: String { name }
 
     var bestSetLine: String {
@@ -74,6 +76,7 @@ struct MuscleReport: Identifiable, Hashable {
         switch state {
         case .stall: return "STALLED · \(drivingLift?.blocksSincePR ?? 2) BLOCKS"
         case .drop: return "DROPPING · " + Editorial.signedPct(drivingLift?.deltaPct ?? 0)
+        case .held: return "HELD · " + (drivingLift?.held?.eyebrowDetail ?? "BY DECISION")
         case .none:
             guard let lift = drivingLift, lift.peak != nil else { return "NOT TRAINED THIS BLOCK" }
             if lift.priorPeak == nil { return "FIRST BLOCK · NOTHING TO COMPARE" }
@@ -135,6 +138,7 @@ struct BlockSnapshot: Identifiable, Hashable {
     var stalledCount: Int { lifts.filter { $0.state == .stall }.count }
     var droppingCount: Int { lifts.filter { $0.state == .drop }.count }
     var judgedCount: Int { lifts.filter { $0.state != StrengthState.none }.count }
+    var heldCount: Int { lifts.filter { $0.state == .held }.count }
     var muscleStates: [BodyMuscle: StrengthState] {
         Dictionary(uniqueKeysWithValues: muscles.map { ($0.muscle, $0.state) })
     }
@@ -187,7 +191,11 @@ final class StrengthViewModel {
     /// Recomputes every report from raw rows. Pure, so the same inputs give the
     /// same reading in tests and on device.
     func rebuild(sets: [WorkoutSet], sessions: [WorkoutSession], calendar: BlockCalendar,
-                 weighIns: WeighInRecord = .empty) {
+                 weighIns: WeighInRecord = .empty, constraints: [StandingConstraint] = []) {
+        // A lift under a standing decision is held on purpose; keyed the way
+        // lift names are keyed everywhere else on this tab.
+        let heldByName = Dictionary(constraints.map { (PrescriptionParser.normalizeExerciseName($0.exercise), $0) },
+                                    uniquingKeysWith: { a, _ in a })
         let sessionById = Dictionary(sessions.compactMap { s in s.id.map { ($0, s) } }, uniquingKeysWith: { a, _ in a })
         // lift → position → best point
         var weekly: [String: [BlockPosition: LiftBlockPoint]] = [:]
@@ -273,7 +281,7 @@ final class StrengthViewModel {
             let lifted = b != calendar.current.block || peakLifted
             let lifts = weekly.map { name, byPos in
                 Self.judge(name: name, byPos: byPos, block: b, sessionType: liftSession[name],
-                           peakLifted: liftedAtPeak(byPos, block: b))
+                           peakLifted: liftedAtPeak(byPos, block: b), held: heldByName[name])
             }
             let waiting = lifted && b == calendar.current.block
                 && lifts.contains { $0.state == StrengthState.none && $0.peak != nil && $0.priorPeak != nil }
@@ -291,7 +299,7 @@ final class StrengthViewModel {
         // so the muscle map still shows volume and the grey states.
         if snaps.last?.judged.block != calendar.current.block {
             let lifts = weekly.map { name, byPos in Self.judge(name: name, byPos: byPos, block: calendar.current.block, sessionType: liftSession[name],
-                                                                 peakLifted: liftedAtPeak(byPos, block: calendar.current.block)) }
+                                                                 peakLifted: liftedAtPeak(byPos, block: calendar.current.block), held: heldByName[name]) }
             let b = calendar.current.block
             let muscles = Self.muscleReports(lifts: lifts, setsPerMuscle: Self.weeklyVolume(setsByBlock[b], weeks: weeksSpanned(b)),
                                              setsSoFar: setsByBlock[b] ?? [:], currentBlock: true,
@@ -355,7 +363,7 @@ final class StrengthViewModel {
     }
 
     static func judge(name: String, byPos: [BlockPosition: LiftBlockPoint], block: Int, sessionType: String?,
-                      peakLifted: Bool = true) -> LiftReport {
+                      peakLifted: Bool = true, held: StandingConstraint? = nil) -> LiftReport {
         // From the lift's muscle shares, not its day's group. The group map
         // files every Legs-day movement under "Legs", which the body map reads
         // as quads — so Seated Leg Curl was the lift "driving" quads.
@@ -396,8 +404,11 @@ final class StrengthViewModel {
             else if (sincePR ?? 0) >= stallBlocks { state = .stall }
             else { state = .hold }
         }
+        // A standing decision outranks the verdict: the lift is flat because
+        // it was told to be. A PR still reads PR — the hold did not stop it.
+        if held != nil, peak != nil, state != .pr { state = .held }
         return LiftReport(name: name, muscle: muscle, muscles: muscles, sessionType: sessionType, weekly: byPos, judged: BlockPosition(block: block, week: Config.peakWeek),
-                          peak: peak, priorPeak: priorPeak, allTimeBest: allTime, deltaPct: delta, blocksSincePR: sincePR, state: state)
+                          peak: peak, priorPeak: priorPeak, allTimeBest: allTime, deltaPct: delta, blocksSincePR: sincePR, state: state, held: held)
     }
 
     /// A block's sets per muscle divided by the training weeks it actually
@@ -538,7 +549,17 @@ final class StrengthViewModel {
         clause(stalls, bold: true, one: " has not moved in two blocks. ", many: " have not moved in two blocks. ")
         clause(drops, bold: true, one: " dropped more than 5%. ", many: " dropped more than 5%. ")
         clause(shorts, bold: false, one: " is short on sets, not strength.", many: " are short on sets, not strength.", sentenceStart: true)
-        if prs.isEmpty && stalls.isEmpty && drops.isEmpty && shorts.isEmpty { parts.append(("Every judged lift is holding or progressing. Nothing to act on.", false)) }
+        // A held lift is explained, not judged: the decision and its cause are
+        // on record, and the flat line is what was asked for.
+        for lift in snap.lifts.filter({ $0.state == .held }).prefix(2) {
+            guard let c = lift.held else { continue }
+            let cap = c.maxLoadKg.map { String(format: " at %g kg", $0) } ?? ""
+            let why = c.note.map { " (\($0))" } ?? ""
+            let delta = lift.deltaPct.map { "; its \(Editorial.signedPct($0)) is expected" } ?? ""
+            parts.append((" \(lift.name)", true))
+            parts.append((" is held\(cap) by decision\(why) since \(c.sinceLabel)\(delta).", false))
+        }
+        if prs.isEmpty && stalls.isEmpty && drops.isEmpty && shorts.isEmpty && snap.heldCount == 0 { parts.append(("Every judged lift is holding or progressing. Nothing to act on.", false)) }
         return .editorial(parts)
     }
 
