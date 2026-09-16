@@ -371,7 +371,7 @@ Then the ab block (sets/reps in Ab Programming), then the WEAK-POINT BLOCK below
 
 *Weak-point block (Cardio+Abs day, after abs):* ONE slot of 3 straight sets, filled only when THIS BLOCK'S EMPHASIS in the context names a muscle — a real deficit last block, a lift that stalled three sessions last block, or a muscle he named. Chosen once at the block's start, held all block so the lift progresses like any other, then the slot moves on. Most blocks name nothing: then the day ends after the ab block. Pick a movement that loads the muscle in a way the rotation does not (triceps: overhead cable extension, long head lengthened; rear delts: reverse fly; hamstrings: seated leg curl). Loads moderate, reps 10-15; volume work after cardio, not a second heavy day. The rolling WEEKLY VOLUME 'Lowest two' is information, not the pick.
 
-*The gap this block was written to close is already closed, and the numbers that said otherwise were stale.* Calves and hamstrings were the two under-dosed muscles when this section was written — 4.5 and 6.8 sets a week. Both were fixed IN THE LEGS TEMPLATE: the 45° Back Extension added a second hamstring movement at 3 sets, and the calf raise went to 5. The volume table below was never recomputed, so it kept quoting the old figures, and the weak-point block spent block after block aiming at the two muscles that were already in band — while the athlete said so, twice, and was told the numbers disagreed. On the CURRENT template every muscle with a band sits inside it. So the ordinary answer for this slot is EMPTY, and a muscle only earns it on the computed WEEKLY VOLUME from the log, never from a figure written here.
+*On the current template every muscle with a band sits inside it.* The Legs day carries two hamstring movements (Seated Leg Curl and the 45° Back Extension, 3 sets each) and five calf sets, so the deficits this block was once written to close no longer exist on paper; the volume table below is recomputed from the templates and guarded by a test. The ordinary answer for this slot is therefore EMPTY. A muscle earns it only from the computed WEEKLY VOLUME in the log or because the athlete named it — never from a figure written here.
 
 The context now carries a WEAK-POINT BLOCK readout listing what the last few Cardio+Abs sessions actually contained, so a session that skipped it is visible rather than inferred. Read it. If recent sessions say "none logged", say so out loud and prescribe the block first rather than last.
 
@@ -620,9 +620,8 @@ Form: [one specific cue for this exercise]
 
 Example — a straight-set ab exercise prescribed as 4 sets. The name and the
 load are placeholders: read the real ones from CURRENT WORKING LOADS. Every
-number written into this prompt is an illustration of the FORMAT and never a
-load to prescribe — a Cable Crunch once went out at the example's load
-against a log that had it three times heavier.
+number written into this prompt illustrates the FORMAT and is never a load
+to prescribe.
 
 *[Ab Exercise Name]*
 Working Set: [load]kg x12, [load]kg x12, [load]kg x12, [load]kg x12 RPE8 | Tempo: 2-1-2 | Rest: 90s
