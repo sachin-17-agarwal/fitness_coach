@@ -28,7 +28,17 @@ from prescribe import norm_name
 log = logging.getLogger(__name__)
 
 DECISION_RE = re.compile(r"^\s*decision:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
-_MAX_LOAD_RE = re.compile(r"max(?:imum)?\s*load\s*(\d+(?:\.\d+)?)\s*kg", re.IGNORECASE)
+# Every way the coach has written a load ceiling. The grammar asks for
+# "max load 70kg"; the coach recorded the shoulder press as "hold at 70kg,
+# RPE8 cap" and the row went in with no ceiling — so the Strength tab read
+# HELD without the cap and the programme's arithmetic guard never applied.
+# The number is the point; the wording around it is not.
+_MAX_LOAD_RE = re.compile(
+    r"(?:max(?:imum)?\s*(?:load\s*)?|hold(?:ing)?\s*(?:at|to)?\s*|cap(?:ped)?\s*(?:at|to)?\s*|ceiling\s*(?:of|at)?\s*|"
+    r"no\s+more\s+than\s*|stay(?:s)?\s*(?:at|on)\s*|top(?:s)?\s*out\s*(?:at)?\s*)"
+    r"(\d+(?:\.\d+)?)\s*kg"
+    r"|(\d+(?:\.\d+)?)\s*kg\s*(?:cap|ceiling|max(?:imum)?|hold)\b",
+    re.IGNORECASE)
 
 
 def parse_decision_lines(reply: str) -> list[dict]:
@@ -48,7 +58,11 @@ def parse_decision_lines(reply: str) -> list[dict]:
         for p in rest:
             hit = _MAX_LOAD_RE.search(p)
             if hit:
-                max_load = float(hit.group(1))
+                max_load = float(hit.group(1) or hit.group(2))
+                # Keep whatever else the segment said ("RPE8 cap") as the note.
+                leftover = (p[:hit.start()] + p[hit.end():]).strip(" ,;—-")
+                if leftover:
+                    notes.append(leftover)
             else:
                 notes.append(p)
         if max_load is None and not notes:
