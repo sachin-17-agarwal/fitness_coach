@@ -1256,6 +1256,28 @@ class StandingConstraintTests(unittest.TestCase):
         self.assertEqual(d[1], {"exercise": "Ab Wheel Rollout", "clear": True})
         self.assertEqual(parse_decision_lines("no decisions here"), [])
 
+    def test_a_ceiling_is_read_however_the_coach_words_it(self):
+        """The grammar asks for "max load 70kg"; the coach wrote "hold at
+        70kg, RPE8 cap" and the shoulder press went in with no ceiling."""
+        from constraints import parse_decision_lines
+        cases = {
+            "Decision: Machine Shoulder Press | hold at 70kg, RPE8 cap | shoulder niggle — reps only": (70.0, "RPE8 cap — shoulder niggle — reps only"),
+            "Decision: Cable Crunch | cap 105kg | stack tops out": (105.0, "stack tops out"),
+            "Decision: Cable Crunch | 105kg cap | stack tops out": (105.0, "stack tops out"),
+            "Decision: Leg Press | ceiling of 230kg | knee": (230.0, "knee"),
+            "Decision: Dips | no more than 20kg added | elbow": (20.0, "added — elbow"),
+            "Decision: Cable Row | max load 90kg | grip": (90.0, "grip"),
+            "Decision: Cable Row | max 90kg | grip": (90.0, "grip"),
+        }
+        for line, (load, note) in cases.items():
+            d = parse_decision_lines(line)[0]
+            self.assertEqual(d["max_load_kg"], load, line)
+            self.assertEqual(d["note"], note, line)
+        # A note with no load at all is still a decision, with no ceiling.
+        d = parse_decision_lines("Decision: Pull-Ups | neutral grip only this block")[0]
+        self.assertIsNone(d["max_load_kg"])
+        self.assertEqual(d["note"], "neutral grip only this block")
+
     def test_the_programme_caps_at_the_ceiling_and_moves_to_reps(self):
         from constraints import apply_ceilings
         from prescribe import Proposal, SetSpec
