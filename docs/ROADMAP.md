@@ -103,6 +103,30 @@ number to be judged against.
 4. **Context fetch ceiling**: the ten-second per-query limit that turned a
    slow read into "no history". *Approved 16 Sep*; folded into 2.1(b).
 
+### 1.1c What the first Decisions report says (16 Sep, 8 openings)
+
+78 exercises decided, 35 adjusted (45%): 15 named a cause, 7 progression,
+7 shape, 6 other. The five most-adjusted lifts are all ab work. Two
+programme defects follow, both to fix before the substitution flag is
+even discussed:
+
+1. **Ab-work shape.** Seven adjusts say the proposal carried a
+   top-set/back-off structure for straight-set ab work. `render_block`
+   renders abs straight today, so either the coach is reading the older
+   PROGRAMME PROPOSAL text or the claim is stale; the next Cardio+Abs
+   opening's 2.1(b) diff shows exactly what the coach changed against the
+   programme card. *check on the next Cardio+Abs.*
+2. **Bodyweight and straight-set progression.** Ab Wheel Rollout stuck at
+   bodyweight × 8 for seven sessions at RPE 6–7; Hanging Leg Raises held at
+   +5 kg; Pallof Press three sessions at 40 kg with reps over the range. The
+   programme's progression excludes bodyweight movements from the sized
+   step and has no lever once a bodyweight lift reaches the top of its
+   range (add load, then reps; or tempo/range). The coach has been doing
+   this by hand. *proposed as 2.11: bodyweight progression in prescribe.py.*
+
+The programme shadow is recorded from tonight (migration 008 pending) and
+will appear in the 20 Sep report.
+
 ### 1.2 Shipped this week, confirm on the phone
 
 - Set counts: a `Revised:` block is no longer a licence to owe fewer sets.
