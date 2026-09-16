@@ -88,8 +88,10 @@ number to be judged against.
 ### 1.1b Surfaced 15–16 Sep, decided 16 Sep
 
 1. **Card reference line** ("LAST BLOCK · WK 3"): hardcoded 21–35 day
-   window, labelled with today's week. Two ways to fix; explained in chat,
-   *decision pending*.
+   window, labelled with today's week. *Decided 16 Sep: the athlete's last
+   session on that lift, labelled by date* — the set progression works
+   from, so card and coach agree by construction. Shipped; *verify on the
+   next build*.
 2. **Band per calendar week or per rotation**: the template gives hamstrings
    11.2/week only at 1.5 rotations a week; the log over a 13-day block with
    two Legs days gives ~8.1. Recommendation given in chat, *decision pending*.
