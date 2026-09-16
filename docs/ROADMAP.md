@@ -131,7 +131,18 @@ number to be judged against.
 
 ### 1.3 Waiting on the athlete
 
-These are one message each in coach chat; the code is live.
+Migrations 006 and 007 were run on 16 Sep. Two decisions and one build:
+
+- **Band per calendar week or per rotation.** Recommendation: per calendar
+  week, with the on-paper table recomputed at the measured rotation rate so
+  the two numbers agree. *pending*
+- **Verify on the next build**: START opening on Push or Pull (card at
+  once, coach lands), the Shoulders row reads HELD, Settings → Export, the
+  card's "LAST · 12 SEP" line, the logger label past the plan.
+- **The block review's dry run**: read it the morning it lands after this
+  deload block rolls over, answer it in chat, and we compare.
+
+Chat messages still worth sending (the code is live):
 
 - `Record a decision: Machine Shoulder Press, shoulder niggle, hold at 70 kg, RPE 8 cap, progress by reps only`
 - `emphasis next: triceps | overhead cable extension` and
@@ -349,7 +360,7 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   to three proposals in the recordable grammar. "block review" in chat
   writes one on demand (never mid-session). "yes to 1 and 3" answers it;
   this block nothing is recorded and the answer is kept for comparison.
-  Needs migration 007. Every number is computed; a narrative citing a
+  Migration 007 run 16 Sep. Every number is computed; a narrative citing a
   number the sheet lacks is rejected.
 - **Approved 14 Sep, shipped 15 Sep (#239).** 2.6 Weekly recovery digest:
   a Monday/Tuesday card under the Home ledger, up to three sentences from

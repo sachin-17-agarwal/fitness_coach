@@ -13,8 +13,39 @@ Anything that changes what the coach says goes behind a gate in
 
 ## Calendar
 
+Status on the evening of Wednesday 16 September. The deload week was used
+to ship the queue early; migrations 006 and 007 have been run.
+
+**Shipped 16 Sep**
+
+| Item | PR | On the phone after the next build |
+|---|---|---|
+| 2.1(a) thinking vs text in the Sunday report | #249 | — (backend; columns fill from tonight's calls) |
+| 2.3 overshoot step sized to the miss | #249 | — (backend) |
+| 2.2 HELD state | #251 | Shoulders row, hero line, map, hand-off |
+| 2.1(b) start on the programme, coach catches up | #252, #253 | START card at once; label; change notes |
+| 2.7 export | #254 | Settings → Export |
+| 2.5 block review, dry run | #255 | Home briefing the morning after rollover; "block review" in chat |
+| Card reference line = last session on the lift | #250 | grey line under the set chips |
+| Revised block still owes its sets; past-the-plan label | #247 | logger label |
+| Failed lookup ≠ no history; emphasis supersedes; volume table | #244–#246 | — (backend) |
+
+**Remaining**
+
 | Day | Work | Needs from you |
 |---|---|---|
+| Thu 17 Sep | Verify on the phone: START opening on Push or Pull, HELD row, export, reference line, logger label · read the first `text`/`thinking` split after the opening | a build; screenshots |
+| Fri 18 Sep | Item 4: raise the context fetch ceiling, log per-query timings | — |
+| Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate for 2.1(b), first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate | the band decision |
+| Mon 21 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes) |
+| Tue 23 Sep | 2.9 widget mockups | pick one of two |
+| Week of 28 Sep | 2.9 widget build · design for decisions captured when reached (item 3) · block review: read the dry run when it lands, answer it, compare | read the review the morning it appears |
+| Tue 30 Sep | Review 2.1(c) geofence: does START still feel slow? | your answer |
+| After | 2.5 goes live (dry_run off) once the first review has been compared · 2.8 watch, timer stage first | mockups approval |
+
+Two days of slack remain; an item that overruns takes the next slot.
+
+---|---|---|
 | ~~Thu 17 Sep~~ shipped Wed 16 Sep | ~~2.1(a) output measurement · 2.3 overshoot step~~ | run migration 006 (report shows `?` until then) |
 | ~~Fri 18 Sep~~ shipped Wed 16 Sep | ~~2.2 HELD state (app)~~ | a build; screenshot of the Shoulders row; the shoulder-press decision in chat |
 | ~~Sat 19 – Sun 20 Sep~~ shipped Wed 16 Sep | ~~2.1(b) backend~~ (#252) · raise the context fetch ceiling and log per-query timings (item 4) · read the 20 Sep report for Stage 5 | — |
