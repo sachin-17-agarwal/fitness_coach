@@ -321,6 +321,41 @@ class Proposal:
 _LOAD_GRID = 0.5
 
 
+# :205 sized to the miss. One increment is 2.5kg on a compound and 1kg on
+# an isolation, so 16 reps on an 8-12 movement at 110kg proposed 111kg next —
+# a block's worth of progression creeping back a kilo at a time. From three
+# reps over, the step is read off the set itself: the Epley estimate of the
+# set, brought back to the middle of the range, capped at +10% a session so
+# one high-rep set cannot produce a jump the joint has not seen. Under three
+# over, the single increment stands.
+OVERSHOOT_REPS = 3
+OVERSHOOT_CAP = 0.10
+
+
+def _overshoot_step(load: float, reps: int, low: int, high: int, kind: str) -> tuple[float, str]:
+    """(new load, reason) for a top set `reps - high` reps over its range."""
+    e1rm = load * (1 + reps / 30)
+    mid = (low + high) / 2
+    target = e1rm / (1 + mid / 30)
+    raw = target - load
+    cap = load * OVERSHOOT_CAP
+    step = max(min(raw, cap), INCREMENT[kind])
+    new = _round_load(load + step)
+    reason = (f"Load {new:g}kg: {reps} reps at {load:g}kg puts {mid:g} reps near "
+              f"{_round_load(target):g}kg" + ("; capped at +10% this session" if raw > cap else "")
+              + f". Reps above the {low}-{high} range are a backlog, not an achievement (:205).")
+    return new, reason
+
+
+def _sized_overshoot(prior, load, low, high, kind):
+    """The sized step when the prior set is far enough over, else None."""
+    if prior.reps is None or prior.bodyweight or not load or load <= 0:
+        return None
+    if prior.reps - high < OVERSHOOT_REPS:
+        return None
+    return _overshoot_step(load, prior.reps, low, high, kind)
+
+
 def _round_load(value: float) -> float:
     """Round to the nearest half-kilo.
 
@@ -559,7 +594,11 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"recorded mesocycle week, so which week it belonged to "
                 f"cannot be verified."
             )
-        if prior.reps is not None and prior.reps >= high:
+        sized = _sized_overshoot(prior, load, low, high, kind) if prior.reps is not None else None
+        if sized:
+            load, why = sized
+            reasons.append(f"Week 1 opens ABOVE last cycle, sized to the miss. {why} Reps reset to the bottom.")
+        elif prior.reps is not None and prior.reps >= high:
             step = INCREMENT[kind]
             load = _round_load(load + step)
             reasons.append(
@@ -585,13 +624,18 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         # returns before reaching that branch, so 12 reps at RPE 9 on a 6-10
         # range was told to "add reps toward the top" of a range it had left.
         if prior.reps is not None and prior.reps > high:
-            step = INCREMENT[kind]
-            load = _round_load(load + step)
-            reasons.append(
-                f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the "
-                f"top of the {low}-{high} range, so the increase was already due "
-                f"(:205). Reps reset to the bottom."
-            )
+            sized = _sized_overshoot(prior, load, low, high, kind)
+            if sized:
+                load, why = sized
+                reasons.append(f"OVERDUE and sized to the miss. {why} Reps reset to the bottom.")
+            else:
+                step = INCREMENT[kind]
+                load = _round_load(load + step)
+                reasons.append(
+                    f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the "
+                    f"top of the {low}-{high} range, so the increase was already due "
+                    f"(:205). Reps reset to the bottom."
+                )
             return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
         if _met_top_of_range(prior, kind, targets["top"]):
             step = INCREMENT[kind]
@@ -614,13 +658,18 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         # top of the range) OR by grinding 1-2 more reps at the same weight.
         # State which lever you used and why."
         if prior.reps is not None and prior.reps >= high:
-            step = INCREMENT[kind]
-            load = _round_load(load + step)
-            reasons.append(
-                f"Week 3 peak via LOAD, ~{step:g}kg up: week 2 finished at "
-                f"{prior.reps} reps, already at the top of the range, so load is the "
-                f"preferred lever (:183)."
-            )
+            sized = _sized_overshoot(prior, load, low, high, kind)
+            if sized:
+                load, why = sized
+                reasons.append(f"Week 3 peak via LOAD, sized to the miss. {why}")
+            else:
+                step = INCREMENT[kind]
+                load = _round_load(load + step)
+                reasons.append(
+                    f"Week 3 peak via LOAD, ~{step:g}kg up: week 2 finished at "
+                    f"{prior.reps} reps, already at the top of the range, so load is the "
+                    f"preferred lever (:183)."
+                )
             return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
         target_low = max(low, min((prior.reps or low) + 1, high))
         reasons.append(
@@ -683,13 +732,18 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     if prior.reps is not None and prior.reps > high:
         # :205 "Reps ABOVE the top of the range are a backlog, not an
         # achievement: the load increase is already overdue."
-        step = INCREMENT[kind]
-        load = _round_load(load + step)
-        reasons.append(
-            f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the top "
-            f"of the {low}-{high} range, which means the increase was already due "
-            f"last session (:205)."
-        )
+        sized = _sized_overshoot(prior, load, low, high, kind)
+        if sized:
+            load, why = sized
+            reasons.append(f"OVERDUE and sized to the miss. {why}")
+        else:
+            step = INCREMENT[kind]
+            load = _round_load(load + step)
+            reasons.append(
+                f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the top "
+                f"of the {low}-{high} range, which means the increase was already due "
+                f"last session (:205)."
+            )
         return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
 
     if _met_top_of_range(prior, kind, targets["top"]):

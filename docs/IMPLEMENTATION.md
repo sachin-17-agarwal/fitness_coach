@@ -15,14 +15,14 @@ Anything that changes what the coach says goes behind a gate in
 
 | Day | Work | Needs from you |
 |---|---|---|
-| Thu 17 Sep | 2.1(a) output measurement · 2.3 overshoot step | run migration 006 |
+| ~~Thu 17 Sep~~ shipped Wed 16 Sep | ~~2.1(a) output measurement · 2.3 overshoot step~~ | run migration 006 (report shows `?` until then) |
 | Fri 18 Sep | 2.2 HELD state (app) | a build; screenshot of the Shoulders row |
-| Sat 19 – Sun 20 Sep | 2.1(b) backend: open, review, diff, storage · read the 20 Sep report for Stage 5 | — |
+| Sat 19 – Sun 20 Sep | 2.1(b) backend: open, review, diff, storage · raise the context fetch ceiling and log per-query timings (item 4) · read the 20 Sep report for Stage 5 | — |
 | Mon 21 – Tue 22 Sep | 2.1(b) app: instant card, review poll, per-exercise update | a build; try it on Push and Pull |
 | Wed 23 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes, steps below) |
 | Thu 24 Sep | 2.7 export | a build; export once and open the CSV |
 | Fri 25 Sep | 2.9 widget mockups | pick one of two mockups |
-| Week of 28 Sep | 2.9 widget build · 2.5 fact sheet and dry-run plumbing | — |
+| Week of 28 Sep | 2.9 widget build · 2.5 fact sheet and dry-run plumbing · design for decisions captured when reached (item 3) | — |
 | Week of 5 Oct | 2.5 dry run on the block ending then · review 2.1(c) geofence (two weeks after 2.1(b) ships) | read the dry-run review, say what you would have decided |
 | After | 2.8 watch, timer stage first | mockups approval |
 
