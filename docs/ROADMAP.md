@@ -334,8 +334,7 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   the map, sits outside the dropping count and is explained, not judged, in
   the coach hand-off. A PR still reads PR. *verify on the next build.*
 - **Approved, 15 Sep.** 2.3 rep-overshoot step sizing (shipped #249);
-  2.4 Swift tests for the numbers; 2.7 export (backup part optional, to
-  storage the athlete owns); 2.8 Apple Watch, staged, mockups first;
+  2.4 Swift tests for the numbers; 2.7 export **(shipped 16 Sep, #254: Settings → Export, five CSVs via the share sheet; backup job not built)**; 2.8 Apple Watch, staged, mockups first;
   2.9 stats widget, mockups first.
 - **Approved 15 Sep, shipped 16 Sep (#252 backend, #253 app).** 2.1(b) start
   on the programme, the coach catches up: START shows the programme's card
