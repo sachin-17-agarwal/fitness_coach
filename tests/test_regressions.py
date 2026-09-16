@@ -5251,3 +5251,57 @@ class RevisedBlockStillOwesItsSetsTests(unittest.TestCase):
         self.assertTrue(_revision_names_a_cause("Revised: elbow pain on the last back-off"))
         self.assertTrue(_revision_names_a_cause("Revised: machine taken, one back-off on the dumbbells"))
         self.assertTrue(_revision_names_a_cause("Revised: out of time, gym closing"))
+
+
+
+class ContextBuildTimingTests(unittest.TestCase):
+    """Every fetch is timed and the build is recorded as a `context` row, so
+    the report shows what the athlete waits on before the model is called;
+    a fetch past the ceiling reads as None and is named, never rendered as an
+    empty log."""
+
+    FETCHES = ["get_full_session_history", "get_recovery_history", "get_substitution_history",
+               "get_apple_workouts", "get_workout_state", "get_weekly_volume", "get_load_stalls",
+               "get_current_loads", "get_peak_week_loads", "get_weak_point_history",
+               "get_set_comparisons", "_recent_decisions", "_standing_constraints", "_recovery_rows",
+               "_block_weak_points"]
+
+    def _build(self, slow: str | None = None, ceiling: float = 20.0):
+        import time as _time
+        import coach_context
+        recorded = []
+        patches = []
+        for name in self.FETCHES:
+            def make(n):
+                def fake(*a, **k):
+                    if n == slow:
+                        _time.sleep(0.3)
+                    return {} if n in ("get_workout_state", "get_weekly_volume") else []
+                return fake
+            patches.append(patch.object(coach_context, name, side_effect=make(name)))
+        for pt in patches:
+            pt.start()
+        try:
+            with patch.object(coach_context, "FETCH_TIMEOUT_SECONDS", ceiling), \
+                 patch("usage.record_call", side_effect=lambda *a, **k: recorded.append((a, k))):
+                coach_context.build_context_block({"mesocycle_week": 1, "mesocycle_day": 1}, "S", 78, 75,
+                                                  logging.getLogger("t"), recovery_override={"hrv": 40})
+        finally:
+            for pt in patches:
+                pt.stop()
+        return recorded
+
+    def test_the_build_is_recorded_with_its_slowest_fetch(self):
+        recorded = self._build(slow="get_current_loads")
+        self.assertEqual(len(recorded), 1)
+        args, kwargs = recorded[0]
+        self.assertEqual(args[0], "context")
+        self.assertGreaterEqual(args[1], 0.3)
+        self.assertIn("slowest current_loads", kwargs["note"])
+        self.assertTrue(kwargs["ok"])
+
+    def test_a_fetch_past_the_ceiling_is_named_and_reads_as_none(self):
+        recorded = self._build(slow="get_current_loads", ceiling=0.05)
+        _args, kwargs = recorded[0]
+        self.assertFalse(kwargs["ok"])
+        self.assertIn("timed out: current_loads", kwargs["note"])

@@ -5,7 +5,10 @@ These functions read recent training/recovery state from Supabase and shape
 it into the [ATHLETE CONTEXT] block injected into Claude's system prompt.
 """
 
+import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import timedelta
 
 from data import (
@@ -318,6 +321,35 @@ def _recovery_rows(days: int = 56) -> list:
             .gte("date", since).lte("date", today).order("date").execute().data or [])
 
 
+# Per-fetch ceiling. A fetch past it reads as None — which the formatters
+# now render as LOOKUP UNAVAILABLE, never as an empty log.
+FETCH_TIMEOUT_SECONDS = 20
+
+
+_log = logging.getLogger(__name__)
+
+
+def _timed(fn, *args):
+    """(result, seconds) for one fetch, so the slowest can be named."""
+    started = time.monotonic()
+    return fn(*args), time.monotonic() - started
+
+
+def _record_context_build(total: float, timings: dict, timed_out: list) -> None:
+    """One `context` row per build in model_calls: the seconds the athlete
+    waits before any model call, with the slowest fetch named."""
+    try:
+        from usage import record_call  # local: keeps import order flat
+        slowest = max(timings.items(), key=lambda kv: kv[1]) if timings else None
+        note = f"slowest {slowest[0]} {slowest[1]:.1f}s" if slowest else "no timings"
+        if timed_out:
+            note += "; timed out: " + ",".join(timed_out)
+        _log.info("CONTEXT BUILD %.1fs (%s)", total, note)
+        record_call("context", total, None, ok=not timed_out, note=note, model=None)
+    except Exception:
+        _log.debug("Could not record the context build", exc_info=True)
+
+
 def build_context_block(memory: dict, athlete_name: str,
                         athlete_current_weight_kg: int,
                         athlete_goal_weight_kg: int,
@@ -349,35 +381,49 @@ def build_context_block(memory: dict, athlete_name: str,
     # timeout. Keep this in step when a fetch is added — it has now drifted
     # three times, most recently when the peak-week and set-comparison fetches
     # landed on separate branches and each bumped the count to eleven.
-    with ThreadPoolExecutor(max_workers=14) as executor:
+    # Each fetch is timed, and the whole build is recorded as a `context` row
+    # in model_calls with the slowest fetch named, so the Sunday report shows
+    # what the athlete waits on before the model is even called. The ceiling
+    # was 10s; a slow read of the sets table hit it, came back as None, and
+    # was rendered to the coach as "no working sets logged" (#244). Twenty
+    # seconds, with one worker per fetch so nothing queues behind another.
+    t0 = time.monotonic()
+    timings: dict = {}
+    timed_out: list = []
+    with ThreadPoolExecutor(max_workers=16) as executor:
         futures = {
-            executor.submit(get_full_session_history, 30): "session_history",
-            executor.submit(get_recovery_history, 30): "recovery_history",
-            executor.submit(get_substitution_history): "substitution_history",
-            executor.submit(get_apple_workouts, 30): "apple_workouts",
-            executor.submit(get_workout_state): "workout_state",
-            executor.submit(get_weekly_volume): "weekly_volume",
-            executor.submit(get_load_stalls): "load_stalls",
-            executor.submit(get_current_loads): "current_loads",
-            executor.submit(get_peak_week_loads): "peak_week_loads",
-            executor.submit(get_weak_point_history): "weak_point",
-            executor.submit(get_set_comparisons): "set_comparisons",
-            executor.submit(_recent_decisions): "decisions",
-            executor.submit(_standing_constraints): "constraints",
-            executor.submit(_recovery_rows): "recovery_rows",
-            executor.submit(_block_weak_points, memory, system_prompt): "block_weak_points",
+            executor.submit(_timed, get_full_session_history, 30): "session_history",
+            executor.submit(_timed, get_recovery_history, 30): "recovery_history",
+            executor.submit(_timed, get_substitution_history): "substitution_history",
+            executor.submit(_timed, get_apple_workouts, 30): "apple_workouts",
+            executor.submit(_timed, get_workout_state): "workout_state",
+            executor.submit(_timed, get_weekly_volume): "weekly_volume",
+            executor.submit(_timed, get_load_stalls): "load_stalls",
+            executor.submit(_timed, get_current_loads): "current_loads",
+            executor.submit(_timed, get_peak_week_loads): "peak_week_loads",
+            executor.submit(_timed, get_weak_point_history): "weak_point",
+            executor.submit(_timed, get_set_comparisons): "set_comparisons",
+            executor.submit(_timed, _recent_decisions): "decisions",
+            executor.submit(_timed, _standing_constraints): "constraints",
+            executor.submit(_timed, _recovery_rows): "recovery_rows",
+            executor.submit(_timed, _block_weak_points, memory, system_prompt): "block_weak_points",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
         # its own authoritative snapshot.
         if recovery_override is None:
-            futures[executor.submit(get_athlete_context)] = "data"
+            futures[executor.submit(_timed, get_athlete_context)] = "data"
         results = {}
         for future, key in futures.items():
             try:
-                results[key] = future.result(timeout=10)
+                results[key], timings[key] = future.result(timeout=FETCH_TIMEOUT_SECONDS)
+            except FutureTimeout:
+                log.warning("Context fetch timed out (%s) after %ss", key, FETCH_TIMEOUT_SECONDS)
+                results[key] = None
+                timed_out.append(key)
             except Exception:
                 log.exception("Context fetch failed (%s)", key)
                 results[key] = None
+    _record_context_build(time.monotonic() - t0, timings, timed_out)
 
     if recovery_override:
         data = _recovery_from_override(recovery_override)

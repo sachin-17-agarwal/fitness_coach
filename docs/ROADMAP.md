@@ -108,7 +108,10 @@ number to be judged against.
    decision at the moment it is agreed, instead of the plan carrying a to-do
    list. *Approved 16 Sep*; designed with 2.5.
 4. **Context fetch ceiling**: the ten-second per-query limit that turned a
-   slow read into "no history". *Approved 16 Sep*; folded into 2.1(b).
+   slow read into "no history". *Approved 16 Sep, shipped 17 Sep (#264)*:
+   ceiling 20 s, one worker per fetch, every fetch timed, and the whole
+   build recorded as a `context` row so the Sunday report shows the seconds
+   the athlete waits before any model call and which fetch is slowest.
 
 ### 1.1c What the first Decisions report says (16 Sep, 8 openings)
 
