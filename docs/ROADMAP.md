@@ -369,7 +369,9 @@ Approved items list their PRs when shipped. Declined items keep the reason.
 - **Approved 15 Sep, shipped 16 Sep (#251).** 2.2 HELD state: a lift under a
   standing decision reads "HELD · CAP 70 KG · SINCE 13 SEP", paints blue on
   the map, sits outside the dropping count and is explained, not judged, in
-  the coach hand-off. A PR still reads PR. *verify on the next build.*
+  the coach hand-off. A PR still reads PR. *Verified on the phone 17 Sep:*
+  hero "1 HELD", shoulders row HELD; the decision itself was re-recorded
+  after #261 so the 70 kg cap is on the row.
 - **Approved, 15 Sep.** 2.3 rep-overshoot step sizing (shipped #249);
   2.4 Swift tests for the numbers; 2.7 export **(shipped 16 Sep, #254: Settings → Export, five CSVs via the share sheet; backup job not built)**; 2.8 Apple Watch, staged, mockups first;
   2.9 stats widget, mockups first.
