@@ -16,8 +16,8 @@ struct LastBlockReference: Equatable {
     let weight: Double
     let reps: Int
     let rpe: Double?
-    /// "Wk 1" — the week both sets belong to.
-    let weekLabel: String
+    /// The date of the session the set came from, "12 SEP".
+    let label: String
 }
 
 struct PrescriptionCard: View {
@@ -190,7 +190,7 @@ struct PrescriptionCard: View {
         return HStack(spacing: 14) {
             Rectangle().fill(Color.line).frame(width: 1, height: 40)
             VStack(alignment: .leading, spacing: 5) {
-                EditorialEyebrow(text: "Last block · \(ref.weekLabel)", color: Editorial.muted, size: 8.5, kerning: 1.5)
+                EditorialEyebrow(text: "Last · \(ref.label)", color: Editorial.muted, size: 8.5, kerning: 1.5)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("\(load) × \(ref.reps)")
                         .font(.display(18))
@@ -208,7 +208,7 @@ struct PrescriptionCard: View {
         }
         .padding(.leading, 8)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Last block, \(ref.weekLabel): \(load) by \(ref.reps)")
+        .accessibilityLabel("Last session, \(ref.label): \(load) by \(ref.reps)")
     }
 
     private func setChip(target: SetTarget, color: Color) -> some View {

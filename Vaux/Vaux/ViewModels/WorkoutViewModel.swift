@@ -1132,28 +1132,33 @@ final class WorkoutViewModel {
         }
     }
 
-    /// The top working set from the session 21–35 days back — the same week
-    /// of the previous four-week block. The most recent session in that
-    /// window wins; the heaviest non-warm-up set in it is the reference.
+    /// The top working set from the athlete's most recent session on this
+    /// lift before today. This replaced a "same week of the previous block"
+    /// lookup that hardcoded a 21–35 day window (blocks run about two weeks,
+    /// so it reached two or three blocks back) and stamped TODAY's week on
+    /// whatever it found: a Cable Crunch card showed a set from weeks earlier
+    /// as "LAST BLOCK · WK 3". The last session is the set progression works
+    /// from, so the card and the coach now agree by construction, and the
+    /// label is the date it was lifted.
     static func lastBlockReference(from history: [WorkoutSet], week: Int?) -> LastBlockReference? {
-        let cal = Calendar.current
-        guard let lower = cal.date(byAdding: .day, value: -35, to: Date()),
-              let upper = cal.date(byAdding: .day, value: -21, to: Date()) else { return nil }
-        let lowerKey = dateFormatter.string(from: lower)
-        let upperKey = dateFormatter.string(from: upper)
-        let inWindow = history.filter { set in
+        let today = dateFormatter.string(from: Date())
+        let before = history.filter { set in
             guard set.isWarmup != true, let date = set.date else { return false }
-            return date >= lowerKey && date <= upperKey
+            return date < today
         }
-        guard let sessionDate = inWindow.compactMap(\.date).max() else { return nil }
-        let candidates = inWindow.filter { $0.date == sessionDate }
+        guard let sessionDate = before.compactMap(\.date).max() else { return nil }
+        let candidates = before.filter { $0.date == sessionDate }
         guard let top = candidates.max(by: { a, b in
             let wa = a.actualWeightKg ?? 0, wb = b.actualWeightKg ?? 0
             if wa != wb { return wa < wb }
             return (a.actualReps ?? 0) < (b.actualReps ?? 0)
         }), let weight = top.actualWeightKg, let reps = top.actualReps else { return nil }
-        let label = week.map { "Wk \($0)" } ?? "Same week"
-        return LastBlockReference(weight: weight, reps: reps, rpe: top.actualRpe, weekLabel: label)
+        let label: String = {
+            guard let d = dateFormatter.date(from: sessionDate) else { return sessionDate }
+            let f = DateFormatter(); f.dateFormat = "d MMM"; f.locale = Locale(identifier: "en_US_POSIX")
+            return f.string(from: d).uppercased()
+        }()
+        return LastBlockReference(weight: weight, reps: reps, rpe: top.actualRpe, label: label)
     }
 
     /// Collapses a flat set list into one point per training day — the best
