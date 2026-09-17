@@ -5,6 +5,7 @@ webhook.py — Flask server for Telegram messages and Apple Health data.
 import logging
 import re
 import secrets
+import json
 import traceback
 from flask import Flask, Response, request, jsonify
 
@@ -401,6 +402,117 @@ def api_block_review_answer():
         traceback.print_exc()
         return jsonify({"error": "answer_failed", "message": f"{type(e).__name__}: {e}"}), 502
     return jsonify({"status": "answered", "message": message})
+
+
+# Short phase names for a widget line: "WEEK 4 · DELOAD".
+_PHASE_SHORT = {1: "BASELINE", 2: "VOLUME", 3: "PEAK", 4: "DELOAD"}
+WIDGET_STRENGTH_KEY = "widget_strength"
+
+
+def widget_verdict(level: str, session_type: str, done: bool) -> str:
+    """The Home tab's verdict line, naming today's session so the widget
+    carries the day as well as the score."""
+    session = (session_type or "").upper()
+    if level == "green":
+        return "READY — SESSION DONE" if done else f"READY — {session} TODAY"
+    if level == "yellow":
+        return "STEADY — SESSION DONE" if done else f"STEADY — {session}, AS PLANNED"
+    if level == "red":
+        return "RUN DOWN — REST TONIGHT" if done else f"RUN DOWN — {session}, GO EASY"
+    return "NO RECOVERY DATA YET"
+
+
+def _session_done_today() -> bool:
+    from data import FINISHED_SESSION_STATUSES, now_local
+    supabase = get_supabase()
+    if not supabase:
+        return False
+    try:
+        today = now_local().strftime("%Y-%m-%d")
+        rows = (supabase.table("workout_sessions").select("status").eq("date", today).execute().data or [])
+        return any((r.get("status") or "").strip().lower() in FINISHED_SESSION_STATUSES for r in rows)
+    except Exception:
+        traceback.print_exc()
+        return False
+
+
+def widget_payload(memory: dict, readiness: dict, done: bool) -> dict:
+    """Everything the widget draws, computed once here so it and Home agree."""
+    from data import SESSION_OVERRIDE_KEY, session_type_for
+    week = _safe_int_or(memory.get("mesocycle_week"), 1)
+    day = _safe_int_or(memory.get("mesocycle_day"), 1)
+    session = session_type_for(day, override=memory.get(SESSION_OVERRIDE_KEY))
+    strength = None
+    raw = memory.get(WIDGET_STRENGTH_KEY)
+    if raw:
+        try:
+            strength = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except (ValueError, TypeError):
+            strength = None
+    return {
+        "date": now_local().strftime("%Y-%m-%d"),
+        "score": readiness.get("score"),
+        "level": readiness.get("level"),
+        "verdict": widget_verdict(readiness.get("level"), session, done),
+        "session_type": session,
+        "done": done,
+        "week": week,
+        "day": day,
+        "phase": _PHASE_SHORT.get(week, ""),
+        "hrv": readiness.get("hrv"),
+        "hrv_delta": readiness.get("hrv_delta"),
+        "sleep_hours": readiness.get("sleep_hours"),
+        "resting_hr": readiness.get("resting_hr"),
+        "rhr_delta": readiness.get("rhr_delta"),
+        "strength": strength,
+    }
+
+
+def _safe_int_or(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+@app.route("/api/widget", methods=["GET"])
+def api_widget():
+    """The home-screen widget's one read: readiness, the day, the verdict,
+    and the strength number the app last computed. No model call."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    from readiness import readiness_today  # local: keeps import order flat
+    try:
+        memory = load_memory()
+        readiness = readiness_today()
+        done = _session_done_today()
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "widget_failed", "message": f"{type(e).__name__}: {e}"}), 502
+    return jsonify(widget_payload(memory, readiness, done))
+
+
+@app.route("/api/widget/strength", methods=["POST"])
+def api_widget_strength():
+    """The Strength tab's block number, posted by the app when it computes
+    it: {"median_gain_pct": 8.1, "lifts": 11, "block": 6, "week": 4}. Stored
+    as-is so the widget shows the tab's number and never a second opinion."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    try:
+        payload = {
+            "median_gain_pct": None if body.get("median_gain_pct") is None else round(float(body["median_gain_pct"]), 1),
+            "lifts": _safe_int_or(body.get("lifts"), 0),
+            "block": _safe_int_or(body.get("block"), 0),
+            "week": _safe_int_or(body.get("week"), 0),
+            "computed_at": now_local().isoformat(),
+        }
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": "bad_request", "message": str(e)}), 400
+    from memory import set_memory_value  # local: keeps import order flat
+    set_memory_value(WIDGET_STRENGTH_KEY, json.dumps(payload))
+    return jsonify({"status": "stored", "strength": payload})
 
 
 def _app_authorised() -> bool:

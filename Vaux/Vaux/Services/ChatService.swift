@@ -446,6 +446,26 @@ final class ChatService: Sendable {
         catch { throw ChatServiceError.decodingFailed(error) }
     }
 
+    /// The Strength tab's block number, handed to the backend so the widget
+    /// shows the same figure without the app running. Fire-and-forget.
+    func postWidgetStrength(medianGainPct: Double?, lifts: Int, block: Int, week: Int) async throws {
+        let urlString = "\(backendBase)/api/widget/strength"
+        guard let url = URL(string: urlString) else { throw ChatServiceError.invalidURL(urlString) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["lifts": lifts, "block": block, "week": week]
+        if let medianGainPct { body["median_gain_pct"] = medianGainPct }
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw ChatServiceError.backendError(statusCode: http.statusCode,
+                                                body: String(data: data, encoding: .utf8) ?? "(no body)")
+        }
+    }
+
     private func callBackend(_ message: String) async throws -> ChatResponse {
         let rawURL = Config.backendURL
         let token = Config.appAPIToken

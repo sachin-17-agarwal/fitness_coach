@@ -18,5 +18,12 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.widgetkit-extension</string>
 	</dict>
+	<!-- The readiness figure is set in Anton, as on the Home tab. The font
+	     file sits in this folder so the synchronized group bundles it with
+	     the extension; registering it here makes Font.custom find it. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>Anton-Regular.ttf</string>
+	</array>
 </dict>
 </plist>

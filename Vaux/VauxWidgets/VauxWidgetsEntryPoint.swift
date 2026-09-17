@@ -20,6 +20,7 @@ import WidgetKit
 @main
 struct VauxWidgetsBundle: WidgetBundle {
     var body: some Widget {
+        ReadinessWidget()
         RestLiveActivity()
     }
 }

@@ -464,11 +464,10 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   after #261 so the 70 kg cap is on the row.
 - **Approved, 15 Sep.** 2.3 rep-overshoot step sizing (shipped #249);
   2.4 Swift tests for the numbers; 2.7 export **(shipped 16 Sep, #254; verified 17 Sep — five CSVs came back and settled the hamstring question)**; 2.8 Apple Watch, staged, mockups first;
-  2.9 stats widget **(direction settled 17 Sep after four rounds: the Home
-  readiness hero as a widget — score, verdict with today's session, week and
-  strength gain; medium, small and lock-screen; canvas link in
-  IMPLEMENTATION 2.9. Accepted without enthusiasm; build when the queue is
-  clear, not before)**.
+  2.9 stats widget **(settled and shipped 17 Sep: the Home readiness hero
+  as a widget — score, verdict with today's session, week and strength
+  gain; medium, small, lock screen. Readiness now computed server-side
+  in `readiness.py` with the phone's formula. Verify on the next build)**.
 - **Approved 15 Sep, shipped 16 Sep (#252 backend, #253 app).** 2.1(b) start
   on the programme, the coach catches up: START shows the programme's card
   at once under "PROGRAMME · COACH REVIEWING"; the review lands into the
