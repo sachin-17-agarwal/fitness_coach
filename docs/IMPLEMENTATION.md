@@ -39,7 +39,7 @@ to ship the queue early; migrations 006, 007 and 008 have been run.
 | ~~Sun 20 Sep~~ pulled to Thu 17 Sep | ~~2.11 bodyweight progression~~ (approved 17 Sep evening, shipped the same night; see the section below) · pulled forward with it: the decision-capture design (item 3, written: `docs/DECISION_CAPTURE.md`) and the 2.9 widget mockups (published, link in the 2.9 section) | approve or amend the design; pick a widget direction |
 | Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate and its four buckets, first shadow rows, first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate | the band decision |
 | Mon 21 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes) |
-| Week of 28 Sep | ~~2.9 widget build~~ (shipped 17 Sep) · decision capture build if the design is approved · block review: read the dry run when it lands on Home, answer it, compare | read the review the morning it appears |
+| ~~Week of 28 Sep~~ pulled to Fri 18 Sep | ~~2.9 widget build~~ (shipped 17 Sep) · ~~decision capture build~~ (approved and shipped 18 Sep; run migration 009) · ~~2.12 hygiene~~ (shipped 18 Sep; run migration 010, then the hygiene dry run) · block review: read the dry run when it lands on Home, answer it, compare | run migrations 009 and 010; read the review the morning it appears |
 | Tue 30 Sep | Review 2.1(c) geofence: does START still feel slow? | your answer |
 | After | 2.5 goes live (dry_run off) once the first review has been compared · 2.8 watch, timer stage first | mockups approval |
 
@@ -102,6 +102,47 @@ and week 1's `>= high` opening at ~line 562), `tests/test_prescribe.py`.
 step and its Why line.
 
 **Gate.** Audit rule-break rate over the block must not rise (gate 1).
+
+## Decision capture (1.1b item 3) — shipped 18 Sep
+
+**Goal.** A decision reached in chat is written down where it is reached,
+confirmed with one tap, and applied through the paths that already exist.
+Design: `docs/DECISION_CAPTURE.md`.
+
+**Files.** `decisions.py` (grammar `RECORDABLE_RE`, `parse_proposed`,
+`lasting_phrases`, `capture`, `open_captures`, `apply_line`, `answer`,
+`parse_answer` with the fifteen-minute window for a bare yes/no, the report
+section), `migrations/009_decision_captures.sql`, `coach.py` (capture after
+every reply; "record it" / "not now" answers the newest open proposal, after
+the block-review answer path), `webhook.py` (`GET /api/decision/pending`,
+`POST /api/decision/answer`), `usage.py` (report section), `system_prompt.txt`
+(the `Proposed:` rule), app: `DecisionCapture`, `ChatService.pendingDecisions /
+answerDecision`, `DashboardViewModel.decisions`, Home `decisionCard` under
+the digest. Tests: `tests/test_decisions.py` (15).
+
+**Verify.** Agree something lasting in chat ("triceps next block"): the
+reply carries a `Proposed:` line, Home shows the card, Record puts it in
+memory. Say something lasting and get prose back: Sunday's report lists the
+miss. Migration 009 first.
+
+## 2.12 Session hygiene — shipped 18 Sep
+
+**Files.** `migrations/010_session_hygiene.sql` (statuses respelled, blank
+and 'Unknown' types nulled, two preview selects), `cleanup.py`
+(`infer_session_type`, `plan_session_hygiene`, `cleanup_session_hygiene`;
+the `hygiene` step in the CLI and `/admin/cleanup`). Tests:
+`tests/test_hygiene.py` (5).
+
+**Run.** Migration 010 in Supabase, then from a terminal, dry run first:
+
+```
+curl -s -X POST https://fitnesscoach-production-257d.up.railway.app/admin/cleanup \
+  -H "Authorization: Bearer $APP_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"step":"hygiene","execute":false}'
+```
+
+Read the log; re-post with `"execute":true` to apply. Duplicates keep the
+row with the most sets and move the others' sets to it before deleting.
 
 ## 2.11 Bodyweight and straight-set progression
 
