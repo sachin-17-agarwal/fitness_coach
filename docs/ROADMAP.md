@@ -129,7 +129,9 @@ days: deload Pull 16 Sep and Push 17 Sep):**
    table stays a reference and the WEEKLY VOLUME block is the number.
 3. **Decisions captured when reached**: the coach offers to record a
    decision at the moment it is agreed, instead of the plan carrying a to-do
-   list. *Approved 16 Sep*; designed with 2.5.
+   list. *Approved 16 Sep; design written 17 Sep in
+   `docs/DECISION_CAPTURE.md` — a `Proposed:` line from the coach, one-tap
+   confirmation, a detector that counts the misses. Waiting for approval.*
 4. **Context fetch ceiling**: the ten-second per-query limit that turned a
    slow read into "no history". *Approved 16 Sep, shipped 17 Sep (#264)*:
    ceiling 20 s, one worker per fetch, every fetch timed, and the whole
