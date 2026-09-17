@@ -49,6 +49,13 @@ class ReadinessFormulaTests(unittest.TestCase):
         self.assertTrue(75 <= out["score"] <= 100)
 
 
+    def test_a_weigh_in_only_row_does_not_erase_the_read(self):
+        rows = [{"date": "2026-09-18", "weight_kg": 80.8, "hrv": None, "sleep_hours": None, "resting_hr": None},
+                {"date": "2026-09-17", "hrv": 68, "sleep_hours": 7.3, "resting_hr": 52}]
+        self.assertEqual(readiness.latest_with_readings(rows)["date"], "2026-09-17")
+        self.assertIsNone(readiness.latest_with_readings(rows[:1]))
+
+
 class _Settings:
     app_api_token = "tok"
 
@@ -85,6 +92,14 @@ class WidgetRouteTests(unittest.TestCase):
         self.assertEqual(body["phase"], "DELOAD")
         self.assertEqual(body["strength"]["median_gain_pct"], 8.1)
         self.assertEqual(body["hrv_delta"], 4)
+
+    def test_yesterdays_read_is_marked_stale(self):
+        ready = {"date": "2026-09-17", "score": 82, "level": "green"}
+        with patch("webhook.now_local") as now:
+            now.return_value.strftime.return_value = "2026-09-18"
+            body = webhook.widget_payload({"mesocycle_week": 4, "mesocycle_day": 3}, ready, False)
+        self.assertTrue(body["stale"])
+        self.assertEqual(body["read_date"], "2026-09-17")
 
     def test_the_app_posts_the_strength_number_and_it_is_stored_as_is(self):
         with patch.object(webhook, "get_settings", return_value=_Settings()), \

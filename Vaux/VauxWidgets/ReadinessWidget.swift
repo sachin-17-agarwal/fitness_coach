@@ -24,6 +24,10 @@ nonisolated struct WidgetStrength: Codable, Hashable, Sendable {
 
 nonisolated struct WidgetPayload: Codable, Hashable, Sendable {
     let date: String
+    /// The date of the readings behind the score; `stale` when it is not
+    /// today (a weigh-in wrote today's row before the Health export ran).
+    let readDate: String?
+    let stale: Bool?
     let score: Int?
     let level: String
     let verdict: String
@@ -40,7 +44,7 @@ nonisolated struct WidgetPayload: Codable, Hashable, Sendable {
     let strength: WidgetStrength?
 
     static let sample = WidgetPayload(
-        date: "2026-09-17", score: 82, level: "green", verdict: "READY — PUSH TODAY",
+        date: "2026-09-17", readDate: "2026-09-17", stale: false, score: 82, level: "green", verdict: "READY — PUSH TODAY",
         sessionType: "Push", done: false, week: 4, day: 2, phase: "DELOAD",
         hrv: 68, hrvDelta: 4, sleepHours: 7.33, restingHr: 52, rhrDelta: -1,
         strength: WidgetStrength(medianGainPct: 8.1, lifts: 11))
@@ -175,6 +179,14 @@ private enum WidgetStyle {
         return "\(total / 60):" + String(format: "%02d", total % 60)
     }
 
+    /// Today's date, or "READ · THU 17" when the score is yesterday's.
+    static func headerDate(_ p: WidgetPayload, long: Bool) -> String {
+        if p.stale == true, let read = p.readDate {
+            return "READ · " + date(read, long: false)
+        }
+        return date(p.date, long: long)
+    }
+
     static func date(_ iso: String, long: Bool) -> String {
         let parser = DateFormatter()
         parser.dateFormat = "yyyy-MM-dd"
@@ -277,7 +289,7 @@ private struct MediumView: View {
     let p: WidgetPayload
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            WidgetHeader(dateText: WidgetStyle.date(p.date, long: true))
+            WidgetHeader(dateText: WidgetStyle.headerDate(p, long: true))
             Spacer(minLength: 4)
             HStack(alignment: .bottom, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -312,7 +324,7 @@ private struct SmallView: View {
     let p: WidgetPayload
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            WidgetHeader(dateText: WidgetStyle.date(p.date, long: false))
+            WidgetHeader(dateText: WidgetStyle.headerDate(p, long: false))
             Spacer(minLength: 2)
             ScoreFigure(payload: p, size: 60)
             Text(p.verdict.replacingOccurrences(of: " — ", with: "\n"))
@@ -372,7 +384,7 @@ struct ReadinessWidgetView: View {
 
     var body: some View {
         let p = entry.payload ?? WidgetPayload(
-            date: WidgetStyle.isoToday, score: nil, level: "unknown", verdict: "NO READ YET — OPEN VAUX",
+            date: WidgetStyle.isoToday, readDate: nil, stale: false, score: nil, level: "unknown", verdict: "NO READ YET — OPEN VAUX",
             sessionType: "", done: false, week: 0, day: 0, phase: "", hrv: nil, hrvDelta: nil,
             sleepHours: nil, restingHr: nil, rhrDelta: nil, strength: nil)
         Group {
