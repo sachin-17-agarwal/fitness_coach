@@ -62,7 +62,9 @@ nonisolated enum WidgetAPI {
         guard let url = URL(string: "\(base)/api/widget") else { return cached() }
         var req = URLRequest(url: url)
         req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = 20
+        // WidgetKit gives a provider seconds, not minutes. A slow backend
+        // must fall through to the last good read, never hold the timeline.
+        req.timeoutInterval = 8
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return cached() }
@@ -103,6 +105,12 @@ nonisolated struct ReadinessProvider: TimelineProvider {
             completion(ReadinessEntry(date: .now, payload: .sample))
             return
         }
+        // A snapshot is wanted now: the last good read at once if there is
+        // one, the network only when the cache is empty.
+        if let cached = WidgetAPI.cached() {
+            completion(ReadinessEntry(date: .now, payload: cached))
+            return
+        }
         Task { completion(ReadinessEntry(date: .now, payload: await WidgetAPI.fetch())) }
     }
 
@@ -113,7 +121,9 @@ nonisolated struct ReadinessProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<ReadinessEntry>) -> Void) {
         Task {
             let payload = await WidgetAPI.fetch()
-            let next = Calendar.current.date(byAdding: .minute, value: 45, to: .now) ?? .now.addingTimeInterval(2700)
+            // Nothing read yet: ask again in five minutes rather than forty-five.
+            let minutes = payload == nil ? 5 : 45
+            let next = Calendar.current.date(byAdding: .minute, value: minutes, to: .now) ?? .now.addingTimeInterval(2700)
             completion(Timeline(entries: [ReadinessEntry(date: .now, payload: payload)], policy: .after(next)))
         }
     }
@@ -362,7 +372,7 @@ struct ReadinessWidgetView: View {
 
     var body: some View {
         let p = entry.payload ?? WidgetPayload(
-            date: WidgetStyle.isoToday, score: nil, level: "unknown", verdict: "NO RECOVERY DATA YET",
+            date: WidgetStyle.isoToday, score: nil, level: "unknown", verdict: "NO READ YET — OPEN VAUX",
             sessionType: "", done: false, week: 0, day: 0, phase: "", hrv: nil, hrvDelta: nil,
             sleepHours: nil, restingHr: nil, rhrDelta: nil, strength: nil)
         Group {
