@@ -2,6 +2,7 @@
 // Vaux
 
 import Foundation
+import WidgetKit
 import Observation
 
 @Observable
@@ -128,6 +129,9 @@ final class DashboardViewModel {
         }
 
         isLoading = false
+        // Fresh recovery or a finished session on Home means the widget is
+        // behind; ask it to read again.
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Swaps today's session for `type`, or restores the schedule when passed

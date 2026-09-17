@@ -39,7 +39,7 @@ to ship the queue early; migrations 006, 007 and 008 have been run.
 | ~~Sun 20 Sep~~ pulled to Thu 17 Sep | ~~2.11 bodyweight progression~~ (approved 17 Sep evening, shipped the same night; see the section below) · pulled forward with it: the decision-capture design (item 3, written: `docs/DECISION_CAPTURE.md`) and the 2.9 widget mockups (published, link in the 2.9 section) | approve or amend the design; pick a widget direction |
 | Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate and its four buckets, first shadow rows, first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate | the band decision |
 | Mon 21 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes) |
-| Week of 28 Sep | 2.9 widget build · decision capture build if the design is approved · block review: read the dry run when it lands, answer it, compare | read the review the morning it appears |
+| Week of 28 Sep | ~~2.9 widget build~~ (shipped 17 Sep) · decision capture build if the design is approved · block review: read the dry run when it lands on Home, answer it, compare | read the review the morning it appears |
 | Tue 30 Sep | Review 2.1(c) geofence: does START still feel slow? | your answer |
 | After | 2.5 goes live (dry_run off) once the first review has been compared · 2.8 watch, timer stage first | mockups approval |
 
@@ -333,27 +333,34 @@ health data and belongs in storage you own.
 
 **Goal.** A medium and a large widget for the hours outside the gym.
 
-**Direction** (settled 17 Sep, four rounds, rendered and checked in Chromium
-before publishing): the Home readiness hero as a widget —
-https://claude.ai/artifact/2nfvyuwbrBY9pkqzJhcuE1 . Anton readiness figure
-in the verdict colour, the verdict line with today's session, week and
-phase, strength gain for the block, HRV and sleep; medium, small and a
-lock-screen tile. Nothing else: no next session, no lift list, no charts.
-Accepted without enthusiasm — build it when the queue is clear.
+**Shipped 17 Sep (built the same night, on request).** The Home readiness
+hero as a widget — https://claude.ai/artifact/2nfvyuwbrBY9pkqzJhcuE1 —
+medium, small and a lock-screen tile. Anton readiness figure in the verdict
+colour, the verdict line naming today's session, week and phase, the block's
+strength gain, HRV with its delta, sleep. Nothing else.
 
-**Two backend pieces first.** The readiness score moves server-side (it is
-computed in `DashboardViewModel` today) so widget and dashboard cannot
-disagree, and a `GET /api/widget` returns score, zone, verdict, session,
-week, strength gain. The widget reads it on its timeline after the morning
-sync and at midday; no app launch needed.
+**How the numbers reach it.** `GET /api/widget` is the widget's one read:
+`readiness.py` computes the score on the server with the formula
+`Recovery.compositeScore` runs on the phone (anchors pinned in
+`tests/test_widget.py`), the verdict is the Home line naming the session,
+the week and phase come from memory, and the strength number is the
+Strength tab's own — `HistoryViewModel` posts it to
+`POST /api/widget/strength` whenever it recomputes, and asks WidgetKit to
+redraw. The timeline re-reads about every 45 minutes and whenever Home
+loads. A dead network shows the last good read.
 
-**Files.** `Vaux/VauxWidgets/…` (the extension exists for the Live
-Activity), an App Group `group.Sachin.Vaux2` on both targets, a shared
-`WidgetSnapshot` JSON written by `DashboardViewModel.load()` and by the
-Health sync, `TimelineProvider` refreshing after the morning sync and at
-midday.
+**Files.** `readiness.py`, `webhook.py` (`/api/widget`,
+`/api/widget/strength`, `widget_verdict`), `Vaux/VauxWidgets/ReadinessWidget.swift`
+(payload, provider, three sizes), `VauxWidgetsEntryPoint.swift`,
+`VauxWidgets/Info.plist` (Anton registered) and `Anton-Regular.ttf` beside
+it, `Shared/Config.swift` (moved from the app folder so the extension shares
+the backend address), `ChatService.postWidgetStrength`, `HistoryViewModel`
+and `DashboardViewModel` reloads.
 
-**Content.** As drawn; the widget reads `/api/widget`, not a snapshot.
+**Verify on the phone.** Add the medium widget after the next build; the
+score matches Home's, the verdict names today's session, the strength line
+matches the Strength tab. Add the lock-screen tile.
+
 
 **Verify.** Add both sizes; numbers match Home and Strength at the same
 moment.

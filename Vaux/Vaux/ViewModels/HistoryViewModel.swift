@@ -6,6 +6,7 @@
 // the same placed data to each tab's reader. One fetch, four readings.
 
 import Foundation
+import WidgetKit
 import Observation
 
 @Observable
@@ -53,6 +54,7 @@ final class HistoryViewModel {
         weighIns = (try? await recoveryService.fetchWeighIns(days: windowDays + 90)) ?? .empty
         constraints = (try? await workoutService.fetchStandingConstraints()) ?? []
         strength.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns, constraints: constraints)
+        publishStrengthToWidget()
         training.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
         await recovery.load(sessions: sessions, calendar: calendar)
         await weeklyVolume.load()
@@ -71,6 +73,7 @@ final class HistoryViewModel {
         await fetchWindow(state: state)
         weighIns = (try? await recoveryService.fetchWeighIns(days: windowDays + 90)) ?? .empty
         strength.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns, constraints: constraints)
+        publishStrengthToWidget()
         training.rebuild(sets: sets, sessions: sessions, calendar: calendar, weighIns: weighIns)
         if let keep { strength.show(block: keep) }
     }
@@ -94,4 +97,20 @@ final class HistoryViewModel {
     }
 
     var hasAnyData: Bool { !sessions.isEmpty || !recovery.history.isEmpty }
+
+    /// The Strength tab's block number goes to the backend so the widget can
+    /// show it without the app running, and the widget is told to redraw.
+    /// The number is the tab's own — the widget never recomputes it.
+    private func publishStrengthToWidget() {
+        guard let snap = strength.latest else { return }
+        let gain = snap.medianGainPct
+        let lifts = snap.judgedCount
+        let block = snap.judged.block
+        let week = snap.judged.week
+        Task {
+            try? await ChatService().postWidgetStrength(medianGainPct: gain, lifts: lifts, block: block, week: week)
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
 }
