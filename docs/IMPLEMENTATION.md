@@ -36,7 +36,7 @@ to ship the queue early; migrations 006, 007 and 008 have been run.
 |---|---|---|
 | ~~Thu 17 Sep~~ done | ~~Verify on the phone~~: HELD row, START opening on Push (card at once, coach landed), export (five CSVs) all confirmed; reference line and logger label still to glance at · ~~first `text`/`thinking` split~~ read: opening 83% thinking; Stage 5 first cut −20% on set replies | — |
 | ~~Fri 18 Sep~~ shipped Thu 17 Sep | ~~Item 4: raise the context fetch ceiling, log per-query timings~~ (#264: ceiling 20 s, every fetch timed, the build recorded as a `context` row in the Sunday report with the slowest fetch named) | — |
-| ~~Sun 20 Sep~~ pulled to Thu 17 Sep | ~~2.11 bodyweight progression~~ (approved 17 Sep evening, shipped the same night; see the section below) · pulled forward with it: the decision-capture design (item 3, written: `docs/DECISION_CAPTURE.md`) and the 2.9 widget mockups, in that order | approve or amend the design; pick a widget direction |
+| ~~Sun 20 Sep~~ pulled to Thu 17 Sep | ~~2.11 bodyweight progression~~ (approved 17 Sep evening, shipped the same night; see the section below) · pulled forward with it: the decision-capture design (item 3, written: `docs/DECISION_CAPTURE.md`) and the 2.9 widget mockups (published, link in the 2.9 section) | approve or amend the design; pick a widget direction |
 | Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate and its four buckets, first shadow rows, first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate | the band decision |
 | Mon 21 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes) |
 | Week of 28 Sep | 2.9 widget build · decision capture build if the design is approved · block review: read the dry run when it lands, answer it, compare | read the review the morning it appears |
@@ -333,8 +333,12 @@ health data and belongs in storage you own.
 
 **Goal.** A medium and a large widget for the hours outside the gym.
 
-**Mockups first** (Fri 25 Sep): two directions on a design canvas, you
-pick one. Then:
+**Mockups** published 17 Sep, two directions in both sizes:
+https://claude.ai/artifact/2nfvyuwbrBY9pkqzJhcuE1 — A · Ledger (the
+median-gain number as the hero, sets against the band as thin bars in
+the large size) and B · Field (the Home hero's green ground, a readiness
+ring, the body map coloured by strength state in the large size). Pick
+one, or name the parts of each to keep. Then:
 
 **Files.** `Vaux/VauxWidgets/…` (the extension exists for the Live
 Activity), an App Group `group.Sachin.Vaux2` on both targets, a shared
