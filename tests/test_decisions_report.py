@@ -114,3 +114,19 @@ class RecordShadowTests(unittest.TestCase):
             def table(self, name): raise RuntimeError("no table")
         with patch("data.get_supabase", return_value=Broken()):
             record_shadow("2026-09-16", "Pull", 4, "prose", "Hammer Curl", {}, {})   # must not raise
+
+
+
+class ShadowComparesNumbersOnlyTests(unittest.TestCase):
+
+    def test_blocks_with_identical_sets_are_the_same_whatever_the_prose(self):
+        from coach import _same_numbers
+        a = {"warmup": [{"weight": 40, "reps": 8}], "working": [{"weight": 80, "reps": 6, "reps_high": 8, "rpe": 8}],
+             "backoff": [{"weight": 64, "reps": 10, "reps_high": 12, "rpe": 7}],
+             "form": "brace hard", "why": "programme", "tempo": "3-1-2", "rest": "2min"}
+        b = dict(a, form="elbows in", why=None, tempo=None, rest="90s")
+        self.assertTrue(_same_numbers(a, b))
+        c = dict(a, backoff=[{"weight": 60, "reps": 10, "reps_high": 12, "rpe": 7}])
+        self.assertFalse(_same_numbers(a, c))
+        d = dict(a, warmup=[])
+        self.assertFalse(_same_numbers(a, d))

@@ -87,6 +87,29 @@ number to be judged against.
   Seated Leg Curl, two back-offs at different loads). One is noise; a second
   this block is a pattern to chase. *watching*
 
+**First readings after the deload week's shipping (17 Sep, two training
+days: deload Pull 16 Sep and Push 17 Sep):**
+
+| kind | uncached in | cache hit | text | thinking | per call |
+|---|---:|---:|---:|---:|---:|
+| plan | 2,271 | 0% | 1,175 | 4,193 | $0.30 |
+| prose | 8,019 | 88% | 182 | 120 | $0.033 |
+| set_reply | 7,634 | 88% | 88 | 142 | $0.032 |
+| context build | median 1.3 s, p90 1.6 s, max 8.6 s, no timeouts | | | | |
+
+- **Stage 5 first cut is working.** Uncached input per set reply fell from
+  ~13,200 to ~7,600 tokens, prose from ~11,600 to ~8,000; cache hit rose
+  from 79% to 88%; a set reply now costs $0.032 against $0.040 (−20%) and
+  prose $0.033 against $0.039 (−15%). The remaining ~7,600 uncached tokens
+  are the conversation history plus the set block: the second cut's target.
+- **The opening is 83% thinking**: 4,193 of 5,050 output tokens. With
+  2.1(b) that is off the critical path; it is still $0.25 of the $0.30.
+- **Context build is not the wait**: 1.3 s median before any model call.
+- **Decisions, three openings**: 20 exercises, 5 adjusted (25%), 3 with a
+  cause, 0 shape. **Shadow**: 3 blocks on the plan path differed from the
+  programme's computation; the comparison was on whole parsed blocks
+  including the form cue, so it over-counted — numbers only from #265.
+
 ### 1.1b Surfaced 15–16 Sep, decided 16 Sep
 
 1. **Card reference line** ("LAST BLOCK · WK 3"): hardcoded 21–35 day
