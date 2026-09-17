@@ -188,6 +188,23 @@ BACKOFF_RANGE = {COMPOUND: (10, 12), ISOLATION: (12, 15)}
 # :203 "2.5-5kg (compounds) / 1-2.5kg (isolations) is a guide, not a fixed grid"
 INCREMENT = {COMPOUND: 2.5, ISOLATION: 1.0}
 
+# Added load on a bodyweight movement is a plate on a dip belt or a dumbbell
+# between the feet, and neither comes in kilo steps. The isolation increment
+# gave a hanging leg raise +1kg a session — a load that does not exist in the
+# gym — and the athlete sat at +5kg while the programme kept asking for six.
+BODYWEIGHT_INCREMENT = 2.5
+
+# A top set that has sat at the same load AND the same reps for this many
+# sessions is a stall the prescription itself has to answer, not only a line
+# in the readout. Same horizon as progression.DEFAULT_MIN_SESSIONS: an
+# exercise recurs about 1.5x a week, so three sessions is a fortnight.
+STALL_SESSIONS = 3
+
+
+def _increment(kind: str, bodyweight: bool) -> float:
+    """The smallest step the load can actually take."""
+    return BODYWEIGHT_INCREMENT if bodyweight else INCREMENT[kind]
+
 # :64 "Drop weight 15-25% immediately." Midpoint, so the result lands inside
 # the band whichever way the gym's stack rounds.
 BACKOFF_DROP = 0.20
@@ -224,6 +241,7 @@ class PriorSet:
     date: str = ""
     week: int | None = None     # mesocycle week it was performed in, if known
     bodyweight: bool = False    # progression's "BW" key: a set at bodyweight
+    held: int = 1               # consecutive sessions at this load AND these reps
 
 
 @dataclass
@@ -347,13 +365,52 @@ def _overshoot_step(load: float, reps: int, low: int, high: int, kind: str) -> t
     return new, reason
 
 
-def _sized_overshoot(prior, load, low, high, kind):
-    """The sized step when the prior set is far enough over, else None."""
-    if prior.reps is None or prior.bodyweight or not load or load <= 0:
+def _sized_overshoot(prior, load, low, high, kind, exercise: str = "",
+                     athlete_kg: float | None = None):
+    """The sized step when the prior set is far enough over, else None.
+
+    A bodyweight movement is sized on what it actually lifted — the plate plus
+    the movement's share of the athlete — and the step comes back as added
+    load in belt-plate increments. Without a weigh-in on record, or for a
+    movement that lifts no meaningful share of the body (a rollout), the
+    single increment stands: sizing a step off +5kg alone would call a 15-rep
+    leg raise a five-kilo lift and step it by a fraction of a plate.
+    """
+    if prior.reps is None or prior.reps - high < OVERSHOOT_REPS:
         return None
-    if prior.reps - high < OVERSHOOT_REPS:
+    if prior.bodyweight:
+        return _bodyweight_overshoot(prior, load or 0.0, low, high, exercise, athlete_kg)
+    if not load or load <= 0:
         return None
     return _overshoot_step(load, prior.reps, low, high, kind)
+
+
+def _bodyweight_overshoot(prior, added, low, high, exercise, athlete_kg):
+    fraction = bodyweight_fraction(exercise)
+    if fraction is None or not athlete_kg or athlete_kg <= 0:
+        return None
+    body = float(athlete_kg) * fraction
+    lifted = added + body
+    e1rm = lifted * (1 + prior.reps / 30)
+    mid = (low + high) / 2
+    target = e1rm / (1 + mid / 30)
+    raw = target - lifted
+    cap = lifted * OVERSHOOT_CAP
+    step = max(min(raw, cap), BODYWEIGHT_INCREMENT)
+    new = _round_to(added + step, BODYWEIGHT_INCREMENT)
+    new = max(new, added + BODYWEIGHT_INCREMENT)
+    reason = (f"Load BW + {new:g}kg: {prior.reps} reps at BW + {added:g}kg is about "
+              f"{lifted:g}kg lifted ({body:g}kg of you), which puts {mid:g} reps near "
+              f"{_round_load(target):g}kg lifted"
+              + ("; capped at +10% this session" if raw > cap else "")
+              + f". Added load moves in {BODYWEIGHT_INCREMENT:g}kg plates. Reps above the "
+              f"{low}-{high} range are a backlog, not an achievement (:205).")
+    return new, reason
+
+
+def _round_to(value: float, step: float) -> float:
+    """Round to the nearest multiple of `step`."""
+    return round(round(value / step) * step, 2)
 
 
 def _round_load(value: float) -> float:
@@ -522,7 +579,8 @@ def _met_top_of_range(prior: PriorSet, kind: str, target_rpe: float) -> bool:
 
 
 def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
-                 reasons: list[str], deferred: list[str]) -> SetSpec:
+                 reasons: list[str], deferred: list[str],
+                 athlete_kg: float | None = None) -> SetSpec:
     """The top set for today, from the wave and what was logged last time.
 
     When the load moves, the reps are prescribed as the whole band with the
@@ -594,12 +652,12 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"recorded mesocycle week, so which week it belonged to "
                 f"cannot be verified."
             )
-        sized = _sized_overshoot(prior, load, low, high, kind) if prior.reps is not None else None
+        sized = _sized_overshoot(prior, load, low, high, kind, exercise, athlete_kg) if prior.reps is not None else None
         if sized:
             load, why = sized
             reasons.append(f"Week 1 opens ABOVE last cycle, sized to the miss. {why} Reps reset to the bottom.")
         elif prior.reps is not None and prior.reps >= high:
-            step = INCREMENT[kind]
+            step = _increment(kind, bodyweight)
             load = _round_load(load + step)
             reasons.append(
                 f"Week 1 opens ~{step:g}kg ABOVE last cycle: week 3 finished at "
@@ -614,6 +672,36 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             )
         return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
 
+    if (prior.held >= STALL_SESSIONS and prior.reps is not None
+            and low <= prior.reps < high and week != 4):
+        # The same load and the same reps for three sessions is a stall, and
+        # "add reps toward the top of the range" has been the prescription
+        # for every one of them. Ab Wheel Rollout sat at bodyweight x8 for
+        # seven sessions at RPE 6-7 while the programme asked for 9-12 each
+        # time; the coach did the coaching by hand every session. When the
+        # RPE says the reps are there, the prescription pins them at the top
+        # of the range — a count, not a band — so the load can move next
+        # time. When the RPE says they are not, the rep lever is stuck and
+        # what replaces it is a coaching decision, so it is deferred.
+        easy = prior.rpe is not None and prior.rpe <= targets["top"] - 1
+        held_at = SetSpec(load, prior.reps, prior.reps, targets["top"], bodyweight=bodyweight).render()
+        if easy:
+            reasons.append(
+                f"STALLED {prior.held} sessions at {held_at.rsplit(' RPE', 1)[0]}, last at "
+                f"RPE {prior.rpe:g} with reps in reserve. The rep lever has not been "
+                f"pulled, so today is {high} reps — the top of the {low}-{high} range as "
+                f"a count, not a band — and the load moves once it lands (:201, :203)."
+            )
+            return SetSpec(load, high, high, targets["top"], bodyweight=bodyweight)
+        at_rpe = f"RPE {prior.rpe:g}" if prior.rpe is not None else "an unrecorded RPE"
+        deferred.append(
+            f"{exercise}: {prior.held} sessions at {held_at.rsplit(' RPE', 1)[0]} and the "
+            f"last was {at_rpe}, at the week's target — the reps are not coming at this "
+            f"load. What replaces the rep lever (a load cut, a tempo, an easier variation) "
+            f"is a coaching decision, not arithmetic; the programme repeats the rep "
+            f"prescription below until one is made."
+        )
+
     if week == 2:
         # :182 — "Keep the Week 1 weight and reach RPE 8 by adding reps toward
         # the top of the range. If last week already hit the top of the range at
@@ -624,12 +712,12 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         # returns before reaching that branch, so 12 reps at RPE 9 on a 6-10
         # range was told to "add reps toward the top" of a range it had left.
         if prior.reps is not None and prior.reps > high:
-            sized = _sized_overshoot(prior, load, low, high, kind)
+            sized = _sized_overshoot(prior, load, low, high, kind, exercise, athlete_kg)
             if sized:
                 load, why = sized
                 reasons.append(f"OVERDUE and sized to the miss. {why} Reps reset to the bottom.")
             else:
-                step = INCREMENT[kind]
+                step = _increment(kind, bodyweight)
                 load = _round_load(load + step)
                 reasons.append(
                     f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the "
@@ -638,7 +726,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 )
             return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
         if _met_top_of_range(prior, kind, targets["top"]):
-            step = INCREMENT[kind]
+            step = _increment(kind, bodyweight)
             load = _round_load(load + step)
             reasons.append(
                 f"Week 2 adds ~{step:g}kg: week 1 already reached the top of the "
@@ -658,12 +746,12 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         # top of the range) OR by grinding 1-2 more reps at the same weight.
         # State which lever you used and why."
         if prior.reps is not None and prior.reps >= high:
-            sized = _sized_overshoot(prior, load, low, high, kind)
+            sized = _sized_overshoot(prior, load, low, high, kind, exercise, athlete_kg)
             if sized:
                 load, why = sized
                 reasons.append(f"Week 3 peak via LOAD, sized to the miss. {why}")
             else:
-                step = INCREMENT[kind]
+                step = _increment(kind, bodyweight)
                 load = _round_load(load + step)
                 reasons.append(
                     f"Week 3 peak via LOAD, ~{step:g}kg up: week 2 finished at "
@@ -732,12 +820,12 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     if prior.reps is not None and prior.reps > high:
         # :205 "Reps ABOVE the top of the range are a backlog, not an
         # achievement: the load increase is already overdue."
-        sized = _sized_overshoot(prior, load, low, high, kind)
+        sized = _sized_overshoot(prior, load, low, high, kind, exercise, athlete_kg)
         if sized:
             load, why = sized
             reasons.append(f"OVERDUE and sized to the miss. {why}")
         else:
-            step = INCREMENT[kind]
+            step = _increment(kind, bodyweight)
             load = _round_load(load + step)
             reasons.append(
                 f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the top "
@@ -748,7 +836,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
 
     if _met_top_of_range(prior, kind, targets["top"]):
         # :203 rep progression is exhausted, so the load moves.
-        step = INCREMENT[kind]
+        step = _increment(kind, bodyweight)
         load = _round_load(load + step)
         reasons.append(
             f"Load up ~{step:g}kg: last session hit {prior.reps} reps at "
@@ -891,12 +979,28 @@ def warmup_ramp(exercise: str, top: SetSpec, muscles_warm: set[str],
 
 
 def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
-                       prior: PriorSet | None, muscles_warm: set[str]) -> Proposal:
-    """One exercise's proposal for today."""
+                       prior: PriorSet | None, muscles_warm: set[str],
+                       athlete_kg: float | None = None) -> Proposal:
+    """One exercise's proposal for today.
+
+    `athlete_kg` is the latest weigh-in, so a bodyweight movement's step can be
+    sized on what it lifts rather than on the plate alone. None is fine: the
+    single increment stands.
+    """
     reasons: list[str] = []
     deferred: list[str] = []
 
-    top = next_top_set(exercise, kind, week, prior, reasons, deferred)
+    top = next_top_set(exercise, kind, week, prior, reasons, deferred, athlete_kg)
+    if (top.bodyweight and top.weight_kg and prior is not None and not prior.load
+            and bodyweight_fraction(exercise) is None):
+        # The first added load on a movement that lifts no share of the body:
+        # the programme's lever is real (a plate on the back, a vest) but it
+        # is not a belt, and saying so keeps the number honest.
+        reasons.append(
+            f"Added load on {exercise} means a plate on the back or a vest. If that "
+            f"is impractical today, a harder variation is the coach's call — the "
+            f"reps have already reached the top of the range at bodyweight."
+        )
     backoffs = backoff_sets(top, kind, sets - 1, week, reasons)
     warm = warmup_ramp(exercise, top, muscles_warm, prior, reasons)
 
@@ -922,7 +1026,8 @@ def norm_name(name: str) -> str:
 def prescribe_session(plan, week: int,
                       history: dict[str, PriorSet],
                       recovery: dict | None = None,
-                      peak_history: dict[str, PriorSet] | None = None) -> list[Proposal]:
+                      peak_history: dict[str, PriorSet] | None = None,
+                      athlete_kg: float | None = None) -> list[Proposal]:
     """Every exercise in `plan`, for this week, given this history.
 
     `history` maps exercise name to its most recent top working set — the same
@@ -963,7 +1068,7 @@ def prescribe_session(plan, week: int,
         if week in (1, 4) and peak.get(key) is not None:
             prior = peak[key]
         proposal = prescribe_exercise(
-            exercise, sets, kind, week, prior, set(muscles_warm)
+            exercise, sets, kind, week, prior, set(muscles_warm), athlete_kg
         )
         if adjustment.adjusted:
             proposal = _adjusted(proposal, adjustment)

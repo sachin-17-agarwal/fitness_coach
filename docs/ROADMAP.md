@@ -156,7 +156,7 @@ even discussed:
    programme's progression excludes bodyweight movements from the sized
    step and has no lever once a bodyweight lift reaches the top of its
    range (add load, then reps; or tempo/range). The coach has been doing
-   this by hand. *proposed as 2.11: bodyweight progression in prescribe.py.*
+   this by hand. *2.11, approved and shipped 17 Sep.*
 
 Migration 008 run 16 Sep: the programme shadow records from the next coach
 reply and appears in the 20 Sep report. Deduplicated adjust rate over the
@@ -407,12 +407,41 @@ judged fairly.
 **Risk.** None.
 **Size.** Tiny.
 
+### 2.11 Bodyweight and straight-set progression
+**What.** Three levers the programme lacked for a bodyweight lift, as
+arithmetic in `prescribe.py`: (1) added load moves in 2.5 kg plates, not
+the 1 kg isolation step no belt or dumbbell offers; (2) the sized
+overshoot step (2.3) applies to bodyweight movements by sizing on what the
+set actually lifted — plate plus the movement's share of the latest
+weigh-in — and comes back in plates; (3) a top set that has sat at the
+same load AND the same reps for three sessions is a stall the prescription
+answers: with reps in reserve (RPE at least a point under target) it pins
+the top of the range as a count, not a band, so the load can move next
+time; at the target RPE it defers the lever to the coach by name (cut,
+tempo, variation). A rollout's first added load says what it means
+(a plate on the back or a vest). The stall lever applies to stack lifts
+too; weeks 1 and 4 ignore it.
+**Why.** Ab Wheel Rollout at bodyweight × 8 for seven sessions at RPE 6–7
+while the programme repeated "9–12"; Hanging Leg Raises held at +5 kg while
+it asked for +6. The coach did both by hand every session (1.1c).
+**Risk.** A pinned count is a harder set than a band; it fires only with
+a full RPE point in reserve, so the set is one the athlete has already
+shown they can do.
+**Size.** Small.
+
 ---
 
 ## Part 3 — Decided
 
 Approved items list their PRs when shipped. Declined items keep the reason.
 
+- **Approved 17 Sep, shipped 17 Sep.** 2.11 bodyweight and straight-set
+  progression: plates not kilos for added load, the sized step on the
+  lifted load, a three-session stall pinned to the top of the range when
+  the RPE says the reps are there and deferred by name when it does not.
+  `find_current_loads` now carries `held`, the sessions at the same load
+  and reps. *Verify on the next Cardio+Abs card: Ab Wheel Rollout reads a
+  count, not a band, if it is still at × 8.*
 - **Approved 15 Sep, shipped 16 Sep (#251).** 2.2 HELD state: a lift under a
   standing decision reads "HELD · CAP 70 KG · SINCE 13 SEP", paints blue on
   the map, sits outside the dropping count and is explained, not judged, in

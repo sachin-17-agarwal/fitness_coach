@@ -12,6 +12,7 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import timedelta
 
 from data import (
+    latest_bodyweight_kg,
     SESSION_OVERRIDE_KEY, get_athlete_context, get_supabase,
     next_session_type_for, now_local, session_type_for,
 )
@@ -407,6 +408,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(_timed, _standing_constraints): "constraints",
             executor.submit(_timed, _recovery_rows): "recovery_rows",
             executor.submit(_timed, _block_weak_points, memory, system_prompt): "block_weak_points",
+            executor.submit(_timed, latest_bodyweight_kg): "bodyweight",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
         # its own authoritative snapshot.
@@ -534,6 +536,7 @@ def build_context_block(memory: dict, athlete_name: str,
         recovery=data,
         peak_week_loads=_peak_week_loads or [],
         ceilings=__import__("constraints").ceilings(results.get("constraints") or []),
+        athlete_kg=results.get("bodyweight"),
     )
     # Handed back to the caller rather than rendered into the prompt. The
     # numbers are already here — the loads, the week and today's recovery all
