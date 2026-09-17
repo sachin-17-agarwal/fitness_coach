@@ -356,15 +356,19 @@ private struct RectangularView: View {
                 Text("%").font(WidgetStyle.display(11)).opacity(0.6)
             }
             VStack(alignment: .leading, spacing: 3) {
+                // Session first: it is the word that changes day to day, and
+                // the tile is too narrow for "STEADY · LEGS" at full tracking.
                 Text(shortVerdict)
-                    .font(.system(size: 11, weight: .semibold))
-                    .kerning(1)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .kerning(0.6)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Text("WK \(p.week) · \(p.phase)")
                     .font(.system(size: 9.5, weight: .medium))
-                    .kerning(1)
+                    .kerning(0.6)
                     .opacity(0.7)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             Spacer(minLength: 0)
         }
@@ -372,7 +376,8 @@ private struct RectangularView: View {
     }
     private var shortVerdict: String {
         let head = p.verdict.components(separatedBy: " — ").first ?? p.verdict
-        return p.done ? "\(head) · DONE" : "\(head) · \(p.sessionType.uppercased())"
+        if p.sessionType.isEmpty { return head }
+        return p.done ? "\(p.sessionType.uppercased()) · DONE" : "\(p.sessionType.uppercased()) · \(head)"
     }
 }
 

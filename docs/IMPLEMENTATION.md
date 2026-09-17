@@ -357,9 +357,10 @@ it, `Shared/Config.swift` (moved from the app folder so the extension shares
 the backend address), `ChatService.postWidgetStrength`, `HistoryViewModel`
 and `DashboardViewModel` reloads.
 
-**Verify on the phone.** Add the medium widget after the next build; the
-score matches Home's, the verdict names today's session, the strength line
-matches the Strength tab. Add the lock-screen tile.
+**Verified 18 Sep.** Medium and lock-screen live on the phone: 74% amber,
+"STEADY — LEGS, AS PLANNED", week 4 deload, strength ▴7.9%, HRV 40, sleep
+5:55. The lock tile's first line was clipped at full tracking; now the
+session leads ("LEGS · STEADY") at tighter tracking.
 
 
 **Verify.** Add both sizes; numbers match Home and Strength at the same

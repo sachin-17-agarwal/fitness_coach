@@ -467,7 +467,8 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   2.9 stats widget **(settled and shipped 17 Sep: the Home readiness hero
   as a widget — score, verdict with today's session, week and strength
   gain; medium, small, lock screen. Readiness now computed server-side
-  in `readiness.py` with the phone's formula. Verify on the next build)**.
+  in `readiness.py` with the phone's formula. *Verified on the phone 18 Sep:
+  medium and lock-screen both live, 74% amber, STEADY — LEGS.*)**.
 - **Approved 15 Sep, shipped 16 Sep (#252 backend, #253 app).** 2.1(b) start
   on the programme, the coach catches up: START shows the programme's card
   at once under "PROGRAMME · COACH REVIEWING"; the review lands into the
