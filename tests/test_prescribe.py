@@ -413,3 +413,91 @@ class OvershootStepTests(unittest.TestCase):
         low, high = TOP_SET_RANGE[COMPOUND]
         spec, why = self._top(20.0, high + 3, COMPOUND, 3)
         self.assertGreaterEqual(spec.weight_kg, 20.0 + INCREMENT[COMPOUND])
+
+
+class BodyweightProgressionTests(unittest.TestCase):
+    """2.11 — a bodyweight lift has the same levers as a stack lift.
+
+    Ab Wheel Rollout sat at bodyweight x8 for seven sessions at RPE 6-7 while
+    the programme repeated "add reps toward the top"; Hanging Leg Raises held
+    at +5kg while it asked for +6kg, a load no gym has. The coach corrected
+    both by hand every session; these are the corrections as arithmetic.
+    """
+
+    def test_added_load_moves_in_plates_not_kilos(self):
+        p = prescribe_exercise("Hanging Leg Raises", 3, ISOLATION, 2,
+                               PriorSet(5.0, 12, 7.0, bodyweight=True), set())
+        self.assertEqual(p.working[0].weight_kg, 7.5)
+        self.assertTrue(p.working[0].bodyweight)
+
+    def test_the_sized_step_uses_what_the_movement_actually_lifts(self):
+        """+5kg x15 on a leg raise lifted about 33kg for an 80kg athlete, not
+        5kg. Sized on that and capped at 10%, the step is a plate: +7.5kg."""
+        p = prescribe_exercise("Hanging Leg Raises", 3, ISOLATION, 2,
+                               PriorSet(5.0, 15, 8.0, bodyweight=True), set(), athlete_kg=80.0)
+        self.assertEqual(p.working[0].weight_kg, 7.5)
+        self.assertIn("33kg lifted", " ".join(p.reasons))
+
+    def test_a_heavier_overshoot_sizes_a_bigger_step(self):
+        p = prescribe_exercise("Pull-Ups", 3, COMPOUND, 3,
+                               PriorSet(10.0, 13, 8.0, bodyweight=True), set(), athlete_kg=80.0)
+        self.assertEqual(p.working[0].weight_kg, 20.0)   # 90kg lifted, +10% cap, in plates
+
+    def test_without_a_weigh_in_the_single_plate_stands(self):
+        p = prescribe_exercise("Hanging Leg Raises", 3, ISOLATION, 2,
+                               PriorSet(5.0, 15, 8.0, bodyweight=True), set(), athlete_kg=None)
+        self.assertEqual(p.working[0].weight_kg, 7.5)
+        self.assertNotIn("lifted", " ".join(p.reasons))
+
+    def test_a_movement_with_no_body_share_is_not_sized(self):
+        """A rollout lifts no meaningful share of the athlete; the step is a
+        plate and the reason says what a plate means on this movement."""
+        p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
+                               PriorSet(None, 15, 7.0, bodyweight=True), set(), athlete_kg=80.0)
+        self.assertEqual(p.working[0].weight_kg, 2.5)
+        self.assertIn("plate on the back or a vest", " ".join(p.reasons))
+
+    def test_a_stall_with_reps_in_reserve_pins_the_top_of_the_range(self):
+        p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
+                               PriorSet(None, 8, 6.5, bodyweight=True, held=7), set())
+        top = p.working[0]
+        self.assertEqual((top.reps_low, top.reps_high), (12, 12))
+        self.assertTrue(top.bodyweight)
+        self.assertFalse(top.weight_kg)      # still no added load
+        self.assertIn("STALLED 7 sessions at BW x8", " ".join(p.reasons))
+
+    def test_the_stall_lever_applies_to_stack_lifts_too(self):
+        p = prescribe_exercise("Cable Row", 3, COMPOUND, 3,
+                               PriorSet(80.0, 8, 7.0, held=3), set())
+        self.assertEqual((p.working[0].weight_kg, p.working[0].reps_low, p.working[0].reps_high),
+                         (80.0, 10, 10))
+
+    def test_a_stall_at_the_target_rpe_is_deferred_not_pinned(self):
+        """RPE 8 on an RPE 8 week means the reps are not there; asking for
+        twelve would prescribe a set the athlete cannot do."""
+        p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
+                               PriorSet(None, 8, 8.0, bodyweight=True, held=4), set())
+        self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (9, 12))
+        self.assertTrue(any("coaching decision" in d for d in p.deferred))
+
+    def test_two_sessions_is_not_a_stall(self):
+        p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
+                               PriorSet(None, 8, 6.5, bodyweight=True, held=2), set())
+        self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (9, 12))
+        self.assertFalse(p.deferred)
+
+    def test_the_deload_and_the_opening_week_ignore_the_stall(self):
+        for week, low, high in ((4, 8, 8), (1, 6, 10)):
+            with self.subTest(week=week):
+                p = prescribe_exercise("Cable Row", 3, COMPOUND, week,
+                                       PriorSet(80.0, 8, 7.0, held=3, week=3), set())
+                self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (low, high))
+                self.assertFalse(any("STALLED" in r for r in p.reasons))
+
+    def test_a_straight_set_block_repeats_the_pinned_count(self):
+        from prescribe import render_block
+        p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
+                               PriorSet(None, 8, 6.5, bodyweight=True, held=7), set())
+        block = render_block(p)
+        self.assertIn("Working Set: BW x12 RPE8, BW x12 RPE8, BW x12 RPE8", block)
+        self.assertNotIn("Back-off", block)

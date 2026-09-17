@@ -133,6 +133,7 @@ def _history(plan, current_loads: list[dict], week: int | None = None) -> tuple:
             date=str(row.get("date") or ""),
             week=row.get("mesocycle_week") if week is None else week,
             bodyweight=bodyweight,
+            held=int(row.get("held") or 1),
         )
     renamed = {e: n for e, n in matches.items() if norm_name(e) != norm_name(n)}
     return history, renamed, ambiguous
@@ -142,7 +143,8 @@ def build_proposal(prompt: str, session_type: str, week: int,
                    current_loads: list[dict],
                    recovery: dict | None = None,
                    peak_week_loads: list[dict] | None = None,
-                   ceilings: dict | None = None) -> tuple:
+                   ceilings: dict | None = None,
+                   athlete_kg: float | None = None) -> tuple:
     """The programme's proposal for today.
 
     Returns (proposals, renamed, ambiguous) — empty throughout when it cannot
@@ -160,7 +162,7 @@ def build_proposal(prompt: str, session_type: str, week: int,
         history, renamed, ambiguous = _history(plan, current_loads)
         peak_history, _r, _a = _history(plan, peak_week_loads or [], week=3)
         proposals = prescribe_session(plan, week, history, recovery=recovery,
-                                      peak_history=peak_history)
+                                      peak_history=peak_history, athlete_kg=athlete_kg)
         if ceilings:
             from constraints import apply_ceilings  # local: keeps import order flat
             proposals = apply_ceilings(proposals, ceilings)

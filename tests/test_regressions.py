@@ -5305,3 +5305,41 @@ class ContextBuildTimingTests(unittest.TestCase):
         _args, kwargs = recorded[0]
         self.assertFalse(kwargs["ok"])
         self.assertIn("timed out: current_loads", kwargs["note"])
+
+
+class HeldSessionsTests(unittest.TestCase):
+    """find_current_loads counts how long the top set has sat at the same
+    load AND reps, so prescribe can answer a stall rather than repeat it."""
+
+    def rows(self, tops):
+        return [{"date": d, "exercise": "Ab Wheel Rollout", "actual_weight_kg": w,
+                 "actual_reps": r, "actual_rpe": 6.5} for d, w, r in tops]
+
+    def test_counts_back_from_the_newest_session(self):
+        from progression import find_current_loads
+        [entry] = find_current_loads(self.rows([
+            ("2026-08-01", 0, 10), ("2026-08-05", 0, 8), ("2026-08-09", 0, 8), ("2026-08-13", 0, 8)]))
+        self.assertEqual(entry["held"], 3)
+        self.assertEqual(entry["load"], "BW")
+
+    def test_a_rep_added_breaks_the_streak(self):
+        from progression import find_current_loads
+        [entry] = find_current_loads(self.rows([
+            ("2026-08-05", 0, 8), ("2026-08-09", 0, 8), ("2026-08-13", 0, 9)]))
+        self.assertEqual(entry["held"], 1)
+
+    def test_a_load_change_breaks_the_streak(self):
+        from progression import find_current_loads
+        [entry] = find_current_loads(self.rows([
+            ("2026-08-05", 5, 10), ("2026-08-09", 7.5, 10), ("2026-08-13", 7.5, 10)]))
+        self.assertEqual(entry["held"], 2)
+
+    def test_the_count_reaches_the_prior_set(self):
+        from programme import _history
+        history, _r, _a = _history(
+            [("Ab Wheel Rollout", 3, "isolation")],
+            [{"exercise": "Ab Wheel Rollout", "load": "BW", "reps": 8, "rpe": 6.5,
+              "date": "2026-08-13", "held": 7}])
+        prior = history["abwheelrollout"]
+        self.assertEqual(prior.held, 7)
+        self.assertTrue(prior.bodyweight)

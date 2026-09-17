@@ -160,11 +160,31 @@ def find_current_loads(rows: list[dict]) -> list[dict]:
             "reps": _as_int(top.get("actual_reps")),
             "rpe": _as_float(top.get("actual_rpe")),
             "met_target": _met_target(top),
+            "held": _held_sessions(sessions, top),
         })
     # Alphabetical: this is a lookup table, and the coach arrives knowing the
     # exercise name, not the date.
     loads.sort(key=lambda entry: entry["exercise"].lower())
     return loads
+
+
+def _held_sessions(sessions: dict[str, list[dict]], latest_top: dict) -> int:
+    """How many sessions, counting back from the newest, the top set has sat
+    at the same load AND the same reps. One means it moved last time.
+
+    find_stalls counts the load alone; a lift that adds a rep a session is
+    progressing, and this is the count that tells the two apart. It feeds
+    prescribe.PriorSet.held so the prescription can answer a stall itself
+    rather than repeating "add reps" a seventh time.
+    """
+    key = (_load_key(latest_top), _as_int(latest_top.get("actual_reps")))
+    held = 0
+    for date in sorted(sessions.keys(), reverse=True):
+        top = _top_set(sessions[date])
+        if top is None or (_load_key(top), _as_int(top.get("actual_reps"))) != key:
+            break
+        held += 1
+    return max(held, 1)
 
 
 # What every block says when its lookup could not run. Deliberately not a

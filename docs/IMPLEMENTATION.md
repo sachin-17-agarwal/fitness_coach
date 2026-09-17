@@ -13,7 +13,7 @@ Anything that changes what the coach says goes behind a gate in
 
 ## Calendar
 
-Status on the evening of Wednesday 16 September. The deload week was used
+Status on the evening of Thursday 17 September. The deload week was used
 to ship the queue early; migrations 006, 007 and 008 have been run.
 
 **Shipped 16 Sep**
@@ -36,10 +36,10 @@ to ship the queue early; migrations 006, 007 and 008 have been run.
 |---|---|---|
 | ~~Thu 17 Sep~~ done | ~~Verify on the phone~~: HELD row, START opening on Push (card at once, coach landed), export (five CSVs) all confirmed; reference line and logger label still to glance at · ~~first `text`/`thinking` split~~ read: opening 83% thinking; Stage 5 first cut −20% on set replies | — |
 | ~~Fri 18 Sep~~ shipped Thu 17 Sep | ~~Item 4: raise the context fetch ceiling, log per-query timings~~ (#264: ceiling 20 s, every fetch timed, the build recorded as a `context` row in the Sunday report with the slowest fetch named) | — |
-| Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate and its four buckets, first shadow rows, first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate · 2.11 bodyweight progression if the shadow confirms it | the band decision |
+| ~~Sun 20 Sep~~ pulled to Thu 17 Sep | ~~2.11 bodyweight progression~~ (approved 17 Sep evening, shipped the same night; see the section below) · pulled forward with it: the decision-capture design (item 3) and the 2.9 widget mockups, in that order | pick a widget direction |
+| Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate and its four buckets, first shadow rows, first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate | the band decision |
 | Mon 21 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes) |
-| Tue 23 Sep | 2.9 widget mockups | pick one of two |
-| Week of 28 Sep | 2.9 widget build · design for decisions captured when reached (item 3) · block review: read the dry run when it lands, answer it, compare | read the review the morning it appears |
+| Week of 28 Sep | 2.9 widget build · decision capture build if the design is approved · block review: read the dry run when it lands, answer it, compare | read the review the morning it appears |
 | Tue 30 Sep | Review 2.1(c) geofence: does START still feel slow? | your answer |
 | After | 2.5 goes live (dry_run off) once the first review has been compared · 2.8 watch, timer stage first | mockups approval |
 
@@ -102,6 +102,51 @@ and week 1's `>= high` opening at ~line 562), `tests/test_prescribe.py`.
 step and its Why line.
 
 **Gate.** Audit rule-break rate over the block must not rise (gate 1).
+
+## 2.11 Bodyweight and straight-set progression
+
+**Goal.** A bodyweight lift has the same levers as a stack lift, and a
+three-session stall is answered by the prescription, not only flagged in
+the readout.
+
+**Files.** `prescribe.py` (`BODYWEIGHT_INCREMENT`, `STALL_SESSIONS`,
+`_increment`, `_bodyweight_overshoot`, `PriorSet.held`, the stall branch
+ahead of the week 2 ladder, `athlete_kg` threaded through
+`prescribe_session` → `prescribe_exercise` → `next_top_set`),
+`progression.py` (`_held_sessions`, `find_current_loads` row key `held`),
+`programme.py` (`_history` carries `held`; `build_proposal(athlete_kg=)`),
+`coach_context.py` (fetches `latest_bodyweight_kg` in the pool as
+`bodyweight` and passes it), `tests/test_prescribe.py`
+(`BodyweightProgressionTests`), `tests/test_regressions.py`
+(`HeldSessionsTests`).
+
+**Rules, as shipped.**
+1. Added load on a bodyweight movement steps by 2.5 kg. Isolation stack
+   lifts keep 1 kg, compounds 2.5 kg.
+2. Three or more reps over the range on a bodyweight movement: size on
+   `added + fraction × weigh-in` with the same Epley-to-mid-range step and
+   +10% cap as 2.3, then round to plates and never less than one plate.
+   No weigh-in, or a movement with no body share (rollout, hollow hold):
+   one plate.
+3. `held ≥ 3` with the reps inside the range but under the top, in weeks
+   2 and 3 and the generic branch: RPE ≤ target − 1 pins reps at the top
+   as a count and says "STALLED N sessions at …"; otherwise the rep
+   prescription stands and a deferred line names the stall and hands the
+   lever to the coach.
+4. First added load on a movement with no body share carries the line
+   "a plate on the back or a vest; if impractical, a harder variation is
+   the coach's call".
+
+**Worked numbers.** Hanging Leg Raises +5 kg × 15 at 80 kg athlete →
++7.5 kg (33 kg lifted, cap binds). Pull-Ups +10 kg × 13 in week 3 → +20 kg.
+Ab Wheel Rollout BW × 8 at RPE 6.5, held 7 → BW × 12 as a count. Cable Row
+80 × 8 at RPE 7, held 3, week 3 → 80 × 10.
+
+**Verify.** Next Cardio+Abs opening: the rollout card reads a count if it is
+still at × 8; the leg raise step is a plate. The Decisions report's
+progression bucket should fall over the next block.
+
+**Gate.** Rule-break rate over the block must not rise (gate 1).
 
 ## 2.2 HELD state for lifts under a standing decision
 
