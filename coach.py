@@ -151,6 +151,17 @@ def _log_cache_usage(response) -> None:
         log.debug("Could not read cache usage", exc_info=True)
 
 
+def _same_numbers(a: dict, b: dict) -> bool:
+    """Whether two parsed blocks prescribe the same sets: warm-up, working and
+    back-off loads, reps and RPE. Prose, tempo and rest are the coaching, not
+    the arithmetic, and are not compared."""
+    def norm(rows):
+        return [(float(r.get("weight") or 0), int(r.get("reps") or 0),
+                 int(r.get("reps_high") or r.get("reps") or 0), float(r.get("rpe") or 0))
+                for r in (rows or [])]
+    return all(norm(a.get(k)) == norm(b.get(k)) for k in ("warmup", "working", "backoff"))
+
+
 def system_blocks(system_prompt: str, stable_context: str, live_context: str,
                   live_day: str | None = None, live_set: str | None = None) -> list:
     """The `system` array every coach call sends, split by volatility with a
@@ -459,7 +470,12 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 would = {q["exercise"]: q for q in parse_all_prescriptions(shadow)}
                 for name in would_swap:
                     a, b = sent.get(name), would.get(name)
-                    if not a or not b or a == b:
+                    # Only the arithmetic counts. The parsed blocks also carry
+                    # the form cue, the Why line, tempo and rest, and those
+                    # differ on almost every block — the coach writes them,
+                    # the programme does not — so comparing whole dicts made
+                    # a "difference" out of blocks whose sets were identical.
+                    if not a or not b or _same_numbers(a, b):
                         continue
                     log.warning(
                         "PROGRAMME SHADOW (%s wk%s) %s: coach sent %s / %s — "
