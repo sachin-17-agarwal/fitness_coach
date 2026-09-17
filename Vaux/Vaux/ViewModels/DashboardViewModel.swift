@@ -28,6 +28,27 @@ final class DashboardViewModel {
     private let mesocycleService = MesocycleService()
     private let workoutService = WorkoutService()
     private let briefingService = BriefingService()
+    private let chatService = ChatService()
+
+    /// The latest block review; the Home card shows it while `isOpen`.
+    var blockReview: BlockReviewResponse?
+    /// What the coach said back to the last answer, shown in the card's place.
+    var blockReviewReply: String?
+    var isAnsweringReview = false
+
+    /// Answer the open review from the card. The reply replaces the card;
+    /// the review itself stays in history.
+    func answerBlockReview(_ text: String) async {
+        isAnsweringReview = true
+        defer { isAnsweringReview = false }
+        do {
+            let reply = try await chatService.answerBlockReview(text)
+            blockReviewReply = reply.message
+            blockReview = try? await chatService.blockReview()
+        } catch {
+            blockReviewReply = "Couldn't send that answer — \(error.localizedDescription). Say it in chat instead."
+        }
+    }
 
     /// Composite recovery score 0-100 combining sleep, HRV, and resting HR.
     var recoveryScore: Int {
@@ -91,6 +112,9 @@ final class DashboardViewModel {
             currentStreak = Self.computeStreak(recentSessions)
             weekTonnage = Self.weekTonnage(recentSessions)
             briefingNote = briefingService.cachedCoachNoteForToday()
+            // The block review lives on Home, not in the briefing nobody
+            // opens. Its own failure must not take the dashboard down.
+            blockReview = try? await chatService.blockReview()
             // The digest needs the 42-day baseline behind last week; fetched
             // only on the days the card shows, so the other days stay light.
             if RecoveryDigest.showOnWeekdays.contains(Calendar.current.component(.weekday, from: Date())) {
