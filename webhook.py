@@ -449,8 +449,12 @@ def widget_payload(memory: dict, readiness: dict, done: bool) -> dict:
             strength = json.loads(raw) if isinstance(raw, str) else dict(raw)
         except (ValueError, TypeError):
             strength = None
+    today = now_local().strftime("%Y-%m-%d")
+    read_date = readiness.get("date")
     return {
-        "date": now_local().strftime("%Y-%m-%d"),
+        "date": today,
+        "read_date": read_date,
+        "stale": bool(read_date) and read_date != today,
         "score": readiness.get("score"),
         "level": readiness.get("level"),
         "verdict": widget_verdict(readiness.get("level"), session, done),

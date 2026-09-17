@@ -142,8 +142,19 @@ def readiness_today() -> dict:
     today = now_local().strftime("%Y-%m-%d")
     since = (now_local() - timedelta(days=7)).strftime("%Y-%m-%d")
     cols = "date, hrv, resting_hr, sleep_hours"
-    latest = (supabase.table("recovery").select(cols).lte("date", today)
-              .order("date", desc=True).limit(1).execute().data or [None])[0]
+    recent = (supabase.table("recovery").select(cols).lte("date", today)
+              .order("date", desc=True).limit(7).execute().data or [])
     week = (supabase.table("recovery").select(cols).gte("date", since)
             .order("date", desc=True).execute().data or [])
-    return readiness_from_rows(latest, week)
+    return readiness_from_rows(latest_with_readings(recent), week)
+
+
+def latest_with_readings(rows: list[dict]) -> dict | None:
+    """The newest row that carries a reading. A morning weigh-in writes
+    today's row with weight alone, hours before the Health export delivers
+    HRV and sleep; taking that row as "today" read as no recovery data at
+    all. Yesterday's read, labelled as such, is the honest answer."""
+    for row in rows:
+        if any(row.get(k) is not None for k in ("hrv", "sleep_hours", "resting_hr")):
+            return row
+    return None

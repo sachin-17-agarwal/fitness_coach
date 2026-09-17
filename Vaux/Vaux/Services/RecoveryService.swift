@@ -17,15 +17,20 @@ final class RecoveryService: Sendable {
 
     /// Returns the single most-recent recovery row whose date <= today, or `nil`
     /// if the table is empty.
+    /// The newest row that carries a reading. A morning weigh-in writes
+    /// today's row with weight alone, hours before the Health export delivers
+    /// HRV and sleep; taking that row as today read on Home as "no recovery
+    /// data yet". Yesterday's read, labelled as such by the caller, is the
+    /// honest answer. Mirrors `latest_with_readings` in readiness.py.
     func fetchLatest() async throws -> Recovery? {
         let today = Self.todayString()
         let rows: [Recovery] = try await client.fetch(
             "recovery",
             query: ["date": "lte.\(today)"],
             order: "date.desc",
-            limit: 1
+            limit: 7
         )
-        return rows.first
+        return rows.first { $0.hrv != nil || $0.sleepHours != nil || $0.restingHr != nil } ?? rows.first
     }
 
     // MARK: - Fetch history

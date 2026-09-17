@@ -300,12 +300,28 @@ struct DashboardView: View {
 
     private var verdictText: String {
         let done = viewModel.todayFinishedSession != nil
+        let verdict: String
         switch level {
-        case .green: return done ? "READY — SESSION DONE" : "READY — PUSH TODAY"
-        case .yellow: return done ? "STEADY — SESSION DONE" : "STEADY — TRAIN AS PLANNED"
-        case .red: return done ? "RUN DOWN — REST TONIGHT" : "RUN DOWN — GO EASY TODAY"
+        case .green: verdict = done ? "READY — SESSION DONE" : "READY — PUSH TODAY"
+        case .yellow: verdict = done ? "STEADY — SESSION DONE" : "STEADY — TRAIN AS PLANNED"
+        case .red: verdict = done ? "RUN DOWN — REST TONIGHT" : "RUN DOWN — GO EASY TODAY"
         case .unknown: return "NO RECOVERY DATA YET"
         }
+        // The score is yesterday's until the Health export delivers today's
+        // readings; say so rather than pass it off as this morning's.
+        if let read = viewModel.recovery?.date, read != RecoveryService.todayString() {
+            return verdict + " · READ " + Self.shortDay(read)
+        }
+        return verdict
+    }
+
+    private static func shortDay(_ iso: String) -> String {
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let date = parser.date(from: iso) else { return iso.uppercased() }
+        let out = DateFormatter()
+        out.dateFormat = "EEE d"
+        return out.string(from: date).uppercased()
     }
 
     /// 14 flat bars, each tinted by the zone that day landed in, today in the
