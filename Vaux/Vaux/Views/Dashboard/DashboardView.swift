@@ -147,6 +147,19 @@ struct DashboardView: View {
                         .riseIn(delay: 0.24)
                 }
 
+                // Decisions the coach proposed in chat, waiting for a tap.
+                // Under the digest, as designed: passive, never mid-session.
+                ForEach(viewModel.decisions) { capture in
+                    decisionCard(capture)
+                        .padding(.top, 14)
+                        .riseIn(delay: 0.26)
+                }
+                if viewModel.decisions.isEmpty, let reply = viewModel.decisionReply {
+                    decisionReplyCard(reply)
+                        .padding(.top, 14)
+                        .riseIn(delay: 0.26)
+                }
+
                 Spacer(minLength: 12)
             }
             .padding(.horizontal, 22)
@@ -675,6 +688,92 @@ struct DashboardView: View {
     private func blockReviewReplyCard(_ reply: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("BLOCK REVIEW · ANSWERED")
+                .font(.system(size: 9, weight: .semibold))
+                .kerning(2)
+                .foregroundStyle(Color.fg3)
+            Text(reply)
+                .font(.system(size: 14))
+                .foregroundStyle(Color.fg1)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.ink2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.line, lineWidth: 1)
+        )
+    }
+
+    // MARK: - Decisions proposed in chat
+
+    /// One proposal the coach made in chat, in plain words, with the two
+    /// answers. Record applies it through the same path a chat `Decision:`
+    /// line takes; Not now leaves it in the log as declined.
+    private func decisionCard(_ capture: DecisionCapture) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(capture.eyebrow)
+                .font(.system(size: 9, weight: .semibold))
+                .kerning(2)
+                .foregroundStyle(Color.iris)
+            Text(capture.text)
+                .font(.system(size: 14))
+                .foregroundStyle(Color.fg1)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 10) {
+                decisionButton("RECORD", loud: true) {
+                    Task { await viewModel.answerDecision(capture, record: true) }
+                }
+                decisionButton("NOT NOW", loud: false) {
+                    Task { await viewModel.answerDecision(capture, record: false) }
+                }
+                Spacer()
+            }
+            .disabled(viewModel.isAnsweringDecision)
+            .opacity(viewModel.isAnsweringDecision ? 0.5 : 1)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.ink2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.iris.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    private func decisionButton(_ label: String, loud: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptic.medium()
+            action()
+        } label: {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .kerning(1.5)
+                .foregroundStyle(loud ? Color.signalInk : Color.fg0)
+                .padding(.horizontal, 14)
+                .frame(height: 36)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(loud ? Color.signal : Color.ink3)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(loud ? Color.clear : Color.line2, lineWidth: 1)
+                )
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.97))
+        .accessibilityLabel(label.capitalized)
+    }
+
+    private func decisionReplyCard(_ reply: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("DECISION")
                 .font(.system(size: 9, weight: .semibold))
                 .kerning(2)
                 .foregroundStyle(Color.fg3)

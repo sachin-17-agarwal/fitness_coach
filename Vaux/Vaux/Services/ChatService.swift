@@ -88,6 +88,35 @@ struct BlockReviewAnswerResponse: Codable, Sendable {
     let message: String
 }
 
+/// `/api/decision/pending`: a decision the coach proposed in chat that the
+/// athlete has not yet recorded or declined. `text` is the line in plain
+/// words; `kind` is constraint (a load cap) or emphasis (next block).
+struct DecisionCapture: Codable, Sendable, Identifiable, Hashable {
+    let id: Int
+    let line: String
+    let kind: String
+    let text: String
+    let proposedAt: String?
+    let sessionId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, line, kind, text
+        case proposedAt = "proposed_at"
+        case sessionId = "session_id"
+    }
+
+    var eyebrow: String { kind == "emphasis" ? "DECISION · NEXT BLOCK" : "DECISION · STANDING" }
+}
+
+struct DecisionPendingResponse: Codable, Sendable {
+    let captures: [DecisionCapture]
+}
+
+struct DecisionAnswerResponse: Codable, Sendable {
+    let status: String
+    let message: String
+}
+
 /// A personal-record event flagged by the backend when a logged set beats
 /// the historical estimated 1RM. One PRInfo per set that PR'd in this
 /// message (a "warm-up 100 x 8, working 110 x 8" might emit two).
@@ -443,6 +472,42 @@ final class ChatService: Sendable {
                                                 body: String(data: data, encoding: .utf8) ?? "(no body)")
         }
         do { return try JSONDecoder().decode(BlockReviewAnswerResponse.self, from: data) }
+        catch { throw ChatServiceError.decodingFailed(error) }
+    }
+
+    /// Proposals the coach made in chat that are still waiting for an answer.
+    func pendingDecisions() async throws -> [DecisionCapture] {
+        let urlString = "\(backendBase)/api/decision/pending"
+        guard let url = URL(string: urlString) else { throw ChatServiceError.invalidURL(urlString) }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw ChatServiceError.backendError(statusCode: http.statusCode,
+                                                body: String(data: data, encoding: .utf8) ?? "(no body)")
+        }
+        do { return try JSONDecoder().decode(DecisionPendingResponse.self, from: data).captures }
+        catch { throw ChatServiceError.decodingFailed(error) }
+    }
+
+    /// Record or decline one proposal. Record applies it through the same
+    /// path a `Decision:` line in chat takes.
+    func answerDecision(id: Int, record: Bool) async throws -> DecisionAnswerResponse {
+        let urlString = "\(backendBase)/api/decision/answer"
+        guard let url = URL(string: urlString) else { throw ChatServiceError.invalidURL(urlString) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["id": id, "answer": record ? "record" : "decline"])
+        req.timeoutInterval = 20
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw ChatServiceError.backendError(statusCode: http.statusCode,
+                                                body: String(data: data, encoding: .utf8) ?? "(no body)")
+        }
+        do { return try JSONDecoder().decode(DecisionAnswerResponse.self, from: data) }
         catch { throw ChatServiceError.decodingFailed(error) }
     }
 

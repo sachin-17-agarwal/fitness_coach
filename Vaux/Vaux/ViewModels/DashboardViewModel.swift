@@ -37,6 +37,25 @@ final class DashboardViewModel {
     var blockReviewReply: String?
     var isAnsweringReview = false
 
+    /// Decisions the coach proposed in chat and the athlete has not closed.
+    /// Shown under the digest until recorded or declined; never mid-session.
+    var decisions: [DecisionCapture] = []
+    /// What the coach said back to the last decision answer.
+    var decisionReply: String?
+    var isAnsweringDecision = false
+
+    func answerDecision(_ capture: DecisionCapture, record: Bool) async {
+        isAnsweringDecision = true
+        defer { isAnsweringDecision = false }
+        do {
+            let reply = try await chatService.answerDecision(id: capture.id, record: record)
+            decisionReply = reply.message
+            decisions.removeAll { $0.id == capture.id }
+        } catch {
+            decisionReply = "Couldn't send that — \(error.localizedDescription). Say \"record it\" or \"not now\" in chat."
+        }
+    }
+
     /// Answer the open review from the card. The reply replaces the card;
     /// the review itself stays in history.
     func answerBlockReview(_ text: String) async {
@@ -116,6 +135,7 @@ final class DashboardViewModel {
             // The block review lives on Home, not in the briefing nobody
             // opens. Its own failure must not take the dashboard down.
             blockReview = try? await chatService.blockReview()
+            decisions = (try? await chatService.pendingDecisions()) ?? decisions
             // The digest needs the 42-day baseline behind last week; fetched
             // only on the days the card shows, so the other days stay light.
             if RecoveryDigest.showOnWeekdays.contains(Calendar.current.component(.weekday, from: Date())) {
