@@ -426,8 +426,9 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   on the programme, the coach catches up: START shows the programme's card
   at once under "PROGRAMME · COACH REVIEWING"; the review lands into the
   card, a changed exercise carries "Coach changed 80kg → 75kg · HRV below
-  baseline"; a failed review leaves the programme standing. *verify on
-  Push and Pull.* **2.1(c) geofence review date: 30 Sep.**
+  baseline"; a failed review leaves the programme standing. *Verified on
+  Push 17 Sep: card at once, coach landed during the warm-up.* **2.1(c)
+  geofence review date: 30 Sep.**
 - **Approved 15 Sep, shipped 16 Sep (#255) as a DRY RUN.** 2.5 block review:
   the first morning after a block rolls over, the briefing carries the
   review — strength peak week against peak week, volume against bands,

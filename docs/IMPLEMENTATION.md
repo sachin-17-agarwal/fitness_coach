@@ -34,7 +34,7 @@ to ship the queue early; migrations 006, 007 and 008 have been run.
 
 | Day | Work | Needs from you |
 |---|---|---|
-| Thu 17 Sep | Verify on the phone: ~~HELD row~~ (confirmed 7:41), START opening on Push, export, reference line, logger label · read the first `text`/`thinking` split after the opening | screenshots after Push |
+| ~~Thu 17 Sep~~ done | ~~Verify on the phone~~: HELD row, START opening on Push (card at once, coach landed), export (five CSVs) all confirmed; reference line and logger label still to glance at · ~~first `text`/`thinking` split~~ read: opening 83% thinking; Stage 5 first cut −20% on set replies | — |
 | ~~Fri 18 Sep~~ shipped Thu 17 Sep | ~~Item 4: raise the context fetch ceiling, log per-query timings~~ (#264: ceiling 20 s, every fetch timed, the build recorded as a `context` row in the Sunday report with the slowest fetch named) | — |
 | Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate and its four buckets, first shadow rows, first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate · 2.11 bodyweight progression if the shadow confirms it | the band decision |
 | Mon 21 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes) |
