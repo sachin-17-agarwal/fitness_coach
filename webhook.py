@@ -354,16 +354,53 @@ def load_system_prompt_for_review() -> str:
 @app.route("/api/block-review", methods=["GET"])
 def api_block_review():
     """The latest block review as the athlete reads it, with its status, so
-    the app can show it on Home until it is answered."""
+    the app can show it on Home until it is answered.
+
+    Home is where it is prepared, too. It used to be prepared by the briefing
+    route alone, and the athlete never opens the briefing — so the first
+    review would never have been written. Same guards as before: the morning
+    after rollover, never inside a session, once per block.
+    """
     if not _app_authorised():
         return jsonify({"error": "Unauthorized"}), 401
-    from block_review import latest_block_review, render_review  # local: keeps import order flat
+    from block_review import latest_block_review, prepare_if_due, render_review  # local: import order
+    try:
+        from coach import get_anthropic_client
+        prepare_if_due(load_memory(), load_system_prompt_for_review(), get_anthropic_client())
+    except Exception:
+        traceback.print_exc()
     row = latest_block_review()
     if not row:
         return jsonify({"status": "none"})
-    return jsonify({"status": row.get("status"), "block_start": str(row.get("block_start")),
-                    "dry_run": bool(row.get("dry_run")), "text": render_review(row),
-                    "proposals": row.get("proposals_list") or []})
+    return jsonify(_block_review_payload(row, render_review(row)))
+
+
+def _block_review_payload(row: dict, text: str) -> dict:
+    return {"status": row.get("status"), "block_start": str(row.get("block_start")),
+            "dry_run": bool(row.get("dry_run")), "text": text,
+            "proposals": row.get("proposals_list") or []}
+
+
+@app.route("/api/block-review/answer", methods=["POST"])
+def api_block_review_answer():
+    """Answer the open review from the Home card: {"text": "yes to 1 and 3"}.
+    The same grammar and the same recording path as an answer typed in chat."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    text = str((request.get_json(silent=True) or {}).get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "text required"}), 400
+    from block_review import answer_block_review, latest_block_review  # local: keeps import order flat
+    row = latest_block_review()
+    if not row or row.get("status") != "shown":
+        return jsonify({"status": row.get("status") if row else "none",
+                        "message": "There is no review waiting for an answer."}), 409
+    try:
+        message = answer_block_review(row, text, load_system_prompt_for_review())
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "answer_failed", "message": f"{type(e).__name__}: {e}"}), 502
+    return jsonify({"status": "answered", "message": message})
 
 
 def _app_authorised() -> bool:

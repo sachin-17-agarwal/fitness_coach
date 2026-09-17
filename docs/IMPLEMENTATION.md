@@ -333,12 +333,19 @@ health data and belongs in storage you own.
 
 **Goal.** A medium and a large widget for the hours outside the gym.
 
-**Mockups** published 17 Sep, two directions in both sizes:
-https://claude.ai/artifact/2nfvyuwbrBY9pkqzJhcuE1 — A · Ledger (the
-median-gain number as the hero, sets against the band as thin bars in
-the large size) and B · Field (the Home hero's green ground, a readiness
-ring, the body map coloured by strength state in the large size). Pick
-one, or name the parts of each to keep. Then:
+**Direction** (settled 17 Sep, four rounds, rendered and checked in Chromium
+before publishing): the Home readiness hero as a widget —
+https://claude.ai/artifact/2nfvyuwbrBY9pkqzJhcuE1 . Anton readiness figure
+in the verdict colour, the verdict line with today's session, week and
+phase, strength gain for the block, HRV and sleep; medium, small and a
+lock-screen tile. Nothing else: no next session, no lift list, no charts.
+Accepted without enthusiasm — build it when the queue is clear.
+
+**Two backend pieces first.** The readiness score moves server-side (it is
+computed in `DashboardViewModel` today) so widget and dashboard cannot
+disagree, and a `GET /api/widget` returns score, zone, verdict, session,
+week, strength gain. The widget reads it on its timeline after the morning
+sync and at midday; no app launch needed.
 
 **Files.** `Vaux/VauxWidgets/…` (the extension exists for the Live
 Activity), an App Group `group.Sachin.Vaux2` on both targets, a shared
@@ -346,14 +353,18 @@ Activity), an App Group `group.Sachin.Vaux2` on both targets, a shared
 Health sync, `TimelineProvider` refreshing after the morning sync and at
 midday.
 
-**Content.** Medium: block progress (week 2 of 3), median strength gain so
-far, last night's HRV against the band, sleep, next session. Large: adds
-the body map. No network calls from the widget; it reads the snapshot.
+**Content.** As drawn; the widget reads `/api/widget`, not a snapshot.
 
 **Verify.** Add both sizes; numbers match Home and Strength at the same
 moment.
 
 ## 2.5 Block review as a coach conversation
+
+**Delivery changed 17 Sep.** The review is prepared and shown by Home's
+`GET /api/block-review` (same guards: week 1 day 1, no active workout,
+once per block) and answered from the Home card via
+`POST /api/block-review/answer` or in chat. The briefing route still
+prepends it, but nothing depends on the briefing being opened.
 
 **Goal.** The morning after the block's last session, on a rest day, a
 Home card and a waiting coach message carry the review and two or three

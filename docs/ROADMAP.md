@@ -165,6 +165,18 @@ reply and appears in the 20 Sep report. Deduplicated adjust rate over the
 same eight openings: 21 of 56 (38%): 8 cause, 5 progression, 3 shape, 5
 other.
 
+### 1.1e The briefing is never read (17 Sep)
+
+"I never look at the briefing because it's useless. Everything that I need
+to know is in the app dashboard." Two things assumed otherwise. The block
+review was prepared and shown only by the briefing route, so the first
+review would never have been written; *fixed 17 Sep*: Home's fetch of
+`/api/block-review` prepares it under the same guards and shows it as a
+card under the readiness block, answered there (Approve all / No) or in
+chat. The decision-capture design routed unanswered proposals to the
+briefing; it now says Home. The briefing itself stays on its button and
+costs nothing unless tapped; whether to retire it is a later question.
+
 ### 1.1d Data hygiene, seen in the export (17 Sep)
 
 - 35 days carry more than one session row; a Cardio+Abs day often has an
@@ -452,8 +464,11 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   after #261 so the 70 kg cap is on the row.
 - **Approved, 15 Sep.** 2.3 rep-overshoot step sizing (shipped #249);
   2.4 Swift tests for the numbers; 2.7 export **(shipped 16 Sep, #254; verified 17 Sep — five CSVs came back and settled the hamstring question)**; 2.8 Apple Watch, staged, mockups first;
-  2.9 stats widget, mockups first **(two directions published 17 Sep; link in
-  IMPLEMENTATION 2.9)**.
+  2.9 stats widget **(direction settled 17 Sep after four rounds: the Home
+  readiness hero as a widget — score, verdict with today's session, week and
+  strength gain; medium, small and lock-screen; canvas link in
+  IMPLEMENTATION 2.9. Accepted without enthusiasm; build when the queue is
+  clear, not before)**.
 - **Approved 15 Sep, shipped 16 Sep (#252 backend, #253 app).** 2.1(b) start
   on the programme, the coach catches up: START shows the programme's card
   at once under "PROGRAMME · COACH REVIEWING"; the review lands into the

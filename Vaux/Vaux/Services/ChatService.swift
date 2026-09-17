@@ -59,6 +59,35 @@ struct SessionStatusResponse: Codable, Sendable {
     let error: String?
 }
 
+/// `/api/block-review`: the latest block review with its status — none |
+/// shown | answered. `text` is what the athlete reads; `proposals` the
+/// numbered recordable lines an answer refers to.
+struct BlockReviewResponse: Codable, Sendable {
+    struct Proposal: Codable, Sendable, Hashable {
+        let line: String
+        let rationale: String?
+    }
+    let status: String
+    let blockStart: String?
+    let dryRun: Bool?
+    let text: String?
+    let proposals: [Proposal]?
+
+    enum CodingKeys: String, CodingKey {
+        case status, text, proposals
+        case blockStart = "block_start"
+        case dryRun = "dry_run"
+    }
+
+    var isOpen: Bool { status == "shown" }
+}
+
+/// `/api/block-review/answer`: what the coach said back, and the new status.
+struct BlockReviewAnswerResponse: Codable, Sendable {
+    let status: String
+    let message: String
+}
+
 /// A personal-record event flagged by the backend when a logged set beats
 /// the historical estimated 1RM. One PRInfo per set that PR'd in this
 /// message (a "warm-up 100 x 8, working 110 x 8" might emit two).
@@ -377,6 +406,43 @@ final class ChatService: Sendable {
                                                 body: String(data: data, encoding: .utf8) ?? "(no body)")
         }
         do { return try JSONDecoder().decode(SessionStatusResponse.self, from: data) }
+        catch { throw ChatServiceError.decodingFailed(error) }
+    }
+
+    /// The latest block review for the Home card. Preparing it, the morning
+    /// after a block rolls over, happens on the server inside this call.
+    func blockReview() async throws -> BlockReviewResponse {
+        let urlString = "\(backendBase)/api/block-review"
+        guard let url = URL(string: urlString) else { throw ChatServiceError.invalidURL(urlString) }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 60   // the first call after rollover writes the review
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw ChatServiceError.backendError(statusCode: http.statusCode,
+                                                body: String(data: data, encoding: .utf8) ?? "(no body)")
+        }
+        do { return try JSONDecoder().decode(BlockReviewResponse.self, from: data) }
+        catch { throw ChatServiceError.decodingFailed(error) }
+    }
+
+    /// Answer the open review in the same grammar chat accepts: "approve all",
+    /// "yes to 1 and 3", "no".
+    func answerBlockReview(_ text: String) async throws -> BlockReviewAnswerResponse {
+        let urlString = "\(backendBase)/api/block-review/answer"
+        guard let url = URL(string: urlString) else { throw ChatServiceError.invalidURL(urlString) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["text": text])
+        req.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw ChatServiceError.backendError(statusCode: http.statusCode,
+                                                body: String(data: data, encoding: .utf8) ?? "(no body)")
+        }
+        do { return try JSONDecoder().decode(BlockReviewAnswerResponse.self, from: data) }
         catch { throw ChatServiceError.decodingFailed(error) }
     }
 

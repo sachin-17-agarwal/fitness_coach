@@ -103,7 +103,7 @@ a Watch or a busy hand does not need the button.
 **Unanswered proposals do not chase him during the session.** The card is
 passive. It reappears in one place afterwards: the Home tab, under the
 recovery digest, as "1 decision waiting from Tuesday's Push" with the same
-two actions, until answered. The morning briefing carries one line for it.
+two actions, until answered. The briefing is not part of this: it is not read.
 The block review's fact sheet lists any still open at rollover, so the
 review can propose them again or let them lapse. Nothing is recorded by
 silence; nothing is lost by it either.
@@ -170,7 +170,7 @@ Backend: `decisions.py` (grammar, `parse_proposed`, `lasting_phrases`,
 `apply_line`, `open_captures`, `answer`), `migrations/009_decision_captures.sql`,
 `coach.py` (call `decisions.capture(reply, user_message, session_id)` after
 `record_decisions`; route chat answers when a capture is open), `webhook.py`
-(`GET /api/decision/pending`, `POST /api/decision/answer`; briefing line),
+(`GET /api/decision/pending`, `POST /api/decision/answer`),
 `block_review.py` (fact sheet lists open captures; `_LINE_RE` moves to
 `decisions.py`), `usage.py` (report section), `system_prompt.txt` (rule),
 `tests/test_decisions.py`.
@@ -197,8 +197,8 @@ from the prose bubble and renders the card instead.
   sending" list empties.
 - Say "keep the leg curl at 110 for the block" and get a prose-only reply:
   no card, and Sunday's report shows one miss with the phrase.
-- Leave a card unanswered: it is on Home the next morning and in the
-  briefing; the block review's sheet lists it at rollover.
+- Leave a card unanswered: it is on Home the next morning; the block
+  review's sheet lists it at rollover.
 
 ## Gate
 

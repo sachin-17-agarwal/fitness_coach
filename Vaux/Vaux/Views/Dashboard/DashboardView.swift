@@ -112,6 +112,16 @@ struct DashboardView: View {
                     .padding(.top, 22)
                     .riseIn(delay: 0.06)
 
+                if let review = viewModel.blockReview, review.isOpen {
+                    blockReviewCard(review)
+                        .padding(.top, 22)
+                        .riseIn(delay: 0.09)
+                } else if let reply = viewModel.blockReviewReply {
+                    blockReviewReplyCard(reply)
+                        .padding(.top, 22)
+                        .riseIn(delay: 0.09)
+                }
+
                 hairline.padding(.top, 22)
 
                 todayBlock
@@ -556,6 +566,117 @@ struct DashboardView: View {
                 .lineLimit(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    // MARK: - Block review
+
+    /// The morning after a block rolls over: the review of the block just
+    /// ended, on Home because Home is what gets read. Answered here with the
+    /// same words chat accepts, or in chat.
+    private func blockReviewCard(_ review: BlockReviewResponse) -> some View {
+        let proposals = review.proposals ?? []
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(review.dryRun == true ? "BLOCK REVIEW · DRY RUN" : "BLOCK REVIEW")
+                    .font(.system(size: 10, weight: .semibold))
+                    .kerning(3)
+                    .foregroundStyle(Color.signal)
+                Spacer()
+                if let start = review.blockStart {
+                    Text("BLOCK FROM \(start.uppercased())")
+                        .font(.system(size: 9, weight: .semibold))
+                        .kerning(2)
+                        .foregroundStyle(Color.fg3)
+                }
+            }
+
+            Text(review.text ?? "")
+                .font(.system(size: 14))
+                .foregroundStyle(Color.fg1)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+
+            HStack(spacing: 10) {
+                if !proposals.isEmpty {
+                    reviewAnswerButton("APPROVE ALL", text: "approve all", loud: true)
+                    reviewAnswerButton("NO", text: "no", loud: false)
+                } else {
+                    reviewAnswerButton("NOTED", text: "no", loud: true)
+                }
+                Spacer()
+                Button {
+                    Haptic.light()
+                    switchToChatTab?()
+                } label: {
+                    Text("ANSWER IN CHAT →")
+                        .font(.system(size: 10, weight: .semibold))
+                        .kerning(1.5)
+                        .foregroundStyle(Color.signal)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Answer the review in chat")
+            }
+            .disabled(viewModel.isAnsweringReview)
+            .opacity(viewModel.isAnsweringReview ? 0.5 : 1)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.ink2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.signal.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    private func reviewAnswerButton(_ label: String, text: String, loud: Bool) -> some View {
+        Button {
+            Haptic.medium()
+            Task { await viewModel.answerBlockReview(text) }
+        } label: {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .kerning(1.5)
+                .foregroundStyle(loud ? Color.signalInk : Color.fg0)
+                .padding(.horizontal, 14)
+                .frame(height: 36)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(loud ? Color.signal : Color.ink3)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(loud ? Color.clear : Color.line2, lineWidth: 1)
+                )
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.97))
+        .accessibilityLabel("Answer \(text)")
+    }
+
+    private func blockReviewReplyCard(_ reply: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("BLOCK REVIEW · ANSWERED")
+                .font(.system(size: 9, weight: .semibold))
+                .kerning(2)
+                .foregroundStyle(Color.fg3)
+            Text(reply)
+                .font(.system(size: 14))
+                .foregroundStyle(Color.fg1)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.ink2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.line, lineWidth: 1)
+        )
     }
 
     // MARK: - Last week
