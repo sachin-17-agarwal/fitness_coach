@@ -129,9 +129,11 @@ days: deload Pull 16 Sep and Push 17 Sep):**
    table stays a reference and the WEEKLY VOLUME block is the number.
 3. **Decisions captured when reached**: the coach offers to record a
    decision at the moment it is agreed, instead of the plan carrying a to-do
-   list. *Approved 16 Sep; design written 17 Sep in
-   `docs/DECISION_CAPTURE.md` — a `Proposed:` line from the coach, one-tap
-   confirmation, a detector that counts the misses. Waiting for approval.*
+   list. *Approved 16 Sep; designed 17 Sep (`docs/DECISION_CAPTURE.md`);
+   approved and shipped 18 Sep: the coach's `Proposed:` line, the Home card
+   with Record / Not now, "record it" / "not now" in chat, the miss
+   detector and the "Decisions captured" report section. Migration 009.
+   The chat-bubble card and the session-shape grammar are stages 2 and 3.*
 4. **Context fetch ceiling**: the ten-second per-query limit that turned a
    slow read into "no history". *Approved 16 Sep, shipped 17 Sep (#264)*:
    ceiling 20 s, one worker per fetch, every fetch timed, and the whole
@@ -185,8 +187,10 @@ costs nothing unless tapped; whether to retire it is a later question.
   blank type and 2 from April read `Unknown`.
 - None of it breaks a number today (the readers filter on sets, not
   sessions), but `rotation_sessions` and the block calendar walk this list.
-  *Proposed as 2.12: one session row per type per day, one status word, a
-  backfill for the blanks.*
+  *2.12, approved and shipped 18 Sep: migration 010 respells the statuses
+  and nulls the blank types; the `hygiene` cleanup step infers a type from
+  the sets and collapses same-day duplicates onto the row with the sets,
+  dry run first (`POST /admin/cleanup {"step":"hygiene"}`).*
 
 ### 1.2 Shipped this week, confirm on the phone
 
@@ -449,6 +453,10 @@ shown they can do.
 
 Approved items list their PRs when shipped. Declined items keep the reason.
 
+- **Approved 18 Sep, shipped 18 Sep.** Decision capture (1.1b item 3), the
+  first two stages: `decisions.py`, migration 009, the prompt rule, the
+  Home card, chat answers, the Sunday report section. 2.12 session hygiene:
+  migration 010 plus the `hygiene` cleanup step, dry run before execute.
 - **Approved 17 Sep, shipped 17 Sep.** 2.11 bodyweight and straight-set
   progression: plates not kilos for added load, the sized step on the
   lifted load, a three-session stall pinned to the top of the range when

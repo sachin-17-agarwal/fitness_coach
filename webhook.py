@@ -519,6 +519,40 @@ def api_widget_strength():
     return jsonify({"status": "stored", "strength": payload})
 
 
+@app.route("/api/decision/pending", methods=["GET"])
+def api_decision_pending():
+    """Proposals waiting for an answer, for the Home card."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    from decisions import open_captures  # local: keeps import order flat
+    rows = open_captures()
+    return jsonify({"captures": [{"id": r.get("id"), "line": r.get("line"), "kind": r.get("kind"),
+                                  "text": r.get("text"), "proposed_at": str(r.get("proposed_at") or ""),
+                                  "session_id": r.get("session_id")} for r in rows]})
+
+
+@app.route("/api/decision/answer", methods=["POST"])
+def api_decision_answer():
+    """{"id": 12, "answer": "record" | "decline"} from the Home card. Record
+    applies the line through the same path a chat `Decision:` line takes."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    verdict = str(body.get("answer") or "").strip().lower()
+    if verdict not in ("record", "decline"):
+        return jsonify({"error": "answer must be record or decline"}), 400
+    from decisions import answer, open_captures  # local: keeps import order flat
+    row = next((r for r in open_captures() if str(r.get("id")) == str(body.get("id"))), None)
+    if not row:
+        return jsonify({"status": "none", "message": "That proposal is no longer open."}), 409
+    try:
+        message = answer(row, verdict, load_system_prompt_for_review(), f"card: {verdict}")
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "answer_failed", "message": f"{type(e).__name__}: {e}"}), 502
+    return jsonify({"status": "recorded" if verdict == "record" else "declined", "message": message})
+
+
 def _app_authorised() -> bool:
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     expected = get_settings().app_api_token
@@ -640,7 +674,7 @@ def admin_cleanup():
     """One-shot DB cleanup runner exposed for Railway-hosted deploys.
 
     Body (JSON, optional):
-      { "step": "orphans"|"dupsets"|"sessions"|"sets"|"memory"|"all",
+      { "step": "orphans"|"dupsets"|"sessions"|"sets"|"memory"|"hygiene"|"all",
         "execute": false }
 
     Defaults: step="orphans", execute=false (dry-run). Returns the captured
@@ -663,7 +697,7 @@ def admin_cleanup():
     execute = bool(body.get("execute", False))
     relabel_to = body.get("relabel_to", "") or ""
 
-    allowed_steps = {"orphans", "dupsets", "sessions", "sets", "memory", "all"}
+    allowed_steps = {"orphans", "dupsets", "sessions", "sets", "memory", "hygiene", "all"}
     if step not in allowed_steps:
         return jsonify({"error": f"step must be one of {sorted(allowed_steps)}"}), 400
 
@@ -679,6 +713,7 @@ def admin_cleanup():
         "memory":   lambda: cleanup_module.cleanup_duplicate_memory_keys(supabase, execute),
         "orphans":  lambda: cleanup_module.cleanup_orphan_duplicate_sessions(supabase, execute),
         "dupsets":  lambda: cleanup_module.cleanup_duplicate_sets(supabase, execute),
+        "hygiene":  lambda: cleanup_module.cleanup_session_hygiene(supabase, execute),
     }
     selected = list(runners.values()) if step == "all" else [runners[step]]
 

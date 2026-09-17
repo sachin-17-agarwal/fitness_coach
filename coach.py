@@ -557,6 +557,14 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         record_decisions(assistant_message)
     except Exception:
         log.exception("Decision line handling failed")
+    # A `Proposed:` line is held for the athlete to record or decline; a
+    # lasting phrase in his message with no recordable line back is a miss
+    # the Sunday report counts (docs/DECISION_CAPTURE.md).
+    try:
+        from decisions import capture  # local: keeps import order flat
+        capture(assistant_message, user_message, (get_workout_state() or {}).get("current_session_id") or None)
+    except Exception:
+        log.exception("Decision capture failed")
     save_conversation_message("assistant", assistant_message)
 
     return assistant_message
@@ -797,6 +805,30 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             except Exception as exc:
                 log.exception("Block review answer failed")
                 message = f"Couldn't record that answer: {exc}"
+            save_conversation_message("user", incoming_text)
+            save_conversation_message("assistant", message)
+            if send_reply:
+                send_telegram_message(message)
+            return message
+
+    # ── an answer to a proposed decision ──────────────────────────────────────
+    # "record it" / "not now" any time; a bare yes/no only within minutes of
+    # the proposal, so a yes to the coach's question mid-set is left alone.
+    # The block review's answer path above takes precedence when one is open.
+    from decisions import open_captures, parse_answer as parse_capture_answer  # local: import order
+    try:
+        pending = open_captures()
+    except Exception:
+        pending = []
+    if pending:
+        verdict = parse_capture_answer(incoming_text, pending[0].get("proposed_at"))
+        if verdict:
+            from decisions import answer as answer_capture  # local: keeps import order flat
+            try:
+                message = answer_capture(pending[0], verdict, load_system_prompt(), incoming_text)
+            except Exception as exc:
+                log.exception("Decision answer failed")
+                message = f"Couldn't record that: {exc}"
             save_conversation_message("user", incoming_text)
             save_conversation_message("assistant", message)
             if send_reply:

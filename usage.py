@@ -504,6 +504,9 @@ def main() -> None:
     text += "\n" + format_decisions(summarise_decisions(fetch_decisions(args.report)),
                                      None if shadow_rows is None else summarise_shadow(shadow_rows),
                                      args.report)
+    from decisions import fetch_captures, format_captures, summarise_captures  # local: import order
+    captures = fetch_captures(args.report)
+    text += "\n" + format_captures(None if captures is None else summarise_captures(captures), args.report)
     print(text)
     if args.out:
         import os

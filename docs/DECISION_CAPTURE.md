@@ -1,7 +1,9 @@
 # Decisions captured when reached
 
-*Design for approval, 17 September 2026. Roadmap item 1.1b(3), approved
-16 Sep to be designed alongside 2.5. Nothing here is built.*
+*Designed 17 September 2026, approved and built 18 September. Roadmap item
+1.1b(3). Stages 1 and 2 below are live: `decisions.py`, migration 009, the
+prompt rule, the Home card, chat answers, the report section. Stage 3 (the
+session-shape grammar) and the in-chat card are not built.*
 
 ## The problem, from the log
 

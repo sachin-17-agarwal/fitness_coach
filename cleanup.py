@@ -47,7 +47,7 @@ import sys
 from collections import defaultdict
 
 from data import (
-    OPEN_SESSION_STATUSES, SESSION_STATUS_FINISHED, get_supabase,
+    OPEN_SESSION_STATUSES, SESSION_STATUS_FINISHED, SESSION_STATUS_OPEN, get_supabase,
     is_session_finished, is_session_open, now_local, today_local_str,
 )
 
@@ -474,7 +474,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--only",
-        choices=["sessions", "sets", "memory", "orphans", "dupsets", "purge"],
+        choices=["sessions", "sets", "memory", "orphans", "dupsets", "hygiene", "purge"],
         help="Only run one of the cleanup steps.",
     )
     parser.add_argument(
@@ -507,7 +507,7 @@ def main() -> int:
     mode = "EXECUTE" if args.execute else "DRY RUN"
     print(f"Running cleanup in {mode} mode.")
 
-    steps = {"sessions", "sets", "memory", "orphans", "dupsets"}
+    steps = {"sessions", "sets", "memory", "orphans", "dupsets", "hygiene"}
     if args.only:
         steps = {args.only}
 
@@ -528,6 +528,8 @@ def main() -> int:
         cleanup_orphan_duplicate_sessions(supabase, args.execute)
     if "dupsets" in steps:
         cleanup_duplicate_sets(supabase, args.execute)
+    if "hygiene" in steps:
+        cleanup_session_hygiene(supabase, args.execute)
 
     print("\nDone.")
     if not args.execute:
@@ -537,3 +539,120 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# ── 6. Session hygiene (roadmap 2.12) ────────────────────────────────────────
+
+# Muscle group -> the session that trains it, for a row whose type is blank.
+_GROUP_SESSION = {
+    "Chest": "Push", "Shoulders": "Push", "Triceps": "Push",
+    "Back": "Pull", "Biceps": "Pull", "Rear Delts": "Pull",
+    "Quads": "Legs", "Hamstrings": "Legs", "Glutes": "Legs", "Calves": "Legs",
+    "Abs": "Cardio+Abs",
+}
+
+
+def infer_session_type(exercises: list[str]) -> str | None:
+    """The session whose muscles most of these exercises belong to; None when
+    nothing resolves or two sessions tie."""
+    from volume import resolve_muscle_group  # local: keeps import order flat
+    votes: dict[str, int] = defaultdict(int)
+    for name in exercises:
+        group = resolve_muscle_group(name or "")
+        session = _GROUP_SESSION.get(group or "")
+        if session:
+            votes[session] += 1
+    if not votes:
+        return None
+    ranked = sorted(votes.items(), key=lambda kv: -kv[1])
+    if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+        return None
+    return ranked[0][0]
+
+
+def plan_session_hygiene(sessions: list[dict], sets_by_session: dict[str, list[dict]]) -> dict:
+    """Pure: what the hygiene step would do, from rows already read.
+
+    Returns {"status": [(id, new)], "type": [(id, new)], "delete": [id],
+    "move_sets": [(from_id, to_id)], "notes": [str]}.
+    """
+    plan = {"status": [], "type": [], "delete": [], "move_sets": [], "notes": []}
+    # 1. One spelling per state.
+    for s in sessions:
+        st = (s.get("status") or "").strip().lower()
+        if st == "complete":
+            plan["status"].append((s["id"], SESSION_STATUS_FINISHED))
+        elif st == "active":
+            plan["status"].append((s["id"], SESSION_STATUS_OPEN))
+    # 2. A blank type, inferred from the sets logged in that row.
+    typed: dict[str, str] = {s["id"]: s.get("type") for s in sessions}
+    for s in sessions:
+        t = (s.get("type") or "").strip()
+        if t and t.lower() != "unknown":
+            continue
+        sets = sets_by_session.get(s["id"], [])
+        inferred = infer_session_type([x.get("exercise") for x in sets if not x.get("is_warmup")])
+        if inferred:
+            plan["type"].append((s["id"], inferred))
+            typed[s["id"]] = inferred
+        elif not sets:
+            plan["notes"].append(f"{s['id']} on {s.get('date')}: no type and no sets — left alone (a rest or yoga row?)")
+        else:
+            plan["notes"].append(f"{s['id']} on {s.get('date')}: no type; the {len(sets)} sets do not settle it")
+    # 3. One row per (date, type): keep the row with the most sets (then the
+    #    finished one, then the earliest start); move the others' sets to it.
+    by_key: dict[tuple, list[dict]] = defaultdict(list)
+    for s in sessions:
+        t = typed.get(s["id"])
+        if s.get("date") and t:
+            by_key[(s["date"], t)].append(s)
+    for (date, t), rows in sorted(by_key.items()):
+        if len(rows) < 2:
+            continue
+        def rank(r):
+            return (-len(sets_by_session.get(r["id"], [])), 0 if is_session_finished(r.get("status")) else 1,
+                    r.get("start_time") or "")
+        keep, *others = sorted(rows, key=rank)
+        for o in others:
+            if sets_by_session.get(o["id"]):
+                plan["move_sets"].append((o["id"], keep["id"]))
+            plan["delete"].append(o["id"])
+        plan["notes"].append(f"{date} {t}: {len(rows)} rows -> keep {keep['id']} "
+                             f"({len(sets_by_session.get(keep['id'], []))} sets), remove {len(others)}")
+    return plan
+
+
+def cleanup_session_hygiene(supabase, execute: bool) -> None:
+    """Roadmap 2.12: one spelling per status, a type on every row that has
+    sets, one row per (date, type). Dry run prints the plan; execute applies
+    it in the order status, type, move sets, delete."""
+    print("\n[6/6] Session hygiene: status spellings, blank types, duplicate rows...")
+    sessions = (supabase.table("workout_sessions")
+                .select("id, date, type, status, start_time").order("date").execute().data or [])
+    sets = (supabase.table("workout_sets")
+            .select("id, workout_session_id, exercise, is_warmup").range(0, 19999).execute().data or [])
+    sets_by_session: dict[str, list[dict]] = defaultdict(list)
+    for x in sets:
+        sets_by_session[x.get("workout_session_id")].append(x)
+    plan = plan_session_hygiene(sessions, sets_by_session)
+    print(f"  status respellings: {len(plan['status'])}")
+    print(f"  types inferred:     {len(plan['type'])}")
+    for sid, t in plan["type"]:
+        print(f"    - {sid} -> {t}")
+    print(f"  duplicate rows:     {len(plan['delete'])} to remove, {len(plan['move_sets'])} with sets to move first")
+    for note in plan["notes"]:
+        print(f"    - {note}")
+    if not execute:
+        print("  [dry-run] Nothing changed.")
+        return
+    for sid, st in plan["status"]:
+        supabase.table("workout_sessions").update({"status": st}).eq("id", sid).execute()
+    for sid, t in plan["type"]:
+        supabase.table("workout_sessions").update({"type": t}).eq("id", sid).execute()
+    for src, dst in plan["move_sets"]:
+        supabase.table("workout_sets").update({"workout_session_id": dst}).eq("workout_session_id", src).execute()
+    for sid in plan["delete"]:
+        supabase.table("workout_sets").delete().eq("workout_session_id", sid).execute()
+        supabase.table("workout_sessions").delete().eq("id", sid).execute()
+    print(f"  -> Applied: {len(plan['status'])} statuses, {len(plan['type'])} types, "
+          f"{len(plan['move_sets'])} set moves, {len(plan['delete'])} rows removed.")
