@@ -1332,3 +1332,32 @@ class UsageReportRobustnessTests(unittest.TestCase):
             def table(self, name): raise RuntimeError("Could not find the table 'public.model_calls'")
         with patch("data.get_supabase", return_value=Broken()):
             self.assertEqual(fetch_rows(14), [])
+
+
+class BrokenNoteGuardTests(unittest.TestCase):
+    """A set reply whose note lost characters in the constrained-output call
+    (18 Sep, Leg Press) is sent back, then falls through to prose."""
+
+    GARBLED = (", solid, thenring warm-.135kg for3 (RE 6.0.Rest 2min then Working Set: 240kg x12 RPE6 | "
+               "Rest:2min.Everything onined properly — this is the number the arm is calling for.now.")
+
+    def test_the_garbled_note_is_caught(self):
+        from plan import note_damage, note_is_broken
+        self.assertTrue(note_is_broken(self.GARBLED))
+        self.assertGreaterEqual(len(note_damage(self.GARBLED)), 3)
+
+    def test_ordinary_notes_pass(self):
+        from plan import note_is_broken
+        for note in ("240kg x12 @6 landed exactly on target — clean top set. Back-off next.",
+                     "Good, 132.5kg x10 right on target (knees fine). Next warm-up: 180kg x5, RPE5-6.",
+                     "Two short nights back to back — 5.64h then 5.91h — so every RPE target is down a point today.",
+                     ""):
+            with self.subTest(note=note[:30]):
+                self.assertFalse(note_is_broken(note))
+
+    def test_a_broken_note_is_a_problem_even_on_hold(self):
+        from plan import set_reply_problems
+        problems = set_reply_problems({"decision": "hold", "note": self.GARBLED}, "Leg Press", {}, 3)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("broken text", problems[0])
+        self.assertEqual(set_reply_problems({"decision": "hold", "note": "Clean set. Hold."}, "Leg Press", {}, 3), [])
