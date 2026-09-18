@@ -11,6 +11,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		03034680305DF5130053D3B4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0386876B2F93B280007D1705 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 038687722F93B280007D1705;
+			remoteInfo = Vaux;
+		};
 		AA10000000000000000000AE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 0386876B2F93B280007D1705 /* Project object */;
@@ -35,18 +42,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0303467C305DF5130053D3B4 /* VauxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VauxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		038687732F93B280007D1705 /* Vaux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vaux.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA10000000000000000000A1 /* VauxWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VauxWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AA10000000000000000000AF /* Exceptions for "VauxWidgets" folder in "VauxWidgetsExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = AA10000000000000000000A4 /* VauxWidgetsExtension */;
-		};
 		038687832F93B413007D1705 /* Exceptions for "Vaux" folder in "Vaux" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -54,9 +55,21 @@
 			);
 			target = 038687722F93B280007D1705 /* Vaux */;
 		};
+		AA10000000000000000000AF /* Exceptions for "VauxWidgets" folder in "VauxWidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AA10000000000000000000A4 /* VauxWidgetsExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		0303467D305DF5130053D3B4 /* VauxTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = VauxTests;
+			sourceTree = "<group>";
+		};
 		038687752F93B280007D1705 /* Vaux */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -81,6 +94,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		03034679305DF5130053D3B4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		038687702F93B280007D1705 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -104,6 +124,7 @@
 				038687752F93B280007D1705 /* Vaux */,
 				AA10000000000000000000A3 /* Shared */,
 				AA10000000000000000000A2 /* VauxWidgets */,
+				0303467D305DF5130053D3B4 /* VauxTests */,
 				038687742F93B280007D1705 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -113,6 +134,7 @@
 			children = (
 				038687732F93B280007D1705 /* Vaux.app */,
 				AA10000000000000000000A1 /* VauxWidgetsExtension.appex */,
+				0303467C305DF5130053D3B4 /* VauxTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -120,6 +142,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0303467B305DF5130053D3B4 /* VauxTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 03034682305DF5130053D3B4 /* Build configuration list for PBXNativeTarget "VauxTests" */;
+			buildPhases = (
+				03034678305DF5130053D3B4 /* Sources */,
+				03034679305DF5130053D3B4 /* Frameworks */,
+				0303467A305DF5130053D3B4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				03034681305DF5130053D3B4 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0303467D305DF5130053D3B4 /* VauxTests */,
+			);
+			name = VauxTests;
+			packageProductDependencies = (
+			);
+			productName = VauxTests;
+			productReference = 0303467C305DF5130053D3B4 /* VauxTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		038687722F93B280007D1705 /* Vaux */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0386877E2F93B283007D1705 /* Build configuration list for PBXNativeTarget "Vaux" */;
@@ -170,14 +215,6 @@
 		};
 /* End PBXNativeTarget section */
 
-/* Begin PBXTargetDependency section */
-		AA10000000000000000000AD /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = AA10000000000000000000A4 /* VauxWidgetsExtension */;
-			targetProxy = AA10000000000000000000AE /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXProject section */
 		0386876B2F93B280007D1705 /* Project object */ = {
 			isa = PBXProject;
@@ -186,6 +223,10 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					0303467B305DF5130053D3B4 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 038687722F93B280007D1705;
+					};
 					038687722F93B280007D1705 = {
 						CreatedOnToolsVersion = 26.2;
 						SystemCapabilities = {
@@ -215,11 +256,19 @@
 			targets = (
 				038687722F93B280007D1705 /* Vaux */,
 				AA10000000000000000000A4 /* VauxWidgetsExtension */,
+				0303467B305DF5130053D3B4 /* VauxTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0303467A305DF5130053D3B4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		038687712F93B280007D1705 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -237,6 +286,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		03034678305DF5130053D3B4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0386876F2F93B280007D1705 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -253,7 +309,62 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		03034681305DF5130053D3B4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 038687722F93B280007D1705 /* Vaux */;
+			targetProxy = 03034680305DF5130053D3B4 /* PBXContainerItemProxy */;
+		};
+		AA10000000000000000000AD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA10000000000000000000A4 /* VauxWidgetsExtension */;
+			targetProxy = AA10000000000000000000AE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		03034683305DF5130053D3B4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RW2Q35J6UX;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Sachin.VauxTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Vaux.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Vaux";
+			};
+			name = Debug;
+		};
+		03034684305DF5130053D3B4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RW2Q35J6UX;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Sachin.VauxTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Vaux.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Vaux";
+			};
+			name = Release;
+		};
 		0386877C2F93B283007D1705 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -390,9 +501,9 @@
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitnessCoach reads your health data (HRV, sleep, heart rate) for recovery insights.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitnessCoach writes workout data to Apple Health.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -432,9 +543,9 @@
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitnessCoach reads your health data (HRV, sleep, heart rate) for recovery insights.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitnessCoach writes workout data to Apple Health.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -465,8 +576,8 @@
 				DEVELOPMENT_TEAM = RW2Q35J6UX;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VauxWidgets/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Vaux Rest";
-				INFOPLIST_FILE = "VauxWidgets/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -494,8 +605,8 @@
 				DEVELOPMENT_TEAM = RW2Q35J6UX;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VauxWidgets/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Vaux Rest";
-				INFOPLIST_FILE = "VauxWidgets/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -510,15 +621,24 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		03034682305DF5130053D3B4 /* Build configuration list for PBXNativeTarget "VauxTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				03034683305DF5130053D3B4 /* Debug */,
+				03034684305DF5130053D3B4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		0386876E2F93B280007D1705 /* Build configuration list for PBXProject "Vaux" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
