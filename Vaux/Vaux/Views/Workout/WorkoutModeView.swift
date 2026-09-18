@@ -129,13 +129,13 @@ struct WorkoutModeView: View {
                     chatText: $viewModel.inlineChatText,
                     onSend: { Task { await viewModel.sendInlineMessage() } },
                     stats: RestStats(
-                        exerciseName: viewModel.currentPrescription?.exerciseName ?? "",
+                        exerciseName: viewModel.restExerciseName,
                         tonnage: viewModel.totalTonnage,
                         setsDone: viewModel.setCount,
                         duration: viewModel.sessionDuration,
                         heartRate: viewModel.heartRateMonitor,
                         todaySets: viewModel.exerciseSetsForCurrentExercise,
-                        lastSets: viewModel.lastSessionSets,
+                        lastSets: viewModel.restLastSets,
                         lastLoaded: viewModel.lastSessionSetsLoaded,
                         strengthHistory: viewModel.strengthHistory,
                         todayE1RM: viewModel.todayE1RM
