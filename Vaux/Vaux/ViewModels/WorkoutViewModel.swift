@@ -85,6 +85,14 @@ final class WorkoutViewModel {
     /// programme. The opening has taken up to ~90 s; three minutes is ample.
     static let reviewPollSeconds: UInt64 = 5
     static let reviewMaxPolls = 36
+    /// After the fast window the card has settled on the programme, but the
+    /// coach's review may still arrive — a slow opening once left the calf
+    /// raise on the programme's 122.5 kg while the coach believed its own
+    /// 125 kg was on the card, and said so eighty minutes later. Keep asking,
+    /// slowly, for the rest of a long session, and land a late review onto
+    /// the exercises not yet touched.
+    static let reviewLatePollSeconds: UInt64 = 30
+    static let reviewLateMaxPolls = 40
 
     // True from the moment a Log tap is accepted until the set is persisted
     // and the phase tracker has advanced. Guards logSet against reentry and
@@ -303,7 +311,48 @@ final class WorkoutViewModel {
             }
             guard let self, !Task.isCancelled else { return }
             if self.planSource == .programmeReviewing { self.planSource = .programme }
+            // Late window: the review may still land. It goes only onto
+            // exercises with nothing logged, never onto the card in play.
+            for _ in 0..<Self.reviewLateMaxPolls {
+                try? await Task.sleep(nanoseconds: Self.reviewLatePollSeconds * 1_000_000_000)
+                guard let self, !Task.isCancelled, self.isActive else { return }
+                guard let status = try? await self.chatService.sessionStatus() else { continue }
+                switch status.status {
+                case "reviewed":
+                    if let text = status.response {
+                        self.applyLateReview(text, changes: status.changes ?? [])
+                    }
+                    return
+                case "failed":
+                    return
+                default:
+                    continue
+                }
+            }
         }
+    }
+
+    /// A review that arrived after the fast window: replace the cards of
+    /// exercises not yet started, leave the current and the finished ones as
+    /// they are, and keep only the change notes that still apply.
+    private func applyLateReview(_ text: String, changes: [PlanChange]) {
+        let incoming = PrescriptionParser.parse(text)
+        guard !incoming.isEmpty else { return }
+        let started = Set(loggedSets.map { PrescriptionParser.normalizeExerciseName($0.exercise) })
+        let current = currentPrescription?.exerciseName
+        var replaced: Set<String> = []
+        for rx in incoming {
+            let name = rx.exerciseName
+            guard name != current, !started.contains(name) else { continue }
+            if let idx = allPrescriptions.firstIndex(where: { $0.exerciseName == name }) {
+                allPrescriptions[idx] = rx
+                replaced.insert(name)
+            }
+        }
+        guard !replaced.isEmpty else { return }
+        planChanges = changes.filter { replaced.contains(PrescriptionParser.normalizeExerciseName($0.exercise)) }
+        planSource = .coach
+        print("[Coach] Late review landed on \(replaced.sorted().joined(separator: ", "))")
     }
 
     /// The coach's change to the exercise on the card, if the review made one.
