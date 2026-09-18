@@ -558,6 +558,7 @@ struct WorkoutModeView: View {
                                 exerciseIndex: viewModel.currentExerciseIndex,
                                 exerciseCount: viewModel.allPrescriptions.isEmpty ? nil : viewModel.allPrescriptions.count,
                                 lastBlock: viewModel.lastBlockReference,
+                                sameWeekBlock: viewModel.sameWeekBlockReference,
                                 onEditSet: { editingSet = $0 }
                             )
                             .transition(.asymmetric(
