@@ -315,7 +315,8 @@ final class WorkoutViewModel {
             // exercises with nothing logged, never onto the card in play.
             for _ in 0..<Self.reviewLateMaxPolls {
                 try? await Task.sleep(nanoseconds: Self.reviewLatePollSeconds * 1_000_000_000)
-                guard let self, !Task.isCancelled, self.isActive else { return }
+                // `self` is already unwrapped by the guard above the loop.
+                guard !Task.isCancelled, self.isActive else { return }
                 guard let status = try? await self.chatService.sessionStatus() else { continue }
                 switch status.status {
                 case "reviewed":
