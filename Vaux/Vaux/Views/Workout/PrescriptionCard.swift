@@ -9,9 +9,12 @@
 
 import SwiftUI
 
-/// The same working set from the same week of the previous block, so the
-/// comparison never crosses a phase (a volume week is never judged against a
-/// peak week). nil when the lift has no history a block back.
+/// A top working set from the log, beside the working chip. Two of these
+/// sit on the card: LAST, the most recent session on the lift (what you did
+/// last time), and BLOCK, the same week of the previous block (where you
+/// were a block ago, peak against peak, deload against deload). The change
+/// in load is shown only on BLOCK — last time may be a different phase, and
+/// a deload set is not a regression from a peak set.
 struct LastBlockReference: Equatable {
     let weight: Double
     let reps: Int
@@ -31,6 +34,8 @@ struct PrescriptionCard: View {
     var exerciseIndex: Int? = nil
     var exerciseCount: Int? = nil
     var lastBlock: LastBlockReference? = nil
+    /// The same week of the previous block; carries the load delta.
+    var sameWeekBlock: LastBlockReference? = nil
     let onEditSet: (WorkoutSet) -> Void
 
     @State private var pulse = false
@@ -56,7 +61,7 @@ struct PrescriptionCard: View {
                         sets: prescription.workingSets.enumerated().map { i, s in
                             SetTarget(weight: s.weight, reps: s.reps, repsHigh: s.repsHigh, rpe: s.rpe, kind: .working, index: i)
                         },
-                        trailing: lastBlock
+                        trailing: lastBlock, block: sameWeekBlock
                     )
                 }
                 if !prescription.backoffSets.isEmpty {
@@ -139,7 +144,8 @@ struct PrescriptionCard: View {
     }
 
     private func setSection(
-        label: String, color: Color, first: Bool, sets: [SetTarget], trailing: LastBlockReference?
+        label: String, color: Color, first: Bool, sets: [SetTarget], trailing: LastBlockReference?,
+        block: LastBlockReference? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
@@ -158,8 +164,8 @@ struct PrescriptionCard: View {
                             setChip(target: target, color: color)
                         }
                     }
-                    if let trailing {
-                        lastBlockStack(trailing, against: sets.first)
+                    if trailing != nil || block != nil {
+                        referenceStack(last: trailing, block: block, against: sets.first)
                     }
                 }
             } else {
@@ -168,8 +174,8 @@ struct PrescriptionCard: View {
                         setChip(target: target, color: color)
                     }
                 }
-                if let trailing {
-                    lastBlockStack(trailing, against: sets.first)
+                if trailing != nil || block != nil {
+                    referenceStack(last: trailing, block: block, against: sets.first)
                         .padding(.top, 4)
                 }
             }
@@ -182,33 +188,56 @@ struct PrescriptionCard: View {
         }
     }
 
-    /// The same-week set from the previous block, ruled off beside the
-    /// working chip, with the change in load.
-    private func lastBlockStack(_ ref: LastBlockReference, against target: SetTarget?) -> some View {
-        let delta = target.map { $0.weight - ref.weight } ?? 0
-        let load = ExerciseCatalog.setWeightLabel(ref.weight, exercise: prescription.exerciseName)
-        return HStack(spacing: 14) {
-            Rectangle().fill(Color.line).frame(width: 1, height: 40)
-            VStack(alignment: .leading, spacing: 5) {
-                EditorialEyebrow(text: "Last · \(ref.label)", color: Editorial.muted, size: 8.5, kerning: 1.5)
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(load) × \(ref.reps)")
-                        .font(.display(18))
-                        .foregroundStyle(Color.fg2)
-                    if let rpe = ref.rpe {
-                        EditorialEyebrow(text: "@\(rpe.wholeOrOne)", color: Editorial.muted, size: 9, kerning: 1)
-                    }
-                    if delta != 0 {
-                        Text("\(delta > 0 ? "▲" : "▼") \(abs(delta).wholeOrOne)")
-                            .font(.display(14))
-                            .foregroundStyle(delta > 0 ? Color.mint : Color.amber)
-                    }
+    /// LAST and BLOCK, ruled off beside the working chip. The load delta sits
+    /// on BLOCK alone: that is the like-for-like comparison.
+    private func referenceStack(last: LastBlockReference?, block: LastBlockReference?,
+                                against target: SetTarget?) -> some View {
+        HStack(spacing: 14) {
+            Rectangle().fill(Color.line).frame(width: 1, height: (last != nil && block != nil) ? 74 : 40)
+            VStack(alignment: .leading, spacing: 10) {
+                if let last {
+                    referenceLine(eyebrow: "Last · \(last.label)", ref: last, delta: nil)
+                }
+                if let block {
+                    referenceLine(eyebrow: "Block · \(block.label)", ref: block,
+                                  delta: target.map { $0.weight - block.weight })
                 }
             }
         }
         .padding(.leading, 8)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Last session, \(ref.label): \(load) by \(ref.reps)")
+        .accessibilityLabel(referenceAccessibility(last: last, block: block))
+    }
+
+    private func referenceLine(eyebrow: String, ref: LastBlockReference, delta: Double?) -> some View {
+        let load = ExerciseCatalog.setWeightLabel(ref.weight, exercise: prescription.exerciseName)
+        return VStack(alignment: .leading, spacing: 5) {
+            EditorialEyebrow(text: eyebrow, color: Editorial.muted, size: 8.5, kerning: 1.5)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(load) × \(ref.reps)")
+                    .font(.display(18))
+                    .foregroundStyle(Color.fg2)
+                if let rpe = ref.rpe {
+                    EditorialEyebrow(text: "@\(rpe.wholeOrOne)", color: Editorial.muted, size: 9, kerning: 1)
+                }
+                if let delta, delta != 0 {
+                    Text("\(delta > 0 ? "▲" : "▼") \(abs(delta).wholeOrOne)")
+                        .font(.display(14))
+                        .foregroundStyle(delta > 0 ? Color.mint : Color.amber)
+                }
+            }
+        }
+    }
+
+    private func referenceAccessibility(last: LastBlockReference?, block: LastBlockReference?) -> String {
+        var parts: [String] = []
+        if let last {
+            parts.append("Last session, \(last.label): \(ExerciseCatalog.setWeightLabel(last.weight, exercise: prescription.exerciseName)) by \(last.reps)")
+        }
+        if let block {
+            parts.append("Same week last block, \(block.label): \(ExerciseCatalog.setWeightLabel(block.weight, exercise: prescription.exerciseName)) by \(block.reps)")
+        }
+        return parts.joined(separator: ". ")
     }
 
     private func setChip(target: SetTarget, color: Color) -> some View {

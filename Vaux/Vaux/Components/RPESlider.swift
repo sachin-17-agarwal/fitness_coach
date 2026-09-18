@@ -9,7 +9,7 @@ import SwiftUI
 struct RPESlider: View {
     @Binding var value: Double
 
-    private let range: ClosedRange<Double> = 6.0...10.0
+    private let range: ClosedRange<Double> = 5.0...10.0
     private let step: Double = 0.5
 
     var body: some View {
@@ -83,7 +83,7 @@ struct RPESlider: View {
 
             // Step labels
             HStack {
-                ForEach(Array(stride(from: 6.0, through: 10.0, by: 1.0)), id: \.self) { tick in
+                ForEach(Array(stride(from: 5.0, through: 10.0, by: 1.0)), id: \.self) { tick in
                     Text("\(Int(tick))")
                         .font(.eyebrowSmall)
                         .foregroundStyle(Color.fg2)

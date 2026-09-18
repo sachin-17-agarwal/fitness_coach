@@ -115,8 +115,11 @@ days: deload Pull 16 Sep and Push 17 Sep):**
 1. **Card reference line** ("LAST BLOCK · WK 3"): hardcoded 21–35 day
    window, labelled with today's week. *Decided 16 Sep: the athlete's last
    session on that lift, labelled by date* — the set progression works
-   from, so card and coach agree by construction. Shipped; *verify on the
-   next build*.
+   from, so card and coach agree by construction. Shipped. *Extended 18 Sep
+   at the athlete's suggestion: two references — LAST (most recent session,
+   a plain fact) and BLOCK (same stamped week of the previous block, peak
+   against peak), with the load delta on BLOCK alone; a deload set beside a
+   peak set had read as "▼5".*
 2. **Band per calendar week or per rotation**: *settled from the exported
    log on 17 Sep.* Legs has come round every 5.0 days since July (1.4 a
    week). Over the block 2–16 Sep the log carries 22.5 hamstring sets — 12

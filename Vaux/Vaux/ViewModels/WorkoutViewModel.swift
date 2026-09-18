@@ -85,6 +85,14 @@ final class WorkoutViewModel {
     /// programme. The opening has taken up to ~90 s; three minutes is ample.
     static let reviewPollSeconds: UInt64 = 5
     static let reviewMaxPolls = 36
+    /// After the fast window the card has settled on the programme, but the
+    /// coach's review may still arrive — a slow opening once left the calf
+    /// raise on the programme's 122.5 kg while the coach believed its own
+    /// 125 kg was on the card, and said so eighty minutes later. Keep asking,
+    /// slowly, for the rest of a long session, and land a late review onto
+    /// the exercises not yet touched.
+    static let reviewLatePollSeconds: UInt64 = 30
+    static let reviewLateMaxPolls = 40
 
     // True from the moment a Log tap is accepted until the set is persisted
     // and the phase tracker has advanced. Guards logSet against reentry and
@@ -303,7 +311,48 @@ final class WorkoutViewModel {
             }
             guard let self, !Task.isCancelled else { return }
             if self.planSource == .programmeReviewing { self.planSource = .programme }
+            // Late window: the review may still land. It goes only onto
+            // exercises with nothing logged, never onto the card in play.
+            for _ in 0..<Self.reviewLateMaxPolls {
+                try? await Task.sleep(nanoseconds: Self.reviewLatePollSeconds * 1_000_000_000)
+                guard let self, !Task.isCancelled, self.isActive else { return }
+                guard let status = try? await self.chatService.sessionStatus() else { continue }
+                switch status.status {
+                case "reviewed":
+                    if let text = status.response {
+                        self.applyLateReview(text, changes: status.changes ?? [])
+                    }
+                    return
+                case "failed":
+                    return
+                default:
+                    continue
+                }
+            }
         }
+    }
+
+    /// A review that arrived after the fast window: replace the cards of
+    /// exercises not yet started, leave the current and the finished ones as
+    /// they are, and keep only the change notes that still apply.
+    private func applyLateReview(_ text: String, changes: [PlanChange]) {
+        let incoming = PrescriptionParser.parse(text)
+        guard !incoming.isEmpty else { return }
+        let started = Set(loggedSets.map { PrescriptionParser.normalizeExerciseName($0.exercise) })
+        let current = currentPrescription?.exerciseName
+        var replaced: Set<String> = []
+        for rx in incoming {
+            let name = rx.exerciseName
+            guard name != current, !started.contains(name) else { continue }
+            if let idx = allPrescriptions.firstIndex(where: { $0.exerciseName == name }) {
+                allPrescriptions[idx] = rx
+                replaced.insert(name)
+            }
+        }
+        guard !replaced.isEmpty else { return }
+        planChanges = changes.filter { replaced.contains(PrescriptionParser.normalizeExerciseName($0.exercise)) }
+        planSource = .coach
+        print("[Coach] Late review landed on \(replaced.sorted().joined(separator: ", "))")
     }
 
     /// The coach's change to the exercise on the card, if the review made one.
@@ -1115,6 +1164,12 @@ final class WorkoutViewModel {
     /// to 35 days back — never last week, which is a different phase.
     var lastBlockReference: LastBlockReference?
 
+    /// The top working set of this exercise from the same mesocycle week of
+    /// the previous block, found by the week stamped on the session rather
+    /// than by counting days: peak against peak, deload against deload. This
+    /// is where the load delta lives; LAST is a plain fact.
+    var sameWeekBlockReference: LastBlockReference?
+
     /// Every set the plan calls for: logged so far plus what is still to come
     /// on the current exercise and the upcoming ones.
     var plannedSetTotal: Int {
@@ -1180,6 +1235,7 @@ final class WorkoutViewModel {
         lastSessionSetsLoaded = false
         strengthHistory = []
         lastBlockReference = nil
+        sameWeekBlockReference = nil
         // `before:` excludes today, otherwise the most recent session
         // containing this exercise is the one currently in progress and the
         // card would show the athlete the sets they logged minutes ago.
@@ -1201,7 +1257,48 @@ final class WorkoutViewModel {
             guard lastSessionSetsExercise == exercise else { return }
             strengthHistory = Self.bestE1RMPerSession(history, excluding: today)
             lastBlockReference = Self.lastBlockReference(from: history, week: mesocycleWeek)
+            // The sessions carry the week stamps the sets do not.
+            let sessions = (try? await workoutService.fetchSessionHistory(days: 180)) ?? []
+            guard lastSessionSetsExercise == exercise else { return }
+            sameWeekBlockReference = Self.sameWeekBlockReference(
+                from: history, sessions: sessions, week: mesocycleWeek, today: today)
         }
+    }
+
+    /// The top working set from the most recent session on this lift that
+    /// was stamped with the same mesocycle week as today and belongs to an
+    /// earlier block. The current block starts at its most recent week 1 ·
+    /// day 1 session; anything on or after that date is this block and is
+    /// skipped. No stamp on the current session, or no earlier same-week
+    /// session on the lift: nil, and the card shows LAST alone.
+    static func sameWeekBlockReference(from history: [WorkoutSet], sessions: [WorkoutSession],
+                                       week: Int?, today: String) -> LastBlockReference? {
+        guard let week else { return nil }
+        let blockStart = sessions
+            .filter { $0.mesocycleWeek == 1 && $0.mesocycleDay == 1 && $0.date <= today }
+            .map(\.date).max()
+        let weekById: [UUID: Int] = Dictionary(
+            sessions.compactMap { s in s.id.flatMap { id in s.mesocycleWeek.map { (id, $0) } } },
+            uniquingKeysWith: { a, _ in a })
+        let candidates = history.filter { set in
+            guard set.isWarmup != true, let date = set.date, date < today,
+                  let sid = set.workoutSessionId, weekById[sid] == week else { return false }
+            if let blockStart, date >= blockStart { return false }
+            return true
+        }
+        guard let sessionDate = candidates.compactMap(\.date).max() else { return nil }
+        let sets = candidates.filter { $0.date == sessionDate }
+        guard let top = sets.max(by: { a, b in
+            let wa = a.actualWeightKg ?? 0, wb = b.actualWeightKg ?? 0
+            if wa != wb { return wa < wb }
+            return (a.actualReps ?? 0) < (b.actualReps ?? 0)
+        }), let weight = top.actualWeightKg, let reps = top.actualReps else { return nil }
+        let label: String = {
+            guard let d = dateFormatter.date(from: sessionDate) else { return sessionDate }
+            let f = DateFormatter(); f.dateFormat = "d MMM"; f.locale = Locale(identifier: "en_US_POSIX")
+            return "WK\(week) · " + f.string(from: d).uppercased()
+        }()
+        return LastBlockReference(weight: weight, reps: reps, rpe: top.actualRpe, label: label)
     }
 
     /// The top working set from the athlete's most recent session on this

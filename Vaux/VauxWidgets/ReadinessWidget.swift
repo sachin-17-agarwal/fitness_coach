@@ -197,6 +197,22 @@ private enum WidgetStyle {
     }
 }
 
+// MARK: - Rendering mode
+
+/// The system's widget styles. Default draws the hero in full colour. Tinted
+/// and Clear (the glass looks the athlete can pick from the widget's style
+/// sheet) hand the surface to iOS and want monochrome ink with the accent
+/// carried by `widgetAccentable` views — here the score and the verdict.
+/// One place decides, so the palette never half-applies.
+private struct Ink {
+    let mode: WidgetRenderingMode
+    var full: Bool { mode == .fullColor }
+    var fg1: Color { full ? .wFg1 : .primary.opacity(0.88) }
+    var fg2: Color { full ? .wFg2 : .primary.opacity(0.66) }
+    var fg3: Color { full ? .wFg3 : .primary.opacity(0.5) }
+    func verdict(_ level: String) -> Color { full ? WidgetStyle.verdictColor(level) : .primary }
+}
+
 // MARK: - Pieces
 
 private struct VauxMark: View {
@@ -222,20 +238,22 @@ private struct VauxMark: View {
 
 private struct WidgetHeader: View {
     let dateText: String
+    @Environment(\.widgetRenderingMode) private var mode
     var body: some View {
+        let ink = Ink(mode: mode)
         HStack(alignment: .center) {
             HStack(spacing: 6) {
-                VauxMark(size: 11)
+                VauxMark(size: 11, color: ink.fg1)
                 Text("VAUX")
                     .font(.system(size: 10, weight: .semibold))
                     .kerning(2.6)
-                    .foregroundStyle(Color.wFg1)
+                    .foregroundStyle(ink.fg1)
             }
             Spacer()
             Text(dateText)
                 .font(.system(size: 9, weight: .medium))
                 .kerning(2)
-                .foregroundStyle(Color.wFg3)
+                .foregroundStyle(ink.fg3)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
@@ -245,8 +263,9 @@ private struct WidgetHeader: View {
 private struct ScoreFigure: View {
     let payload: WidgetPayload
     let size: CGFloat
+    @Environment(\.widgetRenderingMode) private var mode
     var body: some View {
-        let color = WidgetStyle.verdictColor(payload.level)
+        let color = Ink(mode: mode).verdict(payload.level)
         HStack(alignment: .firstTextBaseline, spacing: 3) {
             Text(payload.score.map(String.init) ?? "—")
                 .font(WidgetStyle.display(size))
@@ -259,6 +278,7 @@ private struct ScoreFigure: View {
                     .foregroundStyle(color.opacity(0.55))
             }
         }
+        .widgetAccentable()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(payload.score.map { "Readiness \($0) percent" } ?? "Readiness unknown")
     }
@@ -268,10 +288,12 @@ private struct MetricLine: View {
     let label: String
     let value: String
     var delta: Int? = nil
+    @Environment(\.widgetRenderingMode) private var mode
     var body: some View {
-        (Text(label.isEmpty ? "" : label + " ").foregroundColor(.wFg2)
-         + Text(value).fontWeight(.semibold).foregroundColor(.wFg1)
-         + Text(deltaText).foregroundColor(.wFg3))
+        let ink = Ink(mode: mode)
+        return (Text(label.isEmpty ? "" : label + " ").foregroundColor(ink.fg2)
+         + Text(value).fontWeight(.semibold).foregroundColor(ink.fg1)
+         + Text(deltaText).foregroundColor(ink.fg3))
             .font(.system(size: 9.5, weight: .medium))
             .kerning(1.1)
             .monospacedDigit()
@@ -287,6 +309,7 @@ private struct MetricLine: View {
 
 private struct MediumView: View {
     let p: WidgetPayload
+    @Environment(\.widgetRenderingMode) private var mode
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             WidgetHeader(dateText: WidgetStyle.headerDate(p, long: true))
@@ -297,7 +320,8 @@ private struct MediumView: View {
                     Text(p.verdict)
                         .font(.system(size: 9.5, weight: .semibold))
                         .kerning(2)
-                        .foregroundStyle(WidgetStyle.verdictColor(p.level))
+                        .foregroundStyle(Ink(mode: mode).verdict(p.level))
+                        .widgetAccentable()
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
@@ -322,6 +346,7 @@ private struct MediumView: View {
 
 private struct SmallView: View {
     let p: WidgetPayload
+    @Environment(\.widgetRenderingMode) private var mode
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             WidgetHeader(dateText: WidgetStyle.headerDate(p, long: false))
@@ -330,7 +355,8 @@ private struct SmallView: View {
             Text(p.verdict.replacingOccurrences(of: " — ", with: "\n"))
                 .font(.system(size: 8.5, weight: .semibold))
                 .kerning(1.6)
-                .foregroundStyle(WidgetStyle.verdictColor(p.level))
+                .foregroundStyle(Ink(mode: mode).verdict(p.level))
+                .widgetAccentable()
                 .lineLimit(2)
                 .minimumScaleFactor(0.75)
                 .padding(.top, 5)
