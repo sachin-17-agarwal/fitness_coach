@@ -1054,12 +1054,52 @@ def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: st
     return None
 
 
+# A set reply's note came back with word-pieces missing on 18 Sep — ", solid,
+# thenring warm-.135kg for3 (RE 6.0.Rest 2min then Working Set: 240kg x12
+# RPE6 | Rest:2min.Everything onined properly" — accepted, rendered, stored
+# and shown. Nothing between the model and the card edits text, so the
+# damage was in the constrained-output call itself. These are the marks such
+# a note leaves; two of them and the note is sent back once, then the reply
+# falls through to the prose call.
+_GLUED_WORD_DIGIT_RE = re.compile(r"\b(?:for|at|to|of|then|and|with|by|on|in)\d")
+_MISSING_SPACE_RE = re.compile(r"[a-z0-9]\.[A-Za-z]")
+_BLOCK_IN_NOTE_RE = re.compile(r"(?i)\b(?:warm-?up|working set|back-?off)\s*:")
+
+
+def note_damage(note: str) -> list[str]:
+    """The marks of a note that lost characters on the way out; empty when
+    the note reads as prose."""
+    text = (note or "").strip()
+    if not text:
+        return []
+    marks = []
+    if text[0] in ",.;:)|":
+        marks.append("starts with punctuation")
+    if text.count("(") != text.count(")"):
+        marks.append("unbalanced parentheses")
+    if _GLUED_WORD_DIGIT_RE.search(text):
+        marks.append("a word glued to a number")
+    if len(_MISSING_SPACE_RE.findall(text)) >= 2:
+        marks.append("sentences run together")
+    if _BLOCK_IN_NOTE_RE.search(text):
+        marks.append("a set line inside the note")
+    return marks
+
+
+def note_is_broken(note: str) -> bool:
+    return len(note_damage(note)) >= 2
+
+
 def set_reply_problems(reply: dict, exercise: str, stored: dict, done: int) -> list[str]:
     """Only `revise` carries free numbers, and only its sanity is checked; a
-    computed move cannot be malformed."""
+    computed move cannot be malformed. The note is checked for damage: a
+    reply is text the athlete reads, and a broken one is worse than none."""
     decision = (reply.get("decision") or "").strip().lower()
     if decision not in SET_DECISIONS:
         return [f"decision must be one of {', '.join(SET_DECISIONS)}."]
+    if note_is_broken(reply.get("note") or ""):
+        return ["the note reads as broken text (" + ", ".join(note_damage(reply.get("note") or ""))
+                + "): rewrite it as one to three plain sentences with no set numbers."]
     if decision == "hold":
         return []
     if len((reply.get("reason") or "").strip()) < 12:
@@ -1171,6 +1211,8 @@ def request_set_reply(client, system_blocks: list, messages: list, exercise: str
             notes.append(f"set reply attempt {attempt}: did not parse ({exc})")
             return None, notes
         problems = set_reply_problems(reply, exercise, stored or {}, done) if stored else []
+        if any(p.startswith("the note reads as broken") for p in problems):
+            log.warning("SET REPLY NOTE BROKEN (%s, attempt %d): %r", exercise, attempt, (reply.get("note") or "")[:200])
         if not problems:
             decision = (reply.get("decision") or "hold")
             notes.append(f"set reply accepted · {decision}")

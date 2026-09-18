@@ -182,6 +182,26 @@ chat. The decision-capture design routed unanswered proposals to the
 briefing; it now says Home. The briefing itself stays on its button and
 costs nothing unless tapped; whether to retire it is a later question.
 
+### 1.1f Garbled set reply (18 Sep Legs)
+
+The reply to the third Leg Press warm-up reached the athlete as ", solid,
+thenring warm-.135kg for3 (RE 6.0.Rest 2min then Working Set: 240kg x12
+RPE6 | Rest:2min.Everything onined properly…". The stored row is identical,
+`model_calls` shows one accepted `set_reply` attempt, and nothing between
+the model and the card edits text — so the damage was in the
+constrained-output call itself, and the contract accepted it because it
+only ever checked the numbers. *Fixed 18 Sep:* `note_damage` marks a note
+that starts with punctuation, has unbalanced brackets, glues a word to a
+number, runs sentences together or carries a set line; two marks send the
+reply back once, then it falls through to the prose call, and the event
+is logged. Watching: if it recurs, the prose fallback becomes the default
+for set replies and the structured path is reserved for changes.
+
+Seen in the same transcript, not yet explained: the coach never received
+"Logged warm-up 2 of 3" — the app went from warm-up 1 to warm-up 3. Either
+the request failed silently or it was never sent. *To look at on the app
+side.*
+
 ### 1.1d Data hygiene, seen in the export (17 Sep)
 
 - 35 days carry more than one session row; a Cardio+Abs day often has an
