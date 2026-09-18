@@ -1145,13 +1145,25 @@ def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str
     if done >= len(sequence):
         return note or None
     phase, _ = sequence[done]
-    remaining_all = (reply.get("scope") or "next") == "remaining"
     steps = int(reply.get("steps") or 1)
+    # A load move in a one-load phase carries to every set left in it. The
+    # prompt's own rule: two back-offs at the SAME load, and straight sets at
+    # one weight. On 18 Sep the coach bumped the first back-off of the 45°
+    # Back Extension from 9.5 to 12 kg with scope "next"; the second stayed
+    # at 9.5 on the card while the coach said "same 12kg" — two plans for one
+    # lift. Rep and RPE moves stay per set: the second back-off is meant to
+    # carry fewer reps than the first.
+    load_move = decision in ("lighter", "heavier", "revise")
+    one_load_phase = phase == "backoff" or straight
+    remaining_all = (reply.get("scope") or "next") == "remaining" or (load_move and one_load_phase)
 
-    def moved(planned: SetPlan) -> SetPlan:
+    def moved(planned: SetPlan, first: bool) -> SetPlan:
         if decision == "revise":
             r = reply.get("revised") or {}
-            return SetPlan(float(r["load_kg"]), int(r["reps_low"]), int(r["reps_high"]), float(r["rpe"]))
+            revised = SetPlan(float(r["load_kg"]), int(r["reps_low"]), int(r["reps_high"]), float(r["rpe"]))
+            # The revised set is the next one; the sets after it take its
+            # load and keep their own reps and RPE.
+            return revised if first else SetPlan(revised.load_kg, planned.reps_low, planned.reps_high, planned.rpe)
         return apply_set_decision(decision, steps, planned, exercise) or planned
 
     for k, (ph, i) in enumerate(sequence):
@@ -1160,7 +1172,7 @@ def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str
         if k > done and not remaining_all:
             break
         target_list = working if ph == "working" else backoff
-        target_list[i] = moved(target_list[i])
+        target_list[i] = moved(target_list[i], first=(k == done))
 
     e = ExercisePlan(exercise=exercise, decision="adjust", reason="", working=working, backoff=backoff,
                      tempo=str(stored.get("tempo") or ""), rest_seconds=int(stored.get("rest_seconds") or 0))

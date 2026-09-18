@@ -1361,3 +1361,50 @@ class BrokenNoteGuardTests(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("broken text", problems[0])
         self.assertEqual(set_reply_problems({"decision": "hold", "note": "Clean set. Hold."}, "Leg Press", {}, 3), [])
+
+
+class OneLoadPhaseTests(unittest.TestCase):
+    """A load move in a one-load phase carries to every set left in it."""
+
+    STORED = {"working": [{"load_kg": 12, "reps_low": 9, "reps_high": 9, "rpe": 6}],
+              "backoff": [{"load_kg": 9.5, "reps_low": 9, "reps_high": 11, "rpe": 5},
+                          {"load_kg": 9.5, "reps_low": 7, "reps_high": 9, "rpe": 5}],
+              "tempo": "", "rest_seconds": 120}
+
+    def test_heavier_on_the_first_backoff_moves_the_second_too(self):
+        from plan import render_set_reply
+        text = render_set_reply({"decision": "heavier", "steps": 1, "reason": "landed light again, four reps clear",
+                                 "note": "Bump the back-off up a step."}, "45° Back Extension", self.STORED, done=1)
+        backoff = [l for l in text.split("\n") if l.startswith("Back-off:")][0]
+        loads = [seg.split("kg")[0].strip() for seg in backoff.replace("Back-off:", "").split(",")]
+        self.assertEqual(loads[0], loads[1], backoff)
+        self.assertNotEqual(loads[0], "9.5")
+        # Reps stay per set: the second back-off still carries fewer.
+        self.assertIn("x9-11", backoff)
+        self.assertIn("x7-9", backoff)
+
+    def test_a_rep_move_stays_on_the_next_set_only(self):
+        from plan import render_set_reply
+        text = render_set_reply({"decision": "fewer_reps", "steps": 1, "reason": "ran hot, take a rep off",
+                                 "note": "One rep fewer."}, "45° Back Extension", self.STORED, done=1)
+        backoff = [l for l in text.split("\n") if l.startswith("Back-off:")][0]
+        self.assertIn("x8-10", backoff)
+        self.assertIn("x7-9", backoff)
+
+    def test_a_revise_in_a_one_load_phase_carries_its_load_not_its_reps(self):
+        from plan import render_set_reply
+        text = render_set_reply({"decision": "revise", "reason": "stack only has 10 and 12.5 here",
+                                 "revised": {"load_kg": 12.5, "reps_low": 8, "reps_high": 10, "rpe": 5},
+                                 "note": "Revised to the plates the machine has."}, "45° Back Extension", self.STORED, done=1)
+        self.assertIn("12.5kg x8-10", text)
+        self.assertIn("12.5kg x7-9", text)
+
+    def test_straight_sets_share_one_load(self):
+        from plan import render_set_reply
+        stored = {"working": [{"load_kg": 122.5, "reps_low": 6, "reps_high": 6, "rpe": 6}] * 5, "backoff": [],
+                  "tempo": "", "rest_seconds": 90}
+        text = render_set_reply({"decision": "heavier", "steps": 1, "reason": "reps in hand on every set so far",
+                                 "note": "Up a step."}, "Machine Calf Raise", stored, done=1)
+        working = [l for l in text.split("\n") if l.startswith("Working Set:")][0]
+        self.assertEqual(working.count("122.5kg"), 1)      # the logged first set keeps its target
+        self.assertEqual(working.count("kg x6"), 5)
