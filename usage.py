@@ -346,6 +346,11 @@ def summarise_decisions(rows: list[dict]) -> dict:
     """Per opening: exercises decided, adjusts, why (cause / progression /
     shape / other), the lifts most often adjusted with a sample reason each."""
     rows = [r for r in rows if is_coach_decision(r)]
+    # Mid-session plan updates (decision "update") are the card following the
+    # coach's set replies, not opening decisions: counted apart, kept out of
+    # the adjust rate.
+    updates = [r for r in rows if (r.get("decision") or "") == "update"]
+    rows = [r for r in rows if (r.get("decision") or "") != "update"]
     # One row per exercise per opening, the LAST one. An opening that retried
     # or was re-sent stores its decisions again: 6 Sep's Cardio+Abs held three
     # copies of the same six exercises and alone lifted the adjust rate from
@@ -368,6 +373,8 @@ def summarise_decisions(rows: list[dict]) -> dict:
             entry["reasons"].append((r.get("reason") or "")[:90])
     top = sorted(by_lift.items(), key=lambda kv: (-kv[1]["count"], kv[0]))[:5]
     return {
+        "updates": len(updates),
+        "update_sessions": len({(r.get("date"), r.get("session_type")) for r in updates}),
         "sessions": len(sessions),
         "exercises": len(rows),
         "adjusts": len(adjusts),
@@ -408,6 +415,11 @@ def format_decisions(d: dict, shadow: dict | None, days: int) -> str:
             lines.append("A shape count this high says the programme's proposal and the coach disagree about "
                          "how these exercises are structured. That is a programme defect to fix, not a coaching "
                          "decision, and each one inflates the adjust rate.")
+        if d.get("updates"):
+            lines.append("")
+            lines.append(f"Mid-session: the card moved **{d['updates']}** times across {d['update_sessions']} "
+                         f"session(s) on the coach's set replies; each move is stored as the plan in force, so "
+                         f"the next reply computes from what is on the screen.")
         if d["top_adjusted"]:
             lines += ["", "| lift | adjusted | reasons |", "|---|---:|---|"]
             for t in d["top_adjusted"]:

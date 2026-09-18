@@ -1408,3 +1408,49 @@ class OneLoadPhaseTests(unittest.TestCase):
         working = [l for l in text.split("\n") if l.startswith("Working Set:")][0]
         self.assertEqual(working.count("122.5kg"), 1)      # the logged first set keeps its target
         self.assertEqual(working.count("kg x6"), 5)
+
+
+class OnePlanTests(unittest.TestCase):
+    """The stored plan follows the card: a set reply's move is recorded, the
+    coach is told the card as it stands, and a prose block that differs is
+    detected."""
+
+    STORED = {"working": [{"load_kg": 12, "reps_low": 9, "reps_high": 9, "rpe": 6}],
+              "backoff": [{"load_kg": 9.5, "reps_low": 9, "reps_high": 11, "rpe": 5},
+                          {"load_kg": 9.5, "reps_low": 7, "reps_high": 9, "rpe": 5}],
+              "tempo": "2-1-2", "rest_seconds": 120}
+
+    def test_adapted_plan_is_none_on_hold_and_a_plan_on_a_move(self):
+        from plan import adapted_plan
+        self.assertIsNone(adapted_plan({"decision": "hold", "note": "Fine."}, "45° Back Extension", self.STORED, 1))
+        e = adapted_plan({"decision": "heavier", "steps": 1, "reason": "four reps clear again"},
+                         "45° Back Extension", self.STORED, 1)
+        self.assertEqual([b.load_kg for b in e.backoff], [12.0, 12.0])
+        self.assertEqual(e.tempo, "2-1-2")
+        self.assertEqual(e.reason, "four reps clear again")
+
+    def test_card_line_reads_as_the_card(self):
+        from plan import card_line
+        self.assertEqual(card_line(self.STORED), "Working 12kg x9 @6 | Back-off 9.5kg x9-11 @5, 9.5kg x7-9 @5")
+        self.assertEqual(card_line(None), "no stored plan")
+
+    def test_a_prose_block_that_differs_is_detected_and_converted(self):
+        from plan import block_differs, plan_from_block
+        same = {"exercise": "45° Back Extension",
+                "working": [{"weight": 12, "reps": 9, "rpe": 6}],
+                "backoff": [{"weight": 9.5, "reps": 9, "reps_high": 11, "rpe": 5}, {"weight": 9.5, "reps": 7, "reps_high": 9, "rpe": 5}]}
+        self.assertFalse(block_differs(same, self.STORED))
+        moved = dict(same, backoff=[{"weight": 12, "reps": 9, "reps_high": 11, "rpe": 5}, {"weight": 12, "reps": 7, "reps_high": 9, "rpe": 5}])
+        self.assertTrue(block_differs(moved, self.STORED))
+        e = plan_from_block(moved, self.STORED)
+        self.assertEqual([b.load_kg for b in e.backoff], [12.0, 12.0])
+        self.assertEqual(e.rest_seconds, 120)
+
+    def test_updates_stay_out_of_the_opening_statistics(self):
+        from usage import summarise_decisions
+        rows = [{"date": "2026-09-18", "session_type": "Legs", "exercise": "Leg Press", "decision": "accept", "reason": ""},
+                {"date": "2026-09-18", "session_type": "Legs", "exercise": "Leg Press", "decision": "update", "reason": "mid-session heavier: light"},
+                {"date": "2026-09-18", "session_type": "Legs", "exercise": "Leg Curl", "decision": "adjust", "reason": "knee sore"}]
+        d = summarise_decisions(rows)
+        self.assertEqual((d["exercises"], d["adjusts"]), (2, 1))
+        self.assertEqual(d["updates"], 1)

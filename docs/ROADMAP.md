@@ -182,6 +182,28 @@ chat. The decision-capture design routed unanswered proposals to the
 briefing; it now says Home. The briefing itself stays on its button and
 costs nothing unless tapped; whether to retire it is a later question.
 
+### 1.1g One plan during the session (18 Sep)
+
+The athlete's diagnosis, and the right one: the card and the coach part
+ways when the plan adapts mid-session, not at the opening. The stored plan
+was written once, at the opening, and never touched again; every set
+reply computed its move from those opening numbers while the card had
+already moved on the previous reply, and the coach's own idea of "what is
+prescribed" came from its conversation history rather than the card. The
+calf raise (coach: "125 already prescribed"; card: 122.5) and the back
+extension (first back-off moved to 12, second left at 9.5) are both this.
+
+*Fixed 18 Sep, three parts:* (1) a set reply's move is written to the
+stored plan as a `update` row the moment it is rendered, so the next reply
+computes from what is on the screen; (2) a prose reply carrying a block
+for a lift in today's plan — Revised or re-sent — updates the stored plan
+the same way, because the card follows any block it receives; (3) every
+mid-session call tells the coach the card as it stands ("CARD NOW — Leg
+Press: Working 240kg x12 @6 | Back-off …"), named as the numbers in force
+and not what it wrote at the opening. Update rows are kept out of the
+opening statistics; the Sunday report counts them apart. The opening
+acknowledgement idea is parked: it addressed the smaller gap.
+
 ### 1.1f Garbled set reply (18 Sep Legs)
 
 The reply to the third Leg Press warm-up reached the athlete as ", solid,

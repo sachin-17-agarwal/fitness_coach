@@ -927,7 +927,9 @@ SET_REPLY_SCHEMA = {
 }
 
 SET_REPLY_INSTRUCTION = """
-He has just logged a set of {exercise} (set {done} of {total} done). Return the SET REPLY
+He has just logged a set of {exercise} (set {done} of {total} done). The card on his screen
+for this exercise stands at: {card}. Those are the numbers in force — not what you wrote at
+the opening, not what you suggested in prose since. Return the SET REPLY
 object. `note` is your read and your instruction, in your voice. `decision` is what
 happens to the next set: `hold` unless the set he just did gives you a reason — it came
 in well under or over the target RPE, the reps fell short or flew past, the ramp said
@@ -940,6 +942,82 @@ reason in `reason`. Use `revise` only for a genuine departure (pain, equipment) 
 
 def _same(a: str, b: str) -> bool:
     return _normalise_exercise(a) == _normalise_exercise(b)
+
+
+def card_line(stored: dict | None) -> str:
+    """The stored plan for one exercise as the card shows it: working sets,
+    then back-offs. What the coach is told is in force."""
+    if not stored or not stored.get("working"):
+        return "no stored plan"
+    def one(d: dict) -> str:
+        sp = _as_set(d)
+        reps = f"x{sp.reps_low}" + (f"-{sp.reps_high}" if sp.reps_high != sp.reps_low else "")
+        return f"{sp.load_kg:g}kg {reps} @{sp.rpe:g}"
+    working = ", ".join(one(d) for d in stored.get("working") or [])
+    backoff = ", ".join(one(d) for d in stored.get("backoff") or [])
+    return f"Working {working}" + (f" | Back-off {backoff}" if backoff else "")
+
+
+def record_plan_update(e: ExercisePlan, session_type: str, week: int, reason: str,
+                       session_id: str | None = None) -> bool:
+    """Write the exercise's adapted plan as today's current plan.
+
+    The card follows whatever block reaches it; until now the stored plan
+    stayed at the opening's numbers, so the next set reply computed from
+    stale sets, the coach was told a card that no longer existed, and the
+    two drifted apart within a session. Decision `update` keeps these rows
+    out of the opening statistics. Never raises."""
+    supabase = get_supabase()
+    if not supabase:
+        return False
+    top = e.working[0] if e.working else None
+    try:
+        supabase.table("prescription_decisions").insert({
+            "date": now_local().strftime("%Y-%m-%d"),
+            "session_id": session_id or None,
+            "session_type": session_type,
+            "mesocycle_week": week,
+            "exercise": e.exercise,
+            "decision": "update",
+            "reason": reason[:500],
+            "top_load_kg": top.load_kg if top else None,
+            "top_reps": top.reps_low if top else None,
+            "top_rpe": top.rpe if top else None,
+            "plan": json.dumps({"warmup": e.warmup, "working": [x.__dict__ for x in e.working],
+                                "backoff": [x.__dict__ for x in e.backoff],
+                                "tempo": e.tempo, "rest_seconds": e.rest_seconds}),
+        }).execute()
+        log.info("PLAN UPDATED (%s): %s", e.exercise, reason[:120])
+        return True
+    except Exception:
+        log.exception("Could not store the plan update for %s", e.exercise)
+        return False
+
+
+def plan_from_block(block: dict, stored: dict | None = None) -> ExercisePlan:
+    """A parsed reply block (coach_parsing shape: weight/reps/reps_high/rpe)
+    as an ExercisePlan, keeping the stored tempo and rest."""
+    def rows(items):
+        return [SetPlan(float(r.get("weight") or 0), int(r.get("reps") or 0),
+                        int(r.get("reps_high") or r.get("reps") or 0), float(r.get("rpe") or 0))
+                for r in items or []]
+    return ExercisePlan(exercise=str(block.get("exercise") or ""), decision="adjust", reason="",
+                        warmup=[(float(w.get("weight") or 0), int(w.get("reps") or 0)) for w in block.get("warmup") or []],
+                        working=rows(block.get("working")), backoff=rows(block.get("backoff")),
+                        tempo=str((stored or {}).get("tempo") or ""),
+                        rest_seconds=int((stored or {}).get("rest_seconds") or 0))
+
+
+def block_differs(block: dict, stored: dict) -> bool:
+    """Whether a reply block's working or back-off numbers differ from the
+    stored plan's."""
+    def norm_block(items):
+        return [(float(r.get("weight") or 0), int(r.get("reps") or 0),
+                 int(r.get("reps_high") or r.get("reps") or 0), float(r.get("rpe") or 0)) for r in items or []]
+    def norm_stored(items):
+        return [(sp.load_kg, sp.reps_low, sp.reps_high, sp.rpe) for sp in (_as_set(d) for d in items or [])]
+    return (norm_block(block.get("working")) != norm_stored(stored.get("working"))
+            or norm_block(block.get("backoff")) != norm_stored(stored.get("backoff")))
 
 
 def load_today_plan(exercise: str) -> dict | None:
@@ -1121,29 +1199,23 @@ def set_reply_problems(reply: dict, exercise: str, stored: dict, done: int) -> l
     return []
 
 
-def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str | None:
-    """The coach's note, plus the exercise's block with the decision applied.
+def adapted_plan(reply: dict, exercise: str, stored: dict, done: int) -> ExercisePlan | None:
+    """The exercise's plan with the set reply's decision applied, or None when
+    nothing moves (hold, invalid, or every set already logged).
 
     Sets already logged keep the target they were logged against; the move
-    lands on the next set and, when `scope` is remaining, every set left in
-    that phase. The whole block is re-sent so the card's merge sees complete
-    phases and nothing already on screen is lost. `revise` renders the given
-    set with a `Revised:` line, the prompt's own marker for a departure.
+    lands on the next set and, in a one-load phase, on every set left in it.
     """
-    note = (reply.get("note") or "").strip()
     decision = (reply.get("decision") or "hold").strip().lower()
     working = [_as_set(s) for s in stored.get("working") or []]
     backoff = [_as_set(s) for s in stored.get("backoff") or []]
-    if not working or set_reply_problems(reply, exercise, stored, done):
+    if not working or set_reply_problems(reply, exercise, stored, done) or decision == "hold":
         return None
-    if decision == "hold":
-        return note or None
-
     straight = len(working) > 1
     sequence = ([("working", i) for i in range(len(working))] if straight
                 else [("working", 0)] + [("backoff", i) for i in range(len(backoff))])
     if done >= len(sequence):
-        return note or None
+        return None
     phase, _ = sequence[done]
     steps = int(reply.get("steps") or 1)
     # A load move in a one-load phase carries to every set left in it. The
@@ -1173,9 +1245,25 @@ def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str
             break
         target_list = working if ph == "working" else backoff
         target_list[i] = moved(target_list[i], first=(k == done))
+    return ExercisePlan(exercise=exercise, decision="adjust", reason=str(reply.get("reason") or ""),
+                        working=working, backoff=backoff,
+                        tempo=str(stored.get("tempo") or ""), rest_seconds=int(stored.get("rest_seconds") or 0))
 
-    e = ExercisePlan(exercise=exercise, decision="adjust", reason="", working=working, backoff=backoff,
-                     tempo=str(stored.get("tempo") or ""), rest_seconds=int(stored.get("rest_seconds") or 0))
+
+def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str | None:
+    """The coach's note, plus the exercise's block with the decision applied.
+
+    The whole block is re-sent so the card's merge sees complete phases and
+    nothing already on screen is lost. `revise` renders the given set with a
+    `Revised:` line, the prompt's own marker for a departure.
+    """
+    note = (reply.get("note") or "").strip()
+    decision = (reply.get("decision") or "hold").strip().lower()
+    if not (stored.get("working") or []) or set_reply_problems(reply, exercise, stored, done):
+        return None
+    e = adapted_plan(reply, exercise, stored, done)
+    if e is None:
+        return note or None
     # A computed move keeps the plan's shape by construction; a revision is
     # the athlete's and the coach's business, marked as such.
     lines = render_exercise(e).split("\n")
@@ -1192,7 +1280,8 @@ def request_set_reply(client, system_blocks: list, messages: list, exercise: str
     that fails the (small) checks is handed back once; a second failure falls
     back to the prose reply."""
     notes: list[str] = []
-    instruction = SET_REPLY_INSTRUCTION.format(exercise=exercise, done=done, total=total)
+    instruction = SET_REPLY_INSTRUCTION.format(exercise=exercise, done=done, total=total,
+                                               card=card_line(stored))
     system = list(system_blocks) + [{"type": "text", "text": instruction}]
     turns = list(messages)
     import time
