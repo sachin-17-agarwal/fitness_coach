@@ -283,6 +283,23 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     if live_day is not None:
         live_day += session_template
     blocks = system_blocks(system_prompt, stable_context, live_context, live_day, live_set)
+    # The card as it stands for the lift in play, named to the coach on every
+    # mid-session reply. The stored plan follows the card (record_plan_update
+    # below), so this is the one set of numbers both sides hold; the coach
+    # reasoning from its opening plan or an earlier suggestion is how it told
+    # the athlete a load was "already prescribed" that was never on his screen.
+    if set_log_session:
+        try:
+            from plan import card_line, latest_exercise, load_today_plan  # local: import order
+            _card_exercise = latest_exercise(set_log_session) or (get_workout_state() or {}).get("current_exercise_name") or ""
+            _card_stored = load_today_plan(_card_exercise) if _card_exercise else None
+            if _card_stored:
+                blocks = blocks + [{"type": "text", "text": (
+                    f"CARD NOW — {_card_exercise}: {card_line(_card_stored)}. These are the numbers on his "
+                    f"screen and the plan in force. Anything you said earlier that differs has not reached "
+                    f"the card; to change a number, change it through the set reply or a full block.")}]
+        except Exception:
+            log.exception("Card line for the coach failed")
 
     if record_user_message:
         conversation_history.append({"role": "user", "content": user_message})
@@ -362,6 +379,13 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 if reply is not None:
                     assistant_message = render_set_reply(reply, exercise, stored, done)
                     reply_kind = "set_reply"
+                    # What just reached the card is the plan from now on.
+                    from plan import adapted_plan, record_plan_update  # local: import order
+                    moved = adapted_plan(reply, exercise, stored, done) if assistant_message else None
+                    if moved is not None:
+                        record_plan_update(moved, today_type, _safe_int(memory.get("mesocycle_week", 1)),
+                                           reason=f"mid-session {reply.get('decision')}: {reply.get('reason') or ''}",
+                                           session_id=set_log_session)
             else:
                 log.info("SET CONTRACT: no stored plan for %r today; prose reply", exercise)
         except Exception:
@@ -445,6 +469,23 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 )
     except Exception:
         log.exception("Set-count enforcement failed")
+
+    # A prose reply that carries a block for a lift in today's plan — a
+    # Revised: block, or a re-sent block with new numbers — replaces the card.
+    # The stored plan follows it, so the next set reply computes from what is
+    # on the screen. The opening plan and the set reply store their own.
+    if reply_kind == "prose" and set_log_session:
+        try:
+            from plan import block_differs, load_today_plan, plan_from_block, record_plan_update  # local
+            for block in parse_all_prescriptions(assistant_message):
+                stored = load_today_plan(block.get("exercise") or "")
+                if stored and (block.get("working") or block.get("backoff")) and block_differs(block, stored):
+                    record_plan_update(plan_from_block(block, stored), today_type,
+                                       _safe_int(memory.get("mesocycle_week", 1)),
+                                       reason="mid-session block" + (" (Revised)" if block.get("revised") else ""),
+                                       session_id=set_log_session)
+        except Exception:
+            log.exception("Plan update from the reply's blocks failed")
 
     # SHADOW ONLY — computes the substitution and logs what it WOULD change.
     # Nothing here alters the reply.
