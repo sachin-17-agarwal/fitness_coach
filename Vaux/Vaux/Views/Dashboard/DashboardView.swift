@@ -186,8 +186,12 @@ struct DashboardView: View {
                 }
             }
 
-            Text(greeting)
-                .font(.serifLG)
+            // The masthead in the app's own display face, like the session
+            // name below it and every tab title. The light serif it used to
+            // wear was the one place on Home speaking a different language.
+            Text(greeting.uppercased())
+                .font(.display(30))
+                .kerning(1)
                 .foregroundStyle(Color.fg0)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
