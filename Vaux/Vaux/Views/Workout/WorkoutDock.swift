@@ -163,13 +163,15 @@ struct WorkoutDock: View {
         }
     }
 
-    /// 6 … 10 as digits, the chosen one lime and larger. No boxes, no slider.
+    /// 5 … 10 as digits, the chosen one lime and larger. No boxes, no slider.
+    /// Five is on the scale because a deload back-off is prescribed at RPE 5
+    /// (week 4 back-off 6, minus one on a poor recovery read).
     private var rpeScale: some View {
         let chosen = Int(rpe.rounded())
         return VStack(alignment: .trailing, spacing: 6) {
             EditorialEyebrow(text: "RPE", color: Editorial.muted, size: 8.5, kerning: 1)
             HStack(alignment: .lastTextBaseline, spacing: 12) {
-                ForEach(6...10, id: \.self) { value in
+                ForEach(5...10, id: \.self) { value in
                     Button {
                         Haptic.selection()
                         withAnimation(Motion.snappy) { rpe = Double(value) }
