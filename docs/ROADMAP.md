@@ -516,7 +516,7 @@ Approved items list their PRs when shipped. Declined items keep the reason.
   hero "1 HELD", shoulders row HELD; the decision itself was re-recorded
   after #261 so the 70 kg cap is on the row.
 - **Approved, 15 Sep.** 2.3 rep-overshoot step sizing (shipped #249);
-  2.4 Swift tests for the numbers; 2.7 export **(shipped 16 Sep, #254; verified 17 Sep — five CSVs came back and settled the hamstring question)**; 2.8 Apple Watch, staged, mockups first;
+  2.4 Swift tests for the numbers **(shipped 18 Sep: 31 tests, six files; run with Cmd+U)**; 2.7 export **(shipped 16 Sep, #254; verified 17 Sep — five CSVs came back and settled the hamstring question)**; 2.8 Apple Watch, staged, mockups first;
   2.9 stats widget **(settled and shipped 17 Sep: the Home readiness hero
   as a widget — score, verdict with today's session, week and strength
   gain; medium, small, lock screen. Readiness now computed server-side

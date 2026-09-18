@@ -38,7 +38,7 @@ to ship the queue early; migrations 006, 007 and 008 have been run.
 | ~~Fri 18 Sep~~ shipped Thu 17 Sep | ~~Item 4: raise the context fetch ceiling, log per-query timings~~ (#264: ceiling 20 s, every fetch timed, the build recorded as a `context` row in the Sunday report with the slowest fetch named) | — |
 | ~~Sun 20 Sep~~ pulled to Thu 17 Sep | ~~2.11 bodyweight progression~~ (approved 17 Sep evening, shipped the same night; see the section below) · pulled forward with it: the decision-capture design (item 3, written: `docs/DECISION_CAPTURE.md`) and the 2.9 widget mockups (published, link in the 2.9 section) | approve or amend the design; pick a widget direction |
 | Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate and its four buckets, first shadow rows, first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate | the band decision |
-| Mon 21 Sep | 2.4 Swift test target and the first thirty tests | add the Unit Testing Bundle target in Xcode (two minutes) |
+| ~~Mon 21 Sep~~ done Fri 18 Sep | ~~2.4 Swift test target and the first thirty tests~~ (target added by the athlete; 31 tests in six files) | run them with Cmd+U and paste any red line |
 | ~~Week of 28 Sep~~ pulled to Fri 18 Sep | ~~2.9 widget build~~ (shipped 17 Sep) · ~~decision capture build~~ (approved and shipped 18 Sep; run migration 009) · ~~2.12 hygiene~~ (shipped 18 Sep; run migration 010, then the hygiene dry run) · block review: read the dry run when it lands on Home, answer it, compare | run migrations 009 and 010; read the review the morning it appears |
 | Tue 30 Sep | Review 2.1(c) geofence: does START still feel slow? | your answer |
 | After | 2.5 goes live (dry_run off) once the first review has been compared · 2.8 watch, timer stage first | mockups approval |
@@ -306,7 +306,33 @@ revisited before 2.1(c). Audit gate 1 unchanged.
 **Review date for 2.1(c) geofence.** Two weeks after this ships; the
 question is only whether START still feels slow.
 
-## 2.4 Swift tests for the numbers
+## 2.4 Swift tests for the numbers — shipped 18 Sep
+
+**Status.** The `VauxTests` bundle (Swift Testing, hosted in the app) was
+added in Xcode on 18 Sep. Thirty-one tests in six files under
+`Vaux/VauxTests/`, every one a bug that has happened or a number that must
+agree across two screens or two codebases:
+
+- `ReadinessScoreTests` — the sleep, HRV and RHR anchors and the composite
+  weights, identical to `readiness.py`; the 18 Sep amber read; the zones.
+- `PrescriptionParserTests` — a full block, five straight sets, a Revised
+  block, two blocks in one reply, the coach note keeping prose and dropping
+  the block, name normalisation.
+- `CardReferenceTests` — LAST is the most recent session's top set (no
+  warm-ups); BLOCK is the same stamped week of the previous block, skips the
+  current block, needs a stamp.
+- `StrengthJudgeTests` — up/PR, drop, HELD outranks drop, a PR still reads
+  PR under a hold, one block alone and a build-week best are no verdict.
+- `SessionRulesTests` — every status spelling, the rotation against
+  `data.py`'s CYCLE, override and rest-day slot rules, the volume bands,
+  median and signed percentage.
+- `RecoveryDigestTests` — nothing midweek, Monday reads the week just gone,
+  an empty week has no digest.
+
+Written without a compiler here; the first Cmd+U is the verification. A
+red line is a fixture wrong on my side or a real finding — either way it
+is pasted back and fixed.
+
 
 **Goal.** The pure calculations behind the History tab and the Home
 readiness read run as tests in Xcode, so a change in one place cannot
