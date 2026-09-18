@@ -1147,6 +1147,7 @@ final class WorkoutViewModel {
             nextUp: upcomingSetSummary
         )
         loadLastSessionSetsIfNeeded()
+        loadRestLastSetsIfNeeded()
     }
 
     // MARK: - Rest-screen stats
@@ -1157,6 +1158,40 @@ final class WorkoutViewModel {
     var lastSessionSets: [WorkoutSet] = []
     var lastSessionSetsLoaded = false
     private var lastSessionSetsExercise: String?
+
+    /// The exercise the rest screen is about. Between the last set of one
+    /// exercise and the coach's block for the next, the card still belongs
+    /// to the finished lift but the rest screen already names the next one —
+    /// and its "LAST TIME" must be the next one's, not the finished lift's
+    /// (Leg Press's 245 × 15 sat under "Single Leg Sumo Press" on 18 Sep).
+    var restExerciseName: String {
+        if currentPrescription != nil, isCurrentExerciseComplete(), let next = upcomingPrescriptions.first {
+            return next.exerciseName
+        }
+        return currentPrescription?.exerciseName ?? ""
+    }
+
+    /// Previous session's sets for `restExerciseName`; the current exercise's
+    /// own `lastSessionSets` when they are the same lift.
+    var restLastSets: [WorkoutSet] {
+        restExerciseName == currentPrescription?.exerciseName ? lastSessionSets : nextExerciseLastSets
+    }
+    private var nextExerciseLastSets: [WorkoutSet] = []
+    private var nextExerciseLastSetsExercise: String?
+
+    func loadRestLastSetsIfNeeded() {
+        let exercise = restExerciseName
+        guard !exercise.isEmpty, exercise != currentPrescription?.exerciseName else { return }
+        guard exercise != nextExerciseLastSetsExercise else { return }
+        nextExerciseLastSetsExercise = exercise
+        nextExerciseLastSets = []
+        let today = Self.todayString()
+        Task {
+            let sets = (try? await workoutService.getLastSessionSets(exercise: exercise, before: today)) ?? []
+            guard nextExerciseLastSetsExercise == exercise else { return }
+            nextExerciseLastSets = sets
+        }
+    }
 
     /// The top working set of this exercise from the same week of the
     /// previous block, for the comparison beside the working chip. Looked up
