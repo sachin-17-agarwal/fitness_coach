@@ -5,6 +5,7 @@
 // session on the lift; BLOCK is the same stamped week of the previous block
 // and carries the delta. Both are static functions over rows.
 
+import Foundation
 import Testing
 @testable import Vaux
 
