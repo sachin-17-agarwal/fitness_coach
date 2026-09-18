@@ -38,7 +38,7 @@ to ship the queue early; migrations 006, 007 and 008 have been run.
 | ~~Fri 18 Sep~~ shipped Thu 17 Sep | ~~Item 4: raise the context fetch ceiling, log per-query timings~~ (#264: ceiling 20 s, every fetch timed, the build recorded as a `context` row in the Sunday report with the slowest fetch named) | — |
 | ~~Sun 20 Sep~~ pulled to Thu 17 Sep | ~~2.11 bodyweight progression~~ (approved 17 Sep evening, shipped the same night; see the section below) · pulled forward with it: the decision-capture design (item 3, written: `docs/DECISION_CAPTURE.md`) and the 2.9 widget mockups (published, link in the 2.9 section) | approve or amend the design; pick a widget direction |
 | Sat 19 – Sun 20 Sep | Read the 20 Sep report: Stage 5 cache reading, adjust rate and its four buckets, first shadow rows, first thinking/text split · decide band per week vs rotation and recompute the on-paper table at the measured rotation rate | the band decision |
-| ~~Mon 21 Sep~~ done Fri 18 Sep | ~~2.4 Swift test target and the first thirty tests~~ (target added by the athlete; 31 tests in six files) | run them with Cmd+U and paste any red line |
+| ~~Mon 21 Sep~~ done Fri 18 Sep | ~~2.4 Swift test target and the first thirty tests~~ (31 tests in six files, all green 18 Sep) | — |
 | ~~Week of 28 Sep~~ pulled to Fri 18 Sep | ~~2.9 widget build~~ (shipped 17 Sep) · ~~decision capture build~~ (approved and shipped 18 Sep; run migration 009) · ~~2.12 hygiene~~ (shipped 18 Sep; run migration 010, then the hygiene dry run) · block review: read the dry run when it lands on Home, answer it, compare | run migrations 009 and 010; read the review the morning it appears |
 | Tue 30 Sep | Review 2.1(c) geofence: does START still feel slow? | your answer |
 | After | 2.5 goes live (dry_run off) once the first review has been compared · 2.8 watch, timer stage first | mockups approval |
@@ -329,9 +329,9 @@ agree across two screens or two codebases:
 - `RecoveryDigestTests` — nothing midweek, Monday reads the week just gone,
   an empty week has no digest.
 
-Written without a compiler here; the first Cmd+U is the verification. A
-red line is a fixture wrong on my side or a real finding — either way it
-is pasted back and fixed.
+*Verified 18 Sep: 31 passed on the phone's build after two compile fixes
+(a Foundation import, the judge's owning type). Cmd+U is now part of every
+app change that touches a calculation.*
 
 
 **Goal.** The pure calculations behind the History tab and the Home
