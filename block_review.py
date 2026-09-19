@@ -32,6 +32,12 @@ log = logging.getLogger(__name__)
 DRY_RUN = True            # the first block: written and shown, nothing recordable
 MAX_PROPOSALS = 3
 E1RM_MAX_REPS = 12
+# A set past 12 reps still counts when nothing tighter exists for the same
+# stretch, up to this many reps, and is marked as a looser estimate. Mirrors
+# StrengthViewModel.maxRepsForLooseE1RM: Seated Leg Curl 110 x 16 in a peak
+# week read as a drop here while the app read it as a rise, because the
+# review threw the set away and fell back to a lighter week-1 set.
+E1RM_LOOSE_MAX_REPS = 20
 PEAK_WEEK = 3
 
 # The narrative arrives as four named paragraphs, so the card can always show
@@ -127,13 +133,24 @@ def epley(load: float, reps: int) -> float:
 
 def strength_facts(rows: list[dict], weeks: dict, window: dict) -> list[dict]:
     """Per lift: this block's peak-week best against the previous block's,
-    both as Epley estimates from sets of 12 reps or fewer. A lift with no
-    peak-week set uses its block best and says so."""
+    both as Epley estimates from sets of 12 reps or fewer. When a stretch has
+    only higher-rep sets (up to E1RM_LOOSE_MAX_REPS) the best of those stands
+    in, marked loose, as the app does. A lift with no peak-week set uses its
+    block best and says so."""
+    def points(rs, low, high):
+        return [(epley(float(r["actual_weight_kg"]), int(r["actual_reps"])), r) for r in rs
+                if not r.get("is_warmup") and r.get("actual_weight_kg") and r.get("actual_reps")
+                and low <= int(r["actual_reps"]) <= high and float(r["actual_weight_kg"]) > 0]
+
     def best(rs):
-        pts = [(epley(float(r["actual_weight_kg"]), int(r["actual_reps"])), r) for r in rs
-               if not r.get("is_warmup") and r.get("actual_weight_kg") and r.get("actual_reps")
-               and 0 < int(r["actual_reps"]) <= E1RM_MAX_REPS and float(r["actual_weight_kg"]) > 0]
-        return max(pts, key=lambda p: p[0]) if pts else None
+        """(e1rm, row, loose) — strict sets first, loose only when none exist."""
+        strict = points(rs, 1, E1RM_MAX_REPS)
+        if strict:
+            return max(strict, key=lambda p: p[0]) + (False,)
+        loose = points(rs, E1RM_MAX_REPS + 1, E1RM_LOOSE_MAX_REPS)
+        if loose:
+            return max(loose, key=lambda p: p[0]) + (True,)
+        return None
 
     def in_range(r, since, until):
         return since is not None and until is not None and since <= (r.get("date") or "") <= until
@@ -159,11 +176,12 @@ def strength_facts(rows: list[dict], weeks: dict, window: dict) -> list[dict]:
             continue
         fact = {"exercise": name, "this_e1rm": round(this_best[0], 1),
                 "this_set": f"{float(this_best[1]['actual_weight_kg']):g}kg x{int(this_best[1]['actual_reps'])}",
-                "this_from_peak_week": peak_best is not None}
+                "this_from_peak_week": peak_best is not None, "this_loose": this_best[2]}
         if prev_best:
             delta = (this_best[0] - prev_best[0]) / prev_best[0] * 100
             fact.update({"prev_e1rm": round(prev_best[0], 1),
                          "prev_set": f"{float(prev_best[1]['actual_weight_kg']):g}kg x{int(prev_best[1]['actual_reps'])}",
+                         "prev_loose": prev_best[2],
                          "delta_pct": round(delta, 1),
                          "verdict": "up" if delta >= 1 else ("down" if delta <= -5 else "held")})
         else:
@@ -268,9 +286,12 @@ def format_facts(facts: dict) -> str:
         if "delta_pct" in s:
             lines.append(f"  {s['exercise']}: {s['this_e1rm']}kg ({s['this_set']}) vs {s['prev_e1rm']}kg "
                          f"({s['prev_set']}) = {s['delta_pct']:+g}% — {s['verdict']}"
-                         + ("" if s["this_from_peak_week"] else " [block best, no peak-week set]"))
+                         + ("" if s["this_from_peak_week"] else " [block best, no peak-week set]")
+                         + (" [estimate from a set past 12 reps, as the app shows it]"
+                            if s.get("this_loose") or s.get("prev_loose") else ""))
         else:
-            lines.append(f"  {s['exercise']}: {s['this_e1rm']}kg ({s['this_set']}) — first block")
+            lines.append(f"  {s['exercise']}: {s['this_e1rm']}kg ({s['this_set']}) — first block"
+                         + (" [estimate from a set past 12 reps]" if s.get("this_loose") else ""))
     lines += ["", "VOLUME — sets per calendar week against the band, over the block:"]
     for v in facts["volume"]:
         lines.append(f"  {v['muscle']}: {v['sets_per_week']} against {v['band']}"
@@ -533,7 +554,8 @@ def card_rows(facts) -> dict:
     fresh = [s for s in facts.get("strength") or [] if "delta_pct" not in s]
     compared.sort(key=lambda s: -float(s["delta_pct"]))
     lifts = [{"exercise": s.get("exercise"), "delta_pct": s.get("delta_pct"), "verdict": s.get("verdict"),
-              "this_set": s.get("this_set"), "prev_set": s.get("prev_set")} for s in compared + fresh]
+              "this_set": s.get("this_set"), "prev_set": s.get("prev_set"),
+              "loose": bool(s.get("this_loose") or s.get("prev_loose"))} for s in compared + fresh]
     volume = [{"muscle": v.get("muscle"), "sets": v.get("sets_per_week"), "band": v.get("band"),
                "under_by": v.get("under_by") or 0, "over_by": v.get("over_by") or 0} for v in facts.get("volume") or []]
     return {"lifts": lifts, "volume": volume}

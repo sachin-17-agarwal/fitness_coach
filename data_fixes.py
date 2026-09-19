@@ -82,10 +82,35 @@ def _fix_2026_09_19_block_review_emphasis() -> str:
     return f"removed {len(bad)} review(s) with a disallowed Emphasis-next: {bad}"
 
 
+def _fix_2026_09_19_block_review_loose_sets() -> str:
+    """Reviews computed before the review learned the app's rule for sets
+    past 12 reps carry a false drop (Seated Leg Curl -10.9% for a peak week
+    of 110 x 16). Remove any unanswered review whose strength facts predate
+    the rule (no `this_loose` key) so Home prepares it again with matching
+    numbers."""
+    from data import get_supabase
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    rows = (supabase.table("block_reviews").select("id, status, facts").eq("status", "shown").execute()).data or []
+    bad = []
+    for row in rows:
+        facts = row.get("facts") or {}
+        if isinstance(facts, str):
+            facts = json.loads(facts or "{}")
+        strength = facts.get("strength") or []
+        if strength and any("this_loose" not in f for f in strength):
+            bad.append(row["id"])
+    for rid in bad:
+        supabase.table("block_reviews").delete().eq("id", rid).execute()
+    return f"removed {len(bad)} review(s) computed before the loose-set rule: {bad}"
+
+
 FIXES = [
     ("2026-09-19-emphasis-triceps-chest", _fix_2026_09_19_emphasis_triceps_chest),
     ("2026-09-19-block-review-window", _fix_2026_09_19_block_review_window),
     ("2026-09-19-block-review-emphasis", _fix_2026_09_19_block_review_emphasis),
+    ("2026-09-19-block-review-loose-sets", _fix_2026_09_19_block_review_loose_sets),
 ]
 
 

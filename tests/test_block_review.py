@@ -88,6 +88,7 @@ class CardStructureTests(unittest.TestCase):
             "volume": [{"muscle": "Chest", "sets_per_week": 6.0, "band": "10-16", "under_by": 4.0, "over_by": 0}]})
         rows = br.card_rows(facts)
         self.assertEqual([r["exercise"] for r in rows["lifts"]], ["Dips", "Leg Press", "Incline Press"])
+        self.assertFalse(rows["lifts"][0]["loose"])
         self.assertIsNone(rows["lifts"][2]["delta_pct"])
         self.assertEqual(rows["volume"], [{"muscle": "Chest", "sets": 6.0, "band": "10-16", "under_by": 4.0, "over_by": 0}])
         self.assertEqual(br.card_rows(None), {"lifts": [], "volume": []})
@@ -113,11 +114,37 @@ class FactTests(unittest.TestCase):
         self.assertEqual((lp["this_set"], lp["prev_set"]), ("230kg x10", "200kg x10"))   # peak weeks, not block bests
         self.assertEqual(lp["delta_pct"], 15.0)
         self.assertEqual(lp["verdict"], "up")
-        # A 16-rep set is past the estimate's range: the block best stands in, and the sheet says so.
+        # A 16-rep peak-week set is a looser estimate, not a missing one: it
+        # stands, marked loose, exactly as the app's strength page reads it.
         slc = facts["Seated Leg Curl"]
-        self.assertEqual(slc["this_set"], "105kg x11")
-        self.assertFalse(slc["this_from_peak_week"])
+        self.assertEqual(slc["this_set"], "110kg x16")
+        self.assertTrue(slc["this_from_peak_week"])
+        self.assertTrue(slc["this_loose"])
         self.assertEqual(slc["verdict"], "first block")
+        self.assertFalse(lp["this_loose"])
+
+    def test_a_strict_set_outranks_a_loose_one_and_a_loose_peak_beats_a_lighter_early_strict_set(self):
+        # 19 Sep 2026: the leg curl's peak week was 110 x 16; the review had
+        # compared a week-1 100 x 11 instead and called the lift down 10.9%.
+        rows = [_set("2026-08-20", "Seated Leg Curl", 100, 12, "p3"),
+                _set("2026-09-05", "Seated Leg Curl", 100, 11, "t1"), _set("2026-09-14", "Seated Leg Curl", 110, 16, "t3"),
+                _set("2026-09-14", "Leg Press", 245, 15, "t3"), _set("2026-09-14", "Leg Press", 240, 10, "t3")]
+        weeks = {"p3": 3, "t1": 1, "t3": 3}
+        facts = {f["exercise"]: f for f in br.strength_facts(rows, weeks, self.WINDOW)}
+        slc = facts["Seated Leg Curl"]
+        self.assertEqual((slc["this_set"], slc["prev_set"]), ("110kg x16", "100kg x12"))
+        self.assertTrue(slc["this_loose"]); self.assertFalse(slc["prev_loose"])
+        self.assertEqual(slc["verdict"], "up")
+        # With a strict set in the same week, the strict one is the point even if the loose one estimates higher.
+        self.assertEqual(facts["Leg Press"]["this_set"], "240kg x10")
+        self.assertFalse(facts["Leg Press"]["this_loose"])
+        # A set past 20 reps is still ignored.
+        far = br.strength_facts([_set("2026-09-14", "Calf Raise", 60, 25, "t3")], weeks, self.WINDOW)
+        self.assertEqual(far, [])
+        sheet = br.format_facts({"window": {"since": "2026-09-01", "until": "2026-09-14", "complete": True},
+                                 "strength": [slc], "volume": [], "recovery": {}, "emphasis": [], "emphasis_next": [],
+                                 "standing_constraints": "", "adjustments": []})
+        self.assertIn("[estimate from a set past 12 reps, as the app shows it]", sheet)
 
     def test_recovery_is_the_block_mean_against_the_42_days_before(self):
         rows = [{"date": "2026-08-01", "hrv": 40, "resting_hr": 60, "sleep_hours": 7.5},

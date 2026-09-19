@@ -785,7 +785,7 @@ struct DashboardView: View {
                             .lineLimit(1)
                         Spacer(minLength: 8)
                         if let set = lift.thisSet {
-                            Text(set.uppercased())
+                            Text((lift.loose == true ? "~" : "") + set.uppercased())
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.fg3)
                         }
