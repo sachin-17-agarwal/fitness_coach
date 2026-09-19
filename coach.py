@@ -151,6 +151,10 @@ def _log_cache_usage(response) -> None:
         log.debug("Could not read cache usage", exc_info=True)
 
 
+def _norm_wp(name: str) -> str:
+    return "".join(ch for ch in (name or "").lower() if ch.isalnum())
+
+
 def _same_numbers(a: dict, b: dict) -> bool:
     """Whether two parsed blocks prescribe the same sets: warm-up, working and
     back-off loads, reps and RPE. Prose, tempo and rest are the coaching, not
@@ -486,6 +490,29 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                                        session_id=set_log_session)
         except Exception:
             log.exception("Plan update from the reply's blocks failed")
+
+    # The weak-point lifts are computed by the programme from their own
+    # history (3 straight sets, reps 10-15, the wave and recovery applied),
+    # and the coach's block for them is replaced by that computation whether
+    # or not the general substitution flag is on. The rule is the prompt's
+    # own (:372) and the same lift came back in three shapes in a week when
+    # it was left to prose. A Revised: block and a lift already on the board
+    # today stay the coach's, as everywhere else.
+    try:
+        wp_exercises = programme_out.get("weak_point_exercises") or []
+        wp_computed = {name: block for name, block in (programme_out.get("computed") or {}).items()
+                       if any(_norm_wp(name) == _norm_wp(e) for e in wp_exercises)}
+        if wp_computed and reply_kind != "set_reply":
+            replaced, swapped = substitute_computed_blocks(
+                assistant_message, wp_computed,
+                aliases=programme_out.get("aliases"),
+                skip=programme_out.get("logged_today") or ())
+            if swapped:
+                assistant_message = replaced
+                log.warning("WEAK-POINT BLOCK COMPUTED (%s wk%s): %s",
+                            programme_out.get("session_type"), programme_out.get("week"), ", ".join(swapped))
+    except Exception:
+        log.exception("Weak-point block substitution failed; reply left as written")
 
     # SHADOW ONLY — computes the substitution and logs what it WOULD change.
     # Nothing here alters the reply.

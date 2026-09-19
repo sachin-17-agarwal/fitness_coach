@@ -537,6 +537,7 @@ def build_context_block(memory: dict, athlete_name: str,
         peak_week_loads=_peak_week_loads or [],
         ceilings=__import__("constraints").ceilings(results.get("constraints") or []),
         athlete_kg=results.get("bodyweight"),
+        weak_points=(results.get("block_weak_points") or {}).get("picks") if results.get("block_weak_points") else None,
     )
     # Handed back to the caller rather than rendered into the prompt. The
     # numbers are already here — the loads, the week and today's recovery all
@@ -568,6 +569,10 @@ def build_context_block(memory: dict, athlete_name: str,
             # before. []: placed, and nothing is under its band — slots empty.
             out["weak_points"] = ([p["muscle"] for p in (_bwp.get("picks") or [])]
                                   if _bwp else None)
+            # The named lifts behind the slots: the programme computed these,
+            # and coach.py holds the coach's block for them to the computed one.
+            out["weak_point_exercises"] = [p["exercise"] for p in ((_bwp or {}).get("picks") or [])
+                                           if p.get("exercise")]
             out["logged_today"] = sorted({
                 (c.get("exercise") or "").strip()
                 for c in (results.get("set_comparisons") or []) if c.get("exercise")})

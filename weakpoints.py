@@ -195,7 +195,7 @@ def _stored_pick(supabase, start: str) -> list[dict]:
         except (TypeError, ValueError):
             detail = {}
         out.append({"muscle": row["exercise"][len(DECISION_PREFIX):], "reason": row.get("reason") or "",
-                    **{k: detail.get(k) for k in ("sets", "low", "high", "shortfall", "since", "until")}})
+                    **{k: detail.get(k) for k in ("sets", "low", "high", "shortfall", "since", "until", "exercise")}})
     return out
 
 
@@ -213,7 +213,7 @@ def _store_pick(supabase, start: str, picks: list[dict], since: str, until: str)
             "exercise": f"{DECISION_PREFIX}{p['muscle']}", "decision": "accept",
             "reason": p["reason"],
             "plan": json.dumps({**{k: p[k] for k in ("sets", "low", "high", "shortfall")},
-                                "since": since, "until": until}),
+                                "exercise": p.get("exercise"), "since": since, "until": until}),
         })
     supabase.table("prescription_decisions").insert(rows).execute()
 
@@ -327,15 +327,38 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
         return None
 
 
+def exercise_from_note(note: str, muscle: str) -> str | None:
+    """The movement an emphasis note names, when it names one the catalog
+    knows for that muscle: "Overhead Cable Extension" or "overhead cable
+    extension, long head" both give the movement; "long head lengthened"
+    gives None. The programme computes the slot only when it has a name."""
+    from volume import resolve_muscle_group  # local: keeps import order flat
+    text = (note or "").strip()
+    if not text:
+        return None
+    # Shortest first: "overhead cable extension, long head" names the movement
+    # in its first clause, and the whole note would match too.
+    segments = [seg.strip() for seg in re.split(r"[,;]|\s[—–-]\s", text) if seg.strip()]
+    candidates = sorted(set(segments + [text]), key=len)
+    for cand in candidates:
+        group = resolve_muscle_group(cand)
+        if group and _canonical(group) == _canonical(muscle):
+            return cand if any(ch.isupper() for ch in cand) else cand.title()
+    return None
+
+
 def _named_picks(pending: list[dict], bands: dict) -> list[dict]:
     """The athlete's named muscles as block picks, skipping any that is not a
-    muscle with a band."""
+    muscle with a band. A note that names a movement is carried as the slot's
+    exercise, so the programme computes it like any other lift."""
     picks: list[dict] = []
     for named in pending:
         if named["muscle"] not in bands or any(p["muscle"] == named["muscle"] for p in picks):
             continue
         low, high = bands[named["muscle"]]
+        exercise = exercise_from_note(named.get("note") or "", named["muscle"])
         picks.append({"muscle": named["muscle"], "sets": 0, "low": low, "high": high, "shortfall": 0,
+                      "exercise": exercise,
                       "reason": f"Emphasis this block, named by the athlete on {named['set_on']}"
                                 + (f": {named['note']}" if named.get("note") else "") + "."})
     return picks
@@ -411,8 +434,9 @@ def format_block_weak_points(info: dict | None) -> str:
         sets = p.get("sets")
         low, high = p.get("low"), p.get("high")
         short = p.get("shortfall")
+        named = f" → {p['exercise']} (the programme computes this slot like any other lift)" if p.get("exercise") else ""
         if not sets or low is None:
-            lines.append(f"  {p['muscle']}: {p.get('reason', '')}")
+            lines.append(f"  {p['muscle']}: {p.get('reason', '')}{named}")
             continue
         state = (f"short by {short:g}" if (short or 0) > 0
                  else "inside the band, least headroom — nothing else was under")
