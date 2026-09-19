@@ -29,6 +29,27 @@ class WindowTests(unittest.TestCase):
         self.assertEqual((w["since"], w["until"]), ("2026-09-01", "2026-09-16"))
         self.assertEqual((w["prev_since"], w["prev_until"]), ("2026-08-01", "2026-08-16"))
 
+    def test_rollover_with_no_stamp_in_reach_is_still_the_last_sixteen_sessions(self):
+        # 19 Sep 2026: no session stamped week 1 day 1, the last session is
+        # today. block_start would say "today"; the review must not.
+        sessions = [{"date": f"2026-08-{d:02d}", "mesocycle_week": None, "mesocycle_day": None} for d in range(1, 17)] + \
+                   [{"date": f"2026-09-{d:02d}", "mesocycle_week": None, "mesocycle_day": None} for d in range(4, 20)]
+        w = br.review_window(sessions, {"mesocycle_week": 1, "mesocycle_day": 1}, "2026-09-19")
+        self.assertTrue(w["complete"])
+        self.assertEqual((w["since"], w["until"]), ("2026-09-04", "2026-09-19"))
+        self.assertEqual((w["prev_since"], w["prev_until"]), ("2026-08-01", "2026-08-16"))
+        self.assertEqual(w["block_start"], "2026-09-04")
+
+    def test_a_block_that_ran_long_still_starts_at_its_stamped_opening(self):
+        # Sixteen sessions over 45 days: the five-week floor in block_start
+        # misses the stamp, the ended-block range does not.
+        dates = [f"2026-08-{d:02d}" for d in range(5, 32, 3)] + [f"2026-09-{d:02d}" for d in range(3, 20, 3)]
+        sessions = [{"date": d, "mesocycle_week": None, "mesocycle_day": None} for d in dates]
+        sessions[0]["mesocycle_week"], sessions[0]["mesocycle_day"] = 1, 1
+        w = br.review_window(sessions, {"mesocycle_week": 1, "mesocycle_day": 1}, "2026-09-19")
+        self.assertEqual(w["since"], "2026-08-05")
+        self.assertEqual(w["until"], "2026-09-19")
+
     def test_mid_block_reviews_the_block_in_progress(self):
         sessions = list(self.SESSIONS)
         sessions[16]["mesocycle_week"], sessions[16]["mesocycle_day"] = 1, 1
@@ -36,6 +57,25 @@ class WindowTests(unittest.TestCase):
         self.assertFalse(w["complete"])
         self.assertEqual(w["since"], "2026-09-01")
         self.assertEqual(w["until"], "2026-09-16")
+
+
+class CardStructureTests(unittest.TestCase):
+    def test_the_narrative_splits_into_labelled_sections(self):
+        text = ("Strength: peak week against peak week shows Leg Press up 3%.\n\n"
+                "Volume: every tracked muscle sits under its band.\n\n"
+                "What to change: the standing constraints remain in force.\n\n"
+                "Cable Crunch held at 147.0kg: a stale comparison.")
+        sections = br.review_sections(text)
+        self.assertEqual([s["label"] for s in sections], ["STRENGTH", "VOLUME", "WHAT TO CHANGE", ""])
+        self.assertEqual(sections[0]["body"], "peak week against peak week shows Leg Press up 3%.")
+        self.assertEqual(sections[3]["body"], "Cable Crunch held at 147.0kg: a stale comparison.")
+
+    def test_a_proposal_line_splits_into_kind_subject_and_detail(self):
+        self.assertEqual(br.proposal_parts("Emphasis-next: Triceps | still under band; keep as emphasis"),
+                         {"kind": "emphasis", "subject": "Triceps", "detail": "still under band; keep as emphasis"})
+        self.assertEqual(br.proposal_parts("Decision: Leg Press | max load 242.5kg | open heavier"),
+                         {"kind": "decision", "subject": "Leg Press", "detail": "max load 242.5kg · open heavier"})
+        self.assertEqual(br.proposal_parts("Decision: Cable Crunch | clear")["detail"], "clear")
 
 
 class FactTests(unittest.TestCase):

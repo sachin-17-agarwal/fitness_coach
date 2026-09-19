@@ -122,6 +122,27 @@ def block_start(sessions: list[dict], week: int, day: int, today: str) -> str | 
     return sessions[-done]["date"]
 
 
+def ended_block_range(sessions: list[dict], today: str) -> tuple | None:
+    """(since, until) of the block that has just ended, for the morning-after
+    review: the last BLOCK_SLOTS sessions up to today, or from the most recent
+    stamped week-1/day-1 session among them when the block ran short. None
+    when no session exists. Sessions on today count: the deload's last day is
+    the day the review is read.
+
+    Unlike block_start this never answers "today": a block that took longer
+    than five weeks of calendar, or whose opening session carries no stamp,
+    is still the last sixteen sessions, not a one-day window."""
+    done = [s for s in sessions if (s.get("date") or "") <= today]
+    if not done:
+        return None
+    block = done[-BLOCK_SLOTS:]
+    for i in range(len(block) - 1, 0, -1):
+        if block[i].get("mesocycle_week") == 1 and block[i].get("mesocycle_day") == 1:
+            block = block[i:]
+            break
+    return block[0]["date"], block[-1]["date"]
+
+
 def previous_block_range(sessions: list[dict], start: str) -> tuple | None:
     """(since, until) covering the block before `start`: its last sixteen
     sessions, or as many as exist. None when nothing precedes the start."""

@@ -441,6 +441,19 @@ once per block) and answered from the Home card via
 `POST /api/block-review/answer` or in chat. The briefing route still
 prepends it, but nothing depends on the briefing being opened.
 
+**First dry run, 19 Sep.** The review landed but read the whole block as
+one day (every muscle at 0.0 sets/week, "1 of 1 nights"): at rollover
+`block_start` answered "today" because no stamped opening session sat
+within its five-week floor. Fixed: the review uses
+`weakpoints.ended_block_range` (the last sixteen sessions through today, or
+from the stamped opening among them), a dated data fix removes any review
+whose block starts on the day it was read so Home prepares the real one,
+and the card became structured: proposals first as numbered, tappable rows
+("APPROVE 1 & 3" builds the "yes to 1 and 3" answer), the narrative behind
+a "READ THE NUMBERS" fold split into its labelled sections, the block's date
+range in the header. The payload carries `sections`, `window` and each
+proposal's `kind`/`subject`/`detail`.
+
 **Goal.** The morning after the block's last session, on a rest day, a
 Home card and a waiting coach message carry the review and two or three
 proposed changes; "yes to 1 and 3" records them.

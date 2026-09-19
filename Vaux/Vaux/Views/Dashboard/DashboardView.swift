@@ -25,6 +25,10 @@ struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var showWeightSheet = false
     @State private var showBriefing = false
+    /// Block review card: proposal numbers tapped for a partial answer, and
+    /// whether the numbers behind the proposals are unfolded.
+    @State private var selectedProposals: Set<Int> = []
+    @State private var showReviewNumbers = false
     @AppStorage(Config.displayNameKey) private var displayName: String = ""
 
     var switchToChatTab: (() -> Void)? = nil
@@ -608,41 +612,76 @@ struct DashboardView: View {
     /// same words chat accepts, or in chat.
     private func blockReviewCard(_ review: BlockReviewResponse) -> some View {
         let proposals = review.proposals ?? []
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(review.dryRun == true ? "BLOCK REVIEW · DRY RUN" : "BLOCK REVIEW")
+        let sections = review.sections ?? []
+        let chosen = selectedProposals.filter { $0 <= proposals.count }.sorted()
+        return VStack(alignment: .leading, spacing: 0) {
+            // Header: what this is, whether it counts, which block.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("BLOCK REVIEW")
                     .font(.system(size: 10, weight: .semibold))
                     .kerning(3)
                     .foregroundStyle(Color.signal)
-                Spacer()
-                if let start = review.blockStart {
-                    Text("BLOCK FROM \(start.uppercased())")
-                        .font(.system(size: 9, weight: .semibold))
-                        .kerning(2)
-                        .foregroundStyle(Color.fg3)
+                if review.dryRun == true {
+                    Text("DRY RUN")
+                        .font(.system(size: 8, weight: .semibold))
+                        .kerning(1.5)
+                        .foregroundStyle(Color.fg2)
+                        .padding(.horizontal, 6)
+                        .frame(height: 16)
+                        .background(Capsule().fill(Color.ink3))
+                        .overlay(Capsule().stroke(Color.line2, lineWidth: 1))
                 }
+                Spacer()
+                Text(Self.reviewRange(review))
+                    .font(.system(size: 9, weight: .semibold))
+                    .kerning(2)
+                    .foregroundStyle(Color.fg3)
             }
 
-            Text(review.text ?? "")
-                .font(.system(size: 14))
-                .foregroundStyle(Color.fg1)
-                .lineSpacing(4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+            // The headline is the ask, not the essay.
+            Text(proposals.isEmpty ? "NO CHANGES FOR NEXT BLOCK"
+                 : "\(proposals.count) CHANGE\(proposals.count == 1 ? "" : "S") PROPOSED FOR NEXT BLOCK")
+                .font(.display(22))
+                .foregroundStyle(Color.fg0)
+                .padding(.top, 12)
+            if proposals.count > 1 {
+                Text("Tap a line to answer for that one alone.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.fg3)
+                    .padding(.top, 2)
+            }
 
+            // Proposals: numbered rows, each a tap target.
+            if !proposals.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(proposals.enumerated()), id: \.offset) { index, proposal in
+                        if index > 0 {
+                            Rectangle().fill(Color.line).frame(height: 1)
+                        }
+                        reviewProposalRow(index + 1, proposal, selected: selectedProposals.contains(index + 1))
+                    }
+                }
+                .padding(.top, 10)
+            }
+
+            // Answers.
             HStack(spacing: 10) {
-                if !proposals.isEmpty {
+                if proposals.isEmpty {
+                    reviewAnswerButton("NOTED", text: "no", loud: true)
+                } else if chosen.isEmpty {
                     reviewAnswerButton("APPROVE ALL", text: "approve all", loud: true)
                     reviewAnswerButton("NO", text: "no", loud: false)
                 } else {
-                    reviewAnswerButton("NOTED", text: "no", loud: true)
+                    reviewAnswerButton("APPROVE \(chosen.map { String($0) }.joined(separator: " & "))",
+                                       text: "yes to " + chosen.map { String($0) }.joined(separator: " and "), loud: true)
+                    reviewAnswerButton("NO", text: "no", loud: false)
                 }
                 Spacer()
                 Button {
                     Haptic.light()
                     switchToChatTab?()
                 } label: {
-                    Text("ANSWER IN CHAT →")
+                    Text("IN CHAT →")
                         .font(.system(size: 10, weight: .semibold))
                         .kerning(1.5)
                         .foregroundStyle(Color.signal)
@@ -651,8 +690,60 @@ struct DashboardView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Answer the review in chat")
             }
+            .padding(.top, 14)
             .disabled(viewModel.isAnsweringReview)
             .opacity(viewModel.isAnsweringReview ? 0.5 : 1)
+            if review.dryRun == true {
+                Text("Dry run: your answer is kept to compare, nothing is recorded.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.fg3)
+                    .padding(.top, 6)
+            }
+
+            // The numbers behind the proposals, folded until asked for.
+            if !sections.isEmpty {
+                Rectangle().fill(Color.line).frame(height: 1).padding(.top, 14)
+                Button {
+                    Haptic.light()
+                    withAnimation(.easeInOut(duration: 0.2)) { showReviewNumbers.toggle() }
+                } label: {
+                    HStack {
+                        Text(showReviewNumbers ? "HIDE THE NUMBERS" : "READ THE NUMBERS")
+                            .font(.system(size: 10, weight: .semibold))
+                            .kerning(2)
+                            .foregroundStyle(Color.fg2)
+                        Spacer()
+                        Image(systemName: showReviewNumbers ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.fg3)
+                    }
+                    .frame(minHeight: 40)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(showReviewNumbers ? "Hide the numbers" : "Read the numbers")
+                if showReviewNumbers {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(sections, id: \.self) { section in
+                            VStack(alignment: .leading, spacing: 4) {
+                                if !section.label.isEmpty {
+                                    Text(section.label)
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .kerning(2)
+                                        .foregroundStyle(Color.fg3)
+                                }
+                                Text(section.body)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.fg1)
+                                    .lineSpacing(4)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                    .padding(.bottom, 4)
+                }
+            }
         }
         .padding(14)
         .background(
@@ -665,9 +756,82 @@ struct DashboardView: View {
         )
     }
 
+    /// One proposal: its number, what kind and of what, the change, the
+    /// reason. Tapping toggles it into a partial answer.
+    private func reviewProposalRow(_ number: Int, _ proposal: BlockReviewResponse.Proposal, selected: Bool) -> some View {
+        let kind = (proposal.kind ?? "").uppercased()
+        let subject = (proposal.subject ?? "").uppercased()
+        let eyebrow = [kind, subject].filter { !$0.isEmpty }.joined(separator: " · ")
+        let body = (proposal.detail?.isEmpty == false ? proposal.detail : nil) ?? proposal.line
+        let rationale = (proposal.rationale ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return HStack(alignment: .top, spacing: 12) {
+            Text("\(number)")
+                .font(.display(20))
+                .foregroundStyle(selected ? Color.signal : Color.fg3)
+                .frame(width: 20, alignment: .leading)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 4) {
+                if !eyebrow.isEmpty {
+                    Text(eyebrow)
+                        .font(.system(size: 9, weight: .semibold))
+                        .kerning(2)
+                        .foregroundStyle(selected ? Color.signal : Color.fg3)
+                }
+                Text(body.prefix(1).uppercased() + String(body.dropFirst()))
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.fg0)
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if !rationale.isEmpty {
+                    Text(rationale)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.fg2)
+                        .lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(selected ? Color.signal : Color.line2)
+                .padding(.top, 2)
+        }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            Haptic.light()
+            if selected { selectedProposals.remove(number) } else { selectedProposals.insert(number) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+    }
+
+    /// "24 AUG – 19 SEP" from the review's window; the block's start alone
+    /// when the end is not known.
+    private static func reviewRange(_ review: BlockReviewResponse) -> String {
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy-MM-dd"
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        let out = DateFormatter()
+        out.dateFormat = "d MMM"
+        out.locale = Locale(identifier: "en_US_POSIX")
+        func label(_ iso: String?) -> String? {
+            guard let iso, let date = parser.date(from: iso) else { return nil }
+            return out.string(from: date).uppercased()
+        }
+        let since = label(review.window?.since) ?? label(review.blockStart)
+        let until = label(review.window?.until)
+        switch (since, until) {
+        case let (s?, u?): return "\(s) – \(u)"
+        case let (s?, nil): return "FROM \(s)"
+        default: return ""
+        }
+    }
+
     private func reviewAnswerButton(_ label: String, text: String, loud: Bool) -> some View {
         Button {
             Haptic.medium()
+            selectedProposals = []
             Task { await viewModel.answerBlockReview(text) }
         } label: {
             Text(label)
