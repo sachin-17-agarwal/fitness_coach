@@ -302,7 +302,8 @@ class NarrativeChecksTests(unittest.TestCase):
                                  "emphasis_stored": ["Hamstrings"], "emphasis_next": [], "standing_constraints": "",
                                  "adjustments": []})
         self.assertIn("none — every Cardio+Abs day ended after the ab block", sheet)
-        self.assertIn("a stored pick named Hamstrings; it did not run, so it was not this block's emphasis", sheet)
+        # The stored pick stays in the facts for the record and never reaches the model.
+        self.assertNotIn("Hamstrings", sheet)
 
     def test_every_standing_decision_is_put_to_the_athlete_as_keep_or_clear(self):
         constraints = [{"exercise": "Machine Shoulder Press", "max_load_kg": 70, "note": "shoulder niggle", "set_on": "2026-09-13"},

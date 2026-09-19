@@ -96,7 +96,9 @@ Rules:
 - A lift the sheet marks "held (standing decision)" is flat because it was told to be. Say
   so; it is not a drop.
 - In `volume`, credit a muscle's sets to weak-point work ONLY when WEAK-POINT WORK THAT RAN
-  lists that muscle. Otherwise its sets came from its own days.
+  lists that muscle. Otherwise its sets came from its own days. The block's emphasis is
+  exactly that list and nothing else: never name a muscle as picked, planned or intended
+  for a weak-point slot unless it is on it.
 - A lift marked "plus body" is scored as plate plus the athlete's share of bodyweight, as
   the app scores it; a "~" set is an estimate from a set past 12 reps.
 - `Emphasis-next` NAMES A WEAK POINT for the coming block: extra straight sets on that
@@ -467,9 +469,9 @@ def format_facts(facts: dict) -> str:
     lines += ["", "WEAK-POINT WORK THAT RAN THIS BLOCK (sets logged on Cardio+Abs days beyond the ab block): "
               + ("; ".join(f"{e['muscle']} — {', '.join(e['exercises'])}, {e['sets']} sets" for e in ran)
                  if ran else "none — every Cardio+Abs day ended after the ab block")]
-    stored = facts.get("emphasis_stored") or []
-    if stored and set(stored) != {e["muscle"] for e in ran}:
-        lines.append(f"  (a stored pick named {', '.join(stored)}; it did not run, so it was not this block's emphasis)")
+    # A stored pick that did not run stays in the facts JSON for the record
+    # and is never shown to the model: the first time it was, the review
+    # told the athlete about a hamstrings emphasis that never happened.
     nxt = facts.get("emphasis_next") or []
     if nxt:
         lines.append("NEXT BLOCK'S EMPHASIS, already set by the athlete (do not propose again): "
