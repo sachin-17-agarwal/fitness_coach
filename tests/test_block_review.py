@@ -70,6 +70,28 @@ class CardStructureTests(unittest.TestCase):
         self.assertEqual(sections[0]["body"], "peak week against peak week shows Leg Press up 3%.")
         self.assertEqual(sections[3]["body"], "Cable Crunch held at 147.0kg: a stale comparison.")
 
+    def test_the_model_answers_in_four_named_paragraphs_that_become_the_narrative(self):
+        data = {"strength": "Most lifts moved up; Dips led at +26.5%.", "volume": "Chest sat under its band.",
+                "recovery": "", "changes": "Nothing to change.", "proposals": []}
+        narrative = br.assemble_narrative(data)
+        self.assertEqual(narrative, "Strength: Most lifts moved up; Dips led at +26.5%.\n\n"
+                                    "Volume: Chest sat under its band.\n\nWhat to change: Nothing to change.")
+        self.assertEqual([x["label"] for x in br.review_sections(narrative)], ["STRENGTH", "VOLUME", "WHAT TO CHANGE"])
+        self.assertEqual(br.assemble_narrative({"narrative": "Legacy text."}), "Legacy text.")
+        self.assertEqual(set(br.REVIEW_SCHEMA["required"]), {"strength", "volume", "recovery", "changes", "proposals"})
+
+    def test_card_rows_come_from_the_sheet_largest_rise_first(self):
+        facts = json.dumps({"strength": [
+            {"exercise": "Leg Press", "delta_pct": -2.2, "verdict": "held", "this_set": "245kg x15", "prev_set": "240kg x14"},
+            {"exercise": "Dips", "delta_pct": 26.5, "verdict": "pr", "this_set": "40kg x10", "prev_set": "30kg x10"},
+            {"exercise": "Incline Press", "this_set": "91kg x8", "verdict": "first block"}],
+            "volume": [{"muscle": "Chest", "sets_per_week": 6.0, "band": "10-16", "under_by": 4.0, "over_by": 0}]})
+        rows = br.card_rows(facts)
+        self.assertEqual([r["exercise"] for r in rows["lifts"]], ["Dips", "Leg Press", "Incline Press"])
+        self.assertIsNone(rows["lifts"][2]["delta_pct"])
+        self.assertEqual(rows["volume"], [{"muscle": "Chest", "sets": 6.0, "band": "10-16", "under_by": 4.0, "over_by": 0}])
+        self.assertEqual(br.card_rows(None), {"lifts": [], "volume": []})
+
     def test_a_proposal_line_splits_into_kind_subject_and_detail(self):
         self.assertEqual(br.proposal_parts("Emphasis-next: Triceps | still under band; keep as emphasis"),
                          {"kind": "emphasis", "subject": "Triceps", "detail": "still under band; keep as emphasis"})

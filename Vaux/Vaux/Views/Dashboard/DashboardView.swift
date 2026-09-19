@@ -723,25 +723,8 @@ struct DashboardView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(showReviewNumbers ? "Hide the numbers" : "Read the numbers")
                 if showReviewNumbers {
-                    VStack(alignment: .leading, spacing: 14) {
-                        ForEach(sections, id: \.self) { section in
-                            VStack(alignment: .leading, spacing: 4) {
-                                if !section.label.isEmpty {
-                                    Text(section.label)
-                                        .font(.system(size: 9, weight: .semibold))
-                                        .kerning(2)
-                                        .foregroundStyle(Color.fg3)
-                                }
-                                Text(section.body)
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Color.fg1)
-                                    .lineSpacing(4)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                    .padding(.bottom, 4)
+                    reviewNumbers(sections: sections, lifts: review.lifts ?? [], volume: review.volume ?? [])
+                        .padding(.bottom, 4)
                 }
             }
         }
@@ -754,6 +737,118 @@ struct DashboardView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.signal.opacity(0.35), lineWidth: 1)
         )
+    }
+
+    /// The fold: each paragraph under its label, and under STRENGTH and
+    /// VOLUME the rows the sheet computed, so the prose can interpret instead
+    /// of reciting. Older reviews with unlabelled prose get the rows after it.
+    private func reviewNumbers(sections: [BlockReviewResponse.Section], lifts: [BlockReviewResponse.Lift],
+                               volume: [BlockReviewResponse.VolumeRow]) -> some View {
+        let labelled = sections.contains { !$0.label.isEmpty }
+        return VStack(alignment: .leading, spacing: 16) {
+            ForEach(sections, id: \.self) { section in
+                VStack(alignment: .leading, spacing: 6) {
+                    if !section.label.isEmpty {
+                        Text(section.label)
+                            .font(.system(size: 9, weight: .semibold))
+                            .kerning(2)
+                            .foregroundStyle(Color.fg3)
+                    }
+                    Text(section.body)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.fg1)
+                        .lineSpacing(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                    if section.label == "STRENGTH" { liftRows(lifts) }
+                    if section.label == "VOLUME" { volumeRows(volume) }
+                }
+            }
+            if !labelled {
+                liftRows(lifts)
+                volumeRows(volume)
+            }
+        }
+    }
+
+    /// Every lift, largest rise first: name, this block's top set, the change.
+    @ViewBuilder
+    private func liftRows(_ lifts: [BlockReviewResponse.Lift]) -> some View {
+        if !lifts.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(Array(lifts.enumerated()), id: \.offset) { index, lift in
+                    if index > 0 { Rectangle().fill(Color.line).frame(height: 1) }
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(lift.exercise)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.fg1)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        if let set = lift.thisSet {
+                            Text(set.uppercased())
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.fg3)
+                        }
+                        Text(Self.liftChange(lift))
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .monospacedDigit()
+                            .foregroundStyle(Self.liftTint(lift))
+                            .frame(width: 74, alignment: .trailing)
+                    }
+                    .padding(.vertical, 7)
+                }
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    /// Every banded muscle: sets a week against the band, tinted by where it landed.
+    @ViewBuilder
+    private func volumeRows(_ rows: [BlockReviewResponse.VolumeRow]) -> some View {
+        if !rows.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    if index > 0 { Rectangle().fill(Color.line).frame(height: 1) }
+                    let under = (row.underBy ?? 0) > 0, over = (row.overBy ?? 0) > 0
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(row.muscle)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.fg1)
+                        Spacer(minLength: 8)
+                        Text(under ? "UNDER BY \(Self.oneDecimal(row.underBy ?? 0))"
+                             : over ? "OVER BY \(Self.oneDecimal(row.overBy ?? 0))" : "IN BAND")
+                            .font(.system(size: 9, weight: .semibold))
+                            .kerning(1.5)
+                            .foregroundStyle(under ? Color.ember : over ? Color.amber : Color.fg3)
+                        Text("\(Self.oneDecimal(row.sets ?? 0)) / \((row.band ?? "").replacingOccurrences(of: "-", with: "–"))")
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .monospacedDigit()
+                            .foregroundStyle(Color.fg0)
+                            .frame(width: 84, alignment: .trailing)
+                    }
+                    .padding(.vertical, 7)
+                }
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    private static func liftChange(_ lift: BlockReviewResponse.Lift) -> String {
+        guard let pct = lift.deltaPct else { return "FIRST" }
+        if abs(pct) < 0.05 { return "FLAT" }
+        return Editorial.signedPct(pct)
+    }
+
+    private static func liftTint(_ lift: BlockReviewResponse.Lift) -> Color {
+        guard let pct = lift.deltaPct else { return Color.fg3 }
+        if lift.verdict == "held" { return Color.fg2 }
+        if pct >= 2.5 { return Color.mint }
+        if pct <= -2.5 { return Color.ember }
+        return Color.fg2
+    }
+
+    private static func oneDecimal(_ value: Double) -> String {
+        String(format: "%.1f", value)
     }
 
     /// One proposal: its number, what kind and of what, the change, the

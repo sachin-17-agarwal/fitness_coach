@@ -377,13 +377,14 @@ def api_block_review():
 
 
 def _block_review_payload(row: dict, text: str) -> dict:
-    from block_review import proposal_parts, review_sections  # local: import order
+    from block_review import card_rows, proposal_parts, review_sections  # local: import order
     proposals = [{**p, **proposal_parts(p.get("line", ""))} for p in (row.get("proposals_list") or [])]
     since = row.get("window_since") or row.get("block_start")
     return {"status": row.get("status"), "block_start": str(row.get("block_start")),
             "dry_run": bool(row.get("dry_run")), "text": text,
             "proposals": proposals,
             "sections": review_sections(row.get("narrative") or ""),
+            **card_rows(row.get("facts")),
             "window": {"since": str(since) if since else None,
                        "until": str(row["window_until"]) if row.get("window_until") else None}}
 

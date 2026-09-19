@@ -34,10 +34,17 @@ MAX_PROPOSALS = 3
 E1RM_MAX_REPS = 12
 PEAK_WEEK = 3
 
+# The narrative arrives as four named paragraphs, so the card can always show
+# them under their labels; the model cannot leave a label out.
+SECTIONS = (("strength", "Strength"), ("volume", "Volume"), ("recovery", "Recovery"), ("changes", "What to change"))
+
 REVIEW_SCHEMA = {
     "type": "object",
     "properties": {
-        "narrative": {"type": "string"},
+        "strength": {"type": "string"},
+        "volume": {"type": "string"},
+        "recovery": {"type": "string"},
+        "changes": {"type": "string"},
         "proposals": {
             "type": "array",
             "items": {
@@ -51,7 +58,7 @@ REVIEW_SCHEMA = {
             },
         },
     },
-    "required": ["narrative", "proposals"],
+    "required": ["strength", "volume", "recovery", "changes", "proposals"],
     "additionalProperties": False,
 }
 
@@ -59,8 +66,11 @@ REVIEW_INSTRUCTION = """
 You are writing the athlete's BLOCK REVIEW from the fact sheet below and nothing else.
 Rules:
 - Every number you write must appear in the fact sheet, exactly. Do not compute new ones.
-- Four short paragraphs at most: strength (peak week against peak week), volume against
-  the bands, recovery over the block, and what to change. Plain, specific, his numbers.
+- Four short paragraphs, one per field: `strength` (peak week against peak week), `volume`
+  against the bands, `recovery` over the block, `changes` (what to change). Plain, specific,
+  his numbers. The card beside your words lists EVERY lift's change and EVERY muscle's sets
+  against its band as rows, so do not recite them: interpret. Name at most three lifts and
+  three muscles, the ones that decide something. Two to four sentences per paragraph.
 - Propose at most {max_proposals} changes. Each `line` MUST be in one of these exact grammars,
   which the system records verbatim when he approves it:
     Decision: <Exercise> | max load <N>kg | <one-line reason>
@@ -355,6 +365,20 @@ def valid_proposals(proposals: list[dict], facts: dict | None = None) -> list[di
     return out[:MAX_PROPOSALS]
 
 
+def assemble_narrative(data: dict) -> str:
+    """The four paragraphs as one labelled narrative ("Strength: …"), the form
+    chat shows and review_sections splits; a legacy `narrative` field passes
+    through."""
+    parts = []
+    for key, label in SECTIONS:
+        text = (data.get(key) or "").strip()
+        if text:
+            parts.append(f"{label}: {text}")
+    if not parts and data.get("narrative"):
+        return str(data["narrative"]).strip()
+    return "\n\n".join(parts)
+
+
 def narrate(client, sheet: str, model: str | None = None, facts: dict | None = None) -> dict:
     """One model call: the review from the sheet, checked. A narrative that
     cites a number the sheet lacks is retried once with the offending numbers
@@ -377,7 +401,7 @@ def narrate(client, sheet: str, model: str | None = None, facts: dict | None = N
             data = json.loads(text)
         except ValueError:
             data = {}
-        narrative = (data.get("narrative") or "").strip()
+        narrative = assemble_narrative(data)
         bad = numbers_not_in_sheet(narrative, sheet)
         proposals = valid_proposals(data.get("proposals") or [], facts)
         last = {"narrative": narrative, "proposals": proposals, "unsupported_numbers": bad}
@@ -493,6 +517,26 @@ def review_sections(narrative: str) -> list[dict]:
         else:
             out.append({"label": "", "body": para})
     return out
+
+
+def card_rows(facts) -> dict:
+    """Lift and muscle rows for the card's numbers fold, from the stored fact
+    sheet: lifts with a comparison first, largest rise first, then first-block
+    lifts; muscles in the sheet's order (furthest under band first)."""
+    if isinstance(facts, str):
+        try:
+            facts = json.loads(facts or "{}")
+        except ValueError:
+            facts = {}
+    facts = facts or {}
+    compared = [s for s in facts.get("strength") or [] if "delta_pct" in s]
+    fresh = [s for s in facts.get("strength") or [] if "delta_pct" not in s]
+    compared.sort(key=lambda s: -float(s["delta_pct"]))
+    lifts = [{"exercise": s.get("exercise"), "delta_pct": s.get("delta_pct"), "verdict": s.get("verdict"),
+              "this_set": s.get("this_set"), "prev_set": s.get("prev_set")} for s in compared + fresh]
+    volume = [{"muscle": v.get("muscle"), "sets": v.get("sets_per_week"), "band": v.get("band"),
+               "under_by": v.get("under_by") or 0, "over_by": v.get("over_by") or 0} for v in facts.get("volume") or []]
+    return {"lifts": lifts, "volume": volume}
 
 
 def proposal_parts(line: str) -> dict:
