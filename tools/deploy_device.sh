@@ -64,6 +64,22 @@ done
 
 log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 
+# A failed run used to vanish into the launchd log, and the app simply
+# stopped opening a few days later. Now every non-zero exit puts a macOS
+# notification on screen once the last good install is old enough to matter,
+# so the one thing that needs a human (a new Xcode, the phone unplugged) is
+# seen the same day.
+on_exit() {
+    code=${1:-$?}
+    [ "$code" -ne 0 ] || return 0
+    age=""
+    if [ -f "$STAMP" ]; then age=$(( ( $(date +%s) - $(stat -f %m "$STAMP") ) / 86400 )); fi
+    if [ -z "$age" ] || [ "$age" -ge "$DUE_AFTER_DAYS" ]; then
+        osascript -e "display notification \"Re-sign failed (exit $code)${age:+, last good install $age day(s) ago}. See ~/Library/Logs/vaux-deploy.log\" with title \"Vaux deploy\"" 2>/dev/null || true
+    fi
+}
+trap on_exit EXIT
+
 if [ "$ONLY_IF_DUE" = 1 ] && [ -f "$STAMP" ]; then
     AGE_DAYS=$(( ( $(date +%s) - $(stat -f %m "$STAMP") ) / 86400 ))
     if [ "$AGE_DAYS" -lt "$DUE_AFTER_DAYS" ]; then
@@ -139,7 +155,7 @@ fi
 
 log "Looking for the phone…"
 DEVICES_JSON="$(mktemp)"
-trap 'rm -f "$DEVICES_JSON"' EXIT
+trap 'c=$?; rm -f "$DEVICES_JSON"; on_exit $c' EXIT
 if ! "$DEVICECTL" list devices --json-output "$DEVICES_JSON"; then
     log "devicectl failed to list devices."
     exit 3
@@ -171,14 +187,38 @@ PY
 )"
 
 if [ -z "$UDID" ]; then
-    log "No reachable iPhone${WANT:+ matching '$WANT'}. Is it on the same Wi-Fi, unlocked once recently, and paired with this Mac?"
+    log "No reachable iPhone${WANT:+ matching '$WANT'}."
     log "Devices this Mac knows about:"
-    python3 - "$DEVICES_JSON" <<'PY'
+    # The iOS version this Xcode ships developer services for: a phone on a
+    # newer major (a beta, usually) is paired and even wired yet never gets a
+    # tunnel, and devicectl reports it only as ddiServicesAvailable=false.
+    SDK_IOS="$("$XCODEBUILD" -showsdks 2>/dev/null | awk '/iphoneos/ {sub("iphoneos","",$NF); print $NF; exit}')"
+    python3 - "$DEVICES_JSON" "$SDK_IOS" "$("$XCODEBUILD" -version | head -1)" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
+sdk_ios, xcode = sys.argv[2], sys.argv[3]
+sdk_major = int(sdk_ios.split(".")[0]) if sdk_ios[:1].isdigit() else None
+too_new = []
 for d in data.get("result", {}).get("devices", []):
     hw, props, conn = d.get("hardwareProperties", {}), d.get("deviceProperties", {}), d.get("connectionProperties", {})
-    print(f"  {props.get('name','?')} · {hw.get('platform','?')} · {conn.get('tunnelState','?')} · {hw.get('udid','')}")
+    os_v = props.get("osVersionNumber", "?")
+    beta = " beta" if props.get("releaseType") == "Beta" else ""
+    print(f"  {props.get('name','?').strip()} · {hw.get('platform','?')} {os_v}{beta} · {conn.get('transportType','?')} · "
+          f"{conn.get('pairingState','?')} · tunnel {conn.get('tunnelState','?')} · "
+          f"developer services {'yes' if props.get('ddiServicesAvailable') else 'no'} · {hw.get('udid','')}")
+    if hw.get("platform") == "iOS" and not props.get("ddiServicesAvailable") and sdk_major:
+        try:
+            if int(os_v.split(".")[0]) > sdk_major:
+                too_new.append((props.get("name", "?").strip(), os_v + beta))
+        except ValueError:
+            pass
+if too_new:
+    for name, os_v in too_new:
+        print(f"{name} runs iOS {os_v}, but {xcode} only carries developer services up to iOS {sdk_ios}.")
+    print("No cable, Wi-Fi or pairing step fixes that. Install an Xcode whose iOS SDK is at least the phone's major")
+    print("version (a beta phone needs the matching beta Xcode) into /Applications; this script picks the newest one.")
+else:
+    print("Is the phone on the same Wi-Fi or plugged in, unlocked once recently, and paired with this Mac?")
 PY
     exit 2
 fi
