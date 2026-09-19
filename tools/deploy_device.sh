@@ -89,7 +89,10 @@ CUR_MAJOR="$(xcode_major "$DEV_DIR")"
 # then Spotlight by bundle id, which also finds a copy left in Downloads.
 all_xcodes() {
     { ls -d /Applications/Xcode*.app "$HOME"/Applications/Xcode*.app 2>/dev/null
-      mdfind "kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'" 2>/dev/null; } | sort -u
+      mdfind "kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'" 2>/dev/null
+      # Spotlight misses a copy on a volume or folder it does not index, so
+      # also walk the places an Xcode gets unzipped into.
+      find "$HOME/Downloads" "$HOME/Desktop" "$HOME" /Volumes -maxdepth 2 -type d -name 'Xcode*.app' 2>/dev/null; } | sort -u
 }
 if [ -z "$CUR_MAJOR" ] || [ "$CUR_MAJOR" -lt "$MIN_XCODE" ]; then
     BEST=""; BEST_MAJOR=0; FOUND=""
@@ -106,6 +109,10 @@ if [ -z "$CUR_MAJOR" ] || [ "$CUR_MAJOR" -lt "$MIN_XCODE" ]; then
         DEV_DIR="$BEST"
     else
         log "This project needs Xcode $MIN_XCODE or newer. Xcode found on this Mac:${FOUND:-  none}"
+        log "If a newer Xcode is somewhere else on this Mac, point the script at it:"
+        log "    DEVELOPER_DIR=/path/to/Xcode.app/Contents/Developer $0 $*"
+        log "or make it the default:  sudo xcode-select -s /path/to/Xcode.app"
+        log "To find it:  find / -maxdepth 4 -type d -name 'Xcode*.app' 2>/dev/null"
         log "If the Xcode you build the app with is on another computer, the re-sign job has to run there."
         exit 3
     fi
