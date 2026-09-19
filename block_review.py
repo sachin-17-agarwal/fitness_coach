@@ -42,7 +42,7 @@ PEAK_WEEK = 3
 # Bumped whenever the fact sheet's rules change; an unanswered review built
 # on an older version is removed at the next start so Home prepares it again
 # with numbers that match the app (data_fixes keys a fix on this number).
-FACTS_VERSION = 3
+FACTS_VERSION = 4
 
 # The narrative arrives as four named paragraphs, so the card can always show
 # them under their labels; the model cannot leave a label out.
@@ -90,8 +90,15 @@ Rules:
 - `changes` opens by stating next block's emphasis exactly as the sheet gives it (set, with
   the movement, or not set), then one sentence per muscle on whether this block's numbers
   still support it. Do not propose changing it; the athlete changes it in chat.
+- Every STANDING DECISION IN FORCE is put to the athlete on the card as keep-or-clear; the
+  system adds that line itself, so do not write a `clear` line for it. In `changes`, say
+  keep or clear for each one and why, from the sheet's numbers and its age.
 - A lift the sheet marks "held (standing decision)" is flat because it was told to be. Say
-  so; it is not a drop and needs no proposal.
+  so; it is not a drop.
+- In `volume`, credit a muscle's sets to weak-point work ONLY when WEAK-POINT WORK THAT RAN
+  lists that muscle. Otherwise its sets came from its own days.
+- A lift marked "plus body" is scored as plate plus the athlete's share of bodyweight, as
+  the app scores it; a "~" set is an estimate from a set past 12 reps.
 - `Emphasis-next` NAMES A WEAK POINT for the coming block: extra straight sets on that
   muscle, the note being the movement to add. It is only for a muscle UNDER its band.
   A muscle OVER its band is never an Emphasis-next; say it in the volume paragraph and
@@ -142,31 +149,95 @@ def epley(load: float, reps: int) -> float:
     return load * (1 + reps / 30.0)
 
 
-def strength_facts(rows: list[dict], weeks: dict, window: dict, held: set | None = None) -> list[dict]:
-    """Per lift: this block's peak-week best against the previous block's,
-    both as Epley estimates from sets of 12 reps or fewer. When a stretch has
-    only higher-rep sets (up to E1RM_LOOSE_MAX_REPS) the best of those stands
-    in, marked loose, as the app does. A lift with no peak-week set uses its
-    block best and says so. A lift in `held` (normalised names under a
-    standing decision) reads "held" unless it rose, as the app's strength
-    page does: flat because it was told to be, not a drop."""
-    from constraints import norm_name
-    held = held or set()
+def weigh_ins(supabase, days: int = 200) -> list[tuple]:
+    """(date, kg) ascending from the recovery table, so a bodyweight set is
+    scored against the body that lifted it, as the app does."""
+    try:
+        since = (now_local().date() - timedelta(days=days)).isoformat()
+        rows = (supabase.table("recovery").select("date, weight_kg").gte("date", since)
+                .not_.is_("weight_kg", "null").order("date").execute()).data or []
+    except Exception:
+        log.warning("Block review: weigh-ins unavailable; bodyweight lifts scored on the plate alone", exc_info=True)
+        return []
+    return sorted((r["date"], float(r["weight_kg"])) for r in rows if r.get("date") and r.get("weight_kg"))
 
-    def points(rs, low, high):
-        return [(epley(float(r["actual_weight_kg"]), int(r["actual_reps"])), r) for r in rs
-                if not r.get("is_warmup") and r.get("actual_weight_kg") and r.get("actual_reps")
-                and low <= int(r["actual_reps"]) <= high and float(r["actual_weight_kg"]) > 0]
+
+def kg_on(weigh: list[tuple], day: str | None) -> float | None:
+    """Weight on or before `day`; the earliest weigh-in when `day` precedes
+    them all; None with no weigh-ins. Mirrors WeighInRecord.kg(on:)."""
+    if not weigh:
+        return None
+    if not day:
+        return weigh[-1][1]
+    best = None
+    for d, kg in weigh:
+        if d <= day:
+            best = kg
+        else:
+            break
+    return best if best is not None else weigh[0][1]
+
+
+def canonical_names(supabase) -> dict:
+    """lowercased alias or name -> the exercise library's name, so one lift
+    logged under two spellings is one lift here, as the library says."""
+    try:
+        rows = (supabase.table("exercises").select("name, aliases").execute()).data or []
+    except Exception:
+        return {}
+    out = {}
+    for row in rows:
+        name = (row.get("name") or "").strip()
+        if not name:
+            continue
+        out[name.lower()] = name
+        aliases = row.get("aliases")
+        for alias in (aliases if isinstance(aliases, list) else []):
+            if isinstance(alias, str) and alias.strip():
+                out[" ".join(alias.split()).lower()] = name
+    return out
+
+
+def canon_name(name: str, canon: dict | None) -> str:
+    key = " ".join((name or "").split()).lower()
+    return (canon or {}).get(key) or " ".join((name or "").split())
+
+
+def strength_facts(rows: list[dict], weeks: dict, window: dict, held: set | None = None,
+                   weigh: list[tuple] | None = None, canon: dict | None = None) -> list[dict]:
+    """Per lift: this block's peak-week best against the previous block's,
+    both as Epley estimates. The BEST estimate wins among sets of up to
+    E1RM_LOOSE_MAX_REPS reps; a set past E1RM_MAX_REPS is marked loose. A
+    bodyweight movement is scored as plate plus the athlete's share of
+    bodyweight on that day. Lifts are grouped by the library's canonical
+    name. A lift in `held` reads "held" unless it rose. A lift with no
+    peak-week set uses its block best and says so.
+
+    Leg Press on 14 Sep 2026: 245 x 15 at RPE 9 was the top set, a lighter
+    12-rep set sat beside it, and a strict-first rule read the lift as flat.
+    Dips at +26.5% were the plate alone; with the body they are a fraction of that."""
+    from constraints import norm_name
+    from prescribe import bodyweight_fraction, effective_load
+    held = held or set()
+    weigh = weigh or []
+
+    def points(rs):
+        out = []
+        for r in rs:
+            if r.get("is_warmup") or not r.get("actual_reps") or r.get("actual_weight_kg") is None:
+                continue
+            reps = int(r["actual_reps"])
+            if not 0 < reps <= E1RM_LOOSE_MAX_REPS:
+                continue
+            load = effective_load(float(r["actual_weight_kg"]), r.get("exercise") or "", kg_on(weigh, r.get("date")))
+            if load <= 0:
+                continue
+            out.append((epley(load, reps), r, reps > E1RM_MAX_REPS))
+        return out
 
     def best(rs):
-        """(e1rm, row, loose) — strict sets first, loose only when none exist."""
-        strict = points(rs, 1, E1RM_MAX_REPS)
-        if strict:
-            return max(strict, key=lambda p: p[0]) + (False,)
-        loose = points(rs, E1RM_MAX_REPS + 1, E1RM_LOOSE_MAX_REPS)
-        if loose:
-            return max(loose, key=lambda p: p[0]) + (True,)
-        return None
+        pts = points(rs)
+        return max(pts, key=lambda p: p[0]) if pts else None
 
     def in_range(r, since, until):
         return since is not None and until is not None and since <= (r.get("date") or "") <= until
@@ -174,9 +245,12 @@ def strength_facts(rows: list[dict], weeks: dict, window: dict, held: set | None
     def week_of(r):
         return weeks.get(str(r.get("workout_session_id")))
 
+    def set_text(row):
+        return f"{float(row['actual_weight_kg']):g}kg x{int(row['actual_reps'])}"
+
     by_ex: dict[str, list[dict]] = {}
     for r in rows:
-        by_ex.setdefault((r.get("exercise") or "").strip(), []).append(r)
+        by_ex.setdefault(canon_name(r.get("exercise") or "", canon), []).append(r)
     out = []
     for name, rs in sorted(by_ex.items()):
         this_rows = [r for r in rs if in_range(r, window["since"], window["until"])]
@@ -190,15 +264,13 @@ def strength_facts(rows: list[dict], weeks: dict, window: dict, held: set | None
         prev_best = best(prev_peak) or best(prev_rows)
         if not this_best:
             continue
-        fact = {"exercise": name, "this_e1rm": round(this_best[0], 1),
-                "this_set": f"{float(this_best[1]['actual_weight_kg']):g}kg x{int(this_best[1]['actual_reps'])}",
-                "this_from_peak_week": peak_best is not None, "this_loose": this_best[2]}
+        fact = {"exercise": name, "this_e1rm": round(this_best[0], 1), "this_set": set_text(this_best[1]),
+                "this_from_peak_week": peak_best is not None, "this_loose": this_best[2],
+                "bodyweight": bodyweight_fraction(name) is not None and bool(weigh)}
         if prev_best:
             delta = (this_best[0] - prev_best[0]) / prev_best[0] * 100
-            fact.update({"prev_e1rm": round(prev_best[0], 1),
-                         "prev_set": f"{float(prev_best[1]['actual_weight_kg']):g}kg x{int(prev_best[1]['actual_reps'])}",
-                         "prev_loose": prev_best[2],
-                         "delta_pct": round(delta, 1),
+            fact.update({"prev_e1rm": round(prev_best[0], 1), "prev_set": set_text(prev_best[1]),
+                         "prev_loose": prev_best[2], "delta_pct": round(delta, 1),
                          "verdict": "up" if delta >= 1 else ("down" if delta <= -5 else "flat")})
             if norm_name(name) in held and fact["verdict"] != "up":
                 fact["verdict"] = "held"
@@ -206,6 +278,56 @@ def strength_facts(rows: list[dict], weeks: dict, window: dict, held: set | None
         else:
             fact["verdict"] = "first block"
         out.append(fact)
+    return out
+
+
+def emphasis_that_ran(rows: list[dict], sessions: list[dict], window: dict) -> list[dict]:
+    """The weak-point work the block actually carried: sets logged on its
+    Cardio+Abs days that are not ab work, by muscle. From the log, never from
+    a pick row — a stored pick says what was decided, not what ran."""
+    from volume import resolve_muscle_group
+    cardio_ids = {str(s.get("id")) for s in sessions
+                  if (s.get("type") or "").strip() == "Cardio+Abs"
+                  and window["since"] <= (s.get("date") or "") <= window["until"]}
+    by_muscle: dict[str, dict] = {}
+    for r in rows:
+        if str(r.get("workout_session_id")) not in cardio_ids or r.get("is_warmup"):
+            continue
+        muscle = resolve_muscle_group(r.get("exercise") or "")
+        if not muscle or muscle == "Abs":
+            continue
+        entry = by_muscle.setdefault(muscle, {"muscle": muscle, "sets": 0, "exercises": []})
+        entry["sets"] += 1
+        name = (r.get("exercise") or "").strip()
+        if name and name not in entry["exercises"]:
+            entry["exercises"].append(name)
+    return sorted(by_muscle.values(), key=lambda e: -e["sets"])
+
+
+def constraint_proposals(constraints: list[dict], strength: list[dict]) -> list[dict]:
+    """One keep-or-clear line per standing decision in force, added by the
+    system so the athlete is always asked at the block boundary. Approving
+    clears it through the existing `Decision:` path; not approving keeps it."""
+    from constraints import norm_name
+    by_name = {norm_name(f["exercise"]): f for f in strength}
+    out = []
+    for c in constraints or []:
+        exercise = (c.get("exercise") or "").strip()
+        if not exercise:
+            continue
+        cap = f"{float(c['max_load_kg']):g}kg cap" if c.get("max_load_kg") is not None else "standing note"
+        note = f": {c['note']}" if c.get("note") else ""
+        fact = by_name.get(norm_name(exercise))
+        result = ""
+        if fact:
+            result = f" This block: {fact['this_set']}"
+            if "delta_pct" in fact:
+                result += f", {fact['delta_pct']:+g}% on last block's peak"
+            result += "."
+        out.append({"line": f"Decision: {exercise} | clear",
+                    "rationale": f"{cap} since {c.get('set_on')}{note}.{result} "
+                                 f"Approve to clear it; leave it to keep it.",
+                    "standing": True})
     return out
 
 
@@ -262,7 +384,8 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
     from constraints import norm_name
     constraints = _standing_constraints()
     held = {norm_name(c["exercise"]) for c in constraints if c.get("exercise")}
-    strength = strength_facts(rows, weeks, window, held)
+    strength = strength_facts(rows, weeks, window, held, weigh_ins(supabase), canonical_names(supabase))
+    ran = emphasis_that_ran(rows, sessions, window)
 
     bands = parse_volume_bands(prompt)
     volume = volume_between(supabase, window["since"], window["until"])
@@ -273,7 +396,7 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
     # call current_block_weak_points, which at week 1 day 1 MAKES the coming
     # block's pick — consuming the athlete's queued emphasis on a rest day
     # and dating the pick to a day the block's opening would not match.
-    reviewed = block_picks_between(supabase, window.get("prev_until"), window.get("last_session") or window["until"])
+    stored_pick = block_picks_between(supabase, window.get("prev_until"), window.get("last_session") or window["until"])
     # What the athlete has already named for the coming block: the review
     # must not propose it again, and must never propose over it.
     try:
@@ -291,7 +414,11 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
                     "under_by": r["shortfall"] if r["shortfall"] > 0 else 0,
                     "over_by": round(r["sets"] - r["high"], 1) if r["sets"] > r["high"] else 0} for r in ranking],
         "recovery": recovery,
-        "emphasis": [p["muscle"] for p in reviewed],
+        "emphasis": [e["muscle"] for e in ran],
+        "emphasis_ran": ran,
+        "emphasis_stored": [p["muscle"] for p in stored_pick],
+        "standing": [{"exercise": c.get("exercise"), "max_load_kg": c.get("max_load_kg"),
+                      "note": c.get("note"), "set_on": c.get("set_on")} for c in constraints if c.get("exercise")],
         "emphasis_next": emphasis_next,
         "standing_constraints": format_constraints(constraints).strip(),
         "version": FACTS_VERSION,
@@ -306,19 +433,21 @@ def format_facts(facts: dict) -> str:
     lines = [f"BLOCK UNDER REVIEW: {w['since']} to {w['until']}"
              + ("" if w.get("complete") else " (in progress)")
              + (f"; previous block {w['prev_since']} to {w['prev_until']}" if w.get("prev_since") else "; no previous block"),
-             "", "STRENGTH — peak week against peak week, Epley e1RM from sets of 12 reps or fewer:"]
+             "", "STRENGTH — peak week against peak week, Epley e1RM from the best set of up to 20 reps "
+                 "(a set past 12 reps is a looser estimate); bodyweight lifts scored plate plus body:"]
     if not facts["strength"]:
         lines.append("  no loaded lifts in the block")
     for s in facts["strength"]:
         if "delta_pct" in s:
-            lines.append(f"  {s['exercise']}: {s['this_e1rm']}kg ({s['this_set']}) vs {s['prev_e1rm']}kg "
-                         f"({s['prev_set']}) = {s['delta_pct']:+g}% — {s['verdict']}"
+            body = ", plus body" if s.get("bodyweight") else ""
+            lines.append(f"  {s['exercise']}: {s['this_e1rm']}kg ({s['this_set']}{body}) vs {s['prev_e1rm']}kg "
+                         f"({s['prev_set']}{body}) = {s['delta_pct']:+g}% — {s['verdict']}"
                          + (" (standing decision: flat because it was told to be)" if s.get("held_by_decision") else "")
                          + ("" if s["this_from_peak_week"] else " [block best, no peak-week set]")
                          + (" [estimate from a set past 12 reps, as the app shows it]"
                             if s.get("this_loose") or s.get("prev_loose") else ""))
         else:
-            lines.append(f"  {s['exercise']}: {s['this_e1rm']}kg ({s['this_set']}) — first block"
+            lines.append(f"  {s['exercise']}: {s['this_e1rm']}kg ({s['this_set']}{', plus body' if s.get('bodyweight') else ''}) — first block"
                          + (" [estimate from a set past 12 reps]" if s.get("this_loose") else ""))
     lines += ["", "VOLUME — sets per calendar week against the band, over the block:"]
     for v in facts["volume"]:
@@ -334,7 +463,13 @@ def format_facts(facts: dict) -> str:
     lines.append(f"  short nights (<7h): {r.get('short_nights', 0)} of {r.get('nights_recorded', 0)} recorded")
     if "readiness_taps" in r:
         lines.append(f"  readiness taps: {r['readiness_taps']}, mean {r['readiness_mean']} of 5")
-    lines += ["", "THIS BLOCK'S EMPHASIS: " + (", ".join(facts["emphasis"]) or "none")]
+    ran = facts.get("emphasis_ran") or []
+    lines += ["", "WEAK-POINT WORK THAT RAN THIS BLOCK (sets logged on Cardio+Abs days beyond the ab block): "
+              + ("; ".join(f"{e['muscle']} — {', '.join(e['exercises'])}, {e['sets']} sets" for e in ran)
+                 if ran else "none — every Cardio+Abs day ended after the ab block")]
+    stored = facts.get("emphasis_stored") or []
+    if stored and set(stored) != {e["muscle"] for e in ran}:
+        lines.append(f"  (a stored pick named {', '.join(stored)}; it did not run, so it was not this block's emphasis)")
     nxt = facts.get("emphasis_next") or []
     if nxt:
         lines.append("NEXT BLOCK'S EMPHASIS, already set by the athlete (do not propose again): "
@@ -342,7 +477,16 @@ def format_facts(facts: dict) -> str:
     else:
         lines.append("NEXT BLOCK'S EMPHASIS: not set — the programme picks the two furthest under band "
                      "unless an Emphasis-next is approved")
-    if facts["standing_constraints"]:
+    standing = facts.get("standing") or []
+    if standing:
+        by_name = {f["exercise"].lower(): f for f in facts["strength"]}
+        lines += ["", "STANDING DECISIONS IN FORCE — the card asks keep-or-clear for each; recommend one:"]
+        for c in standing:
+            cap = f"max load {float(c['max_load_kg']):g}kg" if c.get("max_load_kg") is not None else "note"
+            f = by_name.get((c["exercise"] or "").lower())
+            result = (f" — this block {f['this_set']}" + (f", {f['delta_pct']:+g}%" if f and "delta_pct" in f else "")) if f else ""
+            lines.append(f"  {c['exercise']}: {cap}, since {c.get('set_on')}" + (f" — {c['note']}" if c.get("note") else "") + result)
+    elif facts.get("standing_constraints"):
         lines += ["", "STANDING DECISIONS IN FORCE:", facts["standing_constraints"]]
     if facts["adjustments"]:
         lines += ["", "DEPARTURES FROM THE PROGRAMME THIS BLOCK (coach's reasons):"]
@@ -471,6 +615,10 @@ def prepare_block_review(memory: dict, prompt: str, client, dry_run: bool = DRY_
         return None
     sheet = format_facts(facts)
     written = narrate(client, sheet, facts=facts)
+    have = {p["line"].strip().lower() for p in written["proposals"]}
+    for p in constraint_proposals(facts.get("standing") or [], facts.get("strength") or []):
+        if p["line"].lower() not in have:
+            written["proposals"].append(p)
     row = {"block_start": facts["window"]["block_start"], "window_since": facts["window"]["since"],
            "window_until": facts["window"]["until"], "facts": json.dumps(facts),
            "narrative": written["narrative"], "proposals": json.dumps(written["proposals"]),
@@ -583,7 +731,8 @@ def card_rows(facts) -> dict:
     compared.sort(key=lambda s: -float(s["delta_pct"]))
     lifts = [{"exercise": s.get("exercise"), "delta_pct": s.get("delta_pct"), "verdict": s.get("verdict"),
               "this_set": s.get("this_set"), "prev_set": s.get("prev_set"),
-              "loose": bool(s.get("this_loose") or s.get("prev_loose"))} for s in compared + fresh]
+              "loose": bool(s.get("this_loose") or s.get("prev_loose")),
+              "bodyweight": bool(s.get("bodyweight"))} for s in compared + fresh]
     volume = [{"muscle": v.get("muscle"), "sets": v.get("sets_per_week"), "band": v.get("band"),
                "under_by": v.get("under_by") or 0, "over_by": v.get("over_by") or 0} for v in facts.get("volume") or []]
     return {"lifts": lifts, "volume": volume}
@@ -599,6 +748,8 @@ def proposal_parts(line: str) -> dict:
     parts = [p.strip() for p in rest.split("|")]
     subject = parts[0] if parts else rest.strip()
     detail = " · ".join(p for p in parts[1:] if p)
+    if kind == "decision" and detail.lower() == "clear":
+        kind, detail = "standing decision", "Clear it — approve to lift it, leave it to keep it"
     return {"kind": kind, "subject": subject, "detail": detail}
 
 

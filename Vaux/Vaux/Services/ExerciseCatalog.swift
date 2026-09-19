@@ -31,6 +31,10 @@ final class ExerciseCatalog {
     /// Seeded with the built-in defaults so standard movements categorize
     /// even before the remote catalog loads (or when it's empty).
     private var lookup: [String: String] = ExerciseCatalog.builtinGroups
+    /// Lowercased alias → the library's name, so one lift logged under two
+    /// spellings ("Incline Press", "Incline Barbell Press") is one lift on
+    /// the strength page, exactly as the block review merges it.
+    private var canonical: [String: String] = [:]
 
     /// Loads the catalog at most once per app run. Subsequent calls are
     /// no-ops. Safe to call repeatedly from view-model `load()` paths.
@@ -52,7 +56,16 @@ final class ExerciseCatalog {
             // buckets.
             let placeholders: Set<String> = ["unknown", "other", "uncategorized", "n/a", "none", "tbd"]
             var map = Self.builtinGroups
+            var names: [String: String] = [:]
             for row in rows {
+                let name = row.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty {
+                    names[name.lowercased()] = name
+                    for alias in row.aliases ?? [] {
+                        let key = alias.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
+                        if !key.isEmpty { names[key] = name }
+                    }
+                }
                 guard let group = row.muscleGroup, !group.isEmpty,
                       !placeholders.contains(group.lowercased()) else { continue }
                 // A coarse region label never coarsens a built-in that knows
@@ -69,6 +82,7 @@ final class ExerciseCatalog {
                 }
             }
             lookup = map
+            canonical = names
             isLoaded = true
         } catch {
             print("[ExerciseCatalog] Load failed: \(error.localizedDescription)")
@@ -87,6 +101,13 @@ final class ExerciseCatalog {
     /// match a short generic key first.
     func muscleGroup(for exercise: String) -> String? {
         Self.resolveGroup(exercise, in: lookup)
+    }
+
+    /// The library's name for `exercise` when the name or one of its aliases
+    /// matches; otherwise the name as given.
+    func canonicalName(for exercise: String) -> String {
+        let key = exercise.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
+        return canonical[key] ?? exercise
     }
 
     /// The group a table gives an exercise: exact key first, then the

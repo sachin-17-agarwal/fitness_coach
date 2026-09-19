@@ -509,6 +509,29 @@ A dated fix removes the orphan pick rows dated 19 Sep and queues the
 emphasis again; FACTS_VERSION 3 regenerates the review. The plain flat
 verdict is spelled "flat"; "held" is reserved for a standing decision.
 
+**Audit of the whole sheet, 19 Sep evening**, after hours of wrong readings:
+- Best set: the BEST estimate among sets of up to 20 reps wins, marked loose
+  past 12 (server `strength_facts`, app `StrengthViewModel`). Strict-first
+  read Leg Press 245 x 15 as flat behind a lighter 12-rep set.
+- Bodyweight lifts scored plate plus the athlete's share of bodyweight from
+  the weigh-in on or before the set (`weigh_ins`, `kg_on`, `effective_load`),
+  as the app does. Dips +26.5% was the plate alone.
+- One lift under two names is one lift where the exercise library says so
+  (`canonical_names` on the server, `ExerciseCatalog.canonicalName` in the
+  app); a dated fix records "Incline Press" as an alias of "Incline Barbell
+  Press".
+- The block's emphasis is what RAN: sets logged on its Cardio+Abs days beyond
+  the ab block (`emphasis_that_ran`), never a pick row; the sheet says when a
+  stored pick did not run. The narrative may credit weak-point work only when
+  that line lists the muscle.
+- Every standing decision in force is put to the athlete as a keep-or-clear
+  line the system adds (`constraint_proposals`), with its age and the lift's
+  block result; approving clears it through the existing `Decision:` path.
+- Card fold shows lifts that moved or are held and muscles outside their
+  band, with "ALL n LIFTS / MUSCLES" toggles; bodyweight sets carry "+BW".
+FACTS_VERSION 4 regenerates the review once; no further regenerations this
+block.
+
 **Goal.** The morning after the block's last session, on a rest day, a
 Home card and a waiting coach message carry the review and two or three
 proposed changes; "yes to 1 and 3" records them.

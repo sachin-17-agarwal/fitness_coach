@@ -134,6 +134,32 @@ def _fix_2026_09_19_restore_next_emphasis() -> str:
     return f"removed {len(orphans)} orphan pick row(s) dated 2026-09-19; " + " | ".join(notes)
 
 
+def _fix_2026_09_19_incline_press_alias() -> str:
+    """The template says "Incline Press", the log says "Incline Barbell
+    Press" (programme.py has said so since August); the review compared them
+    as two lifts. Record the alias in the exercise library so every reader
+    treats them as one. Nothing to do when the library has neither name."""
+    from data import get_supabase
+    from exercises import add_alias
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    rows = (supabase.table("exercises").select("id, name, aliases").execute()).data or []
+    names = {(r.get("name") or "").strip().lower(): r for r in rows}
+    if "incline barbell press" in names:
+        aliases = names["incline barbell press"].get("aliases") or []
+        if any(isinstance(a, str) and a.strip().lower() == "incline press" for a in aliases):
+            return "Incline Press already an alias of Incline Barbell Press"
+        if not add_alias("Incline Barbell Press", "Incline Press"):
+            raise RuntimeError("could not add the alias")
+        return "Incline Press recorded as an alias of Incline Barbell Press"
+    if "incline press" in names:
+        if not add_alias("Incline Press", "Incline Barbell Press"):
+            raise RuntimeError("could not add the alias")
+        return "Incline Barbell Press recorded as an alias of Incline Press"
+    return "library has neither incline press; nothing merged"
+
+
 def _fix_block_review_facts_version() -> str:
     """Remove any unanswered review whose fact sheet predates the current
     FACTS_VERSION, so Home prepares it again under the current rules."""
@@ -166,6 +192,7 @@ FIXES = [
     ("2026-09-19-block-review-emphasis", _fix_2026_09_19_block_review_emphasis),
     ("2026-09-19-block-review-loose-sets", _fix_2026_09_19_block_review_loose_sets),
     ("2026-09-19-restore-next-emphasis", _fix_2026_09_19_restore_next_emphasis),
+    ("2026-09-19-incline-press-alias", _fix_2026_09_19_incline_press_alias),
     (_facts_version_key(), _fix_block_review_facts_version),
 ]
 
