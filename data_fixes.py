@@ -160,6 +160,26 @@ def _fix_2026_09_19_incline_press_alias() -> str:
     return "library has neither incline press; nothing merged"
 
 
+def _fix_2026_09_19_clear_cable_crunch_cap() -> str:
+    """Decided in chat on 19 Sep: the 105kg Cable Crunch cap comes off for
+    next block. The gym has two heavier stacks (about 130kg) that are usually
+    taken; the athlete will use them when free and reassess next review if
+    they prove too hard to get. Cleared through the same path a chat
+    `Decision:` line takes, so the coach and the programme stop honouring it."""
+    from constraints import load_active, norm_name, record_decisions
+    from data import get_supabase
+    if not get_supabase():
+        raise RuntimeError("no database connection")
+    active = [c for c in load_active() if norm_name(c.get("exercise", "")) == norm_name("Cable Crunch")]
+    if not active:
+        return "no active Cable Crunch constraint; nothing to clear"
+    record_decisions("Decision: Cable Crunch | clear")
+    still = [c for c in load_active() if norm_name(c.get("exercise", "")) == norm_name("Cable Crunch")]
+    if still:
+        raise RuntimeError("Cable Crunch constraint still active after the clear")
+    return f"cleared the Cable Crunch cap ({active[0].get('max_load_kg')}kg, since {active[0].get('set_on')})"
+
+
 def _fix_block_review_facts_version() -> str:
     """Remove any unanswered review whose fact sheet predates the current
     FACTS_VERSION, so Home prepares it again under the current rules."""
@@ -193,6 +213,7 @@ FIXES = [
     ("2026-09-19-block-review-loose-sets", _fix_2026_09_19_block_review_loose_sets),
     ("2026-09-19-restore-next-emphasis", _fix_2026_09_19_restore_next_emphasis),
     ("2026-09-19-incline-press-alias", _fix_2026_09_19_incline_press_alias),
+    ("2026-09-19-clear-cable-crunch-cap", _fix_2026_09_19_clear_cable_crunch_cap),
     (_facts_version_key(), _fix_block_review_facts_version),
 ]
 

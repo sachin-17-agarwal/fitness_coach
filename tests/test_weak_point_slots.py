@@ -98,6 +98,28 @@ class DataFixTests(unittest.TestCase):
             self.assertEqual(data_fixes.apply_pending({}), [])
             store.assert_not_called()
 
+    def test_the_cable_crunch_cap_is_cleared_through_the_decision_path(self):
+        cap = {"exercise": "Cable Crunch", "max_load_kg": 105, "note": "stack tops out", "set_on": "2026-09-15"}
+        state = {"active": [cap, {"exercise": "Machine Shoulder Press", "max_load_kg": 70, "set_on": "2026-09-17"}]}
+
+        def load_active():
+            return list(state["active"])
+
+        def record(line):
+            self.assertEqual(line, "Decision: Cable Crunch | clear")
+            state["active"] = [c for c in state["active"] if c["exercise"] != "Cable Crunch"]
+            return 0
+
+        with patch("data.get_supabase", return_value=object()), \
+             patch("constraints.load_active", side_effect=load_active), \
+             patch("constraints.record_decisions", side_effect=record):
+            note = data_fixes._fix_2026_09_19_clear_cable_crunch_cap()
+        self.assertIn("cleared the Cable Crunch cap (105kg, since 2026-09-15)", note)
+        self.assertEqual([c["exercise"] for c in state["active"]], ["Machine Shoulder Press"], "the shoulder cap stays")
+        with patch("data.get_supabase", return_value=object()), \
+             patch("constraints.load_active", side_effect=load_active):
+            self.assertIn("nothing to clear", data_fixes._fix_2026_09_19_clear_cable_crunch_cap())
+
     def test_the_emphasis_fix_refuses_a_refusal(self):
         with patch("data.get_supabase", return_value=object()), \
              patch("coach.load_system_prompt", return_value="PROMPT"), \
