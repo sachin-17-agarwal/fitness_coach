@@ -480,6 +480,17 @@ set of 13–20 reps when a stretch has nothing tighter, marked as a looser
 estimate on the sheet and with "~" before the set on the card. A third
 dated fix removes unanswered reviews computed before the rule.
 
+Third re-read of the same review: Machine Shoulder Press showed a red drop
+under its 70 kg cap while the strength page read HELD, the "what to change"
+paragraph never mentioned that next block's emphasis is already set, and
+the volume figures wrapped. The sheet now marks lifts under a standing
+decision "held (standing decision)" as the app's `judge` does (a rise still
+reads up), the `changes` paragraph must open with next block's emphasis as
+set and say whether the numbers still support each, and the fact sheet
+carries `FACTS_VERSION`; one data fix keyed on that number removes any
+unanswered review built under an older version, so future rule changes
+need only a bump.
+
 **Goal.** The morning after the block's last session, on a rest day, a
 Home card and a waiting coach message carry the review and two or three
 proposed changes; "yes to 1 and 3" records them.

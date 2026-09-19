@@ -123,6 +123,25 @@ class FactTests(unittest.TestCase):
         self.assertEqual(slc["verdict"], "first block")
         self.assertFalse(lp["this_loose"])
 
+    def test_a_lift_under_a_standing_decision_reads_held_not_down_unless_it_rose(self):
+        # 19 Sep 2026: Machine Shoulder Press -21.7% under its 70kg cap read
+        # red "down" on the card while the strength page read HELD.
+        rows = [_set("2026-08-20", "Machine Shoulder Press", 70, 12, "p3"), _set("2026-09-12", "Machine Shoulder Press", 55, 11, "t3"),
+                _set("2026-08-20", "Cable Crunch", 100, 12, "p3"), _set("2026-09-12", "Cable Crunch", 105, 12, "t3"),
+                _set("2026-08-20", "Leg Press", 240, 12, "p3"), _set("2026-09-12", "Leg Press", 205, 12, "t3")]
+        weeks = {"p3": 3, "t3": 3}
+        from constraints import norm_name
+        held = {norm_name("Machine Shoulder Press"), norm_name("Cable Crunch")}
+        facts = {f["exercise"]: f for f in br.strength_facts(rows, weeks, self.WINDOW, held)}
+        self.assertEqual(facts["Machine Shoulder Press"]["verdict"], "held")
+        self.assertTrue(facts["Machine Shoulder Press"]["held_by_decision"])
+        self.assertEqual(facts["Cable Crunch"]["verdict"], "up")          # a rise under a hold still reads up
+        self.assertEqual(facts["Leg Press"]["verdict"], "down")           # no decision on it: a drop is a drop
+        sheet = br.format_facts({"window": {"since": "2026-09-01", "until": "2026-09-14", "complete": True},
+                                 "strength": [facts["Machine Shoulder Press"]], "volume": [], "recovery": {},
+                                 "emphasis": [], "emphasis_next": [], "standing_constraints": "", "adjustments": []})
+        self.assertIn("— held (standing decision: flat because it was told to be)", sheet)
+
     def test_a_strict_set_outranks_a_loose_one_and_a_loose_peak_beats_a_lighter_early_strict_set(self):
         # 19 Sep 2026: the leg curl's peak week was 110 x 16; the review had
         # compared a week-1 100 x 11 instead and called the lift down 10.9%.

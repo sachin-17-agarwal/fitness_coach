@@ -39,6 +39,10 @@ E1RM_MAX_REPS = 12
 # review threw the set away and fell back to a lighter week-1 set.
 E1RM_LOOSE_MAX_REPS = 20
 PEAK_WEEK = 3
+# Bumped whenever the fact sheet's rules change; an unanswered review built
+# on an older version is removed at the next start so Home prepares it again
+# with numbers that match the app (data_fixes keys a fix on this number).
+FACTS_VERSION = 2
 
 # The narrative arrives as four named paragraphs, so the card can always show
 # them under their labels; the model cannot leave a label out.
@@ -83,6 +87,11 @@ Rules:
     Decision: <Exercise> | clear
     Emphasis-next: <muscle> | <one-line note>
   Propose nothing you cannot justify from the sheet. Zero proposals is a valid answer.
+- `changes` opens by stating next block's emphasis exactly as the sheet gives it (set, with
+  the movement, or not set), then one sentence per muscle on whether this block's numbers
+  still support it. Do not propose changing it; the athlete changes it in chat.
+- A lift the sheet marks "held (standing decision)" is flat because it was told to be. Say
+  so; it is not a drop and needs no proposal.
 - `Emphasis-next` NAMES A WEAK POINT for the coming block: extra straight sets on that
   muscle, the note being the movement to add. It is only for a muscle UNDER its band.
   A muscle OVER its band is never an Emphasis-next; say it in the volume paragraph and
@@ -131,12 +140,17 @@ def epley(load: float, reps: int) -> float:
     return load * (1 + reps / 30.0)
 
 
-def strength_facts(rows: list[dict], weeks: dict, window: dict) -> list[dict]:
+def strength_facts(rows: list[dict], weeks: dict, window: dict, held: set | None = None) -> list[dict]:
     """Per lift: this block's peak-week best against the previous block's,
     both as Epley estimates from sets of 12 reps or fewer. When a stretch has
     only higher-rep sets (up to E1RM_LOOSE_MAX_REPS) the best of those stands
     in, marked loose, as the app does. A lift with no peak-week set uses its
-    block best and says so."""
+    block best and says so. A lift in `held` (normalised names under a
+    standing decision) reads "held" unless it rose, as the app's strength
+    page does: flat because it was told to be, not a drop."""
+    from constraints import norm_name
+    held = held or set()
+
     def points(rs, low, high):
         return [(epley(float(r["actual_weight_kg"]), int(r["actual_reps"])), r) for r in rs
                 if not r.get("is_warmup") and r.get("actual_weight_kg") and r.get("actual_reps")
@@ -184,6 +198,9 @@ def strength_facts(rows: list[dict], weeks: dict, window: dict) -> list[dict]:
                          "prev_loose": prev_best[2],
                          "delta_pct": round(delta, 1),
                          "verdict": "up" if delta >= 1 else ("down" if delta <= -5 else "held")})
+            if norm_name(name) in held and fact["verdict"] != "up":
+                fact["verdict"] = "held"
+                fact["held_by_decision"] = True
         else:
             fact["verdict"] = "first block"
         out.append(fact)
@@ -240,7 +257,10 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
             .select("date, exercise, workout_session_id, is_warmup, actual_weight_kg, actual_reps, actual_rpe")
             .gte("date", since).lte("date", window["until"]).order("date").execute()).data or []
     weeks = _fetch_session_weeks(120)
-    strength = strength_facts(rows, weeks, window)
+    from constraints import norm_name
+    constraints = _standing_constraints()
+    held = {norm_name(c["exercise"]) for c in constraints if c.get("exercise")}
+    strength = strength_facts(rows, weeks, window, held)
 
     bands = parse_volume_bands(prompt)
     volume = volume_between(supabase, window["since"], window["until"])
@@ -267,7 +287,8 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
         "recovery": recovery,
         "emphasis": [p.get("muscle") for p in (emphasis.get("picks") or [])],
         "emphasis_next": emphasis_next,
-        "standing_constraints": format_constraints(_standing_constraints()).strip(),
+        "standing_constraints": format_constraints(constraints).strip(),
+        "version": FACTS_VERSION,
         "adjustments": [{"date": d.get("date"), "exercise": d.get("exercise"), "reason": d.get("reason")}
                         for d in decisions][:12],
     }
@@ -286,6 +307,7 @@ def format_facts(facts: dict) -> str:
         if "delta_pct" in s:
             lines.append(f"  {s['exercise']}: {s['this_e1rm']}kg ({s['this_set']}) vs {s['prev_e1rm']}kg "
                          f"({s['prev_set']}) = {s['delta_pct']:+g}% — {s['verdict']}"
+                         + (" (standing decision: flat because it was told to be)" if s.get("held_by_decision") else "")
                          + ("" if s["this_from_peak_week"] else " [block best, no peak-week set]")
                          + (" [estimate from a set past 12 reps, as the app shows it]"
                             if s.get("this_loose") or s.get("prev_loose") else ""))
