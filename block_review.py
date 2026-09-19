@@ -77,20 +77,26 @@ def review_window(sessions: list[dict], memory: dict, today: str) -> dict | None
     """The block under review and the one before it, as date ranges.
 
     Reviews run the morning after a block ends, when memory already points
-    at week 1 day 1 of the new block — so the block under review is the
-    PREVIOUS block in `weakpoints` terms. Called mid-block (an explicit
-    "block review" in chat), the block in progress is reviewed so far."""
-    from weakpoints import block_start, previous_block_range
+    at week 1 day 1 of the new block — so the block under review is the one
+    that has just ended: its last sixteen sessions, or from its stamped
+    opening session, through today. Called mid-block (an explicit "block
+    review" in chat), the block in progress is reviewed so far."""
+    from weakpoints import block_start, ended_block_range, previous_block_range
     week = int(memory.get("mesocycle_week", 1) or 1)
     day = int(memory.get("mesocycle_day", 1) or 1)
-    start = block_start(sessions, week, day, today)
-    if start is None:
-        return None
-    # At week 1 day 1 no session of the new block has been stamped yet, so
-    # block_start still answers with the block that just ended: [start,
-    # today] is that block plus the rest days after it, complete. Any other
-    # position is a block in progress, reviewed so far.
     rolled_over = week == 1 and day == 1
+    if rolled_over:
+        # Never block_start here: with no stamped opening session in reach it
+        # answers "today", and the review of 19 Sep 2026 read a whole block
+        # as one day's sets (every muscle at 0.0 sets/week, 1 of 1 nights).
+        ended = ended_block_range(sessions, today)
+        if ended is None:
+            return None
+        start = ended[0]
+    else:
+        start = block_start(sessions, week, day, today)
+        if start is None:
+            return None
     since, until = start, today
     before = previous_block_range(sessions, start)
     return {"block_start": since, "since": since, "until": until,
@@ -387,10 +393,11 @@ def prepare_if_due(memory: dict, prompt: str, client) -> dict | None:
     if (get_workout_state() or {}).get("workout_mode") == "active":
         return None
     latest = latest_block_review()
-    from weakpoints import block_start, rotation_sessions
+    from weakpoints import rotation_sessions
     supabase = get_supabase()
     today = now_local().strftime("%Y-%m-%d")
-    start = block_start(rotation_sessions(supabase), week, day, today) if supabase else None
+    window = review_window(rotation_sessions(supabase), memory, today) if supabase else None
+    start = window["block_start"] if window else None
     if latest and start and str(latest.get("block_start")) >= str(start):
         return None   # already reviewed at or after this boundary
     return prepare_block_review(memory, prompt, client)
@@ -412,6 +419,41 @@ def render_review(row: dict) -> str:
         parts.append("(Dry run: this first review records nothing whatever you answer; your answer is kept "
                      "so we can compare it with what you would have decided.)")
     return "\n\n".join(parts)
+
+
+# ── Structure for the Home card ─────────────────────────────────────────────
+# The narrative is prose in labelled paragraphs ("Strength: …", "Volume: …");
+# the card shows each under its label instead of as one block of text.
+_SECTION_RE = re.compile(r"^(?P<label>[A-Z][A-Za-z ]{1,30}):\s+(?P<body>.+)$", re.DOTALL)
+
+
+def review_sections(narrative: str) -> list[dict]:
+    """Paragraphs of the narrative as {label, body}; a paragraph with no
+    leading label keeps an empty one."""
+    out = []
+    for para in re.split(r"\n\s*\n", (narrative or "").strip()):
+        para = para.strip()
+        if not para:
+            continue
+        m = _SECTION_RE.match(para)
+        if m:
+            out.append({"label": m.group("label").strip().upper(), "body": m.group("body").strip()})
+        else:
+            out.append({"label": "", "body": para})
+    return out
+
+
+def proposal_parts(line: str) -> dict:
+    """A proposal line in the grammar split for display: kind ("decision" or
+    "emphasis"), subject (the lift or muscle) and detail (the rest, parts
+    joined with a middle dot)."""
+    head, _, rest = (line or "").partition(":")
+    head = head.strip().lower()
+    kind = "emphasis" if head.startswith("emphasis") else ("decision" if head == "decision" else head)
+    parts = [p.strip() for p in rest.split("|")]
+    subject = parts[0] if parts else rest.strip()
+    detail = " · ".join(p for p in parts[1:] if p)
+    return {"kind": kind, "subject": subject, "detail": detail}
 
 
 _ANSWER_RE = re.compile(r"^\s*(?P<verb>yes|approve|ok|okay|no|decline|reject)\b(?P<rest>.*)$", re.IGNORECASE)

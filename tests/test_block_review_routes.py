@@ -38,6 +38,12 @@ class BlockReviewRouteTests(unittest.TestCase):
         self.assertTrue(body["dry_run"])
         self.assertIn("Strength held.", body["text"])
         self.assertEqual(body["proposals"][0]["line"], "Decision: Cable Crunch | clear")
+        # The card renders structure, not the text blob.
+        self.assertEqual(body["proposals"][0]["kind"], "decision")
+        self.assertEqual(body["proposals"][0]["subject"], "Cable Crunch")
+        self.assertEqual(body["proposals"][0]["detail"], "clear")
+        self.assertEqual(body["sections"], [{"label": "", "body": "Strength held."}])
+        self.assertEqual(body["window"], {"since": "2026-08-19", "until": None})
 
     def test_a_failed_preparation_still_returns_the_latest_review(self):
         with patch.object(webhook, "get_settings", return_value=_Settings()), \

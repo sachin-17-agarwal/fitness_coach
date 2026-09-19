@@ -66,15 +66,30 @@ struct BlockReviewResponse: Codable, Sendable {
     struct Proposal: Codable, Sendable, Hashable {
         let line: String
         let rationale: String?
+        /// "decision" or "emphasis"; the lift or muscle; the rest of the line.
+        let kind: String?
+        let subject: String?
+        let detail: String?
+    }
+    /// One labelled paragraph of the narrative ("STRENGTH", "VOLUME", …).
+    struct Section: Codable, Sendable, Hashable {
+        let label: String
+        let body: String
+    }
+    struct Window: Codable, Sendable {
+        let since: String?
+        let until: String?
     }
     let status: String
     let blockStart: String?
     let dryRun: Bool?
     let text: String?
     let proposals: [Proposal]?
+    let sections: [Section]?
+    let window: Window?
 
     enum CodingKeys: String, CodingKey {
-        case status, text, proposals
+        case status, text, proposals, sections, window
         case blockStart = "block_start"
         case dryRun = "dry_run"
     }

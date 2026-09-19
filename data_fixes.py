@@ -39,8 +39,26 @@ def _fix_2026_09_19_emphasis_triceps_chest() -> str:
     return " | ".join(notes)
 
 
+def _fix_2026_09_19_block_review_window() -> str:
+    """The first block review (19 Sep) was built on a one-day window: at
+    rollover block_start answered "today" because no stamped opening session
+    sat within its five-week floor. Remove every review whose block starts on
+    the day it was read, so the Home card prepares the real one on the next
+    open. Its dry-run answer, if any, described a review that never existed."""
+    from data import get_supabase
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    rows = (supabase.table("block_reviews").select("id, block_start, window_until").execute()).data or []
+    bad = [r["id"] for r in rows if str(r.get("block_start")) == str(r.get("window_until"))]
+    for rid in bad:
+        supabase.table("block_reviews").delete().eq("id", rid).execute()
+    return f"removed {len(bad)} one-day review(s): {bad}"
+
+
 FIXES = [
     ("2026-09-19-emphasis-triceps-chest", _fix_2026_09_19_emphasis_triceps_chest),
+    ("2026-09-19-block-review-window", _fix_2026_09_19_block_review_window),
 ]
 
 
