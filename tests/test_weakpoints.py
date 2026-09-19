@@ -82,6 +82,15 @@ class BlockStartTests(unittest.TestCase):
     def test_a_block_about_to_begin_starts_today(self):
         self.assertEqual(block_start(self.SESSIONS, 1, 1, "2026-08-21"), "2026-08-21")
 
+    def test_a_block_about_to_begin_starts_after_a_session_finished_today(self):
+        # 19 Sep 2026: the deload's last session was today and memory had
+        # rolled to week 1 day 1. "Today" put the new block's first day on
+        # the old block's last, and every range built from it lost that session.
+        self.assertEqual(block_start(self.SESSIONS, 1, 1, "2026-08-20"), "2026-08-21")
+        self.assertEqual(weakpoints.block_boundary(self.SESSIONS, "2026-08-21"), "2026-08-20")
+        self.assertEqual(weakpoints.block_boundary(self.SESSIONS, "2026-08-17"), "2026-08-16")
+        self.assertIsNone(weakpoints.block_boundary(self.SESSIONS, "2026-08-01"))
+
     def test_a_stamp_wins_over_the_count(self):
         sessions = [dict(s) for s in self.SESSIONS]
         sessions[8]["mesocycle_week"], sessions[8]["mesocycle_day"] = 1, 1   # 2026-08-09
@@ -326,6 +335,66 @@ class EmphasisTests(unittest.TestCase):
         self.assertEqual([r for r in fake.decisions if r["exercise"].startswith("Emphasis-next")], [],
                          "the pending emphasis is consumed once used")
         self.assertIn("Triceps: Emphasis this block", format_block_weak_points(info))
+
+    def test_a_pick_made_on_a_rest_day_is_the_same_pick_on_the_opening_day(self):
+        """The pick is keyed to the block, not to the day it was made. Made
+        on the rest day after the last session (start = the next day), it is
+        found again once the opening session has been logged and the start
+        has moved to that session's date; the emphasis is not consumed twice
+        and nothing is recomputed."""
+        import datetime
+        sessions = self._sessions()                       # 24 sessions, 1–24 Aug
+        pending = [{"id": 9, "date": "2026-08-23", "exercise": "Emphasis-next: Triceps",
+                    "reason": "overhead cable extension", "plan": "{}"}]
+        # Rest day 25 Aug, memory at week 1 day 1: the block begins 25 Aug.
+        fake = _FakeSupabase(sessions, self._full_sets(), decisions=pending)
+        with patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch.object(weakpoints, "now_local", return_value=datetime.datetime(2026, 8, 25)):
+            first = weakpoints.current_block_weak_points({"mesocycle_week": 1, "mesocycle_day": 1}, _prompt())
+        self.assertEqual(first["block_start"], "2026-08-25")
+        self.assertEqual([p["muscle"] for p in first["picks"]], ["Triceps"])
+        self.assertEqual([r["date"] for r in fake.written], ["2026-08-25"])
+        # 27 Aug: Pull was logged on the 26th, memory at week 1 day 2, so the
+        # start is now the 26th. The stored pick is dated the 25th.
+        stored = [dict(r, id=100 + i) for i, r in enumerate(fake.written)]
+        later = _FakeSupabase(sessions + [{"id": 30, "date": "2026-08-26", "type": "Pull", "status": "completed",
+                                           "mesocycle_week": None, "mesocycle_day": None}],
+                              self._full_sets(), decisions=stored)
+        with patch.object(weakpoints, "get_supabase", return_value=later), \
+             patch.object(weakpoints, "now_local", return_value=datetime.datetime(2026, 8, 27)):
+            second = weakpoints.current_block_weak_points({"mesocycle_week": 1, "mesocycle_day": 2}, _prompt())
+        self.assertEqual(second["block_start"], "2026-08-26")
+        self.assertEqual(second["source"], "stored")
+        self.assertEqual([p["muscle"] for p in second["picks"]], ["Triceps"])
+        self.assertEqual(later.written, [], "nothing recomputed, nothing consumed")
+
+    def test_the_review_reads_a_blocks_pick_without_making_one(self):
+        rows = [{"id": 1, "date": "2026-08-02", "exercise": "Weak-point: Hamstrings", "reason": "under", "plan": "{}"},
+                {"id": 2, "date": "2026-08-21", "exercise": "Weak-point: Triceps", "reason": "named", "plan": "{}"},
+                {"id": 3, "date": "2026-08-21", "exercise": "Weak-point: Chest", "reason": "named", "plan": "{}"},
+                {"id": 4, "date": "2026-09-19", "exercise": "Weak-point: none", "reason": "nothing under", "plan": "{}"}]
+        fake = _FakeSupabase([], [], decisions=rows)
+        picks = weakpoints.block_picks_between(fake, "2026-08-20", "2026-09-18")
+        self.assertEqual([p["muscle"] for p in picks], ["Triceps", "Chest"])
+        self.assertEqual(weakpoints.block_picks_between(fake, "2026-09-18", "2026-09-19"), [], "'none' is no pick")
+        self.assertEqual([p["muscle"] for p in weakpoints.block_picks_between(fake, None, "2026-08-10")], ["Hamstrings"])
+        self.assertEqual(fake.written, [])
+
+    def test_the_restore_fix_removes_the_orphan_pick_and_queues_the_emphasis_again(self):
+        import datetime
+        import data_fixes
+        rows = [{"id": 1, "date": "2026-09-19", "exercise": "Weak-point: Triceps", "reason": "named", "plan": "{}"},
+                {"id": 2, "date": "2026-09-19", "exercise": "Weak-point: Chest", "reason": "named", "plan": "{}"},
+                {"id": 3, "date": "2026-09-02", "exercise": "Weak-point: Triceps", "reason": "last block", "plan": "{}"}]
+        fake = _FakeSupabase([], [], decisions=rows)
+        with patch("data.get_supabase", return_value=fake), patch.object(weakpoints, "get_supabase", return_value=fake), \
+             patch("coach.load_system_prompt", return_value=_prompt()), \
+             patch.object(weakpoints, "now_local", return_value=datetime.datetime(2026, 9, 19, 18)):
+            note = data_fixes._fix_2026_09_19_restore_next_emphasis()
+        self.assertIn("removed 2 orphan pick row(s)", note)
+        self.assertEqual([r["id"] for r in fake.decisions], [3], "last block's pick is untouched")
+        self.assertEqual([r["exercise"] for r in fake.written], ["Emphasis-next: Triceps", "Emphasis-next: Chest"])
+        self.assertEqual([r["reason"] for r in fake.written], ["Overhead Cable Extension", "Cable Fly (Low To High)"])
 
     def test_a_stalled_lift_nominates_its_muscle_when_nothing_is_under(self):
         fake = _FakeSupabase(self._sessions(), self._full_sets(stalled="Tricep Pushdown"))

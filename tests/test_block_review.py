@@ -39,6 +39,7 @@ class WindowTests(unittest.TestCase):
         self.assertEqual((w["since"], w["until"]), ("2026-09-04", "2026-09-19"))
         self.assertEqual((w["prev_since"], w["prev_until"]), ("2026-08-01", "2026-08-16"))
         self.assertEqual(w["block_start"], "2026-09-04")
+        self.assertEqual(w["last_session"], "2026-09-19")
 
     def test_a_block_that_ran_long_still_starts_at_its_stamped_opening(self):
         # Sixteen sessions over 45 days: the five-week floor in block_start
@@ -137,6 +138,11 @@ class FactTests(unittest.TestCase):
         self.assertTrue(facts["Machine Shoulder Press"]["held_by_decision"])
         self.assertEqual(facts["Cable Crunch"]["verdict"], "up")          # a rise under a hold still reads up
         self.assertEqual(facts["Leg Press"]["verdict"], "down")           # no decision on it: a drop is a drop
+        # Flat with no decision is "flat", never "held": Lat Pulldown -0.6% read HELD on the card.
+        flat = br.strength_facts([_set("2026-08-20", "Lat Pulldown", 85, 10, "p3"), _set("2026-09-12", "Lat Pulldown", 85, 10, "t3")],
+                                 weeks, self.WINDOW, held)
+        self.assertEqual(flat[0]["verdict"], "flat")
+        self.assertNotIn("held_by_decision", flat[0])
         sheet = br.format_facts({"window": {"since": "2026-09-01", "until": "2026-09-14", "complete": True},
                                  "strength": [facts["Machine Shoulder Press"]], "volume": [], "recovery": {},
                                  "emphasis": [], "emphasis_next": [], "standing_constraints": "", "adjustments": []})

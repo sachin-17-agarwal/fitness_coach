@@ -116,10 +116,27 @@ def block_start(sessions: list[dict], week: int, day: int, today: str) -> str | 
         return stamped[-1]["date"]
     done = max(0, (week - 1) * ROTATION + (day - 1))
     if done == 0:
+        # Nothing of the new block is done. It begins no earlier than the
+        # day after the last finished session: when that session was today
+        # (the deload's last day, memory already rolled over), "today" would
+        # put the block's first day on the old block's last, and every range
+        # built from the start would drop that session.
+        last = sessions[-1]["date"] if sessions else None
+        if last and last >= today:
+            return (date.fromisoformat(last) + timedelta(days=1)).isoformat()
         return today
     if len(sessions) < done:
         return None
     return sessions[-done]["date"]
+
+
+def block_boundary(sessions: list[dict], start: str) -> str | None:
+    """The last finished session before `start`: the date that identifies
+    the block after it. A block's first day drifts (a rest day before the
+    opening session, an unstamped opener), the boundary does not — so a
+    pick stored on any day after the boundary belongs to that block."""
+    before = [s["date"] for s in sessions if (s.get("date") or "") < start]
+    return before[-1] if before else None
 
 
 def ended_block_range(sessions: list[dict], today: str) -> tuple | None:
@@ -198,15 +215,7 @@ def rank_by_shortfall(volume: dict, bands: dict, exclude=EXCLUDED) -> list[dict]
 
 # ── The stored decision ──────────────────────────────────────────────────────
 
-def _stored_pick(supabase, start: str) -> list[dict]:
-    rows = (
-        supabase.table("prescription_decisions")
-        .select("exercise, reason, plan, date")
-        .eq("date", start)
-        .like("exercise", f"{DECISION_PREFIX}%")
-        .order("id")
-        .execute()
-    ).data or []
+def _parse_pick_rows(rows: list[dict]) -> list[dict]:
     out = []
     for row in rows:
         try:
@@ -215,9 +224,60 @@ def _stored_pick(supabase, start: str) -> list[dict]:
                 detail = json.loads(detail)
         except (TypeError, ValueError):
             detail = {}
-        out.append({"muscle": row["exercise"][len(DECISION_PREFIX):], "reason": row.get("reason") or "",
+        out.append({"id": row.get("id"), "date": row.get("date"),
+                    "muscle": row["exercise"][len(DECISION_PREFIX):], "reason": row.get("reason") or "",
                     **{k: detail.get(k) for k in ("sets", "low", "high", "shortfall", "since", "until", "exercise")}})
     return out
+
+
+def _pick_rows_between(supabase, after: str | None, until: str | None) -> list[dict]:
+    """Stored pick rows dated after `after` (exclusive) and up to `until`
+    (inclusive), the latest day's set only: a block's pick is remade in
+    place, so the newest day is the one that stands."""
+    query = (supabase.table("prescription_decisions").select("id, exercise, reason, plan, date")
+             .like("exercise", f"{DECISION_PREFIX}%"))
+    if after:
+        query = query.gte("date", (date.fromisoformat(after) + timedelta(days=1)).isoformat())
+    if until:
+        query = query.lte("date", until)
+    rows = (query.order("id").execute()).data or []
+    rows = [r for r in rows if (r.get("date") or "")
+            and (not after or r["date"] > after) and (not until or r["date"] <= until)]
+    if not rows:
+        return []
+    newest = max(r["date"] for r in rows)
+    return [r for r in rows if r["date"] == newest]
+
+
+def _stored_pick(supabase, start: str, boundary: str | None = None) -> list[dict]:
+    """This block's stored pick: rows dated exactly at `start`, or — since the
+    start drifts while the boundary does not — any rows dated after the
+    previous block's last session. The 19 Sep 2026 review made the pick on
+    the ended block's last day, dated that day; the next morning's start was
+    a day later, the pick was invisible, and the named emphasis it had
+    consumed would have been lost for a third time."""
+    rows = (supabase.table("prescription_decisions").select("id, exercise, reason, plan, date")
+            .eq("date", start).like("exercise", f"{DECISION_PREFIX}%").order("id").execute()).data or []
+    if not rows and boundary:
+        rows = _pick_rows_between(supabase, boundary, None)
+    return _parse_pick_rows(rows)
+
+
+def block_picks_between(supabase, after: str | None, until: str | None) -> list[dict]:
+    """Read-only: the pick that governed the block whose sessions ran after
+    `after` and through `until`. For the block review, which must never make
+    or consume a pick."""
+    return [p for p in _parse_pick_rows(_pick_rows_between(supabase, after, until)) if p["muscle"] != NONE]
+
+
+def _delete_pick_rows(supabase, picks: list[dict], start: str) -> None:
+    """Remove a block's stored pick rows, wherever they were dated."""
+    ids = [p["id"] for p in picks if p.get("id") is not None]
+    for rid in ids:
+        supabase.table("prescription_decisions").delete().eq("id", rid).execute()
+    if not ids:
+        supabase.table("prescription_decisions").delete().eq("date", start)\
+            .like("exercise", f"{DECISION_PREFIX}%").execute()
 
 
 def _store_pick(supabase, start: str, picks: list[dict], since: str, until: str) -> None:
@@ -271,7 +331,8 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
         if start is None:
             return None
 
-        stored = _stored_pick(supabase, start)
+        boundary = block_boundary(sessions, start)
+        stored = _stored_pick(supabase, start, boundary)
         if stored:
             # The pick is made once per block and held — but "once" used to mean
             # "at the first coach interaction after the block rolled over",
@@ -296,8 +357,7 @@ def current_block_weak_points(memory: dict, prompt: str) -> dict | None:
             due = [n for n in pending if (n.get("set_on") or "9999") < start]
             named = _named_picks(due, bands)
             if named:
-                supabase.table("prescription_decisions").delete().eq("date", start)\
-                    .like("exercise", f"{DECISION_PREFIX}%").execute()
+                _delete_pick_rows(supabase, stored, start)
                 _store_pick(supabase, start, named, since="named", until=start)
                 for n in due:
                     supabase.table("prescription_decisions").delete().eq("id", n["id"]).execute()
@@ -575,8 +635,7 @@ def set_block_weak_points(memory: dict, prompt: str, muscles: list[str]) -> str:
     start = block_start(sessions, week, day, today)
     if start is None:
         return "I can't place this block yet (not enough stamped sessions), so nothing changed."
-    supabase.table("prescription_decisions").delete().eq("date", start)\
-        .like("exercise", f"{DECISION_PREFIX}%").execute()
+    _delete_pick_rows(supabase, _stored_pick(supabase, start, block_boundary(sessions, start)), start)
     picks = []
     for c in canon:
         low, high = bands[c]

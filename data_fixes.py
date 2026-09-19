@@ -106,6 +106,34 @@ def _fix_2026_09_19_block_review_loose_sets() -> str:
     return f"removed {len(bad)} review(s) computed before the loose-set rule: {bad}"
 
 
+def _fix_2026_09_19_restore_next_emphasis() -> str:
+    """The block review of 19 Sep called current_block_weak_points at week 1
+    day 1, which made the coming block's pick on the ended block's last day:
+    it consumed the queued emphasis (triceps, chest) and stored the pick dated
+    19 Sep, a date the block's opening would never look up. Remove that
+    orphan pick and queue the emphasis again, exactly as it stood that
+    morning; the opening session makes the pick from it."""
+    from coach import load_system_prompt  # local: coach imports widely
+    from data import get_supabase
+    from weakpoints import DECISION_PREFIX, PENDING_PREFIX, set_next_emphasis
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    orphans = (supabase.table("prescription_decisions").select("id, exercise, date")
+               .eq("date", "2026-09-19").like("exercise", f"{DECISION_PREFIX}%").execute()).data or []
+    for row in orphans:
+        supabase.table("prescription_decisions").delete().eq("id", row["id"]).execute()
+    prompt = load_system_prompt()
+    notes = []
+    for muscle, movement in (("triceps", "Overhead Cable Extension"), ("chest", "Cable Fly (Low To High)")):
+        supabase.table("prescription_decisions").delete().eq("exercise", f"{PENDING_PREFIX}{muscle.capitalize()}").execute()
+        note = set_next_emphasis(prompt, muscle, movement)
+        if note.startswith("I can't") or "isn't a muscle" in note:
+            raise RuntimeError(f"{muscle}: {note}")
+        notes.append(note)
+    return f"removed {len(orphans)} orphan pick row(s) dated 2026-09-19; " + " | ".join(notes)
+
+
 def _fix_block_review_facts_version() -> str:
     """Remove any unanswered review whose fact sheet predates the current
     FACTS_VERSION, so Home prepares it again under the current rules."""
@@ -137,6 +165,7 @@ FIXES = [
     ("2026-09-19-block-review-window", _fix_2026_09_19_block_review_window),
     ("2026-09-19-block-review-emphasis", _fix_2026_09_19_block_review_emphasis),
     ("2026-09-19-block-review-loose-sets", _fix_2026_09_19_block_review_loose_sets),
+    ("2026-09-19-restore-next-emphasis", _fix_2026_09_19_restore_next_emphasis),
     (_facts_version_key(), _fix_block_review_facts_version),
 ]
 
