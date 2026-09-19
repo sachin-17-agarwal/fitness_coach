@@ -36,6 +36,10 @@ final class DashboardViewModel {
     /// What the coach said back to the last answer, shown in the card's place.
     var blockReviewReply: String?
     var isAnsweringReview = false
+    /// The morning after rollover the server writes the review inside the
+    /// fetch, which can outlast the request. One quiet retry so Home does
+    /// not sit empty on the one morning the card matters.
+    @ObservationIgnored private var reviewRetryTask: Task<Void, Never>?
 
     /// Decisions the coach proposed in chat and the athlete has not closed.
     /// Shown under the digest until recorded or declined; never mid-session.
@@ -58,6 +62,17 @@ final class DashboardViewModel {
 
     /// Answer the open review from the card. The reply replaces the card;
     /// the review itself stays in history.
+    private func scheduleBlockReviewRetry() {
+        reviewRetryTask?.cancel()
+        reviewRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled, let self else { return }
+            if let review = try? await self.chatService.blockReview() {
+                self.blockReview = review
+            }
+        }
+    }
+
     func answerBlockReview(_ text: String) async {
         isAnsweringReview = true
         defer { isAnsweringReview = false }
@@ -135,6 +150,7 @@ final class DashboardViewModel {
             // The block review lives on Home, not in the briefing nobody
             // opens. Its own failure must not take the dashboard down.
             blockReview = try? await chatService.blockReview()
+            if blockReview == nil { scheduleBlockReviewRetry() }
             decisions = (try? await chatService.pendingDecisions()) ?? decisions
             // The digest needs the 42-day baseline behind last week; fetched
             // only on the days the card shows, so the other days stay light.
