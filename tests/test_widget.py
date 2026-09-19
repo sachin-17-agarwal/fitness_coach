@@ -93,6 +93,28 @@ class WidgetRouteTests(unittest.TestCase):
         self.assertEqual(body["strength"]["median_gain_pct"], 8.1)
         self.assertEqual(body["hrv_delta"], 4)
 
+    def test_a_finished_session_names_itself_not_the_next_slot(self):
+        # 19 Sep 2026, 23:10: Cardio+Abs (week 4 day 4) done, memory already
+        # at week 1 day 1 — the widget said "PULL · DONE · WK 1 · BASELINE".
+        memory = {"mesocycle_week": 1, "mesocycle_day": 1}
+        ready = {"score": 52, "level": "yellow"}
+        body = webhook.widget_payload(memory, ready,
+                                      {"type": "Cardio+Abs", "mesocycle_week": 4, "mesocycle_day": 4})
+        self.assertEqual((body["session_type"], body["done"], body["week"], body["day"], body["phase"]),
+                         ("Cardio+Abs", True, 4, 4, "DELOAD"))
+        self.assertEqual(body["verdict"], "STEADY — SESSION DONE")
+        # Unstamped: step back one slot from the state, as Home does.
+        body = webhook.widget_payload(memory, ready, {"type": "Cardio+Abs"})
+        self.assertEqual((body["week"], body["day"]), (4, 4))
+        body = webhook.widget_payload({"mesocycle_week": 2, "mesocycle_day": 3}, ready, {"type": "Push"})
+        self.assertEqual((body["session_type"], body["week"], body["day"]), ("Push", 2, 2))
+        # Yoga consumed no slot: the state stands, the line names yoga.
+        body = webhook.widget_payload({"mesocycle_week": 2, "mesocycle_day": 3}, ready, {"type": "Yoga"})
+        self.assertEqual((body["session_type"], body["done"], body["week"], body["day"]), ("Yoga", True, 2, 3))
+        # Nothing done: the next slot, as before.
+        body = webhook.widget_payload(memory, ready, None)
+        self.assertEqual((body["session_type"], body["done"], body["week"]), ("Pull", False, 1))
+
     def test_yesterdays_read_is_marked_stale(self):
         ready = {"date": "2026-09-17", "score": 82, "level": "green"}
         with patch("webhook.now_local") as now:
