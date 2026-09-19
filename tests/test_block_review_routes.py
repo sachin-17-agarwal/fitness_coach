@@ -44,6 +44,8 @@ class BlockReviewRouteTests(unittest.TestCase):
         self.assertEqual(body["proposals"][0]["detail"], "clear")
         self.assertEqual(body["sections"], [{"label": "", "body": "Strength held."}])
         self.assertEqual(body["window"], {"since": "2026-08-19", "until": None})
+        self.assertEqual(body["lifts"], [])
+        self.assertEqual(body["volume"], [])
 
     def test_a_failed_preparation_still_returns_the_latest_review(self):
         with patch.object(webhook, "get_settings", return_value=_Settings()), \

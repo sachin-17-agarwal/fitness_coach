@@ -80,6 +80,33 @@ struct BlockReviewResponse: Codable, Sendable {
         let since: String?
         let until: String?
     }
+    /// One lift's block-over-block change, from the fact sheet.
+    struct Lift: Codable, Sendable, Hashable {
+        let exercise: String
+        let deltaPct: Double?
+        let verdict: String?
+        let thisSet: String?
+        let prevSet: String?
+        enum CodingKeys: String, CodingKey {
+            case exercise, verdict
+            case deltaPct = "delta_pct"
+            case thisSet = "this_set"
+            case prevSet = "prev_set"
+        }
+    }
+    /// One muscle's sets per week against its band.
+    struct VolumeRow: Codable, Sendable, Hashable {
+        let muscle: String
+        let sets: Double?
+        let band: String?
+        let underBy: Double?
+        let overBy: Double?
+        enum CodingKeys: String, CodingKey {
+            case muscle, sets, band
+            case underBy = "under_by"
+            case overBy = "over_by"
+        }
+    }
     let status: String
     let blockStart: String?
     let dryRun: Bool?
@@ -87,9 +114,11 @@ struct BlockReviewResponse: Codable, Sendable {
     let proposals: [Proposal]?
     let sections: [Section]?
     let window: Window?
+    let lifts: [Lift]?
+    let volume: [VolumeRow]?
 
     enum CodingKeys: String, CodingKey {
-        case status, text, proposals, sections, window
+        case status, text, proposals, sections, window, lifts, volume
         case blockStart = "block_start"
         case dryRun = "dry_run"
     }

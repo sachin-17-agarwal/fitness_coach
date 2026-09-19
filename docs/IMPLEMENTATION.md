@@ -463,6 +463,15 @@ muscles, the instruction says Emphasis-next names a weak point only, and
 under its band or is already set. A second dated fix removes any unanswered
 review that fails that rule against its own sheet.
 
+The numbers fold then came back as one unlabelled paragraph reciting twenty
+lifts. The model now answers in four named fields (`strength`, `volume`,
+`recovery`, `changes`) enforced by the schema and assembled into the
+labelled narrative chat shows; the payload adds `lifts` (every lift's
+block-over-block change, largest rise first) and `volume` (every muscle
+against its band) from the stored sheet, and the card shows them as rows
+under STRENGTH and VOLUME, so the prose is told to interpret and name at
+most three of each.
+
 **Goal.** The morning after the block's last session, on a rest day, a
 Home card and a waiting coach message carry the review and two or three
 proposed changes; "yes to 1 and 3" records them.
