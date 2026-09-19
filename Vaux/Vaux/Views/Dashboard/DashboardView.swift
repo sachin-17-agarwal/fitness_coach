@@ -789,7 +789,7 @@ struct DashboardView: View {
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.fg3)
                         }
-                        Text(Self.liftChange(lift))
+                        Text(lift.verdict == "held" && lift.deltaPct != nil ? "HELD" : Self.liftChange(lift))
                             .font(.system(size: 13, weight: .semibold, design: .monospaced))
                             .monospacedDigit()
                             .foregroundStyle(Self.liftTint(lift))
@@ -821,10 +821,12 @@ struct DashboardView: View {
                             .kerning(1.5)
                             .foregroundStyle(under ? Color.ember : over ? Color.amber : Color.fg3)
                         Text("\(Self.oneDecimal(row.sets ?? 0)) / \((row.band ?? "").replacingOccurrences(of: "-", with: "–"))")
-                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .monospacedDigit()
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                             .foregroundStyle(Color.fg0)
-                            .frame(width: 84, alignment: .trailing)
+                            .frame(minWidth: 96, alignment: .trailing)
                     }
                     .padding(.vertical, 7)
                 }

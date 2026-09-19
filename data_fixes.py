@@ -106,11 +106,38 @@ def _fix_2026_09_19_block_review_loose_sets() -> str:
     return f"removed {len(bad)} review(s) computed before the loose-set rule: {bad}"
 
 
+def _fix_block_review_facts_version() -> str:
+    """Remove any unanswered review whose fact sheet predates the current
+    FACTS_VERSION, so Home prepares it again under the current rules."""
+    from block_review import FACTS_VERSION
+    from data import get_supabase
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    rows = (supabase.table("block_reviews").select("id, status, facts").eq("status", "shown").execute()).data or []
+    bad = []
+    for row in rows:
+        facts = row.get("facts") or {}
+        if isinstance(facts, str):
+            facts = json.loads(facts or "{}")
+        if facts.get("version") != FACTS_VERSION:
+            bad.append(row["id"])
+    for rid in bad:
+        supabase.table("block_reviews").delete().eq("id", rid).execute()
+    return f"removed {len(bad)} review(s) older than facts v{FACTS_VERSION}: {bad}"
+
+
+def _facts_version_key() -> str:
+    from block_review import FACTS_VERSION
+    return f"block-review-facts-v{FACTS_VERSION}"
+
+
 FIXES = [
     ("2026-09-19-emphasis-triceps-chest", _fix_2026_09_19_emphasis_triceps_chest),
     ("2026-09-19-block-review-window", _fix_2026_09_19_block_review_window),
     ("2026-09-19-block-review-emphasis", _fix_2026_09_19_block_review_emphasis),
     ("2026-09-19-block-review-loose-sets", _fix_2026_09_19_block_review_loose_sets),
+    (_facts_version_key(), _fix_block_review_facts_version),
 ]
 
 
