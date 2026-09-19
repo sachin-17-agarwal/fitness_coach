@@ -67,6 +67,11 @@ Rules:
     Decision: <Exercise> | clear
     Emphasis-next: <muscle> | <one-line note>
   Propose nothing you cannot justify from the sheet. Zero proposals is a valid answer.
+- `Emphasis-next` NAMES A WEAK POINT for the coming block: extra straight sets on that
+  muscle, the note being the movement to add. It is only for a muscle UNDER its band.
+  A muscle OVER its band is never an Emphasis-next; say it in the volume paragraph and
+  leave the programme to hold it. A muscle the sheet lists as already set for next
+  block is not proposed again; say it is set. Emphasis-next is not a way to trim.
 - `rationale` says which fact the proposal rests on.
 """.strip()
 
@@ -215,15 +220,25 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
 
     recovery = recovery_facts(_recovery_rows(120), window)
     emphasis = current_block_weak_points(memory, prompt) or {}
+    # What the athlete has already named for the coming block: the review
+    # must not propose it again, and must never propose over it.
+    try:
+        from weakpoints import _pending_emphasis
+        emphasis_next = [{"muscle": p["muscle"], "note": p.get("note", "")} for p in _pending_emphasis(supabase)]
+    except Exception:
+        log.warning("Block review: could not read next block's emphasis", exc_info=True)
+        emphasis_next = []
     decisions = [d for d in load_recent_decisions(days=60)
                  if window["since"] <= (d.get("date") or "") <= window["until"]]
     return {
         "window": window,
         "strength": strength,
         "volume": [{"muscle": r["muscle"], "sets_per_week": r["sets"], "band": f"{r['low']}-{r['high']}",
-                    "under_by": r["shortfall"] if r["shortfall"] > 0 else 0} for r in ranking],
+                    "under_by": r["shortfall"] if r["shortfall"] > 0 else 0,
+                    "over_by": round(r["sets"] - r["high"], 1) if r["sets"] > r["high"] else 0} for r in ranking],
         "recovery": recovery,
         "emphasis": [p.get("muscle") for p in (emphasis.get("picks") or [])],
+        "emphasis_next": emphasis_next,
         "standing_constraints": format_constraints(_standing_constraints()).strip(),
         "adjustments": [{"date": d.get("date"), "exercise": d.get("exercise"), "reason": d.get("reason")}
                         for d in decisions][:12],
@@ -249,7 +264,8 @@ def format_facts(facts: dict) -> str:
     lines += ["", "VOLUME — sets per calendar week against the band, over the block:"]
     for v in facts["volume"]:
         lines.append(f"  {v['muscle']}: {v['sets_per_week']} against {v['band']}"
-                     + (f" — UNDER by {v['under_by']}" if v["under_by"] else ""))
+                     + (f" — UNDER by {v['under_by']}" if v["under_by"] else "")
+                     + (f" — OVER by {v['over_by']} (not an Emphasis-next)" if v.get("over_by") else ""))
     r = facts["recovery"]
     lines += ["", "RECOVERY — block mean against the 42 days before it:"]
     for label, name in (("hrv", "HRV"), ("rhr", "resting HR"), ("sleep", "sleep h")):
@@ -260,6 +276,13 @@ def format_facts(facts: dict) -> str:
     if "readiness_taps" in r:
         lines.append(f"  readiness taps: {r['readiness_taps']}, mean {r['readiness_mean']} of 5")
     lines += ["", "THIS BLOCK'S EMPHASIS: " + (", ".join(facts["emphasis"]) or "none")]
+    nxt = facts.get("emphasis_next") or []
+    if nxt:
+        lines.append("NEXT BLOCK'S EMPHASIS, already set by the athlete (do not propose again): "
+                     + "; ".join(f"{p['muscle']}" + (f" → {p['note']}" if p.get("note") else "") for p in nxt))
+    else:
+        lines.append("NEXT BLOCK'S EMPHASIS: not set — the programme picks the two furthest under band "
+                     "unless an Emphasis-next is approved")
     if facts["standing_constraints"]:
         lines += ["", "STANDING DECISIONS IN FORCE:", facts["standing_constraints"]]
     if facts["adjustments"]:
@@ -293,17 +316,46 @@ def numbers_not_in_sheet(narrative: str, sheet: str) -> list[str]:
     return sorted(set(bad))
 
 
-def valid_proposals(proposals: list[dict]) -> list[dict]:
-    """Only lines in the recordable grammar survive, at most MAX_PROPOSALS."""
+_EMPHASIS_LINE_RE = re.compile(r"^Emphasis-next:\s*(?P<muscle>[A-Za-z ]+?)\s*\|")
+
+
+def _emphasis_allowed(line: str, facts: dict | None) -> bool:
+    """An Emphasis-next line names a weak point: the muscle must be under its
+    band in the sheet and not already set for next block. Without a sheet the
+    grammar alone decides. The review of 19 Sep 2026 proposed 'Emphasis-next:
+    Triceps | Trim weekly sets…' for a muscle OVER its band that was already
+    queued with its movement; approving it would have overwritten the movement
+    with those words."""
+    m = _EMPHASIS_LINE_RE.match(line)
+    if not m or facts is None:
+        return True
+    muscle = m.group("muscle").strip().lower()
+    if any((p.get("muscle") or "").lower() == muscle for p in facts.get("emphasis_next") or []):
+        log.info("Block review: dropped %r — already set for next block", line)
+        return False
+    for v in facts.get("volume") or []:
+        if (v.get("muscle") or "").lower() == muscle:
+            if v.get("under_by"):
+                return True
+            log.info("Block review: dropped %r — muscle not under its band", line)
+            return False
+    log.info("Block review: dropped %r — muscle not on the sheet", line)
+    return False
+
+
+def valid_proposals(proposals: list[dict], facts: dict | None = None) -> list[dict]:
+    """Only lines in the recordable grammar survive, at most MAX_PROPOSALS;
+    with the fact sheet, an Emphasis-next must name a muscle under its band
+    that is not already set."""
     out = []
     for p in proposals or []:
         line = (p.get("line") or "").strip()
-        if _LINE_RE.match(line):
+        if _LINE_RE.match(line) and _emphasis_allowed(line, facts):
             out.append({"line": line, "rationale": (p.get("rationale") or "").strip()})
     return out[:MAX_PROPOSALS]
 
 
-def narrate(client, sheet: str, model: str | None = None) -> dict:
+def narrate(client, sheet: str, model: str | None = None, facts: dict | None = None) -> dict:
     """One model call: the review from the sheet, checked. A narrative that
     cites a number the sheet lacks is retried once with the offending numbers
     named; a second failure returns the sheet itself as the narrative."""
@@ -327,7 +379,7 @@ def narrate(client, sheet: str, model: str | None = None) -> dict:
             data = {}
         narrative = (data.get("narrative") or "").strip()
         bad = numbers_not_in_sheet(narrative, sheet)
-        proposals = valid_proposals(data.get("proposals") or [])
+        proposals = valid_proposals(data.get("proposals") or [], facts)
         last = {"narrative": narrative, "proposals": proposals, "unsupported_numbers": bad}
         if narrative and not bad:
             return last
@@ -345,7 +397,7 @@ def prepare_block_review(memory: dict, prompt: str, client, dry_run: bool = DRY_
     if facts is None:
         return None
     sheet = format_facts(facts)
-    written = narrate(client, sheet)
+    written = narrate(client, sheet, facts=facts)
     row = {"block_start": facts["window"]["block_start"], "window_since": facts["window"]["since"],
            "window_until": facts["window"]["until"], "facts": json.dumps(facts),
            "narrative": written["narrative"], "proposals": json.dumps(written["proposals"]),
