@@ -429,26 +429,53 @@ def widget_verdict(level: str, session_type: str, done: bool) -> str:
     return "NO RECOVERY DATA YET"
 
 
-def _session_done_today() -> bool:
+def _session_done_today():
+    """The session finished today — its type and stamped week/day — or None.
+    Used to be a bare bool, and the widget then named the NEXT session with
+    today's DONE: "PULL · DONE · WK 1" on the evening of a Cardio+Abs deload
+    day, because the rotation state had already rolled over."""
     from data import FINISHED_SESSION_STATUSES, now_local
     supabase = get_supabase()
     if not supabase:
-        return False
+        return None
     try:
         today = now_local().strftime("%Y-%m-%d")
-        rows = (supabase.table("workout_sessions").select("status").eq("date", today).execute().data or [])
-        return any((r.get("status") or "").strip().lower() in FINISHED_SESSION_STATUSES for r in rows)
+        rows = (supabase.table("workout_sessions").select("type, status, mesocycle_week, mesocycle_day")
+                .eq("date", today).order("id", desc=True).execute().data or [])
+        for r in rows:
+            if (r.get("status") or "").strip().lower() in FINISHED_SESSION_STATUSES:
+                return {"type": (r.get("type") or "").strip(), "mesocycle_week": r.get("mesocycle_week"),
+                        "mesocycle_day": r.get("mesocycle_day")}
+        return None
     except Exception:
         traceback.print_exc()
-        return False
+        return None
 
 
-def widget_payload(memory: dict, readiness: dict, done: bool) -> dict:
-    """Everything the widget draws, computed once here so it and Home agree."""
-    from data import SESSION_OVERRIDE_KEY, session_type_for
+def widget_payload(memory: dict, readiness: dict, finished) -> dict:
+    """Everything the widget draws, computed once here so it and Home agree.
+
+    `finished` is today's finished session (from _session_done_today) or a
+    falsy value. When a session is done today the line is THAT session and
+    its own week and day — the rotation state has already moved to the next
+    slot, exactly as Home's eyebrow reads it — otherwise the next session."""
+    from data import CYCLE, NON_SLOT_TYPES, SESSION_OVERRIDE_KEY, session_type_for
     week = _safe_int_or(memory.get("mesocycle_week"), 1)
     day = _safe_int_or(memory.get("mesocycle_day"), 1)
     session = session_type_for(day, override=memory.get(SESSION_OVERRIDE_KEY))
+    done = bool(finished)
+    if isinstance(finished, dict) and finished.get("type"):
+        session = finished["type"]
+        if finished.get("mesocycle_week") and finished.get("mesocycle_day"):
+            week = _safe_int_or(finished["mesocycle_week"], week)
+            day = _safe_int_or(finished["mesocycle_day"], day)
+        elif session not in NON_SLOT_TYPES:
+            # No stamp: step back one slot from the state, as Home does.
+            if day == 1:
+                day = len(CYCLE)
+                week = 4 if week == 1 else week - 1
+            else:
+                day -= 1
     strength = None
     raw = memory.get(WIDGET_STRENGTH_KEY)
     if raw:
