@@ -491,6 +491,24 @@ carries `FACTS_VERSION`; one data fix keyed on that number removes any
 unanswered review built under an older version, so future rule changes
 need only a bump.
 
+**The emphasis nearly went a third time, and this is the structural fix.**
+The review of 19 Sep called `current_block_weak_points` for "this block's
+emphasis" at week 1 day 1 — which MAKES the coming block's pick: it consumed
+the queued triceps/chest emphasis on the ended block's last day and stored
+the pick dated that day, a date the opening session would never look up.
+Three rules now:
+- A block is identified by its boundary (`block_boundary`: the last finished
+  session before its start), not by the day the pick was made. `_stored_pick`
+  finds a pick dated anywhere after the boundary, so a pick made on a rest
+  day is the same pick on the opening day.
+- `block_start` at week 1 day 1 answers the day after a session finished
+  today, never today.
+- The review reads a block's pick with `block_picks_between`, which writes
+  nothing; `review_window` carries `last_session` for it.
+A dated fix removes the orphan pick rows dated 19 Sep and queues the
+emphasis again; FACTS_VERSION 3 regenerates the review. The plain flat
+verdict is spelled "flat"; "held" is reserved for a standing decision.
+
 **Goal.** The morning after the block's last session, on a rest day, a
 Home card and a waiting coach message carry the review and two or three
 proposed changes; "yes to 1 and 3" records them.

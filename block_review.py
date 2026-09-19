@@ -42,7 +42,7 @@ PEAK_WEEK = 3
 # Bumped whenever the fact sheet's rules change; an unanswered review built
 # on an older version is removed at the next start so Home prepares it again
 # with numbers that match the app (data_fixes keys a fix on this number).
-FACTS_VERSION = 2
+FACTS_VERSION = 3
 
 # The narrative arrives as four named paragraphs, so the card can always show
 # them under their labels; the model cannot leave a label out.
@@ -122,14 +122,16 @@ def review_window(sessions: list[dict], memory: dict, today: str) -> dict | None
         ended = ended_block_range(sessions, today)
         if ended is None:
             return None
-        start = ended[0]
+        start, last_session = ended
     else:
         start = block_start(sessions, week, day, today)
         if start is None:
             return None
+        done = [s["date"] for s in sessions if start <= (s.get("date") or "") <= today]
+        last_session = done[-1] if done else None
     since, until = start, today
     before = previous_block_range(sessions, start)
-    return {"block_start": since, "since": since, "until": until,
+    return {"block_start": since, "since": since, "until": until, "last_session": last_session,
             "prev_since": before[0] if before else None, "prev_until": before[1] if before else None,
             "complete": rolled_over}
 
@@ -197,7 +199,7 @@ def strength_facts(rows: list[dict], weeks: dict, window: dict, held: set | None
                          "prev_set": f"{float(prev_best[1]['actual_weight_kg']):g}kg x{int(prev_best[1]['actual_reps'])}",
                          "prev_loose": prev_best[2],
                          "delta_pct": round(delta, 1),
-                         "verdict": "up" if delta >= 1 else ("down" if delta <= -5 else "held")})
+                         "verdict": "up" if delta >= 1 else ("down" if delta <= -5 else "flat")})
             if norm_name(name) in held and fact["verdict"] != "up":
                 fact["verdict"] = "held"
                 fact["held_by_decision"] = True
@@ -240,7 +242,7 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
     from coach_context import _recovery_rows, _standing_constraints
     from plan import load_recent_decisions
     from progression import _fetch_session_weeks
-    from weakpoints import (current_block_weak_points, parse_volume_bands, rank_by_shortfall,
+    from weakpoints import (block_picks_between, parse_volume_bands, rank_by_shortfall,
                             rotation_sessions, volume_between)
 
     supabase = get_supabase()
@@ -267,7 +269,11 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
     ranking = rank_by_shortfall(volume, bands) if bands else []
 
     recovery = recovery_facts(_recovery_rows(120), window)
-    emphasis = current_block_weak_points(memory, prompt) or {}
+    # The reviewed block's own pick, read without side effects. This used to
+    # call current_block_weak_points, which at week 1 day 1 MAKES the coming
+    # block's pick — consuming the athlete's queued emphasis on a rest day
+    # and dating the pick to a day the block's opening would not match.
+    reviewed = block_picks_between(supabase, window.get("prev_until"), window.get("last_session") or window["until"])
     # What the athlete has already named for the coming block: the review
     # must not propose it again, and must never propose over it.
     try:
@@ -285,7 +291,7 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
                     "under_by": r["shortfall"] if r["shortfall"] > 0 else 0,
                     "over_by": round(r["sets"] - r["high"], 1) if r["sets"] > r["high"] else 0} for r in ranking],
         "recovery": recovery,
-        "emphasis": [p.get("muscle") for p in (emphasis.get("picks") or [])],
+        "emphasis": [p["muscle"] for p in reviewed],
         "emphasis_next": emphasis_next,
         "standing_constraints": format_constraints(constraints).strip(),
         "version": FACTS_VERSION,
