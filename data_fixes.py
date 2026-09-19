@@ -56,9 +56,36 @@ def _fix_2026_09_19_block_review_window() -> str:
     return f"removed {len(bad)} one-day review(s): {bad}"
 
 
+def _fix_2026_09_19_block_review_emphasis() -> str:
+    """The second review of 19 Sep proposed 'Emphasis-next' for biceps and
+    triceps, both OVER their bands, one already queued with its movement.
+    Remove any unanswered review whose proposals would not pass the emphasis
+    rule against its own fact sheet, so Home prepares it again."""
+    from block_review import valid_proposals
+    from data import get_supabase
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    rows = (supabase.table("block_reviews").select("id, status, proposals, facts").eq("status", "shown")
+            .execute()).data or []
+    bad = []
+    for row in rows:
+        props, facts = row.get("proposals") or [], row.get("facts") or {}
+        if isinstance(props, str):
+            props = json.loads(props or "[]")
+        if isinstance(facts, str):
+            facts = json.loads(facts or "{}")
+        if len(valid_proposals(props, facts)) != len(props):
+            bad.append(row["id"])
+    for rid in bad:
+        supabase.table("block_reviews").delete().eq("id", rid).execute()
+    return f"removed {len(bad)} review(s) with a disallowed Emphasis-next: {bad}"
+
+
 FIXES = [
     ("2026-09-19-emphasis-triceps-chest", _fix_2026_09_19_emphasis_triceps_chest),
     ("2026-09-19-block-review-window", _fix_2026_09_19_block_review_window),
+    ("2026-09-19-block-review-emphasis", _fix_2026_09_19_block_review_emphasis),
 ]
 
 

@@ -454,6 +454,15 @@ a "READ THE NUMBERS" fold split into its labelled sections, the block's date
 range in the header. The payload carries `sections`, `window` and each
 proposal's `kind`/`subject`/`detail`.
 
+The re-prepared review then proposed "Emphasis-next: Triceps | Trim weekly
+sets…" for a muscle over its band that was already queued with its
+movement; approved live, that would have overwritten the movement with those
+words. Now the sheet carries next block's emphasis and marks over-band
+muscles, the instruction says Emphasis-next names a weak point only, and
+`valid_proposals(props, facts)` drops an Emphasis-next whose muscle is not
+under its band or is already set. A second dated fix removes any unanswered
+review that fails that rule against its own sheet.
+
 **Goal.** The morning after the block's last session, on a rest day, a
 Home card and a waiting coach message carry the review and two or three
 proposed changes; "yes to 1 and 3" records them.

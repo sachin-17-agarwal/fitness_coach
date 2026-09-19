@@ -140,6 +140,39 @@ class NarrativeChecksTests(unittest.TestCase):
         self.assertEqual(len(kept), 3)
         self.assertNotIn("Add a fifth set of curls", kept)
 
+    def test_an_emphasis_must_name_a_muscle_under_its_band_and_not_already_set(self):
+        # 19 Sep 2026: "Emphasis-next: Triceps | Trim weekly sets…" for a
+        # muscle over its band that was already queued with its movement.
+        facts = {"volume": [{"muscle": "Biceps", "sets_per_week": 15.6, "band": "8-12", "under_by": 0, "over_by": 3.6},
+                            {"muscle": "Triceps", "sets_per_week": 13.2, "band": "8-12", "under_by": 0, "over_by": 1.2},
+                            {"muscle": "Rear Delts", "sets_per_week": 4.0, "band": "8-14", "under_by": 4.0, "over_by": 0},
+                            {"muscle": "Chest", "sets_per_week": 6.0, "band": "10-16", "under_by": 4.0, "over_by": 0}],
+                 "emphasis_next": [{"muscle": "Triceps", "note": "Overhead Cable Extension"},
+                                   {"muscle": "Chest", "note": "Cable Fly (Low To High)"}]}
+        props = [{"line": "Emphasis-next: Biceps | Trim weekly sets toward the 8-12 band", "rationale": "over"},
+                 {"line": "Emphasis-next: Triceps | Trim weekly sets toward the 8-12 band", "rationale": "over"},
+                 {"line": "Emphasis-next: Chest | Cable Fly", "rationale": "already set"},
+                 {"line": "Emphasis-next: Rear Delts | Face Pull", "rationale": "under by 4.0"},
+                 {"line": "Decision: Leg Press | max load 242.5kg | open heavier", "rationale": "note"}]
+        kept = [p["line"] for p in br.valid_proposals(props, facts)]
+        self.assertEqual(kept, ["Emphasis-next: Rear Delts | Face Pull",
+                                "Decision: Leg Press | max load 242.5kg | open heavier"])
+        # Without a sheet the grammar alone decides, as before.
+        self.assertEqual(len(br.valid_proposals(props)), 3)
+
+    def test_the_sheet_names_next_blocks_emphasis_and_over_band_muscles(self):
+        facts = {"window": {"since": "2026-09-02", "until": "2026-09-19", "complete": True},
+                 "strength": [], "recovery": {},
+                 "volume": [{"muscle": "Biceps", "sets_per_week": 15.6, "band": "8-12", "under_by": 0, "over_by": 3.6},
+                            {"muscle": "Chest", "sets_per_week": 6.0, "band": "10-16", "under_by": 4.0, "over_by": 0}],
+                 "emphasis": ["Triceps", "Chest"],
+                 "emphasis_next": [{"muscle": "Triceps", "note": "Overhead Cable Extension"}],
+                 "standing_constraints": "", "adjustments": []}
+        sheet = br.format_facts(facts)
+        self.assertIn("Biceps: 15.6 against 8-12 — OVER by 3.6 (not an Emphasis-next)", sheet)
+        self.assertIn("Chest: 6.0 against 10-16 — UNDER by 4.0", sheet)
+        self.assertIn("NEXT BLOCK'S EMPHASIS, already set by the athlete (do not propose again): Triceps → Overhead Cable Extension", sheet)
+
 
 class AnswerTests(unittest.TestCase):
 
