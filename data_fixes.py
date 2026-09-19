@@ -180,6 +180,30 @@ def _fix_2026_09_19_clear_cable_crunch_cap() -> str:
     return f"cleared the Cable Crunch cap ({active[0].get('max_load_kg')}kg, since {active[0].get('set_on')})"
 
 
+def _clear_constraint(exercise: str, why: str) -> str:
+    """Clear one standing constraint through the path a chat Decision line
+    takes, verified; the sentence returned goes in the log."""
+    from constraints import load_active, norm_name, record_decisions
+    from data import get_supabase
+    if not get_supabase():
+        raise RuntimeError("no database connection")
+    active = [c for c in load_active() if norm_name(c.get("exercise", "")) == norm_name(exercise)]
+    if not active:
+        return f"no active {exercise} constraint; nothing to clear"
+    record_decisions(f"Decision: {exercise} | clear")
+    if [c for c in load_active() if norm_name(c.get("exercise", "")) == norm_name(exercise)]:
+        raise RuntimeError(f"{exercise} constraint still active after the clear")
+    cap = f"{active[0].get('max_load_kg')}kg" if active[0].get("max_load_kg") is not None else "note"
+    return f"cleared {exercise} ({cap}, since {active[0].get('set_on')}): {why}"
+
+
+def _fix_2026_09_19_clear_leg_press_note() -> str:
+    """Approved on the 19 Sep dry-run review card, which recorded nothing:
+    the Leg Press "too light, open heavier than 242.5kg" note is done — the
+    block delivered 245 x 15. The coach recommended the same."""
+    return _clear_constraint("Leg Press", "245kg x15 this block did what the note asked")
+
+
 def _fix_block_review_facts_version() -> str:
     """Remove any unanswered review whose fact sheet predates the current
     FACTS_VERSION, so Home prepares it again under the current rules."""
@@ -214,6 +238,7 @@ FIXES = [
     ("2026-09-19-restore-next-emphasis", _fix_2026_09_19_restore_next_emphasis),
     ("2026-09-19-incline-press-alias", _fix_2026_09_19_incline_press_alias),
     ("2026-09-19-clear-cable-crunch-cap", _fix_2026_09_19_clear_cable_crunch_cap),
+    ("2026-09-19-clear-leg-press-note", _fix_2026_09_19_clear_leg_press_note),
     (_facts_version_key(), _fix_block_review_facts_version),
 ]
 
