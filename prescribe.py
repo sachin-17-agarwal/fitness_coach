@@ -312,6 +312,11 @@ class Proposal:
     # format_proposal keeps only the first ordinary reason per exercise, so a
     # recovery cut sharing that list loses every explanation but one.
     recovery_reasons: list[str] = field(default_factory=list)
+    # Straight sets at one load whatever the muscle map says: the weak-point
+    # slot on Cardio+Abs is "3 straight sets, loads moderate, reps 10-15" by
+    # the programme's own rule, and the map files a triceps extension as an
+    # isolation that would otherwise render top set plus back-offs.
+    straight: bool = False
 
     def __post_init__(self):
         self.reasons = [strip_citations(r) for r in self.reasons]
@@ -578,9 +583,14 @@ def _met_top_of_range(prior: PriorSet, kind: str, target_rpe: float) -> bool:
     return prior.reps >= TOP_SET_RANGE[kind][1] and prior.rpe <= target_rpe
 
 
+# The weak-point slot's band (:372 "reps 10-15", volume work after cardio).
+WEAK_POINT_RANGE = (10, 15)
+
+
 def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                  reasons: list[str], deferred: list[str],
-                 athlete_kg: float | None = None) -> SetSpec:
+                 athlete_kg: float | None = None,
+                 rep_range: tuple | None = None) -> SetSpec:
     """The top set for today, from the wave and what was logged last time.
 
     When the load moves, the reps are prescribed as the whole band with the
@@ -592,7 +602,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     load cut. "Reps reset to the bottom" is the floor of the band, not a cap.
     """
     targets = WAVE[week]
-    low, high = TOP_SET_RANGE[kind]
+    low, high = rep_range or TOP_SET_RANGE[kind]
     bodyweight = is_bodyweight(exercise) or bool(prior and prior.bodyweight)
 
     # A bodyweight movement with a logged set HAS a load — the athlete — and
@@ -980,7 +990,8 @@ def warmup_ramp(exercise: str, top: SetSpec, muscles_warm: set[str],
 
 def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
                        prior: PriorSet | None, muscles_warm: set[str],
-                       athlete_kg: float | None = None) -> Proposal:
+                       athlete_kg: float | None = None,
+                       rep_range: tuple | None = None, straight: bool = False) -> Proposal:
     """One exercise's proposal for today.
 
     `athlete_kg` is the latest weigh-in, so a bodyweight movement's step can be
@@ -990,7 +1001,7 @@ def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
     reasons: list[str] = []
     deferred: list[str] = []
 
-    top = next_top_set(exercise, kind, week, prior, reasons, deferred, athlete_kg)
+    top = next_top_set(exercise, kind, week, prior, reasons, deferred, athlete_kg, rep_range=rep_range)
     if (top.bodyweight and top.weight_kg and prior is not None and not prior.load
             and bodyweight_fraction(exercise) is None):
         # The first added load on a movement that lifts no share of the body:
@@ -1004,10 +1015,13 @@ def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
     backoffs = backoff_sets(top, kind, sets - 1, week, reasons)
     warm = warmup_ramp(exercise, top, muscles_warm, prior, reasons)
 
+    if straight:
+        reasons.append(f"Straight sets: {sets} at one load, the weak-point slot's shape "
+                       f"(reps {rep_range[0]}-{rep_range[1]}, volume work after cardio) (:372).")
     return Proposal(
         exercise=exercise, kind=kind, warmup=warm, working=[top],
         backoff=backoffs, rest_seconds=REST_SECONDS[kind],
-        reasons=reasons, deferred=deferred,
+        reasons=reasons, deferred=deferred, straight=straight,
     )
 
 
@@ -1027,8 +1041,12 @@ def prescribe_session(plan, week: int,
                       history: dict[str, PriorSet],
                       recovery: dict | None = None,
                       peak_history: dict[str, PriorSet] | None = None,
-                      athlete_kg: float | None = None) -> list[Proposal]:
+                      athlete_kg: float | None = None,
+                      straight_lifts: dict | None = None) -> list[Proposal]:
     """Every exercise in `plan`, for this week, given this history.
+
+    `straight_lifts` maps a folded exercise name to its rep range for lifts
+    prescribed as straight sets at one load — the weak-point slot's shape.
 
     `history` maps exercise name to its most recent top working set — the same
     thing progression.get_current_loads already returns, so this consumes a
@@ -1067,8 +1085,10 @@ def prescribe_session(plan, week: int,
         prior = folded.get(key)
         if week in (1, 4) and peak.get(key) is not None:
             prior = peak[key]
+        straight_range = (straight_lifts or {}).get(key)
         proposal = prescribe_exercise(
-            exercise, sets, kind, week, prior, set(muscles_warm), athlete_kg
+            exercise, sets, kind, week, prior, set(muscles_warm), athlete_kg,
+            rep_range=straight_range, straight=straight_range is not None,
         )
         if adjustment.adjusted:
             proposal = _adjusted(proposal, adjustment)
@@ -1333,7 +1353,7 @@ def render_block(proposal: "Proposal", tempo: str | None = None) -> str:
     silence is what leaves the card reading "No plan yet".
     """
     lines = [f"*{proposal.exercise}*"]
-    straight = _is_straight_set(proposal.exercise)
+    straight = proposal.straight or _is_straight_set(proposal.exercise)
     # :61 "Every exercise (EXCEPT ABS) follows this structure" — and the three
     # parts it then lists are the warm-up, the working set and the back-off.
     # Ab work gets neither a ramp nor a drop, only its sets.

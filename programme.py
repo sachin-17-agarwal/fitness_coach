@@ -139,13 +139,45 @@ def _history(plan, current_loads: list[dict], week: int | None = None) -> tuple:
     return history, renamed, ambiguous
 
 
+def weak_point_slots(plan: tuple, entries: list, weak_points: list | None) -> tuple:
+    """Fill the template's weak-point slots with this block's named lifts.
+
+    Returns (plan, straight_lifts): the plan with one (exercise, sets, kind)
+    per named pick, up to the number of slots, and the folded names mapped to
+    the slot's rep range. A pick without a movement leaves its slot to the
+    coach, as before.
+    """
+    from coach_parsing import _WEAK_POINT_SLOT_RE  # local: keeps import order flat
+    from prescribe import WEAK_POINT_RANGE, classify
+    slots = [sets for name, sets in entries if _WEAK_POINT_SLOT_RE.match(name or "")]
+    named = [p for p in (weak_points or []) if p.get("exercise")]
+    plan = list(plan)
+    straight: dict = {}
+    for sets, pick in zip(slots, named):
+        exercise = pick["exercise"]
+        if any(norm_name(exercise) == norm_name(e) for e, _s, _k in plan):
+            continue
+        plan.append((exercise, int(sets) or 3, classify(exercise)))
+        straight[norm_name(exercise)] = WEAK_POINT_RANGE
+    return tuple(plan), straight
+
+
 def build_proposal(prompt: str, session_type: str, week: int,
                    current_loads: list[dict],
                    recovery: dict | None = None,
                    peak_week_loads: list[dict] | None = None,
                    ceilings: dict | None = None,
-                   athlete_kg: float | None = None) -> tuple:
+                   athlete_kg: float | None = None,
+                   weak_points: list | None = None) -> tuple:
     """The programme's proposal for today.
+
+    `weak_points` is this block's pick (weakpoints.current_block_weak_points
+    "picks"). A pick that names a movement fills one of the template's
+    weak-point slots, and the lift is computed from its own history like every
+    other: 3 straight sets, reps 10-15, the wave and the recovery rules
+    applied. Until 19 Sep the slots were the coach's alone, and the same lift
+    came back as a top set with two back-offs one week and two straight sets
+    the next.
 
     Returns (proposals, renamed, ambiguous) — empty throughout when it cannot
     compute one. `renamed` records where a template name resolved to a different
@@ -156,13 +188,14 @@ def build_proposal(prompt: str, session_type: str, week: int,
     """
     try:
         entries, _total = parse_session_template(prompt, session_type)
-        plan = day_plan(entries)
+        plan, straight_lifts = weak_point_slots(day_plan(entries), entries, weak_points)
         if not plan:
             return [], {}, {}
         history, renamed, ambiguous = _history(plan, current_loads)
         peak_history, _r, _a = _history(plan, peak_week_loads or [], week=3)
         proposals = prescribe_session(plan, week, history, recovery=recovery,
-                                      peak_history=peak_history, athlete_kg=athlete_kg)
+                                      peak_history=peak_history, athlete_kg=athlete_kg,
+                                      straight_lifts=straight_lifts)
         if ceilings:
             from constraints import apply_ceilings  # local: keeps import order flat
             proposals = apply_ceilings(proposals, ceilings)

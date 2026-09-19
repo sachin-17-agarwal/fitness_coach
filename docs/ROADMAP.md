@@ -182,6 +182,34 @@ chat. The decision-capture design routed unanswered proposals to the
 briefing; it now says Home. The briefing itself stays on its button and
 costs nothing unless tapped; whether to retire it is a later question.
 
+### 1.1h The weak-point slot, twice lost and three shapes (19 Sep)
+
+The triceps-and-chest emphasis agreed on 12 Sep never reached the records:
+the block opened on hamstrings, the 15 Sep Cardio+Abs got the two lifts
+only after the athlete pushed, and the 19 Sep session closed after abs with
+"nothing owed". The plan carried the two commands as the athlete's homework
+for a week. And when the lifts were prescribed they came in three shapes —
+top set with two back-offs, three straight sets, two straight sets — because
+the slot was the coach's alone; the programme's own rule (:372) is three
+straight sets at a moderate load, reps 10–15. *Fixed 19 Sep, three parts:*
+
+1. **Decisions go in by code.** `data_fixes.py` runs dated fixes once at
+   start; the first queues triceps (Overhead Cable Extension) and chest
+   (Cable Fly (Low To High)) for the block opening 20 Sep. `/status` shows
+   the applied fixes and the queued emphasis, so it can be read back. The
+   plan document no longer carries homework.
+2. **The slot goes through the programme.** A pick that names a movement
+   fills a template slot; `build_proposal` computes the lift from its own
+   history as 3 straight sets in the 10–15 band with the wave and recovery
+   rules applied (`weak_point_slots`, `Proposal.straight`, `WEAK_POINT_RANGE`).
+3. **The coach's block for those lifts is the programme's.** Whatever shape
+   the coach writes for a weak-point lift is replaced by the computed block
+   before it reaches the card (a Revised: block and a lift already on the
+   board stay the coach's). The general substitution flag is unchanged.
+
+Correction to what was said in chat on the 19th: the straight-set shape was
+the documented one; the 15 Sep top-set-and-back-offs was the departure.
+
 ### 1.1g One plan during the session (18 Sep)
 
 The athlete's diagnosis, and the right one: the card and the coach part
@@ -278,18 +306,9 @@ Migrations 006 and 007 were run on 16 Sep. Two decisions and one build:
 - **The block review's dry run**: read it the morning it lands after this
   deload block rolls over, answer it in chat, and we compare.
 
-Chat messages still worth sending (the code is live):
-
-- `Record a decision: Machine Shoulder Press, shoulder niggle, hold at 70 kg, RPE 8 cap, progress by reps only`
-- `emphasis next: triceps | overhead cable extension` and
-  `emphasis next: chest | low-to-high cable fly, upper chest` for next block.
-  **These were agreed in chat on 12 Sep and left here as a manual step; the
-  block that opened on 15 Sep picked hamstrings from the deficit rule
-  instead.** A decision reached in conversation should not depend on the
-  athlete remembering to type it — see the note under 1.1.
-- `weak points: triceps, chest` to move them to the block in progress
-- `weak points none` for this block if not already sent
-- A third Reverse Cable Fly set. Undecided; either answer is fine.
+Nothing here is the athlete's to type. A decision reached in chat is
+recorded by decision capture; one that predates it goes in through
+`data_fixes.py`.
 
 ### 1.4 Housekeeping on the Mac
 

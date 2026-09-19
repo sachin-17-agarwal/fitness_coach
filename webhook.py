@@ -617,7 +617,37 @@ from coach_parsing import (  # noqa: E402
 
 @app.route("/status", methods=["GET"])
 def status():
-    return jsonify({"status": "running", "service": "fitness-coach"}), 200
+    """Health, plus the two things worth checking without a token: which
+    data fixes have been applied and what emphasis is queued for the next
+    block. Muscle names only; nothing personal."""
+    out = {"status": "running", "service": "fitness-coach"}
+    try:
+        from data_fixes import applied_keys  # local: keeps import order flat
+        from weakpoints import _pending_emphasis  # local: keeps import order flat
+        memory = load_memory()
+        out["data_fixes"] = applied_keys(memory)
+        supabase = get_supabase()
+        out["emphasis_next"] = [f"{p['muscle']}: {p.get('note') or ''}".strip(": ")
+                                for p in (_pending_emphasis(supabase) if supabase else [])]
+    except Exception as exc:
+        out["detail_error"] = f"{type(exc).__name__}: {exc}"
+    return jsonify(out), 200
+
+
+def _apply_data_fixes_at_start() -> None:
+    """Decisions that belong in the records go in by code at boot, once."""
+    try:
+        if not get_supabase():
+            return
+        from data_fixes import apply_pending  # local: keeps import order flat
+        applied = apply_pending()
+        if applied:
+            log.info("Data fixes applied at start: %s", ", ".join(applied))
+    except Exception:
+        log.exception("Data fixes at start failed")
+
+
+_apply_data_fixes_at_start()
 
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
