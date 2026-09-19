@@ -120,6 +120,22 @@ class DataFixTests(unittest.TestCase):
              patch("constraints.load_active", side_effect=load_active):
             self.assertIn("nothing to clear", data_fixes._fix_2026_09_19_clear_cable_crunch_cap())
 
+    def test_the_leg_press_note_is_cleared_and_other_constraints_stay(self):
+        state = {"active": [{"exercise": "Leg Press", "max_load_kg": None, "note": "too light", "set_on": "2026-09-14"},
+                            {"exercise": "Machine Shoulder Press", "max_load_kg": 70, "set_on": "2026-09-17"}]}
+
+        def record(line):
+            self.assertEqual(line, "Decision: Leg Press | clear")
+            state["active"] = [c for c in state["active"] if c["exercise"] != "Leg Press"]
+            return 0
+
+        with patch("data.get_supabase", return_value=object()), \
+             patch("constraints.load_active", side_effect=lambda: list(state["active"])), \
+             patch("constraints.record_decisions", side_effect=record):
+            note = data_fixes._fix_2026_09_19_clear_leg_press_note()
+        self.assertIn("cleared Leg Press (note, since 2026-09-14)", note)
+        self.assertEqual([c["exercise"] for c in state["active"]], ["Machine Shoulder Press"])
+
     def test_the_emphasis_fix_refuses_a_refusal(self):
         with patch("data.get_supabase", return_value=object()), \
              patch("coach.load_system_prompt", return_value="PROMPT"), \
