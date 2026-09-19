@@ -472,6 +472,14 @@ against its band) from the stored sheet, and the card shows them as rows
 under STRENGTH and VOLUME, so the prose is told to interpret and name at
 most three of each.
 
+The same review called Seated Leg Curl down 10.9% while the strength page
+showed it up: the peak week's only sets were 110 x 16, the review kept
+sets of 12 reps or fewer and fell back to a lighter week-1 set. The review
+now follows `StrengthViewModel.maxRepsForLooseE1RM`: strict sets first, a
+set of 13–20 reps when a stretch has nothing tighter, marked as a looser
+estimate on the sheet and with "~" before the set on the card. A third
+dated fix removes unanswered reviews computed before the rule.
+
 **Goal.** The morning after the block's last session, on a rest day, a
 Home card and a waiting coach message carry the review and two or three
 proposed changes; "yes to 1 and 3" records them.
