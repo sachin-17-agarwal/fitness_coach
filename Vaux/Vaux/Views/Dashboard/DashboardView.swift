@@ -29,6 +29,8 @@ struct DashboardView: View {
     /// whether the numbers behind the proposals are unfolded.
     @State private var selectedProposals: Set<Int> = []
     @State private var showReviewNumbers = false
+    @State private var showAllReviewLifts = false
+    @State private var showAllReviewMuscles = false
     @AppStorage(Config.displayNameKey) private var displayName: String = ""
 
     var switchToChatTab: (() -> Void)? = nil
@@ -771,10 +773,20 @@ struct DashboardView: View {
         }
     }
 
-    /// Every lift, largest rise first: name, this block's top set, the change.
+    /// A lift worth a row by default: it moved, or a decision holds it.
+    /// Flat and first-block lifts sit behind the "all lifts" toggle.
+    private static func liftMoved(_ lift: BlockReviewResponse.Lift) -> Bool {
+        guard let pct = lift.deltaPct else { return false }
+        return lift.verdict == "held" || abs(pct) >= 1
+    }
+
+    /// The lifts that moved, largest rise first: name, this block's top set,
+    /// the change. A toggle shows the rest.
     @ViewBuilder
-    private func liftRows(_ lifts: [BlockReviewResponse.Lift]) -> some View {
-        if !lifts.isEmpty {
+    private func liftRows(_ all: [BlockReviewResponse.Lift]) -> some View {
+        let moved = all.filter(Self.liftMoved)
+        let lifts = showAllReviewLifts || moved.isEmpty ? all : moved
+        if !all.isEmpty {
             VStack(spacing: 0) {
                 ForEach(Array(lifts.enumerated()), id: \.offset) { index, lift in
                     if index > 0 { Rectangle().fill(Color.line).frame(height: 1) }
@@ -785,7 +797,7 @@ struct DashboardView: View {
                             .lineLimit(1)
                         Spacer(minLength: 8)
                         if let set = lift.thisSet {
-                            Text((lift.loose == true ? "~" : "") + set.uppercased())
+                            Text((lift.loose == true ? "~" : "") + set.uppercased() + (lift.bodyweight == true ? " +BW" : ""))
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.fg3)
                         }
@@ -797,15 +809,42 @@ struct DashboardView: View {
                     }
                     .padding(.vertical, 7)
                 }
+                if moved.count < all.count && !moved.isEmpty {
+                    reviewToggle(showAllReviewLifts ? "FEWER LIFTS" : "ALL \(all.count) LIFTS", on: $showAllReviewLifts)
+                }
             }
             .padding(.top, 4)
         }
     }
 
-    /// Every banded muscle: sets a week against the band, tinted by where it landed.
+    private func reviewToggle(_ label: String, on flag: Binding<Bool>) -> some View {
+        Button {
+            Haptic.light()
+            withAnimation(.easeInOut(duration: 0.2)) { flag.wrappedValue.toggle() }
+        } label: {
+            HStack {
+                Text(label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .kerning(2)
+                    .foregroundStyle(Color.fg3)
+                Spacer()
+                Image(systemName: flag.wrappedValue ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.fg3)
+            }
+            .frame(minHeight: 32)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The muscles outside their band: sets a week against it. A toggle
+    /// shows every banded muscle.
     @ViewBuilder
-    private func volumeRows(_ rows: [BlockReviewResponse.VolumeRow]) -> some View {
-        if !rows.isEmpty {
+    private func volumeRows(_ all: [BlockReviewResponse.VolumeRow]) -> some View {
+        let outside = all.filter { ($0.underBy ?? 0) > 0 || ($0.overBy ?? 0) > 0 }
+        let rows = showAllReviewMuscles || outside.isEmpty ? all : outside
+        if !all.isEmpty {
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                     if index > 0 { Rectangle().fill(Color.line).frame(height: 1) }
@@ -829,6 +868,9 @@ struct DashboardView: View {
                             .frame(minWidth: 96, alignment: .trailing)
                     }
                     .padding(.vertical, 7)
+                }
+                if outside.count < all.count && !outside.isEmpty {
+                    reviewToggle(showAllReviewMuscles ? "FEWER MUSCLES" : "ALL \(all.count) MUSCLES", on: $showAllReviewMuscles)
                 }
             }
             .padding(.top, 4)

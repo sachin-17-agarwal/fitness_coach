@@ -99,7 +99,10 @@ class CardStructureTests(unittest.TestCase):
                          {"kind": "emphasis", "subject": "Triceps", "detail": "still under band; keep as emphasis"})
         self.assertEqual(br.proposal_parts("Decision: Leg Press | max load 242.5kg | open heavier"),
                          {"kind": "decision", "subject": "Leg Press", "detail": "max load 242.5kg · open heavier"})
-        self.assertEqual(br.proposal_parts("Decision: Cable Crunch | clear")["detail"], "clear")
+        clear = br.proposal_parts("Decision: Cable Crunch | clear")
+        self.assertEqual(clear["kind"], "standing decision")
+        self.assertEqual(clear["subject"], "Cable Crunch")
+        self.assertTrue(clear["detail"].startswith("Clear it"))
 
 
 class FactTests(unittest.TestCase):
@@ -148,24 +151,27 @@ class FactTests(unittest.TestCase):
                                  "emphasis": [], "emphasis_next": [], "standing_constraints": "", "adjustments": []})
         self.assertIn("— held (standing decision: flat because it was told to be)", sheet)
 
-    def test_a_strict_set_outranks_a_loose_one_and_a_loose_peak_beats_a_lighter_early_strict_set(self):
-        # 19 Sep 2026: the leg curl's peak week was 110 x 16; the review had
-        # compared a week-1 100 x 11 instead and called the lift down 10.9%.
+    def test_the_best_estimate_wins_and_a_set_past_12_reps_is_marked(self):
+        # 19 Sep 2026: the leg curl's peak week was 110 x 16 and the review
+        # had compared a week-1 100 x 11 instead; Leg Press's 245 x 15 top set
+        # lost to a lighter 12-rep set beside it and read "flat".
         rows = [_set("2026-08-20", "Seated Leg Curl", 100, 12, "p3"),
                 _set("2026-09-05", "Seated Leg Curl", 100, 11, "t1"), _set("2026-09-14", "Seated Leg Curl", 110, 16, "t3"),
-                _set("2026-09-14", "Leg Press", 245, 15, "t3"), _set("2026-09-14", "Leg Press", 240, 10, "t3")]
+                _set("2026-08-20", "Leg Press", 240, 14, "p3"),
+                _set("2026-09-14", "Leg Press", 245, 15, "t3"), _set("2026-09-14", "Leg Press", 205, 12, "t3")]
         weeks = {"p3": 3, "t1": 1, "t3": 3}
         facts = {f["exercise"]: f for f in br.strength_facts(rows, weeks, self.WINDOW)}
         slc = facts["Seated Leg Curl"]
         self.assertEqual((slc["this_set"], slc["prev_set"]), ("110kg x16", "100kg x12"))
         self.assertTrue(slc["this_loose"]); self.assertFalse(slc["prev_loose"])
         self.assertEqual(slc["verdict"], "up")
-        # With a strict set in the same week, the strict one is the point even if the loose one estimates higher.
-        self.assertEqual(facts["Leg Press"]["this_set"], "240kg x10")
-        self.assertFalse(facts["Leg Press"]["this_loose"])
+        lp = facts["Leg Press"]
+        self.assertEqual((lp["this_set"], lp["prev_set"]), ("245kg x15", "240kg x14"))
+        self.assertTrue(lp["this_loose"])
+        self.assertEqual(lp["verdict"], "up")
+        self.assertAlmostEqual(lp["delta_pct"], 4.5, places=0)
         # A set past 20 reps is still ignored.
-        far = br.strength_facts([_set("2026-09-14", "Calf Raise", 60, 25, "t3")], weeks, self.WINDOW)
-        self.assertEqual(far, [])
+        self.assertEqual(br.strength_facts([_set("2026-09-14", "Calf Raise", 60, 25, "t3")], weeks, self.WINDOW), [])
         sheet = br.format_facts({"window": {"since": "2026-09-01", "until": "2026-09-14", "complete": True},
                                  "strength": [slc], "volume": [], "recovery": {}, "emphasis": [], "emphasis_next": [],
                                  "standing_constraints": "", "adjustments": []})
@@ -194,7 +200,7 @@ class FactTests(unittest.TestCase):
         self.assertIn("Leg Press: 306.7kg (230kg x10) vs 266.7kg (200kg x10) = +15% — up", text)
         self.assertIn("Hamstrings: 8.1 against 10-16 — UNDER by 1.9", text)
         self.assertIn("HRV: 48.0 vs baseline 42.0", text)
-        self.assertIn("THIS BLOCK'S EMPHASIS: triceps", text)
+        self.assertIn("WEAK-POINT WORK THAT RAN THIS BLOCK", text)
 
 
 class NarrativeChecksTests(unittest.TestCase):
@@ -246,6 +252,77 @@ class NarrativeChecksTests(unittest.TestCase):
         self.assertIn("Biceps: 15.6 against 8-12 — OVER by 3.6 (not an Emphasis-next)", sheet)
         self.assertIn("Chest: 6.0 against 10-16 — UNDER by 4.0", sheet)
         self.assertIn("NEXT BLOCK'S EMPHASIS, already set by the athlete (do not propose again): Triceps → Overhead Cable Extension", sheet)
+
+
+    def test_a_bodyweight_lift_is_scored_plate_plus_body_as_the_app_does(self):
+        # Dips +26.5% on the plate alone (20kg vs 15kg); with an 80kg body
+        # behind both it is a few percent.
+        rows = [_set("2026-08-20", "Dips", 15, 8, "p3"), _set("2026-09-12", "Dips", 20, 7, "t3")]
+        weeks = {"p3": 3, "t3": 3}
+        weigh = [("2026-08-01", 79.0), ("2026-09-10", 81.0)]
+        fact = br.strength_facts(rows, weeks, FactTests.WINDOW, weigh=weigh)[0]
+        self.assertTrue(fact["bodyweight"])
+        self.assertEqual(fact["this_set"], "20kg x7")                       # the plate is what is shown
+        self.assertAlmostEqual(fact["this_e1rm"], (20 + 81) * (1 + 7 / 30), places=1)
+        self.assertAlmostEqual(fact["prev_e1rm"], (15 + 79) * (1 + 8 / 30), places=1)
+        self.assertTrue(-2 < fact["delta_pct"] < 6)
+        # Without weigh-ins the plate alone, and the flag says so.
+        bare = br.strength_facts(rows, weeks, FactTests.WINDOW)[0]
+        self.assertFalse(bare["bodyweight"])
+        self.assertEqual(br.kg_on(weigh, "2026-09-11"), 81.0)
+        self.assertEqual(br.kg_on(weigh, "2026-07-01"), 79.0)
+        self.assertIsNone(br.kg_on([], "2026-09-11"))
+
+    def test_one_lift_under_two_names_is_one_lift_when_the_library_says_so(self):
+        rows = [_set("2026-08-20", "Incline Barbell Press", 65, 8, "p3"),
+                _set("2026-09-05", "Incline Press", 70, 9, "t1"), _set("2026-09-12", "Incline Barbell Press", 70, 7, "t3")]
+        weeks = {"p3": 3, "t1": 1, "t3": 3}
+        canon = {"incline barbell press": "Incline Barbell Press", "incline press": "Incline Barbell Press"}
+        facts = br.strength_facts(rows, weeks, FactTests.WINDOW, canon=canon)
+        self.assertEqual([f["exercise"] for f in facts], ["Incline Barbell Press"])
+        self.assertEqual(facts[0]["this_set"], "70kg x7")          # the peak-week set, under either spelling
+        self.assertEqual(facts[0]["verdict"], "up")
+        # Without the alias they stay two lifts, one of them "first block".
+        split = {f["exercise"]: f["verdict"] for f in br.strength_facts(rows, weeks, FactTests.WINDOW)}
+        self.assertEqual(split, {"Incline Barbell Press": "up", "Incline Press": "first block"})
+
+    def test_the_emphasis_that_ran_comes_from_cardio_abs_sets_not_a_pick_row(self):
+        sessions = [{"id": "c1", "date": "2026-09-05", "type": "Cardio+Abs"}, {"id": "l1", "date": "2026-09-06", "type": "Legs"},
+                    {"id": "c2", "date": "2026-09-09", "type": "Cardio+Abs"}]
+        rows = [_set("2026-09-05", "Cable Crunch", 100, 12, "c1"), _set("2026-09-05", "Pallof Press", 50, 12, "c1"),
+                _set("2026-09-06", "Seated Leg Curl", 110, 12, "l1"),
+                _set("2026-09-09", "Overhead Cable Extension", 25, 12, "c2"), _set("2026-09-09", "Overhead Cable Extension", 25, 11, "c2")]
+        window = {"since": "2026-09-01", "until": "2026-09-14"}
+        ran = br.emphasis_that_ran(rows, sessions, window)
+        self.assertEqual(ran, [{"muscle": "Triceps", "sets": 2, "exercises": ["Overhead Cable Extension"]}])
+        abs_only = [r for r in rows if r["workout_session_id"] == "c1"]
+        self.assertEqual(br.emphasis_that_ran(abs_only, sessions, window), [])
+        sheet = br.format_facts({"window": {"since": "2026-09-01", "until": "2026-09-14", "complete": True},
+                                 "strength": [], "volume": [], "recovery": {}, "emphasis": [], "emphasis_ran": [],
+                                 "emphasis_stored": ["Hamstrings"], "emphasis_next": [], "standing_constraints": "",
+                                 "adjustments": []})
+        self.assertIn("none — every Cardio+Abs day ended after the ab block", sheet)
+        self.assertIn("a stored pick named Hamstrings; it did not run, so it was not this block's emphasis", sheet)
+
+    def test_every_standing_decision_is_put_to_the_athlete_as_keep_or_clear(self):
+        constraints = [{"exercise": "Machine Shoulder Press", "max_load_kg": 70, "note": "shoulder niggle", "set_on": "2026-09-13"},
+                       {"exercise": "Leg Press", "max_load_kg": None, "note": "open heavier than 242.5kg", "set_on": "2026-09-14"}]
+        strength = [{"exercise": "Machine Shoulder Press", "this_e1rm": 75.2, "this_set": "55kg x11", "prev_e1rm": 96.0,
+                     "prev_set": "70kg x12", "delta_pct": -21.7, "verdict": "held", "held_by_decision": True,
+                     "this_from_peak_week": True, "this_loose": False, "prev_loose": False}]
+        props = br.constraint_proposals(constraints, strength)
+        self.assertEqual([p["line"] for p in props], ["Decision: Machine Shoulder Press | clear", "Decision: Leg Press | clear"])
+        self.assertIn("70kg cap since 2026-09-13: shoulder niggle. This block: 55kg x11, -21.7% on last block's peak.", props[0]["rationale"])
+        self.assertIn("Approve to clear it; leave it to keep it.", props[1]["rationale"])
+        for p in props:
+            self.assertTrue(br._LINE_RE.match(p["line"]), p["line"])
+        sheet = br.format_facts({"window": {"since": "2026-09-01", "until": "2026-09-14", "complete": True},
+                                 "strength": strength, "volume": [], "recovery": {}, "emphasis": [], "emphasis_ran": [],
+                                 "emphasis_next": [], "standing_constraints": "x", "adjustments": [],
+                                 "standing": constraints})
+        self.assertIn("STANDING DECISIONS IN FORCE — the card asks keep-or-clear for each; recommend one:", sheet)
+        self.assertIn("Machine Shoulder Press: max load 70kg, since 2026-09-13 — shoulder niggle — this block 55kg x11, -21.7%", sheet)
+        self.assertIn("Leg Press: note, since 2026-09-14 — open heavier than 242.5kg", sheet)
 
 
 class AnswerTests(unittest.TestCase):

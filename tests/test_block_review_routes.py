@@ -39,9 +39,9 @@ class BlockReviewRouteTests(unittest.TestCase):
         self.assertIn("Strength held.", body["text"])
         self.assertEqual(body["proposals"][0]["line"], "Decision: Cable Crunch | clear")
         # The card renders structure, not the text blob.
-        self.assertEqual(body["proposals"][0]["kind"], "decision")
+        self.assertEqual(body["proposals"][0]["kind"], "standing decision")
         self.assertEqual(body["proposals"][0]["subject"], "Cable Crunch")
-        self.assertEqual(body["proposals"][0]["detail"], "clear")
+        self.assertTrue(body["proposals"][0]["detail"].startswith("Clear it"))
         self.assertEqual(body["sections"], [{"label": "", "body": "Strength held."}])
         self.assertEqual(body["window"], {"since": "2026-08-19", "until": None})
         self.assertEqual(body["lifts"], [])

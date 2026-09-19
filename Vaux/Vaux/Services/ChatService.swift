@@ -89,8 +89,10 @@ struct BlockReviewResponse: Codable, Sendable {
         let prevSet: String?
         /// Estimated from a set past 12 reps, as the strength page marks it.
         let loose: Bool?
+        /// Scored as plate plus the athlete's share of bodyweight.
+        let bodyweight: Bool?
         enum CodingKeys: String, CodingKey {
-            case exercise, verdict, loose
+            case exercise, verdict, loose, bodyweight
             case deltaPct = "delta_pct"
             case thisSet = "this_set"
             case prevSet = "prev_set"
