@@ -622,6 +622,42 @@ corrected it wrote "Revising:" and sent no block.
   block for the lift on the card gets "(No revised block came through, so
   the card still reads …)" appended, and the miss is logged.
 
+## Pre-flight: the card checked by code before anyone sees it — shipped 20 Sep
+
+**Why.** Every rule had a test; what broke each week was what the rules
+produced together on a real lift, found by the athlete at the gym. The
+audit was reactive and the athlete was the harness. Nothing in this asks
+him to check anything.
+
+**What.** `preflight.enforce(proposals, history, peak_history, week,
+straight_lifts, ceilings, session_type, weak_points)` runs inside
+`programme.build_proposal`, so every card — opening, mid-session recompute,
+tomorrow's dry run — passes it. Invariants, corrected in place and written
+into the card's first reason ("Pre-flight corrected this card: …"):
+- loadable: every load is a multiple of the lift's own step;
+- regression: the top set is not below the anchor (peak in weeks 1/4, else
+  the last session) unless a rule says so in its own words (recovery,
+  deload, below range, cap, standing decision, stall, tempo …);
+- range: working reps inside the programme's band, one step under the floor
+  allowed for a recovery cut; straight-set lifts use their own;
+- ceiling: nothing above an active cap;
+- slots: on Cardio+Abs the queued emphasis lifts are on the card — reported
+  as UNFIXED when not, since the plan is built upstream.
+
+**Nightly dry run.** `preflight.run_if_due(memory)` builds the next
+session's card once per local day, outside any session, and stores
+`preflight_last` (session, week, every lift's top set, findings) in memory;
+`/status` shows it. Hung on the widget's and Home's reads, so it needs no
+scheduler. Findings are logged `PRE-FLIGHT …` for the Sunday report.
+
+**Next, in this order.** (1) The in-session coach's numbers about history
+must appear in the context it was handed, as the block review already
+enforces. (2) Replay of the whole pipeline against the athlete's real
+export as a test, run before any prescription change ships.
+
+Tests: `tests/test_preflight.py` (9), including the Reverse Cable Fly case
+end to end through `build_proposal`.
+
 ## 2.8 Apple Watch, timer stage
 
 **Goal.** The rest timer on the wrist with haptics and the next prescribed

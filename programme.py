@@ -163,6 +163,12 @@ def weak_point_slots(plan: tuple, entries: list, weak_points: list | None) -> tu
     return tuple(plan), straight
 
 
+# Findings of the most recent build_proposal (preflight.enforce), for the
+# nightly record; a module value because the tuple this returns is unpacked
+# by every caller.
+LAST_PREFLIGHT: list = []
+
+
 def build_proposal(prompt: str, session_type: str, week: int,
                    current_loads: list[dict],
                    recovery: dict | None = None,
@@ -200,6 +206,16 @@ def build_proposal(prompt: str, session_type: str, week: int,
         if ceilings:
             from constraints import apply_ceilings  # local: keeps import order flat
             proposals = apply_ceilings(proposals, ceilings)
+        # Pre-flight: the card the rules produced TOGETHER, checked against the
+        # invariants and corrected in place, the correction written into the
+        # reason line. What it found is kept for the nightly record.
+        from preflight import enforce, summarise  # local: keeps import order flat
+        proposals, findings = enforce(proposals, history, peak_history, week, straight_lifts, ceilings,
+                                      session_type=session_type, weak_points=weak_points)
+        global LAST_PREFLIGHT
+        LAST_PREFLIGHT = findings
+        if findings:
+            log.warning("PRE-FLIGHT corrected %s wk%s: %s", session_type, week, summarise(findings))
         return proposals, renamed, ambiguous
     except Exception:
         # A proposal is an aid, never a precondition. The coach has run without
