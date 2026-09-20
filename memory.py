@@ -96,24 +96,42 @@ def set_memory_value(key: str, value: str) -> None:
         log.exception("Supabase memory write failed for %s", key)
 
 
-def save_conversation_message(role: str, content: str):
-    """Save a single message to the conversations table."""
+def save_conversation_message(role: str, content: str, client_id: str | None = None):
+    """Save a single message to the conversations table. `client_id` is the
+    app's id for the exchange (migration 011); a store without the column
+    still gets the row, without the id."""
     supabase = get_supabase()
     if not supabase:
-        return
+        return None
+    row = {
+        "date": today_local_str(),
+        "role": role,
+        "content": content,
+        "created_at": now_local().isoformat(),
+    }
+    if client_id:
+        row["client_id"] = client_id
     try:
-        supabase.table("conversations").insert({
-            "date": today_local_str(),
-            "role": role,
-            "content": content,
-            "created_at": now_local().isoformat(),
-        }).execute()
+        saved = supabase.table("conversations").insert(row).execute().data or []
+        return (saved[0] if saved else {}).get("id")
     except Exception:
+        if client_id:
+            log.warning("conversations has no client_id column (migration 011?); saving the turn without it")
+            row.pop("client_id", None)
+            try:
+                saved = supabase.table("conversations").insert(row).execute().data or []
+                return (saved[0] if saved else {}).get("id")
+            except Exception:
+                pass
         log.exception("Failed to save conversation message")
+        return None
 
 
-def load_today_conversation() -> list:
-    """Load today's conversation history from Supabase."""
+def load_today_conversation(with_client_id: bool = False) -> list:
+    """Load today's conversation history from Supabase. Rows are
+    {role, content}; with `with_client_id` each also carries client_id, for
+    the caller that must drop its own in-flight marker before handing the
+    history to the model."""
     try:
         supabase = get_supabase()
         today = today_local_str()
@@ -122,15 +140,26 @@ def load_today_conversation() -> list:
         # same request — and an undefined order between them hands the coach a
         # conversation where its own answer precedes the question. Cheap
         # insurance: id is BIGSERIAL, so it is already insertion order.
-        result = (
-            supabase.table("conversations")
-            .select("role, content")
-            .eq("date", today)
-            .order("created_at")
-            .order("id")
-            .execute()
-        )
-        return [{"role": row["role"], "content": row["content"]} for row in result.data]
+        columns = "role, content, client_id" if with_client_id else "role, content"
+        try:
+            result = (
+                supabase.table("conversations").select(columns).eq("date", today)
+                .order("created_at").order("id").execute()
+            )
+        except Exception:
+            if not with_client_id:
+                raise
+            result = (
+                supabase.table("conversations").select("role, content").eq("date", today)
+                .order("created_at").order("id").execute()
+            )
+        rows = []
+        for row in result.data:
+            out = {"role": row["role"], "content": row["content"]}
+            if with_client_id:
+                out["client_id"] = row.get("client_id")
+            rows.append(out)
+        return rows
     except Exception:
         log.exception("Failed to load conversation")
         return []

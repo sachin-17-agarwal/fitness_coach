@@ -194,6 +194,9 @@ struct WorkoutModeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 viewModel.heartRateMonitor.resume()
+                // A set logged just before switching apps may still owe its
+                // reply; ask for it by id now that we are back.
+                Task { await viewModel.resumePendingCoachMessage() }
                 // A new day since the last read: yesterday's swap is over.
                 if resolvedOn != Config.isoDay(), !viewModel.isActive {
                     Task { await resolveToday() }

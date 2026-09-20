@@ -296,8 +296,21 @@ def api_chat():
     text = (data or {}).get("message", "").strip()
     if not text:
         return jsonify({"error": "empty message"}), 400
+    client_id = str((data or {}).get("client_id") or "").strip()[:64] or None
 
     recovery_override = _recovery_override_from(data)
+
+    # Idempotent delivery (delivery.py): the same client_id sent again after
+    # the phone dropped the connection returns the reply already written, or
+    # 202 while the coach is still on it, and never runs the coach twice.
+    if client_id:
+        import delivery  # local: keeps import order flat
+        state, answered = delivery.check(client_id)
+        if state == "answered":
+            return jsonify(_chat_result(answered.get("content") or "", load_memory(), [], recovered=True))
+        if state == "in_flight":
+            return jsonify({"status": "processing", "client_id": client_id}), 202
+        delivery.claim(client_id, text)
 
     try:
         memory = load_memory()
@@ -307,8 +320,12 @@ def api_chat():
         # double-logs structured entries and invents sets out of ordinary chat.
         response = handle_incoming_message(text, memory, send_reply=False, out_prs=prs,
                                            recovery_override=recovery_override,
-                                           allow_set_logging=False)
+                                           allow_set_logging=False,
+                                           save_user=client_id is None, client_id=client_id)
     except Exception as e:
+        if client_id:
+            import delivery
+            delivery.release(client_id)
         # Log full traceback to Railway/Flask logs for debugging, but return
         # a clean JSON error so the iOS app surfaces something useful instead
         # of a generic HTML 500 page.
@@ -317,12 +334,6 @@ def api_chat():
             "error": "coach_failed",
             "message": f"{type(e).__name__}: {e}",
         }), 502
-
-    def _int_or_default(val, default=1):
-        try:
-            return int(val)
-        except (TypeError, ValueError):
-            return default
 
     # No `prescription` key. It used to carry a server-side parse of the first
     # exercise block, and the app merged it as `[serverRx] + clientParsed
@@ -337,6 +348,18 @@ def api_chat():
     # `prescription` optional and WorkoutViewModel already falls back to the
     # client parse when it is absent. `Revised:` survives too — the Swift
     # parser detects it itself (PrescriptionParser.swift:163).
+    if client_id:
+        import delivery
+        delivery.release(client_id)
+    return jsonify(_chat_result(response, memory, prs))
+
+
+def _chat_result(response: str, memory: dict, prs: list, recovered: bool = False) -> dict:
+    def _int_or_default(val, default=1):
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return default
     result = {
         "response": response,
         "mesocycle_day": _int_or_default(memory.get("mesocycle_day"), 1),
@@ -344,8 +367,9 @@ def api_chat():
     }
     if prs:
         result["prs"] = prs
-
-    return jsonify(result)
+    if recovered:
+        result["recovered"] = True
+    return result
 
 def load_system_prompt_for_review() -> str:
     from coach import load_system_prompt  # local: keeps import order flat

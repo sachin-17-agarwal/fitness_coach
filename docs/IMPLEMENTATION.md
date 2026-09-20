@@ -567,6 +567,37 @@ proposals JSON, status `draft|shown|answered`, dry_run flag),
 
 **Gate.** Gates 1–3; the narrative-cites-facts check; one dry-run block.
 
+## Idempotent chat delivery — shipped 20 Sep (migration 011)
+
+**Problem.** Log a set, switch apps while the coach thinks, come back: the
+reply never arrives. iOS suspends the app within seconds and the request
+dies; the coach finishes anyway. Re-sending the message made the coach see
+it twice, so the app was told never to retry, and polled the conversation by
+matching text instead — which missed.
+
+**Design.** Every message carries a `client_id` the app made. On arrival
+`/api/chat` writes the USER turn under that id (the in-flight marker), and
+the ASSISTANT turn under it when done (`coach.handle_incoming_message(...,
+save_user, client_id)`; `memory.save_conversation_message(..., client_id)`).
+A resend of the same id (`delivery.check`) finds one of: answered — return
+the reply, `recovered: true`, run nothing; in flight — 202, the app asks
+again; new or a marker older than 180 s — process. Without the column the
+process remembers what is in flight (`delivery._inflight_memory`).
+
+**App.** `ChatService.sendMessage(text, clientID:)` runs inside a UIKit
+background task (about thirty seconds after switching apps), and on a
+dropped connection or a 202 asks again by the same id until the reply
+arrives or `RetryConfig.chatTimeout` passes. `WorkoutViewModel` keeps a set
+message whose reply never arrived as `pendingCoachMessage` and
+`resumePendingCoachMessage()` asks for it by id when the app becomes active
+(`WorkoutModeView` scene phase). The card says "Still waiting on the coach
+for this set — it's logged" meanwhile.
+
+**Run.** Migration 011 in Supabase. Until then delivery falls back to the
+in-process memory, which covers everything but a restart mid-request.
+
+Tests: `tests/test_delivery.py` (10).
+
 ## 2.8 Apple Watch, timer stage
 
 **Goal.** The rest timer on the wrist with haptics and the next prescribed
