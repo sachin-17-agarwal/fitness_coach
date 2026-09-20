@@ -730,7 +730,9 @@ def _settle_stale_session(memory: dict) -> None:
 def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool = True,
                             out_prs: list | None = None,
                             recovery_override: dict | None = None,
-                            allow_set_logging: bool = True) -> str:
+                            allow_set_logging: bool = True,
+                            save_user: bool = True,
+                            client_id: str | None = None) -> str:
     """Process a user message, log any sets, and return the coach reply.
 
     `allow_set_logging` MUST be False for callers whose client persists its own
@@ -752,7 +754,23 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     sees on screen. Telegram/CLI callers leave it None and fall back to the
     database-derived snapshot.
     """
-    conversation_history = load_today_conversation()
+    # The app's in-flight marker (delivery.claim) is the user turn already
+    # written for THIS message; it must not also appear in the history the
+    # coach reads, and the turns saved below carry the same id so a resend
+    # can find the reply.
+    def _save_user():
+        if save_user:
+            save_conversation_message("user", incoming_text, client_id=client_id)
+
+    def _save_assistant(text):
+        save_conversation_message("assistant", text, client_id=client_id)
+
+    if client_id:
+        conversation_history = [{"role": m["role"], "content": m["content"]}
+                                for m in load_today_conversation(with_client_id=True)
+                                if m.get("client_id") != client_id]
+    else:
+        conversation_history = load_today_conversation()
     normalised_text = incoming_text.lower().replace("'", "'").strip()
     mesocycle_day = _safe_int(memory.get("mesocycle_day", 1))
     expected_session_type = get_session_type_for_day(
@@ -821,8 +839,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
         except Exception as exc:
             log.exception("Emphasis command failed")
             message = f"Couldn't set the next block's emphasis: {exc}"
-        save_conversation_message("user", incoming_text)
-        save_conversation_message("assistant", message)
+        _save_user()
+        _save_assistant(message)
         if send_reply:
             send_telegram_message(message)
         return message
@@ -833,8 +851,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
         except Exception as exc:
             log.exception("Weak-point command failed")
             message = f"Couldn't change the block's weak points: {exc}"
-        save_conversation_message("user", incoming_text)
-        save_conversation_message("assistant", message)
+        _save_user()
+        _save_assistant(message)
         if send_reply:
             send_telegram_message(message)
         return message
@@ -858,8 +876,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             except Exception as exc:
                 log.exception("Block review failed")
                 message = f"Couldn't write the block review: {exc}"
-        save_conversation_message("user", incoming_text)
-        save_conversation_message("assistant", message)
+        _save_user()
+        _save_assistant(message)
         if send_reply:
             send_telegram_message(message)
         return message
@@ -873,8 +891,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             except Exception as exc:
                 log.exception("Block review answer failed")
                 message = f"Couldn't record that answer: {exc}"
-            save_conversation_message("user", incoming_text)
-            save_conversation_message("assistant", message)
+            _save_user()
+            _save_assistant(message)
             if send_reply:
                 send_telegram_message(message)
             return message
@@ -897,8 +915,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             except Exception as exc:
                 log.exception("Decision answer failed")
                 message = f"Couldn't record that: {exc}"
-            save_conversation_message("user", incoming_text)
-            save_conversation_message("assistant", message)
+            _save_user()
+            _save_assistant(message)
             if send_reply:
                 send_telegram_message(message)
             return message
@@ -923,8 +941,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                        "names every exercise in today's plan, and posting that "
                        "into the workout chat would move your card off the lift "
                        "you're on. Finish the session and run `replay` again.")
-            save_conversation_message("user", incoming_text)
-            save_conversation_message("assistant", message)
+            _save_user()
+            _save_assistant(message)
             return message
 
         try:
@@ -939,8 +957,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                       f"affected.")
             summary = f"A replay was requested but failed: {exc}"
         try:
-            save_conversation_message("user", incoming_text)
-            save_conversation_message("assistant", summary)
+            _save_user()
+            _save_assistant(summary)
         except Exception:
             # The transcript is a convenience here, not the deliverable — the
             # athlete already has the report in front of him either way.
@@ -972,8 +990,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
             message = ("You're mid-session, so I'm holding the audit — it names "
                        "exercises, and posting that into the workout chat would "
                        "move your card. Finish the session and run `audit` again.")
-            save_conversation_message("user", incoming_text)
-            save_conversation_message("assistant", message)
+            _save_user()
+            _save_assistant(message)
             return message
         try:
             from audit import run_chat_audit  # local: keeps import order flat
@@ -989,8 +1007,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                       f"about your training is affected.")
             summary = f"An audit was requested but failed: {exc}"
         try:
-            save_conversation_message("user", incoming_text)
-            save_conversation_message("assistant", summary)
+            _save_user()
+            _save_assistant(summary)
         except Exception:
             log.exception("Could not record the audit in the transcript")
         if send_reply:

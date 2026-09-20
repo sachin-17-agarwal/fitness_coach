@@ -72,6 +72,16 @@ final class WorkoutViewModel {
     // Coach feedback
     var coachNote: String?
     var isCoachThinking = false
+    /// A set message whose reply has not arrived: kept with its delivery id
+    /// so the same message is asked about again when the app comes back,
+    /// never sent as a new one. Switching apps while the coach was thinking
+    /// used to lose the reply for good.
+    struct PendingCoachMessage: Sendable {
+        let text: String
+        let id: UUID
+        let factPrefix: String
+    }
+    var pendingCoachMessage: PendingCoachMessage?
     /// Whose numbers are on the card. The opening shows the programme's at
     /// once while the coach reviews on the server; the review lands into the
     /// card and the label changes. If the review fails, the programme stands.
@@ -833,26 +843,48 @@ final class WorkoutViewModel {
         // The next-phase decision belongs to the iOS phase tracker, not the
         // coach — pass `allowExerciseChange: false` so a stray "moving to
         // chest" in the response can't skip the back-off that's still owed.
+        let pending = PendingCoachMessage(text: setMsg, id: UUID(), factPrefix: factPrefix)
+        pendingCoachMessage = pending
+        await deliverSetMessage(pending)
+        isCoachThinking = false
+    }
+
+    /// Send (or re-send, by the same id) a set message and show its reply.
+    /// A failure whose delivery is unknown keeps the message pending for
+    /// `resumePendingCoachMessage`; a definite failure gives up.
+    private func deliverSetMessage(_ pending: PendingCoachMessage) async {
         do {
-            let response = try await chatService.sendMessage(setMsg)
+            let response = try await chatService.sendMessage(pending.text, clientID: pending.id)
+            pendingCoachMessage = nil
             applyAIResponse(response, allowExerciseChange: false)
             // Prepend the fact AFTER applyAIResponse, because that call
             // resets `coachNote` from the parsed response.
             if let existing = coachNote, !existing.isEmpty {
-                coachNote = "\(factPrefix)\n\n\(existing)"
+                coachNote = "\(pending.factPrefix)\n\n\(existing)"
             } else {
-                coachNote = factPrefix
+                coachNote = pending.factPrefix
             }
         } catch {
             print("Coach feedback failed: \(error)")
-            // Leaving `coachNote` untouched here left the PREVIOUS set's note
-            // on screen with nothing marking it as stale — so a failed
-            // round-trip read as a reply to the set just logged, describing a
-            // different exercise and phase entirely. The fact line is authored
-            // locally and is always correct for the set that was just logged,
-            // so fall back to it rather than to whatever was there before.
-            coachNote = "\(factPrefix)\n\nCouldn't reach the coach for feedback on this set — it's logged. Ask again if you need the next target."
+            // The fact line is authored locally and is always correct for the
+            // set just logged, so it is what stays on screen — never the
+            // previous set's note, which read as a reply to the wrong set.
+            if ChatService.deliveryUnknown(error) {
+                coachNote = "\(pending.factPrefix)\n\nStill waiting on the coach for this set — it's logged. The reply lands when you're back in the app."
+            } else {
+                pendingCoachMessage = nil
+                coachNote = "\(pending.factPrefix)\n\nCouldn't reach the coach for feedback on this set — it's logged. Ask again if you need the next target."
+            }
         }
+    }
+
+    /// Called when the app becomes active: a set whose reply never arrived
+    /// is asked about again by its id, and the backend answers from what it
+    /// already wrote.
+    func resumePendingCoachMessage() async {
+        guard let pending = pendingCoachMessage, !isCoachThinking else { return }
+        isCoachThinking = true
+        await deliverSetMessage(pending)
         isCoachThinking = false
     }
 

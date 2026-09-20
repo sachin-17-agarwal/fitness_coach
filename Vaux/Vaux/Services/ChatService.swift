@@ -5,6 +5,7 @@
 // history in the Supabase `conversations` table.
 
 import Foundation
+import UIKit
 
 // MARK: - Response / Message types
 
@@ -15,6 +16,9 @@ struct ChatResponse: Codable, Sendable {
     let mesocycleWeek: Int?
     let prescription: ServerPrescription?
     let prs: [PRInfo]?
+    /// True when the backend answered a resend from the reply it had already
+    /// written, instead of running the coach again.
+    let recovered: Bool?
 
     enum CodingKeys: String, CodingKey {
         case response
@@ -22,8 +26,13 @@ struct ChatResponse: Codable, Sendable {
         case mesocycleWeek = "mesocycle_week"
         case prescription
         case prs
+        case recovered
     }
 }
+
+/// The backend accepted the message and is still writing the reply (HTTP 202
+/// on a resend). Not a failure: ask again shortly.
+struct CoachStillThinking: Error, Sendable {}
 
 /// `/api/session/open`: the programme's card at once, the coach's review to
 /// follow. `status` is "reviewing" (response carries the programme's plan) or
@@ -342,32 +351,48 @@ final class ChatService: Sendable {
     /// assistant's response. The backend persists both messages to the
     /// `conversations` table, so the client does not save them here (doing
     /// so would double-insert every message).
-    func sendMessage(_ text: String) async throws -> ChatResponse {
+    ///
+    /// Delivery is idempotent (migration 011): every message carries a
+    /// `clientID` the app made, the backend writes the user turn under it on
+    /// arrival and the reply under it when done, and a resend of the same id
+    /// gets the reply back — or 202 while the coach is still writing — and
+    /// never runs the coach twice. So:
+    ///
+    ///  - The call runs inside a background task, so switching apps for a
+    ///    few seconds no longer kills it; iOS grants about thirty.
+    ///  - If the connection still drops, the same id is sent again until the
+    ///    reply arrives or `RetryConfig.chatTimeout` has passed.
+    ///  - A caller that must not lose the reply keeps the id and calls again
+    ///    later (WorkoutViewModel does this when the app comes back).
+    func sendMessage(_ text: String, clientID: UUID = UUID()) async throws -> ChatResponse {
+        let background = UIApplication.shared.beginBackgroundTask(withName: "coach-message", expirationHandler: nil)
+        defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
+        let id = clientID.uuidString.lowercased()
         do {
-            return try await callBackend(text)
+            if let reply = try await callBackend(text, clientID: id) { return reply }
         } catch let error where Self.deliveryUnknown(error) {
-            // Backgrounding the app while the coach is thinking kills the
-            // connection, and the athlete sees "The network connection was
-            // lost". But the backend does not stop: handle_incoming_message
-            // persists BOTH turns to `conversations` before it answers, so by
-            // the time this fires the reply usually exists and only its
-            // delivery was lost.
-            //
-            // Retrying is not the fix and was already tried — an identical
-            // second POST made the coach see its own message twice. Recover
-            // the reply that is already there instead.
-            if let recovered = await recoverReply(to: text) {
-                return recovered
-            }
-            throw error
+            // The write may have landed: fall through and ask again by id.
         }
+        let deadline = Date().addingTimeInterval(RetryConfig.chatTimeout)
+        var lastError: Error = CoachStillThinking()
+        var delay: TimeInterval = 2
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            delay = min(delay * 1.5, 10)
+            do {
+                if let reply = try await callBackend(text, clientID: id) { return reply }
+                lastError = CoachStillThinking()
+            } catch let error where Self.deliveryUnknown(error) {
+                lastError = error
+            }
+        }
+        throw lastError
     }
 
-    /// Whether a failure says nothing about whether the server acted.
-    ///
-    /// The write may have been delivered and completed, so this is exactly the
-    /// class that must not be retried — and exactly the class worth recovering.
-    private static func deliveryUnknown(_ error: Error) -> Bool {
+    /// Whether a failure says nothing about whether the server acted — the
+    /// class worth asking again about, by the same id.
+    static func deliveryUnknown(_ error: Error) -> Bool {
+        if error is CoachStillThinking { return true }
         // Cast before matching: a case pattern cannot be applied to an `Error`
         // existential directly.
         if let retryError = error as? RetryableRequestError,
@@ -377,44 +402,11 @@ final class ChatService: Sendable {
         guard let urlError = error as? URLError else { return false }
         switch urlError.code {
         case .timedOut, .networkConnectionLost, .resourceUnavailable,
-             .cancelled, .backgroundSessionWasDisconnected:
+             .cancelled, .backgroundSessionWasDisconnected, .notConnectedToInternet:
             return true
         default:
             return false
         }
-    }
-
-    /// Poll today's conversation for the answer to `text`.
-    ///
-    /// A long prompt can take Claude 30-50s, so the reply may not be written
-    /// yet when the connection drops. Backs off rather than giving up on the
-    /// first look; returns nil if nothing arrives, and the caller then surfaces
-    /// the original error rather than inventing a reply.
-    private func recoverReply(to text: String) async -> ChatResponse? {
-        let sent = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        for delaySeconds in [2.0, 4.0, 8.0, 16.0] {
-            try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-            guard let messages = try? await loadTodayConversation() else { continue }
-            // The reply is the first assistant turn AFTER the message just
-            // sent. Matching on the text rather than the tail of the list so a
-            // reply to some earlier message is never mistaken for this one.
-            guard let sentIndex = messages.lastIndex(where: {
-                $0.isUser &&
-                $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == sent
-            }) else { continue }
-            let reply = messages[messages.index(after: sentIndex)...]
-                .first { $0.role == "assistant" }
-            if let reply {
-                return ChatResponse(
-                    response: reply.content,
-                    mesocycleDay: nil,
-                    mesocycleWeek: nil,
-                    prescription: nil,
-                    prs: nil
-                )
-            }
-        }
-        return nil
     }
 
     /// Trigger the backend's morning briefing using the user's saved
@@ -579,7 +571,9 @@ final class ChatService: Sendable {
         }
     }
 
-    private func callBackend(_ message: String) async throws -> ChatResponse {
+    /// One POST. Returns nil when the backend answered 202: the message is
+    /// its and the reply is still being written.
+    private func callBackend(_ message: String, clientID: String) async throws -> ChatResponse? {
         let rawURL = Config.backendURL
         let token = Config.appAPIToken
 
@@ -601,27 +595,26 @@ final class ChatService: Sendable {
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = RetryConfig.chatTimeout
 
-        var payload: [String: Any] = ["message": message]
+        var payload: [String: Any] = ["message": message, "client_id": clientID]
         if let recovery = await recoverySnapshot() {
             payload["recovery"] = recovery
         }
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let request = req
 
-        // Not idempotent: this appends to the conversation and bills a Claude
-        // call. Backgrounding the app mid-request drops the connection or
-        // runs out the timeout while the backend goes on to finish the work,
-        // so retrying on those sent the identical message a second time —
-        // the coach saw its own log twice and replied "same message coming
-        // through twice". Only pre-delivery failures are retried now.
-        let (data, response) = try await withRetry(idempotent: false) {
+        // Idempotent by client_id (see sendMessage): a repeat of this request
+        // returns the reply already written rather than running the coach
+        // again, so failures whose delivery is unknown may be retried.
+        let (data, response) = try await withRetry(idempotent: true) {
             try await URLSession.shared.data(for: request)
         }
 
-        if let http = response as? HTTPURLResponse,
-           !(200...299).contains(http.statusCode) {
-            let body = String(data: data, encoding: .utf8) ?? "(no body)"
-            throw ChatServiceError.backendError(statusCode: http.statusCode, body: body)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 202 { return nil }
+            if !(200...299).contains(http.statusCode) {
+                let body = String(data: data, encoding: .utf8) ?? "(no body)"
+                throw ChatServiceError.backendError(statusCode: http.statusCode, body: body)
+            }
         }
 
         do {
