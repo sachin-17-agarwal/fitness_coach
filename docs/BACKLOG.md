@@ -24,7 +24,7 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| E1 | Prompt diet: `system_prompt.next.txt`, a third the size, every code-enforced rule removed | M | written 20 Sep, inactive | Switch on a rest day (`PROMPT_FILE` or the default in `coach.py`). Gated on the audit's rule-break rate not rising over the first week. |
+| E1 | Prompt diet: `system_prompt.next.txt`, a third the size, every code-enforced rule removed | M | live from the 21 Sep rest day | Roll back with `PROMPT_FILE=system_prompt.txt`. Gate: the audit's rule-break rate must not rise over the first week; read in the 27 Sep report. |
 | E2 | Context shape: older sessions one line each, last week in full (Optimisation stage 4) | M | proposed | Gated on E1. |
 | E3 | History caching as a second cut of cache hygiene (stage 5) | S | proposed | First cut shipped 15 Sep; read the 20 Sep report first. |
 | E4 | Plan before prose as a second streamed call (2.1d) | M | proposed | Gated on the thinking/text split showing prose is a real share. Real quality risk: a Why line written after the decision. |

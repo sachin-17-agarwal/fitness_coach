@@ -692,9 +692,8 @@ swap and resume rules, the briefing and session-end formats, tone and
 formatting. Rewritten short: identity, profile, philosophy, what each
 context block is and what stays the coach's.
 
-Switch: `PROMPT_FILE=system_prompt.next.txt` on Railway, or flip
-`coach.DEFAULT_PROMPT_FILE` — on a rest day, never the night before a
-session. `tests/test_prompt_diet.py` pins that both prompts parse
+Switched on for the rest day of 21 Sep (`coach.DEFAULT_PROMPT_FILE`);
+`PROMPT_FILE=system_prompt.txt` rolls back without a deploy of code. `tests/test_prompt_diet.py` pins that both prompts parse
 identically wherever code reads them. Gate: the audit's rule-break rate
 must not rise over the first week on the diet.
 

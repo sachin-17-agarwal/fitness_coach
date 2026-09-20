@@ -43,15 +43,15 @@ class PromptDietTests(unittest.TestCase):
         self.assertLess(len(DIET), 0.45 * len(FULL))
         self.assertGreater(len(DIET), 20_000)
 
-    def test_the_loader_honours_prompt_file_and_defaults_to_the_full_prompt(self):
+    def test_the_loader_defaults_to_the_diet_and_honours_prompt_file(self):
         import coach
         saved, coach._SYSTEM_PROMPT_CACHE = coach._SYSTEM_PROMPT_CACHE, None
         try:
             os.environ.pop("PROMPT_FILE", None)
-            self.assertEqual(coach.load_system_prompt(), FULL)
-            coach._SYSTEM_PROMPT_CACHE = None
-            os.environ["PROMPT_FILE"] = "system_prompt.next.txt"
             self.assertEqual(coach.load_system_prompt(), DIET)
+            coach._SYSTEM_PROMPT_CACHE = None
+            os.environ["PROMPT_FILE"] = "system_prompt.txt"
+            self.assertEqual(coach.load_system_prompt(), FULL)
         finally:
             os.environ.pop("PROMPT_FILE", None)
             coach._SYSTEM_PROMPT_CACHE = saved

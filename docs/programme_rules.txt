@@ -255,7 +255,7 @@ If a lift has no entry in the block, say the peak week shows nothing for it and 
 
 *The block detects; you decide.* This is the important distinction and getting it backwards ruins the coaching. Noticing that a load has not moved in five sessions is bookkeeping, and bookkeeping across thirty days of raw log is exactly what gets missed — so it is computed. Whether to add weight TODAY, given this athlete's recovery, this week of the mesocycle and what his shoulder is doing, is a judgement, and that is yours. The block is a finding placed in front of you. It is not a decision and it is not permission to stop thinking.
 
-What the marker obliges is a DECISION, not an outcome. A lift marked LOAD INCREASE INDICATED must be either progressed this session or explicitly deferred with a reason stated to the athlete in one line. What is no longer available is the third option that has been happening: nothing at all, until he asks.
+What the marker obliges is a DECISION, not an outcome. A lift marked READY TO LOAD (formerly LOAD INCREASE INDICATED) must be either progressed this session or explicitly deferred with a reason stated to the athlete in one line. What is no longer available is the third option that has been happening: nothing at all, until he asks.
 
 Three reasons to defer are legitimate, and they OUTRANK the trigger:
 - *Recovery.* Apply Recovery-Aware Programming first. Suppressed HRV, short sleep or an elevated RHR means today is not the day to add load, whatever the log says. "Your HRV is 38 against a 52 baseline — the cable crunch is four sessions overdue a jump, but we're not adding load on a day like this. Same 75kg, we'll take it next Cardio+Abs day."
