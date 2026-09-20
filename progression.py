@@ -161,11 +161,39 @@ def find_current_loads(rows: list[dict]) -> list[dict]:
             "rpe": _as_float(top.get("actual_rpe")),
             "met_target": _met_target(top),
             "held": _held_sessions(sessions, top),
+            "step": _load_step(sessions),
         })
     # Alphabetical: this is a lookup table, and the coach arrives knowing the
     # exercise name, not the date.
     loads.sort(key=lambda entry: entry["exercise"].lower())
     return loads
+
+
+def _load_step(sessions: dict[str, list[dict]]) -> float | None:
+    """The smallest step this lift's logged loads have taken: the gap between
+    its two closest distinct loads, over every working set in the window.
+    2.5 on a cable stack, 5 on a leg press, 1.25 with microplates. None when
+    only one load was ever used, or the gap is implausible for equipment.
+
+    Feeds prescribe.PriorSet.step: a percentage cut then lands on a load the
+    stack has (12.5kg cut 5% stayed 12.5, not the 12 nobody can load) and an
+    increment is never smaller than the stack allows."""
+    loads = set()
+    for rows in sessions.values():
+        for row in rows:
+            if row.get("is_warmup"):
+                continue
+            value = _as_float(row.get("actual_weight_kg"))
+            if value is not None and value > 0:
+                loads.add(round(value, 3))
+    ordered = sorted(loads)
+    if len(ordered) < 2:
+        return None
+    gaps = [round(b - a, 3) for a, b in zip(ordered, ordered[1:]) if b - a > 0]
+    step = min(gaps) if gaps else None
+    if step is None or step < 0.5 or step > 25:
+        return None
+    return step
 
 
 def _held_sessions(sessions: dict[str, list[dict]], latest_top: dict) -> int:
@@ -296,6 +324,8 @@ def find_stalls(rows: list[dict], min_sessions: int = DEFAULT_MIN_SESSIONS) -> l
             continue
 
         streak_entries = tops[:streak]
+        reps = [_as_int(top.get("actual_reps")) for _, top in reversed(streak_entries)]
+        reps = [r for r in reps if r is not None]
         stalls.append({
             "exercise": exercise,
             "load": current_load,
@@ -305,6 +335,10 @@ def find_stalls(rows: list[dict], min_sessions: int = DEFAULT_MIN_SESSIONS) -> l
             # Oldest-to-newest so the trend reads left to right.
             "recent": [top for _, top in reversed(streak_entries[:_RECENT_SETS_SHOWN])],
             "increase_indicated": _met_target(streak_entries[0][1]),
+            # A load that sat still while the reps climbed is progressing, not
+            # stuck: Reverse Cable Fly at 12.5kg for five sessions, reps 10 to
+            # 12, was called "stalled" to the athlete's face.
+            "reps_rising": len(reps) >= 2 and reps[-1] > reps[0],
         })
 
     stalls.sort(key=lambda s: (not s["increase_indicated"], -s["sessions"], s["exercise"]))
@@ -342,7 +376,12 @@ def format_stalls(stalls: list[dict] | None) -> str:
             f"({stall['first_date']} → {stall['last_date']}). Top sets: {recent}."
         )
         if stall["increase_indicated"]:
-            line += " LOAD INCREASE INDICATED — last session met its target reps at or under target RPE."
+            line += (" NOT A STALL — READY TO LOAD: the last session met its target reps at or under "
+                     "target RPE, so the next increment is due, not more reps at this load.")
+        elif stall.get("reps_rising"):
+            line += " NOT A STALL — reps are rising at this load; it is progressing on the rep lever."
+        else:
+            line += " Stalled: the load has not moved and the reps have not climbed."
         lines.append(line)
     return "\n".join(lines)
 

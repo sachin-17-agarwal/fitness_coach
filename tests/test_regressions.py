@@ -1442,6 +1442,31 @@ class LoadProgressionStallTests(unittest.TestCase):
                                       target_reps=10, target_rpe=8))
         return rows
 
+    def test_the_current_load_carries_the_lifts_own_step(self):
+        rows = [{"exercise": "Reverse Cable Fly", "date": d, "actual_weight_kg": w, "actual_reps": r,
+                 "actual_rpe": 7, "is_warmup": False, "set_number": 1}
+                for d, w, r in (("2026-08-20", 10.0, 12), ("2026-08-27", 12.5, 10), ("2026-09-03", 12.5, 11),
+                                ("2026-09-10", 12.5, 12))]
+        rows += [{"exercise": "Reverse Cable Fly", "date": "2026-09-10", "actual_weight_kg": 6.0, "actual_reps": 12,
+                  "actual_rpe": None, "is_warmup": True, "set_number": 0}]      # a warm-up never sets the step
+        current = {c["exercise"]: c for c in progression.find_current_loads(rows)}["Reverse Cable Fly"]
+        self.assertEqual(current["step"], 2.5)
+        one_load = [r for r in rows if r["actual_weight_kg"] == 12.5]
+        self.assertIsNone(progression.find_current_loads(one_load)[0]["step"])
+
+    def test_a_load_that_sat_still_while_reps_climbed_is_not_called_stalled(self):
+        rows = [{"exercise": "Reverse Cable Fly", "date": d, "actual_weight_kg": 12.5, "actual_reps": r,
+                 "actual_rpe": rpe, "is_warmup": False, "set_number": 1}
+                for d, r, rpe in (("2026-08-27", 10, 8), ("2026-09-03", 11, 8), ("2026-09-10", 12, 7))]
+        stalls = progression.find_stalls(rows, min_sessions=3)
+        self.assertEqual(len(stalls), 1)
+        self.assertTrue(stalls[0]["reps_rising"])
+        text = progression.format_stalls(stalls)
+        self.assertIn("NOT A STALL", text)
+        flat = [dict(r, actual_reps=10, actual_rpe=8) for r in rows]
+        self.assertIn("Stalled: the load has not moved and the reps have not climbed",
+                      progression.format_stalls(progression.find_stalls(flat, min_sessions=3)))
+
     def test_stalled_load_is_flagged_with_increase_indicated(self):
         stalls = progression.find_stalls(self._ab_crunch_history())
         match = [s for s in stalls if s["exercise"] == "Ab Crunch Machine"]
@@ -1449,7 +1474,7 @@ class LoadProgressionStallTests(unittest.TestCase):
         self.assertEqual(match[0]["sessions"], 5)
         self.assertEqual(match[0]["load"], 75)
         self.assertTrue(match[0]["increase_indicated"])
-        self.assertIn("LOAD INCREASE INDICATED", progression.format_stalls(stalls))
+        self.assertIn("NOT A STALL — READY TO LOAD", progression.format_stalls(stalls))
 
     def test_progressing_lift_is_not_flagged(self):
         """A load that moves every session must never appear. If it did, the

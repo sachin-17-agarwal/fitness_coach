@@ -201,9 +201,11 @@ BODYWEIGHT_INCREMENT = 2.5
 STALL_SESSIONS = 3
 
 
-def _increment(kind: str, bodyweight: bool) -> float:
-    """The smallest step the load can actually take."""
-    return BODYWEIGHT_INCREMENT if bodyweight else INCREMENT[kind]
+def _increment(kind: str, bodyweight: bool, step: float | None = None) -> float:
+    """The smallest step the load can actually take: the programme's guide
+    for the kind of lift, or the lift's own stack step when that is larger."""
+    base = BODYWEIGHT_INCREMENT if bodyweight else INCREMENT[kind]
+    return max(base, step) if step else base
 
 # :64 "Drop weight 15-25% immediately." Midpoint, so the result lands inside
 # the band whichever way the gym's stack rounds.
@@ -242,6 +244,13 @@ class PriorSet:
     week: int | None = None     # mesocycle week it was performed in, if known
     bodyweight: bool = False    # progression's "BW" key: a set at bodyweight
     held: int = 1               # consecutive sessions at this load AND these reps
+    # The smallest load step this lift's own history shows (2.5 on a cable
+    # stack, 5 on a leg press, 1.25 with microplates), from progression's
+    # find_current_loads; None when the log cannot tell. Every rounding and
+    # increment for the lift uses it, so a 5% recovery cut on a 12.5kg cable
+    # fly cannot come out as 12kg, a load that does not exist on the stack,
+    # and "one increment" on that stack is 2.5, not the 1kg a dumbbell allows.
+    step: float | None = None
 
 
 @dataclass
@@ -259,6 +268,9 @@ class SetSpec:
     reps_high: int
     rpe: float
     bodyweight: bool = False
+    # The load grid this set's lift can actually take (PriorSet.step, else
+    # the half-kilo default), so a later adjustment rounds to a real load.
+    grid: float = 0.5
 
     def render(self) -> str:
         if self.bodyweight:
@@ -418,15 +430,18 @@ def _round_to(value: float, step: float) -> float:
     return round(round(value / step) * step, 2)
 
 
-def _round_load(value: float) -> float:
-    """Round to the nearest half-kilo.
+def _round_load(value: float, grid: float | None = None) -> float:
+    """Round to the lift's own load step when it is known (PriorSet.step),
+    else to the nearest half-kilo.
 
     Half a kilo divides every increment the programme uses (1.0kg isolation,
-    2.5kg compound), so an increase can never be rounded away. Percentage
-    results — back-off drops, deload drops, warm-up ramps — land on a tidy
-    number without pretending to know the athlete's equipment.
+    2.5kg compound), so an increase can never be rounded away. With the lift's
+    grid the result is a load that exists on its stack: 11.875 on a 2.5kg
+    cable stack is 12.5, not 12. Increases use _increment, which never steps
+    by less than the grid, so they cannot be rounded away either.
     """
-    return round(value / _LOAD_GRID) * _LOAD_GRID
+    g = grid if grid and grid > 0 else _LOAD_GRID
+    return round(value / g) * g
 
 
 @dataclass(frozen=True)
@@ -554,7 +569,7 @@ def apply_recovery(spec: "SetSpec", adjustment: RecoveryAdjustment,
     if step:
         if low - step < DELOAD_MIN_REPS:
             if weight is not None:
-                weight = _round_load(weight * 0.925)
+                weight = _round_load(weight * 0.925, spec.grid)
             reasons.append(
                 f"Recovery cut taken as LOAD, not reps: {low} reps minus {step} "
                 f"would leave under {DELOAD_MIN_REPS}, so the reps hold and the "
@@ -563,9 +578,19 @@ def apply_recovery(spec: "SetSpec", adjustment: RecoveryAdjustment,
         else:
             low, high = low - step, max(low - step, high - step)
     if adjustment.load_multiplier != 1.0 and weight is not None:
-        weight = _round_load(weight * adjustment.load_multiplier)
+        cut = _round_load(weight * adjustment.load_multiplier, spec.grid)
+        if cut == weight:
+            # 12.5kg on a 2.5kg cable stack, cut 5%, is 11.875: no such load.
+            # The stack decides — the load holds and the RPE/rep cut carries
+            # the day. Said out loud so the card is not read as a regression.
+            reasons.append(
+                f"Recovery load cut of {abs(1 - adjustment.load_multiplier) * 100:.0f}% is smaller than "
+                f"this lift's {spec.grid:g}kg step, so the load holds at {weight:g}kg and the "
+                f"RPE/rep cut carries it (:317)."
+            )
+        weight = cut
 
-    return SetSpec(weight, low, high, rpe, bodyweight=spec.bodyweight)
+    return SetSpec(weight, low, high, rpe, bodyweight=spec.bodyweight, grid=spec.grid)
 
 
 def _met_top_of_range(prior: PriorSet, kind: str, target_rpe: float) -> bool:
@@ -620,6 +645,10 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     load = (prior.load or 0.0) if bodyweight else prior.load
     if bodyweight and isinstance(load, str):
         load = 0.0
+    # The lift's own step: rounding lands on a real load and an increment is
+    # never smaller than the stack allows.
+    step = prior.step if prior.step and prior.step > 0 else None
+    grid = step or _LOAD_GRID
 
     if prior.reps is not None and prior.reps < low and week != 4:
         # :70 "That flexibility runs UPWARD only ... drifting BELOW an
@@ -667,8 +696,8 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             load, why = sized
             reasons.append(f"Week 1 opens ABOVE last cycle, sized to the miss. {why} Reps reset to the bottom.")
         elif prior.reps is not None and prior.reps >= high:
-            step = _increment(kind, bodyweight)
-            load = _round_load(load + step)
+            step = _increment(kind, bodyweight, step)
+            load = _round_load(load + step, grid)
             reasons.append(
                 f"Week 1 opens ~{step:g}kg ABOVE last cycle: week 3 finished at "
                 f"{prior.reps} reps, at or above the top of the {low}-{high} range. "
@@ -680,7 +709,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"bottom of the {low}-{high} range. Baseline means the start "
                 f"of a NEW cycle, never a repeat of the last one."
             )
-        return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
+        return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
 
     if (prior.held >= STALL_SESSIONS and prior.reps is not None
             and low <= prior.reps < high and week != 4):
@@ -694,7 +723,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         # time. When the RPE says they are not, the rep lever is stuck and
         # what replaces it is a coaching decision, so it is deferred.
         easy = prior.rpe is not None and prior.rpe <= targets["top"] - 1
-        held_at = SetSpec(load, prior.reps, prior.reps, targets["top"], bodyweight=bodyweight).render()
+        held_at = SetSpec(load, prior.reps, prior.reps, targets["top"], bodyweight=bodyweight, grid=grid).render()
         if easy:
             reasons.append(
                 f"STALLED {prior.held} sessions at {held_at.rsplit(' RPE', 1)[0]}, last at "
@@ -702,7 +731,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"pulled, so today is {high} reps — the top of the {low}-{high} range as "
                 f"a count, not a band — and the load moves once it lands (:201, :203)."
             )
-            return SetSpec(load, high, high, targets["top"], bodyweight=bodyweight)
+            return SetSpec(load, high, high, targets["top"], bodyweight=bodyweight, grid=grid)
         at_rpe = f"RPE {prior.rpe:g}" if prior.rpe is not None else "an unrecorded RPE"
         deferred.append(
             f"{exercise}: {prior.held} sessions at {held_at.rsplit(' RPE', 1)[0]} and the "
@@ -727,29 +756,29 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 load, why = sized
                 reasons.append(f"OVERDUE and sized to the miss. {why} Reps reset to the bottom.")
             else:
-                step = _increment(kind, bodyweight)
-                load = _round_load(load + step)
+                step = _increment(kind, bodyweight, step)
+                load = _round_load(load + step, grid)
                 reasons.append(
                     f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the "
                     f"top of the {low}-{high} range, so the increase was already due "
                     f"(:205). Reps reset to the bottom."
                 )
-            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
+            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
         if _met_top_of_range(prior, kind, targets["top"]):
-            step = _increment(kind, bodyweight)
-            load = _round_load(load + step)
+            step = _increment(kind, bodyweight, step)
+            load = _round_load(load + step, grid)
             reasons.append(
                 f"Week 2 adds ~{step:g}kg: week 1 already reached the top of the "
                 f"{low}-{high} range at RPE {prior.rpe:g}, so reps have nowhere left "
                 f"to go (:182). Reps reset to the bottom."
             )
-            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
+            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
         target_low = max(low, min((prior.reps or low) + 1, high))
         reasons.append(
             f"Week 2 holds the week 1 load and adds reps toward the top of the "
             f"{low}-{high} range (:182). Volume before intensity."
         )
-        return SetSpec(load, target_low, high, targets["top"], bodyweight=bodyweight)
+        return SetSpec(load, target_low, high, targets["top"], bodyweight=bodyweight, grid=grid)
 
     if week == 3:
         # :183 — "Reach it by adding load (preferred when reps are already at the
@@ -761,21 +790,21 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 load, why = sized
                 reasons.append(f"Week 3 peak via LOAD, sized to the miss. {why}")
             else:
-                step = _increment(kind, bodyweight)
-                load = _round_load(load + step)
+                step = _increment(kind, bodyweight, step)
+                load = _round_load(load + step, grid)
                 reasons.append(
                     f"Week 3 peak via LOAD, ~{step:g}kg up: week 2 finished at "
                     f"{prior.reps} reps, already at the top of the range, so load is the "
                     f"preferred lever (:183)."
                 )
-            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
+            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
         target_low = max(low, min((prior.reps or low) + 1, high))
         reasons.append(
             f"Week 3 peak via REPS: same load, 1-2 more reps than week 2 to reach "
             f"RPE {targets['top']:g} (:183)."
         )
         return SetSpec(load, target_low, min(target_low + 1, high),
-                       targets["top"], bodyweight=bodyweight)
+                       targets["top"], bodyweight=bodyweight, grid=grid)
 
     if week == 4:
         # :185 "Same exercises and same weights as Week 3, but deliberately
@@ -812,7 +841,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             )
         elif reps < DELOAD_MIN_REPS:
             # :186 the low-rep exception — deload by load instead.
-            load = _round_load(load * (1 - DELOAD_LOAD_DROP))
+            load = _round_load(load * (1 - DELOAD_LOAD_DROP), grid)
             reps = prior.reps or high
             reasons.append(
                 f"Deload by LOAD, not reps: subtracting {drop} from {prior.reps} "
@@ -825,7 +854,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"Deload: same load as last session, {drop} fewer reps so the set "
                 f"lands at RPE {targets['top']:g}."
             )
-        return SetSpec(load, reps, reps, targets["top"], bodyweight=bodyweight)
+        return SetSpec(load, reps, reps, targets["top"], bodyweight=bodyweight, grid=grid)
 
     if prior.reps is not None and prior.reps > high:
         # :205 "Reps ABOVE the top of the range are a backlog, not an
@@ -835,26 +864,26 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             load, why = sized
             reasons.append(f"OVERDUE and sized to the miss. {why}")
         else:
-            step = _increment(kind, bodyweight)
-            load = _round_load(load + step)
+            step = _increment(kind, bodyweight, step)
+            load = _round_load(load + step, grid)
             reasons.append(
                 f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the top "
                 f"of the {low}-{high} range, which means the increase was already due "
                 f"last session (:205)."
             )
-        return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
+        return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
 
     if _met_top_of_range(prior, kind, targets["top"]):
         # :203 rep progression is exhausted, so the load moves.
-        step = _increment(kind, bodyweight)
-        load = _round_load(load + step)
+        step = _increment(kind, bodyweight, step)
+        load = _round_load(load + step, grid)
         reasons.append(
             f"Load up ~{step:g}kg: last session hit {prior.reps} reps at "
             f"RPE {prior.rpe:g}, which is the top of the {low}-{high} range at or "
             f"under the week's target of {targets['top']:g} (:203). Reps reset to "
             f"the bottom of the range."
         )
-        return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight)
+        return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
 
     # :201 rep progression first — same load, aim further up the range.
     # Clamp to the range: a prior session below the floor must not drag the
@@ -866,7 +895,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         f"{at_rpe}, so add reps toward the top of the range before the load "
         f"moves (:201)."
     )
-    return SetSpec(load, target_low, high, targets["top"], bodyweight=bodyweight)
+    return SetSpec(load, target_low, high, targets["top"], bodyweight=bodyweight, grid=grid)
 
 
 def backoff_sets(top: SetSpec, kind: str, count: int, week: int,

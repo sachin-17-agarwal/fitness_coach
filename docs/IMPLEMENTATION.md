@@ -598,6 +598,30 @@ in-process memory, which covers everything but a restart mid-request.
 
 Tests: `tests/test_delivery.py` (10).
 
+## Reverse Cable Fly, 20 Sep: the lift's own load step — shipped 20 Sep
+
+**What happened.** Week 1 anchored to the peak (12.5 x 11 @8) and opened
+12.5 x 8-12 @7; the readiness read took RPE down a point (8-12 → 7-11) and
+5.7 h sleep cut the load 5%: 11.875, rounded to the half-kilo, 12 — a load a
+2.5 kg cable stack does not have. The stall watch called 12.5 kg "stalled 5
+sessions" although reps had risen 10 → 12 at RPE 7, and the coach defended
+"the top of the 7-11 range at 12" against the athlete's own last set. When
+corrected it wrote "Revising:" and sent no block.
+
+**Fixes.**
+- `progression._load_step`: the smallest gap between a lift's distinct
+  logged loads (2.5 on a stack, 5 on a leg press), carried on
+  `find_current_loads` rows and `PriorSet.step`; `SetSpec.grid`. Every
+  rounding and increment inside `next_top_set` and `apply_recovery` uses
+  it, so a cut smaller than the step holds the load and says so, and "one
+  increment" is never smaller than the stack allows (12.5 → 15, not 13.5).
+- `find_stalls` carries `reps_rising`; `format_stalls` says NOT A STALL —
+  READY TO LOAD when the last set met its target, NOT A STALL when reps are
+  rising, and Stalled only when neither.
+- `plan.missing_revision_note`: a reply that claims a revision without a
+  block for the lift on the card gets "(No revised block came through, so
+  the card still reads …)" appended, and the miss is logged.
+
 ## 2.8 Apple Watch, timer stage
 
 **Goal.** The rest timer on the wrist with haptics and the next prescribed

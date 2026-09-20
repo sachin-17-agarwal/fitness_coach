@@ -457,6 +457,31 @@ class BodyweightProgressionTests(unittest.TestCase):
         self.assertEqual(p.working[0].weight_kg, 2.5)
         self.assertIn("plate on the back or a vest", " ".join(p.reasons))
 
+    def test_the_lifts_own_step_drives_rounding_and_increments(self):
+        # Reverse Cable Fly, 20 Sep 2026: peak 12.5 x 11 @8 on a 2.5kg cable
+        # stack. Week 1 opens at 12.5 x 8-12; a readiness cut (RPE down a
+        # point, load down 5%) then produced "12kg x 7-11" — 11.875 rounded
+        # to the half-kilo, a load the stack does not have.
+        from prescribe import RecoveryAdjustment, _adjusted
+        p = prescribe_exercise("Reverse Cable Fly", 3, ISOLATION, 1,
+                               PriorSet(12.5, 11, 8.0, week=3, step=2.5), set())
+        top = p.working[0]
+        self.assertEqual((top.weight_kg, top.reps_low, top.reps_high, top.grid), (12.5, 8, 12, 2.5))
+        base_rpe = top.rpe
+        cut = _adjusted(p, RecoveryAdjustment(rpe_delta=-1.0, load_multiplier=0.95, reasons=("tired",)))
+        top = cut.working[0]
+        self.assertEqual((top.weight_kg, top.reps_low, top.reps_high, top.rpe), (12.5, 7, 11, base_rpe - 1))
+        self.assertIn("smaller than this lift's 2.5kg step, so the load holds at 12.5kg",
+                      " ".join(cut.reasons + cut.recovery_reasons))
+        # Week 1 after a top-of-range peak steps by the stack, not by the 1kg guide.
+        p = prescribe_exercise("Reverse Cable Fly", 3, ISOLATION, 1,
+                               PriorSet(12.5, 12, 7.0, week=3, step=2.5), set())
+        self.assertEqual(p.working[0].weight_kg, 15.0)
+        # Without a known step the half-kilo default and the 1kg guide stand, as before.
+        p = prescribe_exercise("Reverse Cable Fly", 3, ISOLATION, 1,
+                               PriorSet(12.5, 12, 7.0, week=3), set())
+        self.assertEqual((p.working[0].weight_kg, p.working[0].grid), (13.5, 0.5))
+
     def test_a_stall_with_reps_in_reserve_pins_the_top_of_the_range(self):
         p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
                                PriorSet(None, 8, 6.5, bodyweight=True, held=7), set())
