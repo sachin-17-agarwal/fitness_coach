@@ -97,12 +97,22 @@ def get_anthropic_client() -> Anthropic:
 _SYSTEM_PROMPT_CACHE: str | None = None
 
 
+# Which prompt the coach reads. system_prompt.txt is the full rulebook;
+# system_prompt.next.txt is the diet (20 Sep 2026): the arithmetic the code
+# now computes taken out, judgment and formats kept. Switched with the
+# PROMPT_FILE environment variable, flipped to the diet by default on a rest
+# day once it has been read.
+DEFAULT_PROMPT_FILE = "system_prompt.txt"
+
+
 def load_system_prompt() -> str:
     global _SYSTEM_PROMPT_CACHE
     if _SYSTEM_PROMPT_CACHE is None:
-        path = os.path.join(os.path.dirname(__file__), "system_prompt.txt")
+        name = os.environ.get("PROMPT_FILE", "").strip() or DEFAULT_PROMPT_FILE
+        path = os.path.join(os.path.dirname(__file__), os.path.basename(name))
         with open(path, "r", encoding="utf-8") as f:
             _SYSTEM_PROMPT_CACHE = f.read()
+        log.info("System prompt: %s (%d chars)", os.path.basename(path), len(_SYSTEM_PROMPT_CACHE))
     return _SYSTEM_PROMPT_CACHE
 
 

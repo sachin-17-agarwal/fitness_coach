@@ -678,6 +678,26 @@ Next: the prompt diet (rules the code enforces come out of
 `system_prompt.txt`), one `blocks` module for block identity, the applied
 data fixes pruned into a history note.
 
+## Clearing out, step 2: the prompt diet — written 20 Sep, inactive
+
+`system_prompt.next.txt` (364 lines, 34k chars) against `system_prompt.txt`
+(903 lines, 106k chars, kept verbatim as `docs/programme_rules.txt` so the
+"(:NNN)" references the computed reasons cite still resolve). Removed:
+every rule the code enforces — the wave, ranges, increments, the ramp
+percentages, the ab ladder, the recovery arithmetic, the weak-point slot
+rules, the stall-marker procedure — and the anecdotes behind them. Kept
+verbatim: the four template lines and the band sentence the parsers read,
+the exercise format, the `Decision:`/`Proposed:`/`Revised:` grammars, the
+swap and resume rules, the briefing and session-end formats, tone and
+formatting. Rewritten short: identity, profile, philosophy, what each
+context block is and what stays the coach's.
+
+Switch: `PROMPT_FILE=system_prompt.next.txt` on Railway, or flip
+`coach.DEFAULT_PROMPT_FILE` — on a rest day, never the night before a
+session. `tests/test_prompt_diet.py` pins that both prompts parse
+identically wherever code reads them. Gate: the audit's rule-break rate
+must not rise over the first week on the diet.
+
 ## 2.8 Apple Watch, timer stage
 
 **Goal.** The rest timer on the wrist with haptics and the next prescribed
