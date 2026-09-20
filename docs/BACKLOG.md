@@ -24,7 +24,7 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| E1 | Prompt diet: remove from `system_prompt.txt` every rule the code now enforces (wave, ranges, increments, recovery arithmetic, weak-point slot, block review); target ~15k tokens from ~25k | M | approved 20 Sep (clearing out, step 2) | Gated on the audit's rule-break rate not rising. Also a coaching change: fewer clauses, more judgment. |
+| E1 | Prompt diet: `system_prompt.next.txt`, a third the size, every code-enforced rule removed | M | written 20 Sep, inactive | Switch on a rest day (`PROMPT_FILE` or the default in `coach.py`). Gated on the audit's rule-break rate not rising over the first week. |
 | E2 | Context shape: older sessions one line each, last week in full (Optimisation stage 4) | M | proposed | Gated on E1. |
 | E3 | History caching as a second cut of cache hygiene (stage 5) | S | proposed | First cut shipped 15 Sep; read the 20 Sep report first. |
 | E4 | Plan before prose as a second streamed call (2.1d) | M | proposed | Gated on the thinking/text split showing prose is a real share. Real quality risk: a Why line written after the decision. |
@@ -52,8 +52,8 @@ The two categories beyond the four you named:
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
 | S1 | In-session coach: any number it states about history must be in the context it was handed, or the reply is rewritten | M | approved 20 Sep | The block review already has this rule (`numbers_not_in_sheet`). |
-| S2 | One `blocks` module for block identity: start, boundary, ended range, picks | M | approved 20 Sep (clearing out, step 3) | Three helpers agree today because one person wrote them. |
-| S3 | Prune the applied dated fixes into a history note; keep the mechanism | S | approved 20 Sep (step 4) | Ten one-offs in the list. |
+| S2 | One `blocks` module for block identity: start, boundary, ended range, picks | M | done 20 Sep (#307) | |
+| S3 | Prune the applied dated fixes into a history note; keep the mechanism | S | done 20 Sep (#307); delete `fixes_2026_09.py` once `/status` shows all eight applied | |
 | S4 | Session stamping: every finished session carries its mesocycle week and day; hygiene check and backfill | S | idea | `block_start` and the review lean on stamps; the 2 Sep opener had none. |
 | S5 | Pre-flight invariants grow with every gym screenshot; nightly record read from `/status` and the Sunday report | S each | standing | Loadable, regression, range, ceiling, slots so far. |
 | S6 | Verify idempotent delivery on a real dropped connection (switch apps mid-set) | S | blocked on a rebuild | Migration 011 run 20 Sep. |

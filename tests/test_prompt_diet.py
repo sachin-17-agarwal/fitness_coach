@@ -1,0 +1,57 @@
+"""The diet prompt (system_prompt.next.txt) parses exactly like the full one
+wherever code reads the prompt, and is a fraction of its size."""
+
+import os
+import re
+import unittest
+
+from coach_parsing import _WEAK_POINT_SLOT_RE, parse_session_template
+from weakpoints import parse_volume_bands
+
+
+def _read(name):
+    with open(name, encoding="utf-8") as handle:
+        return handle.read()
+
+
+FULL, DIET = _read("system_prompt.txt"), _read("system_prompt.next.txt")
+
+
+class PromptDietTests(unittest.TestCase):
+
+    def test_the_templates_parse_identically(self):
+        for session in ("Pull", "Push", "Legs", "Cardio+Abs"):
+            self.assertEqual(parse_session_template(DIET, session), parse_session_template(FULL, session), session)
+            pairs, total = parse_session_template(DIET, session)
+            self.assertTrue(pairs, session)
+            self.assertEqual(sum(sets for _, sets in pairs), total, session)
+
+    def test_the_bands_parse_identically(self):
+        self.assertEqual(parse_volume_bands(DIET), parse_volume_bands(FULL))
+        self.assertEqual(parse_volume_bands(DIET)["Rear Delts"], (8, 14))
+
+    def test_the_weak_point_slots_are_still_named(self):
+        pairs, _ = parse_session_template(DIET, "Cardio+Abs")
+        self.assertEqual(sum(1 for name, _ in pairs if _WEAK_POINT_SLOT_RE.match(name)), 2)
+
+    def test_the_formats_the_app_parses_are_present(self):
+        for needle in ("Working Set:", "Back-off:", "Warm-up:", "Form:", "Revised:", "Decision: Cable Crunch | clear",
+                       "Proposed: Emphasis-next:", "*RECOVERY*", "*TODAY: [SESSION TYPE]*", "Session done"):
+            self.assertIn(needle, DIET, needle)
+
+    def test_the_diet_is_a_fraction_of_the_full_prompt(self):
+        self.assertLess(len(DIET), 0.45 * len(FULL))
+        self.assertGreater(len(DIET), 20_000)
+
+    def test_the_loader_honours_prompt_file_and_defaults_to_the_full_prompt(self):
+        import coach
+        saved, coach._SYSTEM_PROMPT_CACHE = coach._SYSTEM_PROMPT_CACHE, None
+        try:
+            os.environ.pop("PROMPT_FILE", None)
+            self.assertEqual(coach.load_system_prompt(), FULL)
+            coach._SYSTEM_PROMPT_CACHE = None
+            os.environ["PROMPT_FILE"] = "system_prompt.next.txt"
+            self.assertEqual(coach.load_system_prompt(), DIET)
+        finally:
+            os.environ.pop("PROMPT_FILE", None)
+            coach._SYSTEM_PROMPT_CACHE = saved
