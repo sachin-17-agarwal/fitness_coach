@@ -17,8 +17,9 @@ struct ChatResponse: Codable, Sendable {
     let prescription: ServerPrescription?
     let prs: [PRInfo]?
     /// True when the backend answered a resend from the reply it had already
-    /// written, instead of running the coach again.
-    let recovered: Bool?
+    /// written, instead of running the coach again. `var` with a default so
+    /// the two places that build a ChatResponse by hand keep compiling.
+    var recovered: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case response
