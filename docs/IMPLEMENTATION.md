@@ -658,6 +658,26 @@ export as a test, run before any prescription change ships.
 Tests: `tests/test_preflight.py` (9), including the Reverse Cable Fly case
 end to end through `build_proposal`.
 
+## Clearing out, step 1: the reply contract — shipped 20 Sep
+
+Seven guards on the coach's reply, each added after an incident, each in
+its own try/except in `chat_with_coach`, ran in the order they were
+written. `reply_contract.py` is that pipeline made explicit: nine named
+steps in a fixed order (truncation, set_counts, plan_follows, revise_claim,
+weak_points, programme_live, set_count_drift, decisions, captures), only
+four allowed to edit the reply — a read-only step that edits has its change
+reverted and logged — a failing step skipped, and one `REPLY CONTRACT` log
+line naming what each did. The programme shadow (a row per reply the
+programme would have changed, read by nobody) is retired from the coach and
+the Sunday report; the pre-flight checks the card by code instead. The
+delivery id now reaches both turns the chat path saves, which the
+idempotent resend needs to find the reply. Rule from here: a new check is a
+step in this file, and one comes out or is folded in.
+
+Next: the prompt diet (rules the code enforces come out of
+`system_prompt.txt`), one `blocks` module for block identity, the applied
+data fixes pruned into a history note.
+
 ## 2.8 Apple Watch, timer stage
 
 **Goal.** The rest timer on the wrist with haptics and the next prescribed

@@ -1,11 +1,10 @@
-"""The shadow, read from tables: the coach against the programme in the
-Sunday report."""
+"""The coach against the programme in the Sunday report, read from the
+prescription_decisions table."""
 
 import unittest
 from unittest.mock import patch
 
-from usage import (format_decisions, is_coach_decision, record_shadow, summarise_decisions,
-                   summarise_shadow)
+from usage import format_decisions, is_coach_decision, summarise_decisions
 
 
 class DecisionsSummaryTests(unittest.TestCase):
@@ -48,27 +47,17 @@ class DecisionsSummaryTests(unittest.TestCase):
         self.assertEqual(d["top_adjusted"][0]["exercise"], "Machine Shoulder Press")
         self.assertEqual(d["top_adjusted"][0]["count"], 2)
 
-    def test_the_section_reads_the_numbers_and_the_shadow(self):
-        d = summarise_decisions(self.ROWS)
-        shadow = summarise_shadow([{"date": "2026-09-13", "kind": "prose", "exercise": "Cable Crunch"},
-                                   {"date": "2026-09-13", "kind": "prose", "exercise": "Cable Crunch"},
-                                   {"date": "2026-09-15", "kind": "set_reply", "exercise": "Hammer Curl"}])
-        text = format_decisions(d, shadow, 14)
+    def test_the_section_reads_the_numbers(self):
+        text = format_decisions(summarise_decisions(self.ROWS), 14)
         self.assertIn("adjusted **3** of them (**60%**)", text)
         self.assertIn("2 named a cause", text)
         self.assertIn("1 other", text)
         self.assertIn("| Machine Shoulder Press | 2 |", text)
-        self.assertIn("**3** exercise blocks on 2 days", text)
-        self.assertIn("prose 2, set_reply 1", text)
-        self.assertIn("Cable Crunch ×2", text)
+        self.assertIn("reply_contract.py", text)
 
-    def test_an_empty_window_and_a_missing_shadow_table_are_said_plainly(self):
-        text = format_decisions(summarise_decisions([]), None, 14)
+    def test_an_empty_window_is_said_plainly(self):
+        text = format_decisions(summarise_decisions([]), 14)
         self.assertIn("No opening decisions recorded", text)
-        self.assertIn("migration 008", text)
-        text = format_decisions(summarise_decisions([]), summarise_shadow([]), 14)
-        self.assertIn("No rows in 14 days", text)
-        self.assertIn("migration 008 ran", text)
 
 
 class ReasonBucketTests(unittest.TestCase):
@@ -86,38 +75,12 @@ class ReasonBucketTests(unittest.TestCase):
         from usage import format_decisions, summarise_decisions
         rows = [{"date": "d", "session_type": "Cardio+Abs", "exercise": f"E{i}", "decision": "adjust",
                  "reason": "abs are straight sets, converting the proposal's back-off line"} for i in range(3)]
-        text = format_decisions(summarise_decisions(rows), None, 14)
+        text = format_decisions(summarise_decisions(rows), 14)
         self.assertIn("3 shape", text)
         self.assertIn("programme defect", text)
 
 
-class RecordShadowTests(unittest.TestCase):
-
-    def test_a_row_per_differing_exercise_and_never_raises(self):
-        rows = []
-        class Table:
-            def insert(self, row):
-                rows.append(row)
-                class X:
-                    def execute(inner): return None
-                return X()
-        class SB:
-            def table(self, name): return Table()
-        with patch("data.get_supabase", return_value=SB()):
-            record_shadow("2026-09-16", "Pull", 4, "prose", "Hammer Curl",
-                          {"working": [{"weight": 20, "reps": 10}], "backoff": []},
-                          {"working": [{"weight": 20, "reps": 8}], "backoff": [{"weight": 16, "reps": 12}]})
-        self.assertEqual(rows[0]["kind"], "prose")
-        self.assertEqual(rows[0]["mesocycle_week"], 4)
-        self.assertIn('"reps": 8', rows[0]["computed"])
-        class Broken:
-            def table(self, name): raise RuntimeError("no table")
-        with patch("data.get_supabase", return_value=Broken()):
-            record_shadow("2026-09-16", "Pull", 4, "prose", "Hammer Curl", {}, {})   # must not raise
-
-
-
-class ShadowComparesNumbersOnlyTests(unittest.TestCase):
+class SameNumbersTests(unittest.TestCase):
 
     def test_blocks_with_identical_sets_are_the_same_whatever_the_prose(self):
         from coach import _same_numbers

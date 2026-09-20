@@ -284,34 +284,13 @@ def format_report(summary: dict, days: int, since: str, cost: dict | None = None
 # "How often does the coach depart from the programme, and does it say why"
 # has had a table answering it since the plan contract: prescription_decisions
 # stores every exercise of every opening as accept or adjust with its reason.
-# The older programme shadow — what the programme would have prescribed
-# against what the coach sent, on every reply — was a Railway log line nobody
-# read; record_shadow writes it as a row. Both are aggregated here so the
-# substitution flag is judged on numbers.
+# The programme shadow that used to sit beside it (a row per reply the
+# programme would have changed) was retired on 20 Sep 2026 with the reply
+# contract: nobody read it, and the pre-flight checks the card by code.
 
 # Rows in prescription_decisions that are not the coach's decisions.
 _NOT_A_DECISION_PREFIXES = ("Weak-point: ", "Emphasis-next: ")
 _PROGRAMME_REASON_PREFIX = "programme — coach reviewing"
-
-
-def record_shadow(date: str, session_type: str | None, week, kind: str, exercise: str,
-                  sent: dict, computed: dict) -> None:
-    """Best-effort: one row per exercise the programme would have changed."""
-    try:
-        import json
-        from data import get_supabase  # local: keeps import order flat
-        supabase = get_supabase()
-        if not supabase:
-            return
-        supabase.table("programme_shadow").insert({
-            "date": date, "session_type": session_type,
-            "mesocycle_week": int(week) if str(week).isdigit() else None,
-            "kind": kind, "exercise": exercise,
-            "sent": json.dumps({"working": sent.get("working"), "backoff": sent.get("backoff")}),
-            "computed": json.dumps({"working": computed.get("working"), "backoff": computed.get("backoff")}),
-        }).execute()
-    except Exception:
-        log.warning("programme_shadow write failed (%s)", exercise, exc_info=True)
 
 
 def is_coach_decision(row: dict) -> bool:
@@ -385,20 +364,7 @@ def summarise_decisions(rows: list[dict]) -> dict:
     }
 
 
-def summarise_shadow(rows: list[dict]) -> dict:
-    """Per reply kind: how many exercises the programme would have changed,
-    and which most often."""
-    by_kind: dict = {}
-    by_lift: dict = {}
-    for r in rows:
-        by_kind[r.get("kind") or "?"] = by_kind.get(r.get("kind") or "?", 0) + 1
-        by_lift[r.get("exercise") or "?"] = by_lift.get(r.get("exercise") or "?", 0) + 1
-    top = sorted(by_lift.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
-    return {"total": len(rows), "by_kind": by_kind, "top": top,
-            "days": len({r.get("date") for r in rows})}
-
-
-def format_decisions(d: dict, shadow: dict | None, days: int) -> str:
+def format_decisions(d: dict, days: int) -> str:
     lines = ["", "## Decisions — the coach against the programme", ""]
     if not d["exercises"]:
         lines.append("No opening decisions recorded in the window.")
@@ -424,22 +390,10 @@ def format_decisions(d: dict, shadow: dict | None, days: int) -> str:
             lines += ["", "| lift | adjusted | reasons |", "|---|---:|---|"]
             for t in d["top_adjusted"]:
                 lines.append(f"| {t['exercise']} | {t['count']} | {' · '.join(t['reasons']) or '—'} |")
-    lines += ["", "### Programme shadow — replies the programme would have changed", ""]
-    if shadow is None:
-        lines.append("Not recorded yet (migration 008).")
-    elif not shadow["total"]:
-        lines.append(f"No rows in {days} days. Recording began when migration 008 ran (16 Sep), so a zero on "
-                     f"the first reports after it says nothing yet; from then on it means every block the "
-                     f"coach sent outside the plan contract matched what the programme computed.")
-    else:
-        kinds = ", ".join(f"{k} {v}" for k, v in sorted(shadow["by_kind"].items()))
-        lines.append(f"**{shadow['total']}** exercise blocks on {shadow['days']} days differed from the programme's "
-                     f"computation ({kinds}). Most often: " + ", ".join(f"{n} ×{c}" for n, c in shadow["top"]) + ".")
     lines += ["", "Reading it: the adjust rate is how often the coach departs from the programme at the "
-              "opening, and the buckets say why. The shadow counts replies outside the plan "
-              "contract — prose and set replies — whose numbers the programme would have replaced. The "
-              "substitution flag stays off while the adjust rate is low and the cause rate high; a rising "
-              "shadow count on prose replies is the case for turning it on."]
+              "opening, and the buckets say why. Mid-session moves are the card following the coach's "
+              "set replies. Every reply's checks are one pipeline (reply_contract.py); what each did is in "
+              "the REPLY CONTRACT log lines."]
     return "\n".join(lines)
 
 
@@ -456,21 +410,6 @@ def fetch_decisions(days: int) -> list[dict]:
     except Exception as exc:
         log.warning("prescription_decisions could not be read: %s", exc)
         return []
-
-
-def fetch_shadow(days: int) -> list[dict] | None:
-    """None when the table does not exist yet (migration 008), [] when empty."""
-    from data import get_supabase  # local: keeps import order flat
-    supabase = get_supabase()
-    if not supabase:
-        return None
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
-    try:
-        return (supabase.table("programme_shadow").select("date, kind, exercise")
-                .gte("date", since).order("date").range(0, 4999).execute()).data or []
-    except Exception as exc:
-        log.warning("programme_shadow could not be read: %s", exc)
-        return None
 
 
 def fetch_rows(days: int) -> list[dict]:
@@ -512,10 +451,7 @@ def main() -> None:
     rows = fetch_rows(args.report)
     since = (datetime.now(timezone.utc) - timedelta(days=args.report)).strftime("%Y-%m-%d")
     text = format_report(summarise(rows), args.report, since, cost_summary(rows, args.report))
-    shadow_rows = fetch_shadow(args.report)
-    text += "\n" + format_decisions(summarise_decisions(fetch_decisions(args.report)),
-                                     None if shadow_rows is None else summarise_shadow(shadow_rows),
-                                     args.report)
+    text += "\n" + format_decisions(summarise_decisions(fetch_decisions(args.report)), args.report)
     from decisions import fetch_captures, format_captures, summarise_captures  # local: import order
     captures = fetch_captures(args.report)
     text += "\n" + format_captures(None if captures is None else summarise_captures(captures), args.report)
