@@ -697,7 +697,7 @@ def status():
     out = {"status": "running", "service": "fitness-coach"}
     try:
         from data_fixes import applied_keys  # local: keeps import order flat
-        from weakpoints import _pending_emphasis  # local: keeps import order flat
+        from blocks import _pending_emphasis  # local: keeps import order flat
         memory = load_memory()
         out["data_fixes"] = applied_keys(memory)
         supabase = get_supabase()

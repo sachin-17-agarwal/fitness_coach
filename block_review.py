@@ -120,7 +120,7 @@ def review_window(sessions: list[dict], memory: dict, today: str) -> dict | None
     that has just ended: its last sixteen sessions, or from its stamped
     opening session, through today. Called mid-block (an explicit "block
     review" in chat), the block in progress is reviewed so far."""
-    from weakpoints import block_start, ended_block_range, previous_block_range
+    from blocks import block_start, ended_block_range, previous_block_range
     week = int(memory.get("mesocycle_week", 1) or 1)
     day = int(memory.get("mesocycle_day", 1) or 1)
     rolled_over = week == 1 and day == 1
@@ -366,8 +366,8 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
     from coach_context import _recovery_rows, _standing_constraints
     from plan import load_recent_decisions
     from progression import _fetch_session_weeks
-    from weakpoints import (block_picks_between, parse_volume_bands, rank_by_shortfall,
-                            rotation_sessions, volume_between)
+    from blocks import block_picks_between
+    from weakpoints import parse_volume_bands, rank_by_shortfall, rotation_sessions, volume_between
 
     supabase = get_supabase()
     if not supabase:
@@ -402,7 +402,7 @@ def build_fact_sheet(memory: dict, prompt: str) -> dict | None:
     # What the athlete has already named for the coming block: the review
     # must not propose it again, and must never propose over it.
     try:
-        from weakpoints import _pending_emphasis
+        from blocks import _pending_emphasis
         emphasis_next = [{"muscle": p["muscle"], "note": p.get("note", "")} for p in _pending_emphasis(supabase)]
     except Exception:
         log.warning("Block review: could not read next block's emphasis", exc_info=True)
