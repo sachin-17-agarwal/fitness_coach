@@ -97,12 +97,12 @@ def get_anthropic_client() -> Anthropic:
 _SYSTEM_PROMPT_CACHE: str | None = None
 
 
-# Which prompt the coach reads. system_prompt.txt is the full rulebook;
-# system_prompt.next.txt is the diet (20 Sep 2026): the arithmetic the code
-# now computes taken out, judgment and formats kept. Switched with the
-# PROMPT_FILE environment variable, flipped to the diet by default on a rest
-# day once it has been read.
-DEFAULT_PROMPT_FILE = "system_prompt.txt"
+# Which prompt the coach reads. system_prompt.next.txt is the diet (20 Sep
+# 2026): the arithmetic the code computes taken out, judgment and formats
+# kept. system_prompt.txt is the full rulebook, still the file the parsers'
+# tests read and the one the computed reasons cite by line. PROMPT_FILE
+# overrides; the default switched to the diet on the rest day of 21 Sep.
+DEFAULT_PROMPT_FILE = "system_prompt.next.txt"
 
 
 def load_system_prompt() -> str:
