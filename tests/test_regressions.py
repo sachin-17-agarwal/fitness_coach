@@ -1567,7 +1567,7 @@ class LoadProgressionStallTests(unittest.TestCase):
         """
         prompt = load_system_prompt()
         self.assertIn("PROGRESSION WATCH", prompt)
-        self.assertIn("LOAD INCREASE INDICATED", prompt)
+        self.assertIn("READY TO LOAD", prompt)
 
     def test_progression_trigger_does_not_override_recovery(self):
         """The first version of this rule said a flagged lift "has its load
@@ -2702,7 +2702,10 @@ class SystemPromptConsistencyTests(unittest.TestCase):
     """
 
     def setUp(self):
-        self.prompt = load_system_prompt()
+        # The full rulebook, whose allocation lists and templates must agree;
+        # the diet prompt has no lists to disagree (tests/test_prompt_diet.py).
+        with open("system_prompt.txt", encoding="utf-8") as handle:
+            self.prompt = handle.read()
 
     def test_each_day_sums_to_its_stated_total(self):
         for session in ("Push", "Pull", "Legs", "Cardio+Abs"):
