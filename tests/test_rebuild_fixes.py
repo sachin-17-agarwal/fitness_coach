@@ -291,26 +291,33 @@ class GoLiveSwitchTests(unittest.TestCase):
         os.environ.pop("PROGRAMME_SUBSTITUTION", None)
         self.assertFalse(get_settings().programme_substitution)
 
-    def test_the_live_block_binds_the_reply_only_under_the_switch(self):
-        """AST, like the shadow test: the only place assistant_message is bound
-        from the computed blocks sits inside `if ...programme_substitution:`."""
-        import ast, inspect, coach
-        tree = ast.parse(inspect.getsource(coach.chat_with_coach))
-        live = [n for n in ast.walk(tree)
-                if isinstance(n, ast.If) and "programme_substitution" in ast.dump(n.test)]
-        self.assertEqual(len(live), 1, "one guarded live block")
-        bound_inside = {t.id for n in ast.walk(live[0]) if isinstance(n, ast.Assign)
-                        for t in ast.walk(n.targets[0]) if isinstance(t, ast.Name)}
-        self.assertIn("assistant_message", bound_inside)
-        # And nowhere else does a substitution result reach the reply.
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and any(
-                    isinstance(t, ast.Name) and t.id == "assistant_message"
-                    for t in ast.walk(node.targets[0])):
-                inside_live = any(node is m for m in ast.walk(live[0]))
-                src = ast.dump(node.value)
-                self.assertTrue(inside_live or "substitut" not in src.lower(),
-                                "a substitution binds the reply outside the switch")
+    def test_the_live_step_binds_the_reply_only_under_the_switch(self):
+        """Behaviour, not source: the same computed block reaches the reply
+        through reply_contract only when PROGRAMME_SUBSTITUTION is on."""
+        import os
+        from unittest.mock import patch
+        from reply_contract import ReplyContext, apply_contract
+        computed = {"Leg Press": "*Leg Press*\nWorking Set: 222.5kg x6-10 RPE8 | Rest: 2min\n"}
+        reply = "*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 2min\n"
+
+        def run():
+            ctx = ReplyContext(reply=reply, reply_kind="prose", system_prompt="", today_type="Legs",
+                               programme_out={"computed": computed, "weak_point_exercises": []})
+            with patch("constraints.record_decisions", return_value=0), patch("decisions.capture", return_value=0), \
+                 patch("workout.get_workout_state", return_value={}):
+                return apply_contract(ctx), ctx
+
+        os.environ.pop("PROGRAMME_SUBSTITUTION", None)
+        out, ctx = run()
+        self.assertEqual(out, reply)
+        self.assertNotIn("programme_live", [r["step"] for r in ctx.record])
+        os.environ["PROGRAMME_SUBSTITUTION"] = "1"
+        try:
+            out, ctx = run()
+            self.assertIn("222.5kg", out)
+            self.assertIn({"step": "programme_live", "action": "substituted", "detail": "Leg Press"}, ctx.record)
+        finally:
+            os.environ.pop("PROGRAMME_SUBSTITUTION", None)
 
     def test_on_and_off_end_to_end(self):
         import os

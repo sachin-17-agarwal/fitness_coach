@@ -247,7 +247,9 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     plan_request: bool = False,
                     set_log_session: str | None = None,
                     session_type: str | None = None,
-                    record_user_message: bool = True) -> str:
+                    record_user_message: bool = True,
+                    save_user: bool = True,
+                    client_id: str | None = None) -> str:
     """`session_type` is the session the app named when it opened — it
     outranks the rotation for this reply, so the plan is for the session on
     the athlete's screen even when the backend's day counter has drifted.
@@ -308,7 +310,8 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
 
     if record_user_message:
         conversation_history.append({"role": "user", "content": user_message})
-        save_conversation_message("user", user_message)
+        if save_user:
+            save_conversation_message("user", user_message, client_id=client_id)
 
     messages_to_send = _truncate_history(conversation_history)
 
@@ -330,7 +333,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # always gets an answer.
     assistant_message = None
     response = None
-    reply_kind = "prose"   # which path produced the reply, for the shadow row
+    reply_kind = "prose"   # which path produced the reply, for the contract record
     if plan_request and get_settings().plan_contract:
         try:
             from plan import render_plan, request_session_plan, save_decisions
@@ -418,234 +421,17 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
             assistant_message = response.content[0].text
 
 
-    # A reply cut off at the token ceiling is the one failure the parsers
-    # cannot see: a prescription truncated mid-block still matches the
-    # `Warm-up:` / `Working Set:` prefixes it managed to emit, so the card
-    # renders a partial plan and the athlete is left asking for it again.
-    # Nothing here can un-truncate it, but it must not pass silently.
-    if response is not None and getattr(response, "stop_reason", None) == "max_tokens":
-        log.warning(
-            "Coach reply hit max_tokens — prescription may be truncated (%d chars)",
-            len(assistant_message),
-        )
-    # The set count the coach was HANDED, checked against the one it sent.
-    #
-    # format_session_template puts an explicit "Seated Leg Curl: 3 working sets"
-    # into the live context on every Legs day, and replies came back with 2
-    # anyway. Nothing downstream noticed: the app renders whatever chips the
-    # reply parses to, marks the session complete against that same number, and
-    # the log then shows a 2-set session as though it were prescribed.
-    #
-    # Log-only on purpose. Editing the reply would mean inventing a load and
-    # rep target the coach never chose, and a re-ask mid-exercise can return a
-    # partial block, which the app applies by replacing the entire card —
-    # including the athlete's completed-set checkmarks. Making the divergence
-    # visible is the fix; deciding what to do about it needs the log first.
-    # Correct a surplus BEFORE the reply leaves, then report what is left.
-    #
-    # Logging the divergence was not enough. The count is computed, handed over
-    # as an explicit lookup, and a Pull session still went out with three sets of
-    # Reverse Cable Fly against a template of two — a week after the same session
-    # had correctly explained why it is two. Both replies were defensible; only
-    # one was right; and from the athlete's side the pair is indistinguishable
-    # from randomness, which costs the correct reply its authority too.
-    #
-    # Surplus sets are removed; an under-count is filled by repeating the
-    # block's own last back-off, so the card the app follows holds the
-    # template's count and the coach never disputes a completion it caused.
-    try:
-        assistant_message, trimmed = enforce_set_counts(
-            assistant_message, system_prompt, today_type,
-        )
-        for fix in trimmed:
-            if fix.get("added"):
-                log.warning(
-                    "SET COUNT FILLED (%s): %s had %d %s set(s) too few against a "
-                    "template of %d — last set repeated before sending",
-                    today_type, fix["exercise"], fix["added"], fix["phase"],
-                    fix["target"],
-                )
-            else:
-                log.warning(
-                    "SET COUNT TRIMMED (%s): %s had %d surplus %s set(s) against a "
-                    "template of %d — removed before sending",
-                    today_type, fix["exercise"], fix["dropped"], fix["phase"],
-                    fix["target"],
-                )
-    except Exception:
-        log.exception("Set-count enforcement failed")
-
-    # A prose reply that carries a block for a lift in today's plan — a
-    # Revised: block, or a re-sent block with new numbers — replaces the card.
-    # The stored plan follows it, so the next set reply computes from what is
-    # on the screen. The opening plan and the set reply store their own.
-    if reply_kind == "prose" and set_log_session:
-        try:
-            from plan import block_differs, load_today_plan, plan_from_block, record_plan_update  # local
-            for block in parse_all_prescriptions(assistant_message):
-                stored = load_today_plan(block.get("exercise") or "")
-                if stored and (block.get("working") or block.get("backoff")) and block_differs(block, stored):
-                    record_plan_update(plan_from_block(block, stored), today_type,
-                                       _safe_int(memory.get("mesocycle_week", 1)),
-                                       reason="mid-session block" + (" (Revised)" if block.get("revised") else ""),
-                                       session_id=set_log_session)
-        except Exception:
-            log.exception("Plan update from the reply's blocks failed")
-        # "Revising:" with nothing revised: say so on the card's behalf rather
-        # than let the athlete believe the numbers moved.
-        try:
-            from plan import missing_revision_note  # local: import order
-            note = missing_revision_note(assistant_message, parse_all_prescriptions(assistant_message),
-                                         _card_exercise, _card_stored)
-            if note:
-                assistant_message = assistant_message.rstrip() + "\n\n" + note
-                log.warning("REVISE CLAIM WITHOUT BLOCK (%s): note appended", _card_exercise)
-        except Exception:
-            log.exception("Revise-claim check failed")
-
-    # The weak-point lifts are computed by the programme from their own
-    # history (3 straight sets, reps 10-15, the wave and recovery applied),
-    # and the coach's block for them is replaced by that computation whether
-    # or not the general substitution flag is on. The rule is the prompt's
-    # own (:372) and the same lift came back in three shapes in a week when
-    # it was left to prose. A Revised: block and a lift already on the board
-    # today stay the coach's, as everywhere else.
-    try:
-        wp_exercises = programme_out.get("weak_point_exercises") or []
-        wp_computed = {name: block for name, block in (programme_out.get("computed") or {}).items()
-                       if any(_norm_wp(name) == _norm_wp(e) for e in wp_exercises)}
-        if wp_computed and reply_kind != "set_reply":
-            replaced, swapped = substitute_computed_blocks(
-                assistant_message, wp_computed,
-                aliases=programme_out.get("aliases"),
-                skip=programme_out.get("logged_today") or ())
-            if swapped:
-                assistant_message = replaced
-                log.warning("WEAK-POINT BLOCK COMPUTED (%s wk%s): %s",
-                            programme_out.get("session_type"), programme_out.get("week"), ", ".join(swapped))
-    except Exception:
-        log.exception("Weak-point block substitution failed; reply left as written")
-
-    # SHADOW ONLY — computes the substitution and logs what it WOULD change.
-    # Nothing here alters the reply.
-    #
-    # The three guards this replaces were each wired straight in, and the last
-    # one came back from review with four critical findings — the worst being
-    # that it reverted the mandatory HRV reduction and put a suppressed-recovery
-    # day back at full intensity. It had passed 310 tests. So this one earns its
-    # way in on evidence from real sessions instead: every request logs the
-    # difference between what the coach wrote and what the programme computed
-    # from the same loads, the same week and the same recovery readings. When
-    # the log says the computed block is the better one, the substitution gets
-    # turned on; until then the athlete's card is untouched.
-    try:
-        computed = programme_out.get("computed") or {}
-        if computed:
-            shadow, would_swap = substitute_computed_blocks(
-                assistant_message, computed,
-                aliases=programme_out.get("aliases"),
-                skip=programme_out.get("logged_today") or ())
-            if would_swap:
-                sent = {q["exercise"]: q for q in parse_all_prescriptions(assistant_message)}
-                would = {q["exercise"]: q for q in parse_all_prescriptions(shadow)}
-                for name in would_swap:
-                    a, b = sent.get(name), would.get(name)
-                    # Only the arithmetic counts. The parsed blocks also carry
-                    # the form cue, the Why line, tempo and rest, and those
-                    # differ on almost every block — the coach writes them,
-                    # the programme does not — so comparing whole dicts made
-                    # a "difference" out of blocks whose sets were identical.
-                    if not a or not b or _same_numbers(a, b):
-                        continue
-                    log.warning(
-                        "PROGRAMME SHADOW (%s wk%s) %s: coach sent %s / %s — "
-                        "programme computes %s / %s",
-                        programme_out.get("session_type"), programme_out.get("week"),
-                        name, a.get("working"), a.get("backoff"),
-                        b.get("working"), b.get("backoff"),
-                    )
-                    # A row, not only a log line: the Sunday report aggregates
-                    # these so the substitution flag is judged on numbers.
-                    from usage import record_shadow  # local: keeps import order flat
-                    record_shadow(now_local().strftime("%Y-%m-%d"), programme_out.get("session_type"),
-                                  programme_out.get("week"), reply_kind, name, a, b)
-            for name in programme_out.get("open") or []:
-                log.info("PROGRAMME SHADOW: %s left to the coach (no computed answer)", name)
-    except Exception:
-        log.exception("Programme shadow comparison failed")
-
-    # LIVE, behind PROGRAMME_SUBSTITUTION. The same substitution the shadow
-    # computed, applied to the reply: the coach keeps its prose, its cues and
-    # its tempo, and the Warm-up / Working Set / Back-off lines become the
-    # programme's. Nothing else in this function may bind the reply from the
-    # computed blocks — the shadow block above is checked in the AST for that,
-    # and this one is checked for being guarded by the switch.
-    #
-    # A Revised: block, an exercise with sets already on the board today, and
-    # anything the programme left open all stay the coach's, exactly as in
-    # shadow. Failure here leaves the reply as the coach wrote it.
-    if get_settings().programme_substitution:
-        try:
-            computed = programme_out.get("computed") or {}
-            if computed:
-                substituted, swapped = substitute_computed_blocks(
-                    assistant_message, computed,
-                    aliases=programme_out.get("aliases"),
-                    skip=programme_out.get("logged_today") or ())
-                if swapped:
-                    assistant_message = substituted
-                    log.warning("PROGRAMME LIVE (%s wk%s): substituted %s",
-                                programme_out.get("session_type"),
-                                programme_out.get("week"), ", ".join(swapped))
-        except Exception:
-            log.exception("Programme substitution failed; reply left as written")
-
-    try:
-        counts = check_set_counts(assistant_message, system_prompt, today_type)
-        for bad in counts["mismatches"]:
-            log.warning(
-                "SET COUNT DRIFT (%s): %s prescribed %d working sets, template "
-                "says %d, and the reply gives no reason",
-                today_type, bad["exercise"], bad["actual"], bad["expected"],
-            )
-        for chosen in counts["deliberate"]:
-            # Not a fault. Logged because a run of these on one exercise means
-            # the template is the thing that is wrong.
-            log.info(
-                "Set count deviated deliberately (%s): %s prescribed %d "
-                "against a template of %d, marked Revised:",
-                today_type, chosen["exercise"], chosen["actual"],
-                chosen["expected"],
-            )
-        if counts["unmatched"]:
-            # Not an error — substitutions and the whole Cardio+Abs day have no
-            # template line. Logged so the check's real coverage is visible
-            # rather than assumed from a silent zero.
-            log.info(
-                "Set-count check skipped %d block(s) with no template entry: %s",
-                len(counts["unmatched"]), ", ".join(counts["unmatched"]),
-            )
-    except Exception:
-        # A reply must never fail to reach the athlete because a check on it
-        # raised.
-        log.exception("Set-count check failed")
+    # Every check on the reply, in one fixed order, with one record of what
+    # each did (reply_contract.py). Adding a check means adding a step there.
+    from reply_contract import ReplyContext, apply_contract  # local: keeps import order flat
+    assistant_message = apply_contract(ReplyContext(
+        reply=assistant_message, reply_kind=reply_kind, system_prompt=system_prompt, today_type=today_type,
+        programme_out=programme_out, set_log_session=set_log_session, memory=memory, user_message=user_message,
+        truncated=response is not None and getattr(response, "stop_reason", None) == "max_tokens",
+        card_exercise=_card_exercise, card_stored=_card_stored))
 
     conversation_history.append({"role": "assistant", "content": assistant_message})
-    # A `Decision:` line in any reply is a standing constraint from now on.
-    try:
-        from constraints import record_decisions  # local: keeps import order flat
-        record_decisions(assistant_message)
-    except Exception:
-        log.exception("Decision line handling failed")
-    # A `Proposed:` line is held for the athlete to record or decline; a
-    # lasting phrase in his message with no recordable line back is a miss
-    # the Sunday report counts (docs/DECISION_CAPTURE.md).
-    try:
-        from decisions import capture  # local: keeps import order flat
-        capture(assistant_message, user_message, (get_workout_state() or {}).get("current_session_id") or None)
-    except Exception:
-        log.exception("Decision capture failed")
-    save_conversation_message("assistant", assistant_message)
+    save_conversation_message("assistant", assistant_message, client_id=client_id)
 
     return assistant_message
 
@@ -1187,7 +973,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                                recovery_override=recovery_override,
                                plan_request=is_plan_request(incoming_text, reply_type),
                                set_log_session=set_log_session,
-                               session_type=named_type)
+                               session_type=named_type,
+                               save_user=save_user, client_id=client_id)
 
     if inherited_attribution:
         guessed, count = inherited_attribution

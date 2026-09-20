@@ -4444,7 +4444,7 @@ class ProtocolAuditTests(unittest.TestCase):
 
 
 class ProgrammeShadowModeTests(unittest.TestCase):
-    """It observes. It must not be able to do anything else.
+    """Once the shadow; since 20 Sep 2026 the reply contract (reply_contract.py).
 
     The three guards this replaces were each wired straight into the live path,
     and the last came back from review with four critical findings — the worst
@@ -4471,47 +4471,39 @@ class ProgrammeShadowModeTests(unittest.TestCase):
         self.assertEqual(swapped, ["Leg Press"])
 
     def test_a_broken_programme_cannot_take_the_session_down(self):
-        """A proposal is an aid, never a precondition. build_proposal already
-        swallows its own failures; this pins that the shadow block does too."""
-        import coach, logging
-        calls = []
+        """A proposal is an aid, never a precondition: a step that raises is
+        logged and skipped and the reply reaches the athlete as it was."""
+        from reply_contract import ReplyContext, apply_contract
 
         class Boom(dict):
             def get(self, *a, **k):
-                calls.append(a)
                 raise RuntimeError("programme exploded")
 
-        # Exercise the guarded body directly with a hostile payload.
-        programme_out = Boom()
-        try:
-            computed = programme_out.get("computed") or {}
-        except Exception:
-            computed = None
-        self.assertIsNone(computed, "the fixture must actually raise")
-        self.assertTrue(calls)
-        self.assertTrue(hasattr(coach, "substitute_computed_blocks"),
-                        "the shadow's imports are wired")
+        ctx = ReplyContext(reply="Nice set. 90 seconds.", reply_kind="prose", system_prompt="", today_type="Legs",
+                           programme_out=Boom(computed={"x": "y"}))
+        with patch("decisions.capture", return_value=0), patch("constraints.record_decisions", return_value=0), \
+             patch("workout.get_workout_state", return_value={}):
+            out = apply_contract(ctx)
+        self.assertEqual(out, "Nice set. 90 seconds.")
+        self.assertIn({"step": "weak_points", "action": "failed", "detail": ""}, ctx.record)
 
-    def test_the_shadow_block_never_assigns_to_the_reply(self):
-        """Checked in the AST, not by reading it.
+    def test_only_the_named_editing_steps_may_rebind_the_reply(self):
+        """The contract's own rule, enforced at run time: a read-only step that
+        changes the reply has its change reverted and logged."""
+        import reply_contract
+        from reply_contract import EDITING_STEPS, ReplyContext, STEPS, apply_contract
+        self.assertEqual([n for n, _ in STEPS],
+                         ["truncation", "set_counts", "plan_follows", "revise_claim", "weak_points",
+                          "programme_live", "set_count_drift", "decisions", "captures"])
+        self.assertEqual(set(EDITING_STEPS), {"set_counts", "revise_claim", "weak_points", "programme_live"})
 
-        This is the whole safety claim, and "I read it and it looks fine" is
-        exactly the standard that shipped the guard which reverted the HRV
-        reduction. The shadow may READ assistant_message; the moment it binds
-        it, shadow mode has become live mode by accident.
-        """
-        import ast, inspect, coach
-        tree = ast.parse(inspect.getsource(coach.chat_with_coach))
-        shadow = [n for n in ast.walk(tree)
-                  if isinstance(n, ast.Try)
-                  and "Programme shadow comparison failed" in ast.dump(n)]
-        self.assertEqual(len(shadow), 1, "the shadow block must be findable")
-        bound = {t.id for n in ast.walk(shadow[0])
-                 if isinstance(n, (ast.Assign, ast.AugAssign, ast.NamedExpr))
-                 for t in ast.walk(n.targets[0] if isinstance(n, ast.Assign) else n.target)
-                 if isinstance(t, ast.Name)}
-        self.assertNotIn("assistant_message", bound,
-                         f"shadow mode assigns to the reply; bound names: {bound}")
+        def rogue(ctx):
+            ctx.reply = "REWRITTEN"
+
+        with patch.object(reply_contract, "STEPS", (("set_count_drift", rogue),)):
+            ctx = ReplyContext(reply="as written", reply_kind="prose", system_prompt="", today_type="Legs")
+            self.assertEqual(apply_contract(ctx), "as written")
+        self.assertIn({"step": "set_count_drift", "action": "reverted", "detail": ""}, ctx.record)
 
     def test_no_computed_answer_means_no_comparison_at_all(self):
         from coach_parsing import substitute_computed_blocks
