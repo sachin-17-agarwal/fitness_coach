@@ -1454,3 +1454,24 @@ class OnePlanTests(unittest.TestCase):
         d = summarise_decisions(rows)
         self.assertEqual((d["exercises"], d["adjusts"]), (2, 1))
         self.assertEqual(d["updates"], 1)
+
+
+class MissingRevisionTests(unittest.TestCase):
+    """A "Revising:" that carries no block leaves the athlete believing the
+    card changed. The reply says what the card still reads instead."""
+
+    STORED = {"working": [{"weight": 12.0, "reps_low": 7, "reps_high": 11, "rpe": 6}], "backoff": [], "sets": 3}
+
+    def test_a_revise_claim_without_a_block_gets_the_card_line_appended(self):
+        from plan import missing_revision_note
+        reply = "You're right — 12.5 x12 last time. Revising:\n\nGood catch."
+        note = missing_revision_note(reply, [], "Reverse Cable Fly", self.STORED)
+        self.assertIsNotNone(note)
+        self.assertTrue(note.startswith("(No revised block came through, so the card still reads"))
+
+    def test_a_revise_claim_with_its_block_is_fine_and_so_is_plain_prose(self):
+        from plan import missing_revision_note
+        blocks = [{"exercise": "Reverse Cable Fly", "working": [{"weight": 15.0, "reps_low": 10, "reps_high": 12}]}]
+        self.assertIsNone(missing_revision_note("Revising: 15kg x10-12.", blocks, "Reverse Cable Fly", self.STORED))
+        self.assertIsNone(missing_revision_note("Good set. Same again next set.", [], "Reverse Cable Fly", self.STORED))
+        self.assertIsNone(missing_revision_note("Revising: …", [], "", None))

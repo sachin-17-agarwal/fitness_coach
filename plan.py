@@ -1327,3 +1327,31 @@ def request_set_reply(client, system_blocks: list, messages: list, exercise: str
                                         + "\nReturn the corrected set reply."},
         ]
     return None, notes
+
+
+# ── A "Revising:" that revised nothing ─────────────────────────────────────
+# The coach wrote "Revising:" and sent no block: the card kept the old
+# numbers while the athlete read that they had changed (Reverse Cable Fly,
+# 20 Sep 2026). The rule (:740) is that a change travels as a block.
+_REVISE_CLAIM_RE = re.compile(
+    r"\b(?:revis(?:ing|ed)\b|updat(?:ing|ed) (?:the |your )?(?:card|prescription|plan|target|load)"
+    r"|chang(?:ing|ed) (?:the |your )?(?:card|prescription|plan|target|load)"
+    r"|(?:bump|stepp|mov)(?:ing|ed) (?:it |you )?(?:up|down) to \d)",
+    re.IGNORECASE,
+)
+
+
+def missing_revision_note(reply: str, blocks: list[dict], card_exercise: str, card_stored: dict | None) -> str | None:
+    """The sentence to append when `reply` claims a revision but carries no
+    block for the lift on the card; None when nothing is owed."""
+    if not _REVISE_CLAIM_RE.search(reply or ""):
+        return None
+    if not card_exercise or not card_stored:
+        return None
+    wanted = "".join(ch for ch in card_exercise.lower() if ch.isalnum())
+    for block in blocks or []:
+        name = "".join(ch for ch in (block.get("exercise") or "").lower() if ch.isalnum())
+        if name and (name == wanted or name in wanted or wanted in name) and (block.get("working") or block.get("backoff")):
+            return None
+    return (f"(No revised block came through, so the card still reads {card_line(card_stored)}. "
+            f"Say the number you want and I'll send the block.)")

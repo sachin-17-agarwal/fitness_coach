@@ -292,6 +292,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # below), so this is the one set of numbers both sides hold; the coach
     # reasoning from its opening plan or an earlier suggestion is how it told
     # the athlete a load was "already prescribed" that was never on his screen.
+    _card_exercise, _card_stored = "", None
     if set_log_session:
         try:
             from plan import card_line, latest_exercise, load_today_plan  # local: import order
@@ -490,6 +491,17 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                                        session_id=set_log_session)
         except Exception:
             log.exception("Plan update from the reply's blocks failed")
+        # "Revising:" with nothing revised: say so on the card's behalf rather
+        # than let the athlete believe the numbers moved.
+        try:
+            from plan import missing_revision_note  # local: import order
+            note = missing_revision_note(assistant_message, parse_all_prescriptions(assistant_message),
+                                         _card_exercise, _card_stored)
+            if note:
+                assistant_message = assistant_message.rstrip() + "\n\n" + note
+                log.warning("REVISE CLAIM WITHOUT BLOCK (%s): note appended", _card_exercise)
+        except Exception:
+            log.exception("Revise-claim check failed")
 
     # The weak-point lifts are computed by the programme from their own
     # history (3 straight sets, reps 10-15, the wave and recovery applied),
