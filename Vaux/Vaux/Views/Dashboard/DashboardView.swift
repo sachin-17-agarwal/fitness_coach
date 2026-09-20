@@ -24,7 +24,6 @@ import SwiftUI
 struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var showWeightSheet = false
-    @State private var showBriefing = false
     /// Block review card: proposal numbers tapped for a partial answer, and
     /// whether the numbers behind the proposals are unfolded.
     @State private var selectedProposals: Set<Int> = []
@@ -64,18 +63,6 @@ struct DashboardView: View {
                 WeightLogSheet(initialWeight: viewModel.latestWeightKg) {
                     Task { await viewModel.load() }
                 }
-            }
-            .sheet(isPresented: $showBriefing) {
-                MorningBriefingView(
-                    onStartWorkout: { _ in
-                        showBriefing = false
-                        switchToTrainTab?()
-                    },
-                    onOpenChat: {
-                        showBriefing = false
-                        switchToChatTab?()
-                    }
-                )
             }
             .task { await viewModel.load() }
             .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
@@ -133,13 +120,6 @@ struct DashboardView: View {
                 todayBlock
                     .padding(.top, 18)
                     .riseIn(delay: 0.12)
-
-                if let note = viewModel.briefingNote,
-                   !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    coachBlock(note)
-                        .padding(.top, 18)
-                        .riseIn(delay: 0.16)
-                }
 
                 hairline.padding(.top, 22)
 
@@ -573,39 +553,6 @@ struct DashboardView: View {
     }
 
     // MARK: - Coach
-
-    private func coachBlock(_ note: String) -> some View {
-        let finished = viewModel.todayFinishedSession != nil
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(finished ? "COACH · RECAP" : "COACH")
-                    .font(.system(size: 10, weight: .semibold))
-                    .kerning(3)
-                    .foregroundStyle(Color.fg2)
-                Spacer()
-                Button {
-                    Haptic.light()
-                    showBriefing = true
-                } label: {
-                    Text("BRIEFING →")
-                        .font(.system(size: 10, weight: .semibold))
-                        .kerning(1.5)
-                        .foregroundStyle(Color.signal)
-                        .frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open today's briefing")
-            }
-            .frame(height: 20)
-
-            Text(note)
-                .font(.system(size: 14))
-                .foregroundStyle(Color.fg1)
-                .lineSpacing(4)
-                .lineLimit(4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
 
     // MARK: - Block review
 

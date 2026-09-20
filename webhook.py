@@ -210,75 +210,6 @@ def _recovery_override_from(payload) -> dict | None:
     return recovery if isinstance(recovery, dict) and recovery else None
 
 
-@app.route("/api/briefing", methods=["POST"])
-def api_briefing():
-    """Run the morning briefing using the user's saved `briefing_style`.
-
-    Replaces the iOS app having to construct its own prompt — keeps a single
-    source of truth so the Telegram morning auto and the in-app Briefing
-    button always speak the same style.
-    """
-    from coach import build_briefing_prompt, handle_incoming_message
-
-    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    expected_token = get_settings().app_api_token
-    if not expected_token:
-        return jsonify({"error": "APP_API_TOKEN not configured"}), 503
-    if not secrets.compare_digest(token, expected_token):
-        return jsonify({"error": "Unauthorized"}), 401
-
-    recovery_override = _recovery_override_from(request.get_json(silent=True))
-
-    try:
-        memory = load_memory()
-        style = str(memory.get("briefing_style", "detailed")).strip().lower()
-        prompt = build_briefing_prompt(style)
-        prs: list = []
-        # Same reasoning as /api/chat: an iOS caller persists its own sets, and
-        # the briefing prompt is generated text that must never be mined for
-        # weight x reps patterns.
-        response = handle_incoming_message(prompt, memory, send_reply=False, out_prs=prs,
-                                           recovery_override=recovery_override,
-                                           allow_set_logging=False)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({
-            "error": "briefing_failed",
-            "message": f"{type(e).__name__}: {e}",
-        }), 502
-
-    def _int_or_default(val, default=1):
-        try:
-            return int(val)
-        except (TypeError, ValueError):
-            return default
-
-    # The block review lands here, the first morning after a block rolls
-    # over, ahead of the briefing: a rest morning, never inside or straight
-    # after a session. Prepared once; answered in chat.
-    review_text = None
-    try:
-        from block_review import prepare_if_due, render_review  # local: keeps import order flat
-        from coach import get_anthropic_client
-        row = prepare_if_due(memory, load_system_prompt_for_review(), get_anthropic_client())
-        if row:
-            review_text = render_review(row)
-    except Exception:
-        traceback.print_exc()
-
-    result = {
-        "response": (f"BLOCK REVIEW\n\n{review_text}\n\n———\n\n{response}" if review_text else response),
-        "mesocycle_day": _int_or_default(memory.get("mesocycle_day"), 1),
-        "mesocycle_week": _int_or_default(memory.get("mesocycle_week"), 1),
-        "style": style,
-    }
-    if review_text:
-        result["block_review"] = review_text
-    if prs:
-        result["prs"] = prs
-    return jsonify(result)
-
-
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     """
@@ -381,9 +312,9 @@ def api_block_review():
     """The latest block review as the athlete reads it, with its status, so
     the app can show it on Home until it is answered.
 
-    Home is where it is prepared, too. It used to be prepared by the briefing
-    route alone, and the athlete never opens the briefing — so the first
-    review would never have been written. Same guards as before: the morning
+    Home is where it is prepared. It used to be prepared by the morning
+    briefing route, retired 20 Sep 2026 — nothing ever sent one, and Home
+    carries everything it said. Same guards as before: the morning
     after rollover, never inside a session, once per block.
     """
     if not _app_authorised():

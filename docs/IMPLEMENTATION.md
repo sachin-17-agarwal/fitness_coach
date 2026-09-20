@@ -697,6 +697,21 @@ Switched on for the rest day of 21 Sep (`coach.DEFAULT_PROMPT_FILE`);
 identically wherever code reads them. Gate: the audit's rule-break rate
 must not rise over the first week on the diet.
 
+## The morning briefing, retired — 20 Sep
+
+Nothing ever sent one: no scheduled job existed, the only "morning" path
+was a command-line mode posting to Telegram, and the app built one on
+demand from a Home button nobody pressed. The athlete: "the data is well
+presented; this started during the Telegram days". Removed: `/api/briefing`,
+`build_briefing_prompt` / `send_morning_briefing` / the style table and the
+CLI mode, the MORNING BRIEFING FORMAT section and every briefing mention in
+the diet prompt, and in the app `BriefingService`, `BriefingViewModel`,
+`MorningBriefingView`, the `Briefing` model, `PreferencesService` (briefing
+style), the Home coach note and BRIEFING → button, the chat header button
+and suggestion, the Settings style section. The `briefing_style` memory
+row is inert. The full rulebook (`docs/programme_rules.txt`) keeps the
+section as history.
+
 ## 2.8 Apple Watch, timer stage
 
 **Goal.** The rest timer on the wrist with haptics and the next prescribed
