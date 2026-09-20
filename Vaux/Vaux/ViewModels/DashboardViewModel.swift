@@ -18,9 +18,6 @@ final class DashboardViewModel {
     var weekTonnage: Double = 0
     var isLoading = true
     var errorMessage: String?
-    /// Today's coach note, when the briefing flow has already generated one.
-    /// Read from cache only — see BriefingService.cachedCoachNoteForToday.
-    var briefingNote: String?
     /// Last week's recovery in two or three sentences, Monday and Tuesday
     /// only. Built from the log by RecoveryDigest, no model call.
     var digest: RecoveryDigest?
@@ -28,7 +25,6 @@ final class DashboardViewModel {
     private let recoveryService = RecoveryService()
     private let mesocycleService = MesocycleService()
     private let workoutService = WorkoutService()
-    private let briefingService = BriefingService()
     private let chatService = ChatService()
 
     /// The latest block review; the Home card shows it while `isOpen`.
@@ -146,9 +142,8 @@ final class DashboardViewModel {
 
             currentStreak = Self.computeStreak(recentSessions)
             weekTonnage = Self.weekTonnage(recentSessions)
-            briefingNote = briefingService.cachedCoachNoteForToday()
-            // The block review lives on Home, not in the briefing nobody
-            // opens. Its own failure must not take the dashboard down.
+            // The block review lives on Home. Its own failure must not take
+            // the dashboard down.
             blockReview = try? await chatService.blockReview()
             if blockReview == nil { scheduleBlockReviewRetry() }
             decisions = (try? await chatService.pendingDecisions()) ?? decisions

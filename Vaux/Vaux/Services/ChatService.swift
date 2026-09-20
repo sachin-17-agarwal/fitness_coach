@@ -297,7 +297,7 @@ final class ChatService: Sendable {
     // MARK: - Authoritative recovery snapshot
 
     /// Builds the recovery snapshot the dashboard is currently showing, to send
-    /// alongside chat/briefing requests. The backend coach uses this verbatim
+    /// alongside chat requests. The backend coach uses this verbatim
     /// so its "today's recovery" can never disagree with what's on screen —
     /// it's read through the *same* `RecoveryService` the dashboard uses, so
     /// the row, the timezone, and the 7-day averages all match exactly.
@@ -408,13 +408,6 @@ final class ChatService: Sendable {
         default:
             return false
         }
-    }
-
-    /// Trigger the backend's morning briefing using the user's saved
-    /// `briefing_style` preference. The backend constructs the prompt so
-    /// the iOS button and the Telegram morning auto stay in sync.
-    func runMorningBriefing() async throws -> ChatResponse {
-        return try await callBriefingBackend()
     }
 
     // MARK: - Conversation history
@@ -625,55 +618,6 @@ final class ChatService: Sendable {
             throw ChatServiceError.decodingFailed(error)
         }
     }
-
-    private func callBriefingBackend() async throws -> ChatResponse {
-        let rawURL = Config.backendURL
-        let token = Config.appAPIToken
-
-        let base = rawURL.hasSuffix("/") ? String(rawURL.dropLast()) : rawURL
-        // Strip a trailing /api/chat if the user pasted the chat URL into
-        // settings — both endpoints share the same base.
-        let trimmed = base.hasSuffix("/api/chat")
-            ? String(base.dropLast("/api/chat".count))
-            : base
-        let urlString = "\(trimmed)/api/briefing"
-
-        guard let url = URL(string: urlString) else {
-            throw ChatServiceError.invalidURL(urlString)
-        }
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = RetryConfig.chatTimeout
-        var payload: [String: Any] = [:]
-        if let recovery = await recoverySnapshot() {
-            payload["recovery"] = recovery
-        }
-        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        let request = req
-
-        // Same hazard as the chat endpoint — a briefing writes to the
-        // conversation and costs a Claude call.
-        let (data, response) = try await withRetry(idempotent: false) {
-            try await URLSession.shared.data(for: request)
-        }
-
-        if let http = response as? HTTPURLResponse,
-           !(200...299).contains(http.statusCode) {
-            let body = String(data: data, encoding: .utf8) ?? "(no body)"
-            throw ChatServiceError.backendError(statusCode: http.statusCode, body: body)
-        }
-
-        do {
-            return try JSONDecoder().decode(ChatResponse.self, from: data)
-        } catch {
-            throw ChatServiceError.decodingFailed(error)
-        }
-    }
-
-    // MARK: - Helpers
 
     private static func todayString() -> String {
         let f = DateFormatter()

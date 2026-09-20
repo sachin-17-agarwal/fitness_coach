@@ -46,6 +46,7 @@ The two categories beyond the four you named:
 | F7 | Widget: strength number kept fresh; a "this week" line | S | idea | Widget shipped 17 Sep, fixed 19–20 Sep. |
 | F8 | Replay of the whole pipeline against the real export, as a test | M | approved 20 Sep (in principle) | Needs one export from Settings. Also the biggest stability item. |
 | F9 | Set reply as prose by default if note damage recurs | S | watch | Guard shipped 18 Sep; no recurrence seen. |
+| F10 | Morning briefing retired: route, prompt section, Home note and sheet, chat button, settings style, Telegram CLI mode | S | done 20 Sep | Nothing ever sent one; Home and the widget carry what it said. A Telegram-era feature. |
 
 ## Stability — the thing does what it says, every time
 

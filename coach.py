@@ -329,7 +329,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # but the per-request context (recovery, sessions, workout state) stays live.
     #
     # The breakpoint uses the 1-hour TTL rather than the 5-minute default.
-    # Traffic here is bursty: a morning briefing, then a 60-90 minute session
+    # Traffic here is bursty: a session opening, then a 60-90 minute session
     # where messages arrive a set at a time. Rest periods keep most turns
     # inside 5 minutes, but every longer gap — walking to the next machine,
     # a heavy single, a stretch of not talking to the coach — expired the
@@ -444,49 +444,6 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     save_conversation_message("assistant", assistant_message, client_id=client_id)
 
     return assistant_message
-
-
-BRIEFING_STYLE_INSTRUCTIONS = {
-    "concise": (
-        "Keep it short — 4-6 bullet lines, max ~150 words. No preamble, no "
-        "filler. Lead with today's session type and the headline recovery number."
-    ),
-    "detailed": (
-        "Give the full breakdown: recovery numbers with context, today's full "
-        "exercise list with sets/reps/weights/RPE, progression notes vs last "
-        "week, anything to watch."
-    ),
-    "drill_sergeant": (
-        "Talk like a no-nonsense strength coach. Direct, demanding, zero "
-        "fluff. Tell me what to do, why it matters, and what would be a "
-        "cop-out. Still cover recovery + today's plan + key targets."
-    ),
-}
-
-
-def build_briefing_prompt(style: str) -> str:
-    """Compose the morning briefing prompt with a style-specific tone."""
-    base = (
-        "Good morning. Give me my morning briefing: "
-        "review my recovery data, tell me today's session with full "
-        "exercise list, sets, reps, weights and RPE targets based on "
-        "my recent performance, and flag anything I need to know. "
-        "If the latest recovery data is not from today, say the exact date you are using."
-    )
-    instruction = BRIEFING_STYLE_INSTRUCTIONS.get(
-        style, BRIEFING_STYLE_INSTRUCTIONS["detailed"]
-    )
-    return f"{base}\n\nStyle: {instruction}"
-
-
-def send_morning_briefing(memory: dict):
-    print("Sending morning briefing...")
-    conversation_history = []
-    style = str(memory.get("briefing_style", "detailed")).strip().lower()
-    message = build_briefing_prompt(style)
-    response = chat_with_coach(message, conversation_history, memory)
-    send_telegram_message(response)
-    print(f"Morning briefing sent (style={style}).")
 
 
 def _settle_stale_session(memory: dict) -> None:
@@ -1046,16 +1003,12 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 2:
         print("Usage:")
-        print("  python coach.py morning    - send morning briefing")
         print("  python coach.py terminal   - interactive terminal mode")
         sys.exit(0)
 
     mode = sys.argv[1]
 
-    if mode == "morning":
-        send_morning_briefing(memory)
-
-    elif mode == "terminal":
+    if mode == "terminal":
         print("AI Fitness Coach - Terminal Mode")
         print("Type 'quit' to exit\n")
         conversation_history = load_today_conversation()

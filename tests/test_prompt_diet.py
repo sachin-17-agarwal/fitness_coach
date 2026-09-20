@@ -36,12 +36,13 @@ class PromptDietTests(unittest.TestCase):
 
     def test_the_formats_the_app_parses_are_present(self):
         for needle in ("Working Set:", "Back-off:", "Warm-up:", "Form:", "Revised:", "Decision: Cable Crunch | clear",
-                       "Proposed: Emphasis-next:", "*RECOVERY*", "*TODAY: [SESSION TYPE]*", "Session done"):
+                       "Proposed: Emphasis-next:", "Session done"):
             self.assertIn(needle, DIET, needle)
 
-    def test_the_diet_is_a_fraction_of_the_full_prompt(self):
+    def test_the_diet_is_a_fraction_of_the_full_prompt_and_has_no_briefing(self):
         self.assertLess(len(DIET), 0.45 * len(FULL))
         self.assertGreater(len(DIET), 20_000)
+        self.assertNotIn("briefing", DIET.lower())      # retired 20 Sep 2026: nothing ever sent one
 
     def test_the_loader_defaults_to_the_diet_and_honours_prompt_file(self):
         import coach

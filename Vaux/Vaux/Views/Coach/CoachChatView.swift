@@ -17,7 +17,6 @@ struct CoachChatView: View {
     var switchToTrainTab: (() -> Void)? = nil
 
     private let suggestions: [String] = [
-        "Today's briefing",
         "How's my recovery?",
         "Train hard today?",
         "Plan my deload week"
@@ -67,19 +66,6 @@ struct CoachChatView: View {
                     EditorialEyebrow(text: "Coach · Online")
                 }
                 Spacer()
-                Button {
-                    Haptic.medium()
-                    Task { await viewModel.sendMorningBriefing() }
-                } label: {
-                    Text("BRIEFING →")
-                        .font(.system(size: 10, weight: .bold))
-                        .kerning(2.5)
-                        .foregroundStyle(Color.signal)
-                        .frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isLoading)
-                .accessibilityLabel("Request morning briefing")
             }
             .frame(height: 44)
 

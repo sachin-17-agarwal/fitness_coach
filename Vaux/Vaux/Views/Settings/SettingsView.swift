@@ -4,7 +4,7 @@
 // Settings as a ruled ledger in the editorial language: eyebrow section
 // titles with a fact on the right, hairline rows, Anton for the figures, and
 // one lime text action per section. Every control of the previous card
-// layout is kept — name, mesocycle position, briefing style, exercise
+// layout is kept — name, mesocycle position, exercise
 // library, HealthKit sync, backend config, about.
 
 import Foundation
@@ -25,15 +25,12 @@ struct SettingsView: View {
     @State private var saveStatus: StatusMessage?
     @State private var backendStatus: StatusMessage?
     @State private var lastSyncAt: Date? = HealthKitManager.shared.lastSyncDate
-    @State private var briefingStyle: BriefingStyle = .detailed
-    @State private var briefingStatus: StatusMessage?
     @FocusState private var nameFocused: Bool
     /// Written straight through to UserDefaults, so the dashboard greeting
     /// updates as it's typed with no explicit save step.
     @AppStorage(Config.displayNameKey) private var displayName: String = ""
 
     private let mesocycleService = MesocycleService()
-    private let preferences = PreferencesService()
 
     struct StatusMessage {
         let text: String
@@ -56,7 +53,6 @@ struct SettingsView: View {
                         topBar
                         nameBlock
                         blockSection
-                        briefingSection
                         librarySection
                         exportSection
                         healthSection
@@ -72,7 +68,6 @@ struct SettingsView: View {
             .navigationBarHidden(true)
             .task {
                 await loadMesocycle()
-                briefingStyle = await preferences.loadBriefingStyle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .mesocycleDidChange)) { _ in
                 // Keep the steppers in sync with `advance()` calls fired from
@@ -178,67 +173,6 @@ struct SettingsView: View {
         case 3: return "Peak"
         case 4: return "Deload"
         default: return nil
-        }
-    }
-
-    // MARK: - Briefing style
-
-    private var briefingSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Briefing style", right: "In-app and Telegram")
-
-            ForEach(Array(BriefingStyle.allCases.enumerated()), id: \.element.id) { index, style in
-                let selected = briefingStyle == style
-                Button {
-                    Haptic.selection()
-                    selectBriefingStyle(style)
-                } label: {
-                    HStack(alignment: .center, spacing: 14) {
-                        Circle()
-                            .fill(selected ? Color.signal : Color.clear)
-                            .overlay(Circle().stroke(selected ? Color.signal : Color.fg3, lineWidth: 1))
-                            .frame(width: 8, height: 8)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(style.displayName)
-                                .font(.system(size: 15, weight: selected ? .semibold : .regular))
-                                .foregroundStyle(selected ? Color.fg0 : Color.fg1)
-                            Text(style.blurb)
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.fg3)
-                                .lineLimit(2)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .frame(minHeight: 56)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .overlay(alignment: .top) {
-                    if index > 0 { Rectangle().fill(Color.line).frame(height: 1) }
-                }
-                .padding(.horizontal, Editorial.gutter)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            }
-
-            if let status = briefingStatus {
-                statusLabel(status)
-                    .padding(.horizontal, Editorial.gutter)
-                    .padding(.top, 8)
-            }
-        }
-    }
-
-    private func selectBriefingStyle(_ style: BriefingStyle) {
-        let previous = briefingStyle
-        briefingStyle = style
-        Task {
-            do {
-                try await preferences.saveBriefingStyle(style)
-                briefingStatus = StatusMessage(text: "Saved", isError: false)
-            } catch {
-                briefingStyle = previous
-                briefingStatus = StatusMessage(text: "Failed: \(error.localizedDescription)", isError: true)
-            }
         }
     }
 
