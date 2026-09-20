@@ -22,6 +22,10 @@ build), **verify** (shipped, not yet confirmed on device), **in progress**,
 
 ---
 
+> **The list we plan from is `docs/BACKLOG.md`** (six categories: efficiency,
+> features, stability, UI, coaching, process). This document keeps the
+> reasoning and the record of decisions behind each item.
+
 ## Part 1 — Pending and ongoing
 
 ### 1.1 Optimisation plan (`docs/OPTIMISATION.md`)
