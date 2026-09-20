@@ -390,6 +390,10 @@ def api_block_review():
         return jsonify({"error": "Unauthorized"}), 401
     from block_review import latest_block_review, prepare_if_due, render_review  # local: import order
     try:
+        _preflight_once(load_memory())
+    except Exception:
+        traceback.print_exc()
+    try:
         from coach import get_anthropic_client
         prepare_if_due(load_memory(), load_system_prompt_for_review(), get_anthropic_client())
     except Exception:
@@ -451,6 +455,17 @@ def widget_verdict(level: str, session_type: str, done: bool) -> str:
     if level == "red":
         return "RUN DOWN — REST TONIGHT" if done else f"RUN DOWN — {session}, GO EASY"
     return "NO RECOVERY DATA YET"
+
+
+def _preflight_once(memory: dict) -> None:
+    """Tomorrow's card, checked by code once a day. Hung on the reads the
+    phone makes anyway (the widget every quarter hour, Home), so it needs no
+    scheduler and nobody has to look at anything."""
+    try:
+        from preflight import run_if_due  # local: keeps import order flat
+        run_if_due(memory)
+    except Exception:
+        traceback.print_exc()
 
 
 def _session_done_today():
@@ -546,6 +561,7 @@ def api_widget():
     from readiness import readiness_today  # local: keeps import order flat
     try:
         memory = load_memory()
+        _preflight_once(memory)
         readiness = readiness_today()
         done = _session_done_today()
     except Exception as e:
@@ -687,6 +703,12 @@ def status():
         supabase = get_supabase()
         out["emphasis_next"] = [f"{p['muscle']}: {p.get('note') or ''}".strip(": ")
                                 for p in (_pending_emphasis(supabase) if supabase else [])]
+        raw = memory.get("preflight_last")
+        if raw:
+            try:
+                out["preflight"] = json.loads(raw) if isinstance(raw, str) else raw
+            except ValueError:
+                out["preflight"] = {"raw": str(raw)[:200]}
     except Exception as exc:
         out["detail_error"] = f"{type(exc).__name__}: {exc}"
     return jsonify(out), 200
