@@ -1,28 +1,28 @@
-<!-- generated 2026-09-20 · 475 prescriptions · 62 violations -->
+<!-- generated 2026-09-21 · 475 prescriptions · 83 violations -->
 
 **Protocol audit — last 90 days**
 
 - **475** prescriptions checked across **2279** replies on dated training days.
-- **48** of them broke at least one rule.
+- **55** of them broke at least one rule.
 - Week known for 328 prescriptions (284 from the coach's own words that day, 44 from the session stamp): every check ran. Week only reconstructed for 147: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 19 of 44 days.
 
 **What was broken, and how often**
 
+- Prescribed below the week's RPE target — **22**
 - Wrong number of working sets — **18**
-- Prescribed below the week's RPE target — **15**
-- Top set below the exercise's rep range — **8**
-- Back-off below the week's RPE target — **8**
+- Top set below the exercise's rep range — **15**
+- Back-off below the week's RPE target — **15**
 - Second back-off not fewer reps — **8**
 - Two back-offs at different loads — **5**
 
 **The most recent of each**
 
-- 2026-09-18 · Legs wk4 · Leg Extension — back-off at RPE5 in week 4, which targets RPE6
-- 2026-09-18 · Legs wk4 · Leg Extension — top set at RPE6 in week 4, which targets RPE7
+- 2026-09-20 · Pull wk1 · Hammer Curl — top set at 7 reps against a 8-12 range
+- 2026-09-20 · Pull wk1 · Hammer Curl — back-off at RPE6 in week 1, which targets RPE7
+- 2026-09-20 · Pull wk1 · Hammer Curl — top set at RPE7 in week 1, which targets RPE8
 - 2026-09-18 · Legs wk4 · 45° Back Extension — two back-offs at different loads
 - 2026-08-26 · Legs wk3 · Machine Calf Raise — 1 working set(s) against a template of 5
 - 2026-07-29 · Push wk1 · Machine Shoulder Press — second back-off at 10 reps, not fewer than 10
-- 2026-07-29 · Push wk1 · Cable Lateral Raise — top set at 6 reps against a 8-12 range
 
 **Where the coach's stated week and the session row disagree (sample)**
 

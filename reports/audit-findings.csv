@@ -61,3 +61,24 @@ date,session,week,exercise,code,detail
 2026-09-18,Legs,4,Single Leg Sumo Press,backoff_rpe_under_target,"back-off at RPE5 in week 4, which targets RPE6"
 2026-09-18,Legs,4,Leg Extension,rpe_under_target,"top set at RPE6 in week 4, which targets RPE7"
 2026-09-18,Legs,4,Leg Extension,backoff_rpe_under_target,"back-off at RPE5 in week 4, which targets RPE6"
+2026-09-20,Pull,1,Reverse Cable Fly,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-09-20,Pull,1,Reverse Cable Fly,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-09-20,Pull,1,Reverse Cable Fly,reps_below_range,top set at 7 reps against a 8-12 range
+2026-09-20,Pull,1,Pull-Ups,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-09-20,Pull,1,Pull-Ups,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-09-20,Pull,1,Pull-Ups,reps_below_range,top set at 5 reps against a 6-10 range
+2026-09-20,Pull,1,Cable Row,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-09-20,Pull,1,Cable Row,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-09-20,Pull,1,Cable Row,reps_below_range,top set at 5 reps against a 6-10 range
+2026-09-20,Pull,1,Lat Pulldown,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-09-20,Pull,1,Lat Pulldown,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-09-20,Pull,1,Lat Pulldown,reps_below_range,top set at 5 reps against a 6-10 range
+2026-09-20,Pull,1,T-Bar Row,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-09-20,Pull,1,T-Bar Row,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-09-20,Pull,1,T-Bar Row,reps_below_range,top set at 5 reps against a 6-10 range
+2026-09-20,Pull,1,Machine Bicep Curl,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-09-20,Pull,1,Machine Bicep Curl,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-09-20,Pull,1,Machine Bicep Curl,reps_below_range,top set at 7 reps against a 8-12 range
+2026-09-20,Pull,1,Hammer Curl,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
+2026-09-20,Pull,1,Hammer Curl,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
+2026-09-20,Pull,1,Hammer Curl,reps_below_range,top set at 7 reps against a 8-12 range
