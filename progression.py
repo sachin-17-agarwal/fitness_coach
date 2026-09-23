@@ -117,6 +117,16 @@ def _met_target(row: dict) -> bool:
     return actual_rpe <= target_rpe
 
 
+def _day(iso: str) -> str:
+    """'2026-09-09' -> '9 Sep', the way the athlete reads a date."""
+    from datetime import date as _date
+    try:
+        d = _date.fromisoformat(str(iso)[:10])
+    except ValueError:
+        return str(iso)
+    return f"{d.day} {d.strftime('%b')}"
+
+
 def _programme_due(exercise: str, tops: list[dict]) -> bool:
     """The programme's own load-increase trigger, so the watch and the card
     cannot disagree: a top set at this load reached the TOP of the lift's
@@ -393,7 +403,7 @@ def format_stalls(stalls: list[dict] | None) -> str:
         recent = ", ".join(_format_set(r) for r in stall["recent"])
         line = (
             f"  {stall['exercise']}: {load_text} for {stall['sessions']} sessions "
-            f"({stall['first_date']} → {stall['last_date']}). Top sets: {recent}."
+            f"({_day(stall['first_date'])} → {_day(stall['last_date'])}). Top sets: {recent}."
         )
         if stall["increase_indicated"]:
             line += (" NOT A STALL — READY TO LOAD: the last session met its target reps at or under "

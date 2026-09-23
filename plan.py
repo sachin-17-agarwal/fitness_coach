@@ -220,6 +220,8 @@ def _fill_sets_from_block(e: ExercisePlan, block: str) -> bool:
         e.warmup = [(float(w.get("weight") or 0), int(w.get("reps") or 0)) for w in parsed.get("warmup") or []]
     if not e.tempo and parsed.get("tempo"):
         e.tempo = str(parsed["tempo"])
+    if not e.note and parsed.get("note"):
+        e.note = str(parsed["note"])
     if not e.rest_seconds:
         e.rest_seconds = _rest_seconds(parsed.get("rest")) or 120
     return True
