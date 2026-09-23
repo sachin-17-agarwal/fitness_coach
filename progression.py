@@ -117,6 +117,24 @@ def _met_target(row: dict) -> bool:
     return actual_rpe <= target_rpe
 
 
+def _programme_due(exercise: str, tops: list[dict]) -> bool:
+    """The programme's own load-increase trigger, so the watch and the card
+    cannot disagree: a top set at this load reached the TOP of the lift's
+    range (:180, :203) at a known RPE of 9 or under.
+
+    The watch used to fire on _met_target — the newest set hitting its own
+    card's reps at its RPE — and a deload set done as prescribed always does,
+    so Leg Extension read READY TO LOAD on 23 Sep while the programme,
+    correctly, held it (week 3 finished at 11 of 8-12)."""
+    from prescribe import TOP_SET_RANGE, classify  # local: prescribe imports widely
+    high = TOP_SET_RANGE[classify(exercise)][1]
+    for top in tops:
+        reps, rpe = _as_int(top.get("actual_reps")), _as_float(top.get("actual_rpe"))
+        if reps is not None and rpe is not None and reps >= high and rpe <= 9:
+            return True
+    return False
+
+
 def _group_by_exercise_and_date(rows: list[dict]) -> dict[str, dict[str, list[dict]]]:
     """Working sets keyed exercise -> date -> rows. Warm-ups and the cardio /
     yoga rows that share the table are dropped; neither carries a load to
@@ -336,7 +354,7 @@ def find_stalls(rows: list[dict], min_sessions: int = DEFAULT_MIN_SESSIONS) -> l
             "last_date": streak_entries[0][0],
             # Oldest-to-newest so the trend reads left to right.
             "recent": [top for _, top in reversed(streak_entries[:_RECENT_SETS_SHOWN])],
-            "increase_indicated": _met_target(streak_entries[0][1]),
+            "increase_indicated": _programme_due(exercise, [top for _, top in streak_entries]),
             # A load that sat still while the reps climbed is progressing, not
             # stuck: Reverse Cable Fly at 12.5kg for five sessions, reps 10 to
             # 12, was called "stalled" to the athlete's face.
@@ -383,7 +401,9 @@ def format_stalls(stalls: list[dict] | None) -> str:
         elif stall.get("reps_rising"):
             line += " NOT A STALL — reps are rising at this load; it is progressing on the rep lever."
         else:
-            line += " Stalled: the load has not moved and the reps have not climbed."
+            line += (" Held by the programme's own rule: no top set at this load has reached the top of its "
+                     "range yet, so the load waits (the proposal's reason says the same). Stalled only if the "
+                     "reps have not climbed across the block either.")
         lines.append(line)
     return "\n".join(lines)
 
