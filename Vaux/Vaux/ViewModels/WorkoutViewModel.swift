@@ -764,7 +764,7 @@ final class WorkoutViewModel {
         } else {
             phaseProgress = label
         }
-        let actual = "\(ExerciseCatalog.setWeightLabel(loggedWeight, exercise: exercise)) × \(loggedReps)" + (isWarmup ? "" : " @ RPE \(loggedRPE.oneDecimal)")
+        let actual = "\(ExerciseCatalog.setWeightLabel(loggedWeight, exercise: exercise)) × \(loggedReps)" + (isWarmup ? "" : " @ RPE \(loggedRPE.wholeOrOne)")
         let targetSuffix = formatTargetSuffix(
             phase: loggedPhase,
             phaseSetIndex: loggedPhaseSetIndex,

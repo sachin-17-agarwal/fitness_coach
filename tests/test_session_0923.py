@@ -183,3 +183,17 @@ class WatchAgreesWithTheProgrammeTests(unittest.TestCase):
         self.assertEqual(len(p.warmup), 1)
         curl = prescribe_exercise("Seated Leg Curl", 3, ISOLATION, 1, PriorSet(110.0, 11, 8.0, week=3, step=5.0), {"Hamstrings"})
         self.assertEqual(curl.warmup, [])
+
+
+class CardSaysWhyTests(unittest.TestCase):
+    def test_a_recovery_cut_is_explained_on_the_card(self):
+        from prescribe import prescribe_session
+        read = {"read": {"rpe_delta": -1.0, "load_multiplier": 1.0, "recovery_session": False,
+                         "reasons": ["7-day HRV 8% below baseline, so RPE targets come down a point"]}}
+        p = prescribe_session((("Leg Press", 3, COMPOUND),), 1, {"Leg Press": PriorSet(245, 15, 9.0, week=3, step=5)},
+                              recovery=read)[0]
+        block = parse_all_prescriptions(render_block(p))[0]
+        self.assertIn("HRV", block.get("note") or "")
+
+    def test_watch_dates_read_as_days(self):
+        self.assertEqual(progression._day("2026-09-09"), "9 Sep")

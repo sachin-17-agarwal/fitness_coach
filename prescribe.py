@@ -1423,6 +1423,11 @@ def render_block(proposal: "Proposal", tempo: str | None = None) -> str:
 
     if proposal.backoff and not straight:
         lines.append("Back-off: " + ", ".join(_fmt_set(b) for b in proposal.backoff))
+    # The reading behind a recovery cut, on the card with the lift. Home showed
+    # 82% green on 23 Sep while the card had cut the targets a point, and
+    # nothing said why until he asked.
+    if getattr(proposal, "recovery_reasons", None) and not getattr(proposal, "recovery_session", False):
+        lines.append("Note: Recovery: " + strip_citations(proposal.recovery_reasons[0]))
     return "\n".join(lines)
 
 
