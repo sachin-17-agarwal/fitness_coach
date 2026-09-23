@@ -95,3 +95,46 @@ class HorizonTests(unittest.TestCase):
         rolled = self._load("2026-09-15")
         self.assertEqual([s["from"] for s in rolled["substitutes"]], ["Barbell Row"])
         self.assertIn("push", rolled["orders"])
+
+
+class ReviewFixTests(unittest.TestCase):
+    def test_clear_forms(self):
+        self.assertEqual(decisions.kind_of("Substitute: Dips | clear"), "substitute")
+        self.assertEqual(decisions.kind_of("Order: Push | clear"), "order")
+        self.assertEqual(decisions.describe("Substitute: Dips | clear"), "Dips: substitution cleared, back in the template")
+        self.assertEqual(decisions.describe("Order: Push | clear"), "Push: order cleared, template order again")
+
+    def _load(self, rows, block_start="2026-09-02"):
+        from unittest.mock import MagicMock
+        sb = MagicMock()
+        sb.table.return_value.select.return_value.in_.return_value.eq.return_value.order.return_value.execute.return_value.data = rows
+        with patch("shape.get_supabase", return_value=sb), patch("shape._block_start", return_value=block_start):
+            return shape._load()
+
+    def test_a_newer_clear_ends_the_shape(self):
+        rows = [{"line": "Substitute: Dips | clear", "kind": "substitute", "answered_at": "2026-09-22T00:00:00+00:00"},
+                {"line": "Order: Push | clear", "kind": "order", "answered_at": "2026-09-22T00:00:00+00:00"},
+                {"line": SUB_STANDING, "kind": "substitute", "answered_at": "2026-09-10T00:00:00+00:00"},
+                {"line": SUB, "kind": "substitute", "answered_at": "2026-09-10T00:00:00+00:00"},
+                {"line": ORDER, "kind": "order", "answered_at": "2026-09-10T00:00:00+00:00"}]
+        got = self._load(rows)
+        self.assertEqual([s["from"] for s in got["substitutes"]], ["Barbell Row"])
+        self.assertEqual(got["orders"], {})
+
+    def test_the_block_horizon_reads_the_local_date(self):
+        # 08:30 Sydney on the block's first day is 22:30 UTC the day before.
+        rows = [{"line": SUB, "kind": "substitute", "answered_at": "2026-09-21T22:30:00+00:00"}]
+        self.assertEqual(len(self._load(rows, "2026-09-22")["substitutes"]), 1)
+        self.assertEqual(len(self._load(rows, "2026-09-23")["substitutes"]), 0)
+
+    def test_recorded_is_said_only_once_the_row_is_stored(self):
+        from unittest.mock import MagicMock
+        sb = MagicMock()
+        sb.table.return_value.update.return_value.eq.return_value.execute.side_effect = RuntimeError("down")
+        with patch("decisions.get_supabase", return_value=sb), patch("shape.invalidate"):
+            text = decisions.answer({"id": 1, "line": SUB}, "record", "PROMPT")
+        self.assertIn("nothing was recorded", text)
+        sb2 = MagicMock()
+        with patch("decisions.get_supabase", return_value=sb2), patch("shape.invalidate"):
+            text = decisions.answer({"id": 1, "line": SUB}, "record", "PROMPT")
+        self.assertTrue(text.startswith("Recorded: Dips → Overhead Cable Extension"))

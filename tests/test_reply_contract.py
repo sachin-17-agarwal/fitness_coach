@@ -154,3 +154,30 @@ class NumbersStepTests(unittest.TestCase):
         with patch.object(reply_contract, "get_settings", return_value=SimpleNamespace(numbers_contract=False)):
             reply_contract.numbers(ctx)
         self.assertEqual(ctx.reply, "You pressed 200kg.")
+
+
+class NumbersStepReviewFixes(unittest.TestCase):
+    CONTEXT = "Leg Press: 180kg x10 @ RPE 8 on 16 Sep; last week 160kg x10."
+
+    def test_a_rewrite_that_drops_a_protected_line_is_refused(self):
+        from reply_contract import ReplyContext, numbers
+        original = ("Last week you pressed 200kg.\nRevising: Leg Press\nWorking Set: 180kg x8 RPE 8\n"
+                    "Proposed: Decision: Leg Press | max load 180kg | knee")
+        ctx = ReplyContext(reply=original, reply_kind="prose", system_prompt="", today_type="Legs",
+                           context_text=self.CONTEXT,
+                           rewrite=lambda r, b: "Your last press was 180kg x10.\nWorking Set: 180kg x8 RPE 8")
+        numbers(ctx)
+        self.assertEqual(ctx.reply, original)
+        self.assertEqual(ctx.record[0]["action"], "rewrite_refused")
+
+    def test_differences_of_context_loads_and_relative_reps_are_arithmetic(self):
+        from reply_contract import unsupported_numbers
+        self.assertEqual(unsupported_numbers("That's 20kg more than last week with 6 reps in hand, 3 reps clear.",
+                                             self.CONTEXT), [])
+        self.assertEqual(unsupported_numbers("You did 6 reps at 200kg.", self.CONTEXT), ["6", "200"])
+
+    def test_drift_is_read_after_every_edit(self):
+        from reply_contract import STEPS
+        names = [n for n, _ in STEPS]
+        self.assertNotIn("set_count_drift", names)
+        self.assertLess(names.index("set_counts"), names.index("programme_live"))

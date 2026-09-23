@@ -14,8 +14,7 @@ Steps, in order. Only the ones marked EDITS may rebind the reply.
                           does not carry: one rewrite is asked for, using
                           only the context's numbers
   set_counts      EDITS  surplus sets trimmed, a shortfall filled from the
-                          block's own last set (coach_parsing.enforce_set_counts);
-                          what is still off-template after the edit, logged
+                          block's own last set (coach_parsing.enforce_set_counts)
   plan_follows           a block for a lift in today's plan becomes the plan
                           in force (plan.record_plan_update)
   revise_claim    EDITS  "Revising:" with no block gets the card's standing
@@ -23,7 +22,8 @@ Steps, in order. Only the ones marked EDITS may rebind the reply.
   weak_points     EDITS  the weak-point lifts' blocks are the programme's
                           computation, whatever the coach wrote
   programme_live  EDITS  behind PROGRAMME_SUBSTITUTION: every computed block
-                          replaces the coach's
+                          replaces the coach's; then what is still
+                          off-template after every edit, logged
   decisions              `Decision:` lines become standing constraints
   captures               `Proposed:` lines are held for the athlete
 
@@ -96,6 +96,13 @@ _CLAIM_RE = re.compile(
 # Letters may touch the number ("x10", "RPE8"): the context writes them so.
 _ANY_NUM_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)?(?!\.?\d)")
 _BLOCK_LINE_RE = re.compile(r"(?i)^\s*(?:\*\*)?(?:warm-?up|ramp|working set|back-?off|top set)s?\b.*:|^\s*Card:")
+# Lines the rest of the contract reads: a rewrite that loses one is refused.
+_KEEP_LINE_RE = re.compile(r"(?i)^\s*(?:\*\*)?(?:warm-?up|ramp|working set|back-?off|top set)s?\b.*:"
+                           r"|^\s*(?:Card|Revising|Revised|Decision|Proposed|Emphasis-next|Substitute|Order):")
+# A rep count said relative to the target is arithmetic, not history:
+# "6 reps in hand", "3 reps clear", "two more reps".
+_RELATIVE_REPS_RE = re.compile(r"(?i)\b\d+\s*reps?\s+(?:in hand|in reserve|in the tank|to spare|clear|short|"
+                               r"left|more|fewer|less|over|under|up|down)\b|\bRIR\b")
 # Loads the programme itself moves by; "add 2.5kg" is arithmetic, not history.
 _PROGRAMME_STEPS = {"1", "1.25", "2.5", "5"}
 
@@ -111,14 +118,19 @@ def unsupported_numbers(reply: str, context_text: str) -> list[str]:
     """Every number the reply states as a claim about a lift that the
     context does not carry, as written in the reply."""
     have = {_num_key(n) for n in _ANY_NUM_RE.findall(context_text or "")}
+    # A difference between two context loads ("20kg more than last week")
+    # is the coach's arithmetic on numbers it was shown, not a new claim.
+    loads = sorted({float(k) for k in have if k.replace(".", "", 1).isdigit()})[-200:]
+    derived = {_num_key(str(round(b - a, 3))) for i, a in enumerate(loads) for b in loads[i + 1:]}
     bad = []
     for line in (reply or "").splitlines():
         if _BLOCK_LINE_RE.match(line):
             continue
+        line = _RELATIVE_REPS_RE.sub(" ", line)
         for m in _CLAIM_RE.finditer(line):
             n = next(v for v in m.groupdict().values() if v is not None)
             key = _num_key(n)
-            if key in have or key in _PROGRAMME_STEPS:
+            if key in have or key in _PROGRAMME_STEPS or (m.group("kg") and key in derived):
                 continue
             try:
                 if 0 <= float(n) <= 4 and float(n).is_integer():
@@ -144,6 +156,15 @@ def numbers(ctx: ReplyContext) -> None:
     rewritten = ctx.rewrite(ctx.reply, bad)
     if not rewritten or not rewritten.strip():
         ctx.note("numbers", "logged", ", ".join(bad))
+        return
+    # The steps after this one read block, Revising and recordable lines. A
+    # rewrite that lost one would lose a decision or turn a revision into a
+    # re-send silently; it is refused and the original goes on.
+    kept = {l.strip() for l in rewritten.splitlines()}
+    lost = [l.strip() for l in ctx.reply.splitlines() if _KEEP_LINE_RE.match(l) and l.strip() not in kept]
+    if lost:
+        log.warning("NUMBERS rewrite dropped %d protected line(s); original kept: %s", len(lost), lost[0][:80])
+        ctx.note("numbers", "rewrite_refused", ", ".join(bad))
         return
     still = unsupported_numbers(rewritten, ctx.context_text)
     ctx.reply = rewritten
@@ -173,13 +194,17 @@ def set_counts(ctx: ReplyContext) -> None:
                         "removed before sending", ctx.today_type, fix["exercise"], fix["dropped"],
                         fix["phase"], fix["target"])
             ctx.note("set_counts", "trimmed", f"{fix['exercise']} -{fix['dropped']} {fix['phase']}")
-    # What is still off-template after the edit. Once its own step; folded
-    # here on 23 Sep 2026 when the numbers step came in (one in, one out).
+
+
+def _log_drift(ctx: ReplyContext) -> None:
+    """What is still off-template once every editing step has run. Once its
+    own step after programme_live; folded on 23 Sep 2026 when the numbers
+    step came in (one in, one out) and kept at the same point in the order."""
     counts = check_set_counts(ctx.reply, ctx.system_prompt, ctx.today_type)
     for bad in counts["mismatches"]:
         log.warning("SET COUNT DRIFT (%s): %s prescribed %d working sets, template says %d, and the reply "
                     "gives no reason", ctx.today_type, bad["exercise"], bad["actual"], bad["expected"])
-        ctx.note("set_counts", "drift", f"{bad['exercise']} {bad['actual']} vs {bad['expected']}")
+        ctx.note("programme_live", "drift", f"{bad['exercise']} {bad['actual']} vs {bad['expected']}")
     for chosen in counts["deliberate"]:
         log.info("Set count deviated deliberately (%s): %s prescribed %d against a template of %d, marked Revised:",
                  ctx.today_type, chosen["exercise"], chosen["actual"], chosen["expected"])
@@ -246,6 +271,13 @@ def weak_points(ctx: ReplyContext) -> None:
 def programme_live(ctx: ReplyContext) -> None:
     """Behind PROGRAMME_SUBSTITUTION: the coach keeps its prose, cues and
     tempo; the Warm-up / Working Set / Back-off lines become the programme's."""
+    try:
+        _substitute(ctx)
+    finally:
+        _log_drift(ctx)
+
+
+def _substitute(ctx: ReplyContext) -> None:
     if not get_settings().programme_substitution:
         return
     out = ctx.programme_out or {}

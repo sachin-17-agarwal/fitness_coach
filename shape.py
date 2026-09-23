@@ -24,7 +24,7 @@ import threading
 import time
 from datetime import timedelta
 
-from data import get_supabase, now_local
+from data import get_supabase, local_date_str, now_local
 
 log = logging.getLogger(__name__)
 
@@ -77,24 +77,33 @@ def _load() -> dict:
     start = _block_start(supabase) if any(" this block " in (r.get("line") or "") for r in rows) else None
     fallback = (now_local() - timedelta(days=_BLOCK_FALLBACK_DAYS)).strftime("%Y-%m-%d")
     out = {"substitutes": [], "orders": {}}
+    # Newest first: the first row seen for a lift or a session decides; a
+    # `| clear` row ends what came before it.
     seen_from: set[str] = set()
+    seen_session: set[str] = set()
     for r in rows:
         m = RECORDABLE_RE.match((r.get("line") or "").strip())
         if not m:
             continue
-        answered = str(r.get("answered_at") or "")[:10]
+        answered = local_date_str(r.get("answered_at"))
         if m.group("sub_from"):
-            if m.group("horizon") == "this block" and answered < (start or fallback):
-                continue
             key = _fold(m.group("sub_from"))
             if key in seen_from:
+                continue
+            if not m.group("sub_to"):
+                seen_from.add(key)
+                continue
+            if m.group("horizon") == "this block" and answered < (start or fallback):
                 continue
             seen_from.add(key)
             out["substitutes"].append({"from": m.group("sub_from").strip(), "to": m.group("sub_to").strip(),
                                        "horizon": m.group("horizon"), "why": m.group("sub_why").strip()})
         elif m.group("order_session"):
             key = _fold(m.group("order_session"))
-            if key not in out["orders"]:
+            if key in seen_session:
+                continue
+            seen_session.add(key)
+            if m.group("order_first"):
                 out["orders"][key] = {"session": m.group("order_session").strip(),
                                       "first": m.group("order_first").strip(), "why": m.group("order_why").strip()}
     return out

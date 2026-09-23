@@ -1000,6 +1000,11 @@ final class WorkoutViewModel {
         let negations = ["don't swap", "dont swap", "do not swap", "not swap", "don't replace",
                          "do not replace", "don't switch", "do not switch", "no need to"]
         if negations.contains(where: lower.contains) { return false }
+        // A reorder keeps the lift for later ("shoulder press first instead,
+        // incline after"); words that say so make this a move, not a swap.
+        let reorder = ["first", "before", "after", "then", "later", "come back", "start with", "begin with",
+                       "next", "reorder", "change the order"]
+        if reorder.contains(where: lower.contains) { return false }
         let requests = ["swap", "switch", "replace", "substitute", "instead of", "instead",
                         "alternative", "something else", "machine is taken", "machine is busy",
                         "machine's taken", "is occupied", "someone's on", "can't do", "cant do",

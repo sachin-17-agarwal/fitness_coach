@@ -671,7 +671,7 @@ def status():
                                 for p in (_pending_emphasis(supabase) if supabase else [])]
         try:
             import flags  # local: keeps import order flat
-            out["coach_flags_14d"] = len(flags.list_flags(14))
+            out["coach_flags_14d"] = flags.count_flags(14)
         except Exception:
             pass
         raw = memory.get("preflight_last")
