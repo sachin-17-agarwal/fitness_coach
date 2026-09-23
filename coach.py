@@ -389,11 +389,17 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # a card that still says otherwise.
     if assistant_message is None and set_log_session and get_settings().plan_contract:
         try:
-            from plan import (latest_exercise, load_today_plan, logged_sets_for,
+            from plan import (latest_exercise, lift_step, load_today_plan, logged_sets_for,
                               render_set_reply, request_set_reply)
             exercise = latest_exercise(set_log_session)
             stored = load_today_plan(exercise) if exercise else None
             if stored:
+                # The stored plan carries no load step; the programme's
+                # proposal does, so a move lands on the stack (125kg calf
+                # raise + one step is 130, not 131).
+                step = lift_step(programme_out.get("steps"), exercise, programme_out.get("aliases"))
+                if step:
+                    stored = {**stored, "step": step}
                 done = logged_sets_for(set_log_session, exercise)
                 total = len(stored.get("working") or []) + len(stored.get("backoff") or [])
                 reply, set_notes = request_set_reply(

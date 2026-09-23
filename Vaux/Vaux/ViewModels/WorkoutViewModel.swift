@@ -907,6 +907,7 @@ final class WorkoutViewModel {
         // *now* — applyAIResponse may re-sync the phase from the log below.
         let athleteAskedToSkip = athleteRequestedWarmupSkip(text)
         let athleteAskedToMove = athleteRequestedExerciseChange(text)
+        let athleteAskedToSwap = athleteRequestedSwap(text)
 
         do {
             let response = try await chatService.sendMessage(text, exercise: currentPrescription?.exerciseName)
@@ -918,7 +919,7 @@ final class WorkoutViewModel {
             // card jumped to Hanging Leg Raises. The athlete had to ask the
             // coach to go back. The set the athlete is standing in front of
             // is ground truth; the coach's prose still reaches the note.
-            applyAIResponse(response, allowExerciseChange: athleteAskedToMove)
+            applyAIResponse(response, allowExerciseChange: athleteAskedToMove, swapRequested: athleteAskedToSwap)
             // Only skip when the athlete clearly asked to drop the warm-up
             // AND the coach didn't push back. The coach can't move the iOS
             // phase tracker on its own, but we also won't drop a set on a
@@ -953,6 +954,25 @@ final class WorkoutViewModel {
         let pattern = try? NSRegularExpression(pattern: #"\b(do|doing)\b.*\b(now|next)\b|\b(now|next)\b.*\b(do|doing)\b"#)
         let range = NSRange(lower.startIndex..., in: lower)
         return pattern?.firstMatch(in: lower, range: range) != nil
+    }
+
+    /// True when the athlete asks for a different lift in this one's place:
+    /// a swap, a substitute, or a report that this one cannot be done. A
+    /// reorder ("start with shoulder press", "do calves first") is a move,
+    /// not a swap, and must never remove the lift it moved past. The
+    /// spelling gap between the coach's block and the plan ("Incline Barbell
+    /// Press" for "Incline Press") looked like a new lift, and under the
+    /// wider move test the current lift was dropped from the plan.
+    private func athleteRequestedSwap(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let negations = ["don't swap", "dont swap", "do not swap", "not swap", "don't replace",
+                         "do not replace", "don't switch", "do not switch", "no need to"]
+        if negations.contains(where: lower.contains) { return false }
+        let requests = ["swap", "switch", "replace", "substitute", "instead of", "instead",
+                        "alternative", "something else", "machine is taken", "machine is busy",
+                        "machine's taken", "is occupied", "someone's on", "can't do", "cant do",
+                        "cannot do", "hurts", "painful", "drop this", "leave this"]
+        return requests.contains(where: lower.contains)
     }
 
     /// True only when the athlete gave an explicit, affirmative instruction
@@ -1706,7 +1726,8 @@ final class WorkoutViewModel {
 
     private func applyAIResponse(
         _ chatResponse: ChatResponse,
-        allowExerciseChange: Bool = true
+        allowExerciseChange: Bool = true,
+        swapRequested: Bool = false
     ) {
         let text = chatResponse.response
         let oldExercise = currentPrescription?.exerciseName
@@ -1787,7 +1808,7 @@ final class WorkoutViewModel {
                     currentPrescription = prescriptions.first
                 }
                 let incomingName = prescriptions.first?.exerciseName
-                let isSwap = allowExerciseChange
+                let isSwap = swapRequested
                     && prescriptions.count < 3
                     && exerciseSetsForCurrentExercise.filter { $0.isWarmup != true }.isEmpty
                     && incomingName != nil && oldExercise != nil
