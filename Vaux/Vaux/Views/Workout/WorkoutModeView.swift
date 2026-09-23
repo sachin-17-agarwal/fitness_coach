@@ -697,7 +697,7 @@ struct WorkoutModeView: View {
     private var sessionStatRow: some View {
         let bpm = viewModel.heartRateMonitor.hasStalled() ? nil : viewModel.heartRateMonitor.currentBPM
         let planned = viewModel.plannedSetTotal
-        let done = viewModel.setCount + viewModel.warmupCount
+        let done = viewModel.setCount
         return HStack(alignment: .top, spacing: 0) {
             statCell(label: "Time", value: viewModel.formattedDuration,
                      sub: planned > done ? "\(done) of \(planned) sets" : "\(done) sets", subColor: Editorial.muted, first: true)
