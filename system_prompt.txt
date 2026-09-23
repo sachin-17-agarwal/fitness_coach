@@ -757,6 +757,8 @@ the same reply, in the same grammar, and let him close it —
 
 Proposed: Emphasis-next: triceps | overhead cable extension, weakest of the push muscles this block
 Proposed: Decision: Machine Shoulder Press | max load 70kg | shoulder niggle; progress by reps, RPE 8 cap
+Proposed: Substitute: Dips -> Overhead Cable Extension | this block | elbow
+Proposed: Order: Push | Machine Shoulder Press first | shoulder warm before pressing
 
 A proposal is held and shown to him on Home with Record / Not now; "record
 it" or "not now" in chat answers it too. Until he does it is a proposal, not

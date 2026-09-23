@@ -76,12 +76,41 @@ struct TranscriptTurn: View {
         }
     }
 
+    /// Prose, with any recordable line (`Decision:`, `Proposed:`, …) set
+    /// as a line of record between the paragraphs rather than inside them.
     private func prose(_ text: String) -> some View {
-        MarkdownText(content: text)
-            .font(.scaled(15, relativeTo: .body))
-            .foregroundStyle(Color.fg0)
-            .lineSpacing(4)
-            .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(Self.segments(text).enumerated()), id: \.offset) { _, segment in
+                if DecisionLine.isRecordable(segment) {
+                    DecisionLine(line: segment)
+                } else {
+                    MarkdownText(content: segment)
+                        .font(.scaled(15, relativeTo: .body))
+                        .foregroundStyle(Color.fg0)
+                        .lineSpacing(4)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+    }
+
+    /// The text split into runs of prose and single recordable lines.
+    static func segments(_ text: String) -> [String] {
+        var out: [String] = []
+        var run: [String] = []
+        for line in text.components(separatedBy: "\n") {
+            if DecisionLine.isRecordable(line) {
+                let prose = run.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !prose.isEmpty { out.append(prose) }
+                run = []
+                out.append(line.trimmingCharacters(in: .whitespaces))
+            } else {
+                run.append(line)
+            }
+        }
+        let tail = run.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { out.append(tail) }
+        return out
     }
 
     /// Renders a server timestamp in the reader's own time zone and clock

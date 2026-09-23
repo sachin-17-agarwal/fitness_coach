@@ -27,12 +27,16 @@ log = logging.getLogger(__name__)
 
 # The recordable grammar — one place for what block_review and constraints
 # each used to hold. A line is recordable when it is exactly one of these.
+# The third grammar (stage 3, shape.py): a substitution held for the block
+# or standing, and a session's standing order.
 RECORDABLE_RE = re.compile(
     r"^(?P<line>Decision: (?P<exercise>[^|\n]+?) \| (?:max load (?P<cap>\d+(?:\.\d+)?)kg \| (?P<why>.+)|clear)"
-    r"|Emphasis-next: (?P<muscle>[A-Za-z ]+?) \| (?P<note>.+))$"
+    r"|Emphasis-next: (?P<muscle>[A-Za-z ]+?) \| (?P<note>.+)"
+    r"|Substitute: (?P<sub_from>[^|>\n]+?) -> (?P<sub_to>[^|\n]+?) \| (?P<horizon>this block|standing) \| (?P<sub_why>.+)"
+    r"|Order: (?P<order_session>[A-Za-z+ ]+?) \| (?P<order_first>[^|\n]+?) first \| (?P<order_why>.+))$"
 )
 PROPOSED_RE = re.compile(r"^\s*Proposed:\s*(?P<line>.+?)\s*$", re.IGNORECASE | re.MULTILINE)
-_ANY_RECORDABLE_RE = re.compile(r"^\s*(Decision|Emphasis-next|Proposed):", re.IGNORECASE | re.MULTILINE)
+_ANY_RECORDABLE_RE = re.compile(r"^\s*(Decision|Emphasis-next|Proposed|Substitute|Order):", re.IGNORECASE | re.MULTILINE)
 
 # What the athlete says when something is meant to outlive today. Kept to
 # phrases that carry a number or a horizon so ordinary set talk ("max
@@ -54,19 +58,22 @@ ANSWER_WINDOW_MINUTES = 15
 
 
 def kind_of(line: str) -> str | None:
-    """constraint | emphasis | None."""
+    """constraint | emphasis | substitute | order | None."""
     m = RECORDABLE_RE.match((line or "").strip())
     if not m:
         return None
-    return "constraint" if m.group("line").startswith("Decision:") else "emphasis"
+    head = m.group("line").split(":", 1)[0]
+    return {"Decision": "constraint", "Emphasis-next": "emphasis", "Substitute": "substitute", "Order": "order"}[head]
 
 
 def subject_of(line: str) -> str:
-    """The exercise or the muscle the line is about, folded for comparison."""
+    """What the line is about — the exercise, the muscle, the lift replaced or
+    the session reordered — folded for comparison."""
     m = RECORDABLE_RE.match((line or "").strip())
     if not m:
         return ""
-    return "".join(ch for ch in (m.group("exercise") or m.group("muscle") or "").lower() if ch.isalnum())
+    subject = m.group("exercise") or m.group("muscle") or m.group("sub_from") or m.group("order_session") or ""
+    return "".join(ch for ch in subject.lower() if ch.isalnum())
 
 
 def describe(line: str) -> str:
@@ -76,6 +83,11 @@ def describe(line: str) -> str:
         return line
     if m.group("muscle"):
         return f"Next block's emphasis: {m.group('muscle').strip()} — {m.group('note').strip()}"
+    if m.group("sub_from"):
+        horizon = "for this block" if m.group("horizon") == "this block" else "from now on"
+        return f"{m.group('sub_from').strip()} → {m.group('sub_to').strip()} {horizon} — {m.group('sub_why').strip()}"
+    if m.group("order_session"):
+        return f"{m.group('order_session').strip()}: {m.group('order_first').strip()} first — {m.group('order_why').strip()}"
     exercise = m.group("exercise").strip()
     if m.group("cap"):
         return f"{exercise}: cap {float(m.group('cap')):g} kg — {m.group('why').strip()}"
@@ -181,6 +193,12 @@ def apply_line(line: str, prompt: str) -> bool:
         if parsed:
             set_next_emphasis(prompt, parsed["muscle"], parsed.get("note", ""))
             return True
+    if kind in ("substitute", "order"):
+        # The recorded row is the store (shape.py reads it); only the cache
+        # has to forget what it held.
+        import shape  # local: keeps import order flat
+        shape.invalidate()
+        return True
     return False
 
 

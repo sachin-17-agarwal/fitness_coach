@@ -11,6 +11,12 @@ final class ChatViewModel {
     var isLoading = false
     var errorMessage: String?
 
+    /// Proposals the coach made that are waiting for an answer, shown as
+    /// cards under the transcript; and what the last answer did.
+    var decisions: [DecisionCapture] = []
+    var decisionReply: String?
+    var isAnsweringDecision = false
+
     /// What the coach is looking at today, shown under the header so the
     /// athlete sees the same context the coach reasons from.
     var mesocycle: MesocycleState?
@@ -70,6 +76,26 @@ final class ChatViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+        await loadDecisions()
+    }
+
+    /// Whatever is still proposed; a failure leaves the cards as they were.
+    func loadDecisions() async {
+        if let pending = try? await chatService.pendingDecisions() {
+            decisions = pending
+        }
+    }
+
+    func answerDecision(_ capture: DecisionCapture, record: Bool) async {
+        isAnsweringDecision = true
+        defer { isAnsweringDecision = false }
+        do {
+            let reply = try await chatService.answerDecision(id: capture.id, record: record)
+            decisionReply = reply.message
+            decisions.removeAll { $0.id == capture.id }
+        } catch {
+            decisionReply = "Couldn't send that — \(error.localizedDescription). Say \"record it\" or \"not now\" in chat."
+        }
     }
 
     func sendMessage() async {
@@ -114,6 +140,8 @@ final class ChatViewModel {
                 createdAt: ISO8601DateFormatter().string(from: Date())
             )
             messages.append(assistantMessage)
+            decisionReply = nil
+            await loadDecisions()
         } catch {
             errorMessage = error.localizedDescription
         }

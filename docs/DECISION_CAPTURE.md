@@ -1,9 +1,10 @@
 # Decisions captured when reached
 
 *Designed 17 September 2026, approved and built 18 September. Roadmap item
-1.1b(3). Stages 1 and 2 below are live: `decisions.py`, migration 009, the
-prompt rule, the Home card, chat answers, the report section. Stage 3 (the
-session-shape grammar) and the in-chat card are not built.*
+1.1b(3). All three stages are live: `decisions.py`, migration 009, the
+prompt rule, the Home card, chat answers, the report section (18 Sep); the
+in-chat card and the session-shape grammar — `Substitute:` and `Order:`,
+applied by `shape.py` inside `parse_session_template` (23 Sep).*
 
 ## The problem, from the log
 

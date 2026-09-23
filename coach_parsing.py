@@ -354,6 +354,15 @@ def parse_session_template(prompt: str, session_type: str) -> tuple[list[tuple[s
             found = _EXERCISE_RE.match(chunk.strip())
             if found:
                 pairs.append((found.group("name").strip(), int(found.group("sets"))))
+        # The recorded session shape (shape.py): a substitution held for the
+        # block, a standing order. Applied here so the coach's set-count
+        # block, the plan contract and the programme's proposal all read the
+        # same template. A failure leaves the template as written.
+        try:
+            import shape  # local: keeps import order flat
+            pairs = shape.apply(pairs, session_type)
+        except Exception:
+            log.exception("Session shape could not be applied; template as written")
         return pairs, int(match.group("total"))
     return [], 0
 
@@ -415,6 +424,13 @@ def format_session_template(prompt: str, session_type: str) -> str:
     lines = []
     for name, sets in pairs:
         lines.append(f"  {name}: {sets} working sets ({_set_shape(name, sets)})")
+    try:
+        import shape  # local: keeps import order flat
+        shaped = shape.describe(session_type, pairs)
+        if shaped:
+            lines.append(f"  Recorded session shape applied above: {shaped}")
+    except Exception:
+        pass
     body = "\n".join(lines)
     return (
         f"\nTODAY'S SET COUNTS — the programme's template, and a LOOKUP rather "

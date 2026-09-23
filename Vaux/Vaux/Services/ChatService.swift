@@ -180,7 +180,14 @@ struct DecisionCapture: Codable, Sendable, Identifiable, Hashable {
         case sessionId = "session_id"
     }
 
-    var eyebrow: String { kind == "emphasis" ? "DECISION · NEXT BLOCK" : "DECISION · STANDING" }
+    var eyebrow: String {
+        switch kind {
+        case "emphasis": return "DECISION · NEXT BLOCK"
+        case "substitute": return line.contains("| this block |") ? "SUBSTITUTE · THIS BLOCK" : "SUBSTITUTE · STANDING"
+        case "order": return "ORDER · STANDING"
+        default: return "DECISION · STANDING"
+        }
+    }
 }
 
 struct DecisionPendingResponse: Codable, Sendable {

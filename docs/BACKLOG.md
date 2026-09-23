@@ -38,7 +38,7 @@ The two categories beyond the four you named:
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
 | F1 | Block review goes live: a tap records, no more dry run | S | done 23 Sep | `block_review.DRY_RUN = False`; the 19 Sep row stays a dry run. First live review at the next block rollover. |
-| F2 | Decision capture stages 2–3: the chat-bubble card, the session-shape grammar | M | approved (design) | Stage 1 shipped 18 Sep. |
+| F2 | Decision capture stages 2–3: the chat-bubble card, the session-shape grammar | M | done 23 Sep | Cards under the reply in Coach chat; `Substitute:`/`Order:` recorded and applied inside `parse_session_template` (`shape.py`), so coach and programme read one template. First shape line waits on the coach proposing one. |
 | F3 | Apple Watch: rest timer with haptics (stage 1), set logging from the wrist (stage 2) | L | proposed (2.8) | Mockups first. New target to sign; depends on P1. |
 | F4 | Pre-flight phase 2: findings that need a decision become Home decision cards; unanswered → programme default, stated | M | idea | Phase 1 (correct + log) shipped 20 Sep (#303). |
 | F5 | Standing decisions reviewed mid-block by age, not only at the block review | S | idea | The shoulder cap was never asked about until the review existed. |
