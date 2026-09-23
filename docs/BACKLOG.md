@@ -37,7 +37,7 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| F1 | Block review goes live: a tap records, no more dry run | S | proposed | First dry run compared 19 Sep: matched on 2 of 3, the third reasoned in chat. Say "go live". |
+| F1 | Block review goes live: a tap records, no more dry run | S | done 23 Sep | `block_review.DRY_RUN = False`; the 19 Sep row stays a dry run. First live review at the next block rollover. |
 | F2 | Decision capture stages 2–3: the chat-bubble card, the session-shape grammar | M | approved (design) | Stage 1 shipped 18 Sep. |
 | F3 | Apple Watch: rest timer with haptics (stage 1), set logging from the wrist (stage 2) | L | proposed (2.8) | Mockups first. New target to sign; depends on P1. |
 | F4 | Pre-flight phase 2: findings that need a decision become Home decision cards; unanswered → programme default, stated | M | idea | Phase 1 (correct + log) shipped 20 Sep (#303). |
