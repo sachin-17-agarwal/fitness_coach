@@ -4715,7 +4715,8 @@ class RecoveryIsComputedNotProsedTests(unittest.TestCase):
     def test_short_sleep_cuts_the_load_and_leaves_the_effort(self):
         """:317 — 5-6h: reduce top-set weight by 5%, note CNS fatigue."""
         top = self._leg_press({**self.NORMAL, "sleep_hours": 5.8}).working[0]
-        self.assertEqual(top.weight_kg, 211.5)
+        # 222.5 x 0.95 = 211.4, on the compound's 2.5kg grid (no stack step known).
+        self.assertEqual(top.weight_kg, 212.5)
         self.assertEqual(top.rpe, 8.0)
         self.assertEqual(top.reps_low, 6)
 

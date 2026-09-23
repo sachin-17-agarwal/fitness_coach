@@ -206,7 +206,10 @@ def _load_step(sessions: dict[str, list[dict]]) -> float | None:
     its back-off are 20% apart by design, and taking that gap as the step made
     the programme add a whole back-off drop as "one increment" (Single Leg
     Sumo Press 132.5 -> 150kg on 23 Sep 2026). A plausible step is at most
-    the larger of 5kg and 5% of the load.
+    the larger of 10kg and 7.5% of the load: the Machine Chest Press stack
+    moves in 8kg (85, 93, ... 141, 149, 165) and a 5kg/5% cap threw that out
+    at 149, so week 1 opened at 151.5kg, a load the machine does not have
+    (replay of the 22 Sep 2026 export).
 
     Feeds prescribe.PriorSet.step: a percentage cut then lands on a load the
     stack has and an increment is never smaller than the stack allows."""
@@ -221,7 +224,7 @@ def _load_step(sessions: dict[str, list[dict]]) -> float | None:
         return None
     gaps = [round(b - a, 3) for a, b in zip(ordered, ordered[1:]) if b - a > 0]
     step = min(gaps) if gaps else None
-    if step is None or step < 0.5 or step > max(5.0, 0.05 * ordered[-1]):
+    if step is None or step < 0.5 or step > max(10.0, 0.075 * ordered[-1]):
         return None
     return step
 

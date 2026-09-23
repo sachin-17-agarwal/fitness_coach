@@ -1,0 +1,5 @@
+id,active,created_at,exercise,max_load_kg,note,set_on
+1,0,2026-09-14T06:57:57.518816+00:00,Leg Press,,"current working loads too light for the prescribed RPE at this rep range — top set undershooting RPE9 by several reps' worth of buffer — next Legs session opens meaningfully heavier than 242.5kg, verify against actual RPE reported that day",2026-09-14
+2,0,2026-09-15T07:39:32.361618+00:00,Cable Crunch,105,"stack tops out; progress by reps to 12-15 @8-9, then tempo (slower eccentric, or a pause at peak contraction) once reps cap out",2026-09-15
+3,0,2026-09-16T21:12:42.637217+00:00,Machine Shoulder Press,,"hold at 70kg, RPE8 cap — shoulder niggle — progress by reps only, no load increase until cleared",2026-09-17
+4,1,2026-09-16T21:38:47.554023+00:00,Machine Shoulder Press,70,"RPE8 cap — shoulder niggle — progress by reps only, no load increase until cleared",2026-09-17

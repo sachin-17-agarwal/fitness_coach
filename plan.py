@@ -1219,7 +1219,7 @@ def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: st
         if is_bodyweight(exercise) and load <= 0 and decision == "lighter":
             return planned
         step = _load_step(exercise, load, grid) * n
-        load = max(0.0, _round_load(load - step if decision == "lighter" else load + step, grid))
+        load = max(0.0, _round_load(load - step if decision == "lighter" else load + step, grid, load))
         return SetPlan(load, low, high, rpe)
     if decision in ("fewer_reps", "more_reps"):
         d = -n if decision == "fewer_reps" else n
@@ -1228,7 +1228,7 @@ def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: st
         d = -n if decision == "easier" else n
         new_rpe = min(10.0, max(5.0, rpe + d))
         if decision == "easier" and low - n < DELOAD_MIN_REPS:
-            return SetPlan(_round_load(load * 0.925, grid) if load > 0 else load, low, high, new_rpe)
+            return SetPlan(_round_load(load * 0.925, grid, load) if load > 0 else load, low, high, new_rpe)
         return SetPlan(load, max(1, low + d), max(1, high + d), new_rpe)
     return None
 

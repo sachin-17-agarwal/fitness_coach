@@ -56,10 +56,21 @@ def _on_step(weight: float | None, step: float | None) -> bool:
     return abs(weight / step - round(weight / step)) < 1e-6
 
 
-def _scaled(spec: SetSpec, ratio: float, grid: float | None) -> SetSpec:
+def _on_ladder(weight: float | None, step: float | None, anchor: float | None) -> bool:
+    """On the stack's ladder from a load he has been at (85, 93, ... 149,
+    157 for an 8kg step from 149), or, without one, a multiple of the step."""
+    if weight is None or not step:
+        return True
+    if anchor is None:
+        return _on_step(weight, step)
+    d = (weight - anchor) / step
+    return abs(d - round(d)) < 1e-6
+
+
+def _scaled(spec: SetSpec, ratio: float, grid: float | None, anchor: float | None = None) -> SetSpec:
     if spec.weight_kg is None or ratio == 1.0:
         return spec
-    return replace(spec, weight_kg=_round_load(spec.weight_kg * ratio, grid or spec.grid))
+    return replace(spec, weight_kg=_round_load(spec.weight_kg * ratio, grid or spec.grid, anchor))
 
 
 def enforce(proposals: list, history: dict, peak_history: dict | None, week: int,
@@ -83,12 +94,14 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
         fixes: list[str] = []
         working, backoff, warmup = list(p.working), list(p.backoff), list(p.warmup)
 
-        # loadable: a load the stack does not have is rounded to one it has.
+        # loadable: a load the stack does not have is rounded to one it has —
+        # a whole number of steps from the load he was last at.
+        anchor_load = float(anchor.load) if anchor is not None and getattr(anchor, "load", None) else None
         if step:
             for name, sets in (("working", working), ("backoff", backoff), ("warmup", warmup)):
                 for i, spec in enumerate(sets):
-                    if not _on_step(spec.weight_kg, step):
-                        fixed = _round_load(spec.weight_kg, step)
+                    if not _on_ladder(spec.weight_kg, step, anchor_load):
+                        fixed = _round_load(spec.weight_kg, step, anchor_load)
                         sets[i] = replace(spec, weight_kg=fixed, grid=step)
                         fixes.append(f"{spec.weight_kg:g}kg is not a load on this lift's {step:g}kg step; {fixed:g}kg is")
                         findings.append({"exercise": p.exercise, "kind": "loadable", "fixed": True,
@@ -102,9 +115,9 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
             if not _JUSTIFIED_RE.search(text):
                 old = working[0].weight_kg
                 ratio = float(anchor.load) / old if old else 1.0
-                working = [replace(working[0], weight_kg=float(anchor.load))] + [_scaled(w, ratio, step) for w in working[1:]]
-                backoff = [_scaled(b, ratio, step) for b in backoff]
-                warmup = [_scaled(w, ratio, step) for w in warmup]
+                working = [replace(working[0], weight_kg=float(anchor.load))] + [_scaled(w, ratio, step, anchor_load) for w in working[1:]]
+                backoff = [_scaled(b, ratio, step, anchor_load) for b in backoff]
+                warmup = [_scaled(w, ratio, step, anchor_load) for w in warmup]
                 fixes.append(f"no rule lowers this lift below its last top set of {float(anchor.load):g}kg, so it holds there")
                 findings.append({"exercise": p.exercise, "kind": "regression", "fixed": True,
                                  "detail": f"top {old:g}kg → {float(anchor.load):g}kg (anchor {anchor.load:g} x{anchor.reps})"})
@@ -122,11 +135,11 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
             limit = base * (1 + OVERSHOOT_CAP) + (step or 0.5) if "sized" in reasons_text else base + max(2 * INCREMENT.get(p.kind, 2.5), step or 0.0)
             if working[0].weight_kg > limit + 1e-9:
                 old = working[0].weight_kg
-                new_top = _round_load(base + inc, step) if step else base + inc
+                new_top = _round_load(base + inc, step, base) if step else base + inc
                 ratio = new_top / old
-                working = [replace(working[0], weight_kg=new_top)] + [_scaled(w, ratio, step) for w in working[1:]]
-                backoff = [_scaled(b, ratio, step) for b in backoff]
-                warmup = [_scaled(w, ratio, step) for w in warmup]
+                working = [replace(working[0], weight_kg=new_top)] + [_scaled(w, ratio, step, anchor_load) for w in working[1:]]
+                backoff = [_scaled(b, ratio, step, anchor_load) for b in backoff]
+                warmup = [_scaled(w, ratio, step, anchor_load) for w in warmup]
                 fixes.append(f"{old:g}kg is {old - base:g}kg above the {base:g}kg it progresses from, more than one "
                              f"increment; {new_top:g}kg is one increment up")
                 findings.append({"exercise": p.exercise, "kind": "jump", "fixed": True,
