@@ -1120,22 +1120,48 @@ def _as_set(d: dict) -> SetPlan:
                    float(d.get("rpe", 8)))
 
 
-def _load_step(exercise: str, load: float) -> float:
-    """One step for this movement: the programme's increment, or 5% of the
-    load rounded to the half-kilo when that is larger."""
+def _known_step(grid: float | None) -> float | None:
+    """The lift's own load step when the programme knows it. prescribe's
+    default grid is the half-kilo, which means "the log could not tell", not
+    a stack that moves in 0.5kg."""
+    from prescribe import _LOAD_GRID
+    return grid if grid and grid > _LOAD_GRID else None
+
+
+def lift_step(steps: dict | None, exercise: str, aliases: dict | None = None) -> float | None:
+    """The step coach_context computed for this lift (SetSpec.grid). `steps`
+    is keyed by the template's name; `aliases` (logged spelling -> template
+    name, coach_context's out["aliases"]) lets a plan stored as "Incline
+    Barbell Press" meet the programme's "Incline Press"."""
+    names = [exercise] + [t for logged, t in (aliases or {}).items() if _same(logged, exercise)]
+    for name, grid in (steps or {}).items():
+        if any(_same(name, n) for n in names):
+            return _known_step(_as_float_or_none(grid))
+    return None
+
+
+def _load_step(exercise: str, load: float, grid: float | None = None) -> float:
+    """One step for this movement: the programme's increment or the lift's
+    own stack step, whichever is larger, or 5% of the load rounded to that
+    step when that is larger still. Without the step a 125kg calf raise on a
+    5kg stack was moved to 131kg (review of 23 Sep 2026)."""
     from prescribe import INCREMENT, _round_load, classify
-    base = INCREMENT[classify(exercise)]
-    return max(base, _round_load(load * 0.05))
+    grid = _known_step(grid)
+    base = max(INCREMENT[classify(exercise)], grid or 0.0)
+    return max(base, _round_load(load * 0.05, grid))
 
 
-def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: str) -> SetPlan | None:
+def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: str,
+                       grid: float | None = None) -> SetPlan | None:
     """The programme's arithmetic for one move on one planned set.
 
     easier/harder follow :323 — a point of RPE at a fixed load is a rep; if
     that would leave under five reps, the reps hold and the load moves 7.5%.
-    None when the decision is unknown.
+    `grid` is the lift's own load step (stored["step"]) so every load lands on
+    the stack. None when the decision is unknown.
     """
     from prescribe import DELOAD_MIN_REPS, _round_load, is_bodyweight
+    grid = _known_step(grid)
     n = 1 if steps < 1 else min(int(steps), 2)
     low, high, load, rpe = planned.reps_low, planned.reps_high, planned.load_kg, planned.rpe
     if decision == "hold":
@@ -1143,8 +1169,8 @@ def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: st
     if decision in ("lighter", "heavier"):
         if is_bodyweight(exercise) and load <= 0 and decision == "lighter":
             return planned
-        step = _load_step(exercise, load) * n
-        load = max(0.0, _round_load(load - step if decision == "lighter" else load + step))
+        step = _load_step(exercise, load, grid) * n
+        load = max(0.0, _round_load(load - step if decision == "lighter" else load + step, grid))
         return SetPlan(load, low, high, rpe)
     if decision in ("fewer_reps", "more_reps"):
         d = -n if decision == "fewer_reps" else n
@@ -1153,7 +1179,7 @@ def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: st
         d = -n if decision == "easier" else n
         new_rpe = min(10.0, max(5.0, rpe + d))
         if decision == "easier" and low - n < DELOAD_MIN_REPS:
-            return SetPlan(_round_load(load * 0.925) if load > 0 else load, low, high, new_rpe)
+            return SetPlan(_round_load(load * 0.925, grid) if load > 0 else load, low, high, new_rpe)
         return SetPlan(load, max(1, low + d), max(1, high + d), new_rpe)
     return None
 
@@ -1196,20 +1222,34 @@ def note_is_broken(note: str) -> bool:
 
 # An instruction to change the load, as the note words it. Reads of how a set
 # felt ("felt heavier than Thursday") are not instructions and do not count.
+# Explicit load words always count. A bare "up"/"down" ("take it up", "bring
+# it down") counts only in a clause with no rep, RPE or range word: "take the
+# next set up to 12 reps", "push it up to RPE 8", "bring the reps down to 8"
+# and "move up to the top of the range" are rep and effort instructions, and
+# reading them as load moves handed correct more_reps/harder/fewer_reps
+# replies back to the model (review of 23 Sep 2026).
 _NOTE_HEAVIER_RE = re.compile(
-    r"\b(?:take|make|go|move|bump|put|load|push)\b[^.!?]{0,40}\b(?:heavier|up a (?:step|notch|plate|pin)|up)\b"
-    r"|\b(?:add|put on)\b[^.!?]{0,15}\b(?:weight|a plate|a pin|load)\b|\bgo heavier\b|\bheavier (?:on|for) the\b",
+    r"\b(?:take|make|go|move|bump|put|load|push)\b[^.!?]{0,40}\b(?:heavier|up a (?:step|notch|plate|pin))\b"
+    r"|\b(?:add|put on)\b[^.!?]{0,15}\b(?:weight|a plate|a pin|load|kg)\b|\bgo heavier\b|\bheavier (?:on|for) the\b",
     re.IGNORECASE)
 _NOTE_LIGHTER_RE = re.compile(
-    r"\b(?:take|make|go|move|drop|bring|put)\b[^.!?]{0,40}\b(?:lighter|down a (?:step|notch|plate|pin)|down)\b"
-    r"|\b(?:drop|strip|take off)\b[^.!?]{0,15}\b(?:weight|a plate|a pin|load)\b|\bgo lighter\b",
+    r"\b(?:take|make|go|move|drop|bring|put)\b[^.!?]{0,40}\b(?:lighter|down a (?:step|notch|plate|pin))\b"
+    r"|\b(?:drop|strip|take off|take)\b[^.!?]{0,15}\b(?:weight|a plate|a pin|load|[\d.]+\s*kg off)\b|\bgo lighter\b",
     re.IGNORECASE)
+_NOTE_BARE_UP_RE = re.compile(r"\b(?:take|make|go|move|bump|put|load|push)\b[^.!?]{0,40}\bup\b", re.IGNORECASE)
+_NOTE_BARE_DOWN_RE = re.compile(r"\b(?:take|make|go|move|drop|bring|put)\b[^.!?]{0,40}\bdown\b", re.IGNORECASE)
+_NOTE_NOT_LOAD_RE = re.compile(r"\b(?:reps?|rpe|range|tempo|effort|rir)\b", re.IGNORECASE)
 
 
 def note_direction(note: str) -> str | None:
     """'heavier', 'lighter' or None: the load change the note tells him to make."""
     text = note or ""
     heavier, lighter = bool(_NOTE_HEAVIER_RE.search(text)), bool(_NOTE_LIGHTER_RE.search(text))
+    for clause in re.split(r"[.!?;]", text):
+        if _NOTE_NOT_LOAD_RE.search(clause):
+            continue
+        heavier = heavier or bool(_NOTE_BARE_UP_RE.search(clause))
+        lighter = lighter or bool(_NOTE_BARE_DOWN_RE.search(clause))
     if heavier == lighter:
         return None
     return "heavier" if heavier else "lighter"
@@ -1338,6 +1378,9 @@ def adapted_plan(reply: dict, exercise: str, stored: dict, done: int,
     # carry fewer reps than the first.
     load_move = decision in ("lighter", "heavier", "revise")
     one_load_phase = phase == "backoff" or straight
+    # The lift's own load step, put on the stored plan by coach.py from the
+    # programme's proposal; None when the log could not tell.
+    grid = _known_step(_as_float_or_none(stored.get("step")))
     remaining_all = (reply.get("scope") or "next") == "remaining" or (load_move and one_load_phase)
 
     def moved(planned: SetPlan, first: bool) -> SetPlan:
@@ -1347,7 +1390,7 @@ def adapted_plan(reply: dict, exercise: str, stored: dict, done: int,
             # The revised set is the next one; the sets after it take its
             # load and keep their own reps and RPE.
             return revised if first else SetPlan(revised.load_kg, planned.reps_low, planned.reps_high, planned.rpe)
-        return apply_set_decision(decision, steps, planned, exercise) or planned
+        return apply_set_decision(decision, steps, planned, exercise, grid) or planned
 
     for k, (ph, i) in enumerate(sequence):
         if k < done or ph != phase:
@@ -1362,8 +1405,9 @@ def adapted_plan(reply: dict, exercise: str, stored: dict, done: int,
     if decision in ("heavier", "lighter") and phase == "backoff" and working:
         top = logged_top or working[0].load_kg
         if top and top > 0:
-            ceiling = _floor_to(0.85 * top, 2.5)
-            floor = _floor_to(0.75 * top, 2.5)
+            band_grid = grid or 2.5
+            ceiling = _floor_to(0.85 * top, band_grid)
+            floor = _floor_to(0.75 * top, band_grid)
             for i, b in enumerate(backoff):
                 if sequence.index(("backoff", i)) < done:
                     continue

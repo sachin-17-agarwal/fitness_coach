@@ -556,6 +556,9 @@ def build_context_block(memory: dict, athlete_name: str,
             _blocks, open_names = render_session(_proposals)
             out["computed"] = {p.exercise: render_block(p)
                                for p in _proposals if is_determined(p)}
+            # The load step each lift's log shows (SetSpec.grid): the card's
+            # loads are rounded to it, so a set reply's move must be too.
+            out["steps"] = {p.exercise: p.working[0].grid for p in _proposals if p.working}
             out["open"] = open_names
             out["session_type"] = today_session
             out["week"] = _safe_int(mesocycle_week)
