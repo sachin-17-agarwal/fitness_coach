@@ -69,6 +69,7 @@ Expected variables:
 - `SUPABASE_URL`
 - `SUPABASE_KEY`
 - `APP_API_TOKEN` — shared secret the iOS app sends as `Authorization: Bearer <token>`
+- `GITHUB_FLAGS_TOKEN` (optional) — a fine-grained GitHub token with issues write on this repository; with it, every coach flag (`flags.py`) is also filed as an issue labelled `coach-flag`. `GITHUB_FLAGS_REPO` defaults to this repository.
 - `HEALTH_WEBHOOK_TOKEN` — shared secret the Apple Health webhook sends as `X-Health-Token`
 - `APP_TIMEZONE` (optional, defaults to `Australia/Sydney`)
 - `PORT` (optional, defaults to `5000`)

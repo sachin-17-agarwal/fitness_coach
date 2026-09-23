@@ -19,6 +19,9 @@ struct WorkoutCoachSheet: View {
     let isThinking: Bool
     let onSend: () -> Void
     var openInCoach: (() -> Void)? = nil
+    /// Flag the reply on screen as wrong; what the last flag did.
+    var onFlag: (() -> Void)? = nil
+    var flagStatus: String? = nil
 
     @FocusState private var focused: Bool
 
@@ -62,6 +65,30 @@ struct WorkoutCoachSheet: View {
                                 .font(.system(size: 14))
                                 .lineSpacing(3)
                                 .foregroundStyle(Color.fg0)
+                            if let onFlag {
+                                HStack(spacing: 12) {
+                                    Button {
+                                        Haptic.light()
+                                        onFlag()
+                                    } label: {
+                                        Label("FLAG THIS REPLY", systemImage: "flag")
+                                            .font(.system(size: 9.5, weight: .bold))
+                                            .kerning(1.8)
+                                            .foregroundStyle(Editorial.muted)
+                                            .frame(minHeight: 32)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Flag this reply as wrong; anything typed below goes with it as the note")
+                                    if let flagStatus, !flagStatus.isEmpty {
+                                        Text(flagStatus)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(Color.fg2)
+                                            .lineLimit(2)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.top, 4)
+                            }
                         }
                         .padding(.top, 18)
                     } else if lastQuestion == nil {

@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # in the context it was handed, or one rewrite is asked for.
     numbers_contract: bool = True
 
+    # flags.py: with a token, every coach flag is also filed as an issue on
+    # this repository. A fine-grained token with issues write, set on the
+    # server only.
+    github_flags_token: str = ""
+    github_flags_repo: str = "sachin-17-agarwal/fitness_coach"
+
     # Athlete profile (used in coach context block)
     athlete_name: str = "Athlete"
     athlete_current_weight_kg: int = 0

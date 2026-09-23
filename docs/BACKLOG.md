@@ -62,6 +62,7 @@ The two categories beyond the four you named:
 | S8 | The missing "Logged warm-up 2 of 3" message | S | idea | App side; noticed 18 Sep. |
 | S9 | Hygiene dry run of session statuses/types, then execute | S | blocked on the athlete pasting the log | Migration 010 run. |
 | S10 | Late coach review applied after 3 minutes | — | done (#277) | |
+| S11 | Coach flag log: a wrong reply is flagged from the coach sheet; the exchange, card, sets and contract record are kept (`coach_flags`), shared from Settings as one text, and filed as a GitHub issue when `GITHUB_FLAGS_TOKEN` is set | S | done 23 Sep | Migration 013 to run. Optional: a fine-grained token with issues write on this repo, set on Railway. |
 
 ## UI — how it looks
 
@@ -92,7 +93,7 @@ The two categories beyond the four you named:
 | P2 | One export from Settings for the replay harness (F8) | S | waiting on the athlete | Training data only. |
 | P3 | Rules we hold: a new check is a step in `reply_contract.py` and one comes out; every gym screenshot becomes a pre-flight invariant; nothing merges while a session is live | — | standing | |
 | P4 | The Sunday report is read by Claude, not the athlete; sections only a human would read are removed | S | in progress | Shadow removed 20 Sep. |
-| P5 | Migrations: 011 run; none pending | — | done | |
+| P5 | Migrations: 011 run; 012 and 013 pending | — | waiting on the athlete | Both in `migrations/`. |
 
 ---
 

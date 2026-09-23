@@ -61,6 +61,23 @@ struct PlanChange: Codable, Sendable, Hashable {
     let why: String?
 }
 
+/// `/api/flag`: the flagged exchange as stored, and the issue it was filed
+/// as when the server has a token for it.
+struct FlagResponse: Codable, Sendable {
+    let id: Int?
+    let issueUrl: String?
+    let summary: String?
+    let stored: Bool?
+    enum CodingKeys: String, CodingKey { case id, summary, stored; case issueUrl = "issue_url" }
+}
+
+/// `/api/flags`: the recent flags as one Markdown text for the share sheet.
+struct FlagsResponse: Codable, Sendable {
+    let count: Int
+    let days: Int?
+    let markdown: String
+}
+
 /// `/api/session/status`: none | reviewing | reviewed (+response, changes) | failed.
 struct SessionStatusResponse: Codable, Sendable {
     let status: String
@@ -486,6 +503,46 @@ final class ChatService: Sendable {
                                                 body: String(data: data, encoding: .utf8) ?? "(no body)")
         }
         do { return try JSONDecoder().decode(BlockReviewResponse.self, from: data) }
+        catch { throw ChatServiceError.decodingFailed(error) }
+    }
+
+    /// Mark the coach's last reply as wrong. The server keeps the exchange
+    /// with the card, the sets and what the reply contract did; `clientID`
+    /// is the id the reply was sent under, so the right pair is kept.
+    func flagCoachReply(note: String, exercise: String?, clientID: String?) async throws -> FlagResponse {
+        let urlString = "\(backendBase)/api/flag"
+        guard let url = URL(string: urlString) else { throw ChatServiceError.invalidURL(urlString) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var payload: [String: Any] = ["note": note]
+        if let exercise, !exercise.isEmpty { payload["exercise"] = exercise }
+        if let clientID, !clientID.isEmpty { payload["client_id"] = clientID }
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        req.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw ChatServiceError.backendError(statusCode: http.statusCode,
+                                                body: String(data: data, encoding: .utf8) ?? "(no body)")
+        }
+        do { return try JSONDecoder().decode(FlagResponse.self, from: data) }
+        catch { throw ChatServiceError.decodingFailed(error) }
+    }
+
+    /// The recent flags as one Markdown text, for sharing.
+    func coachFlags(days: Int = 14) async throws -> FlagsResponse {
+        let urlString = "\(backendBase)/api/flags?days=\(days)"
+        guard let url = URL(string: urlString) else { throw ChatServiceError.invalidURL(urlString) }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(Config.appAPIToken)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 20
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw ChatServiceError.backendError(statusCode: http.statusCode,
+                                                body: String(data: data, encoding: .utf8) ?? "(no body)")
+        }
+        do { return try JSONDecoder().decode(FlagsResponse.self, from: data) }
         catch { throw ChatServiceError.decodingFailed(error) }
     }
 
