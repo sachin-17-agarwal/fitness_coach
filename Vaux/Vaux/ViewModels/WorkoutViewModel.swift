@@ -9,6 +9,15 @@ enum SetPhase: String {
     case warmup = "Warm-up"
     case working = "Working"
     case backoff = "Back-off"
+
+    /// The value stored on the row (migration 014).
+    var storageKey: String {
+        switch self {
+        case .warmup: return "warmup"
+        case .working: return "working"
+        case .backoff: return "backoff"
+        }
+    }
 }
 
 @Observable
@@ -688,7 +697,8 @@ final class WorkoutViewModel {
                 isWarmup: isWarmup,
                 targetWeight: target?.weight,
                 targetReps: target?.reps,
-                targetRpe: target?.rpe
+                targetRpe: target?.rpe,
+                phase: loggedPhase.storageKey
             )
             loggedSets.append(set)
             exerciseSetsForCurrentExercise.append(set)
@@ -1950,13 +1960,9 @@ final class WorkoutViewModel {
     private func phaseCompletionCounts(
         against current: ExercisePrescription
     ) -> (warmups: Int, working: Int, backoff: Int) {
-        let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
-        let nonWarmupsDone = exerciseSetsForCurrentExercise.count - warmupsDone
-        return (
-            warmups: warmupsDone,
-            working: min(nonWarmupsDone, current.workingSets.count),
-            backoff: max(0, nonWarmupsDone - current.workingSets.count)
-        )
+        let split = WorkoutSet.splitByPhase(exerciseSetsForCurrentExercise,
+                                            workingPrescribed: current.workingSets.count)
+        return (warmups: split.warmups.count, working: split.working.count, backoff: split.backoff.count)
     }
 
     /// Applies a `Revised:` block, which is deliberately allowed to shrink the
@@ -2205,24 +2211,27 @@ final class WorkoutViewModel {
     /// happened to be active before the prescription changed.
     private func syncPhaseToPrescription() {
         guard let rx = currentPrescription else { return }
-        let warmupsDone = exerciseSetsForCurrentExercise.filter { $0.isWarmup == true }.count
-        let nonWarmupsDone = exerciseSetsForCurrentExercise.count - warmupsDone
         let workingPrescribed = rx.workingSets.count
+        // By the phase each row was logged under; position for rows without one.
+        let split = WorkoutSet.splitByPhase(exerciseSetsForCurrentExercise, workingPrescribed: workingPrescribed)
+        let warmupsDone = split.warmups.count
+        let workingDone = split.working.count
+        let backoffDone = split.backoff.count
 
         if warmupsDone < rx.warmupSets.count {
             currentPhase = .warmup
             phaseSetIndex = warmupsDone
-        } else if nonWarmupsDone < workingPrescribed {
+        } else if workingDone < workingPrescribed {
             currentPhase = .working
-            phaseSetIndex = nonWarmupsDone
+            phaseSetIndex = workingDone
         } else if !rx.backoffSets.isEmpty {
             currentPhase = .backoff
-            phaseSetIndex = max(0, nonWarmupsDone - workingPrescribed)
+            phaseSetIndex = backoffDone
         } else {
             // Prescription has no back-off — leave us at the last working
             // set so prefill still shows something reasonable.
             currentPhase = rx.warmupSets.isEmpty ? .working : (workingPrescribed > 0 ? .working : .warmup)
-            phaseSetIndex = max(0, min(nonWarmupsDone, max(0, workingPrescribed - 1)))
+            phaseSetIndex = max(0, min(workingDone, max(0, workingPrescribed - 1)))
         }
     }
 

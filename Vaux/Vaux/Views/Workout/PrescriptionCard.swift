@@ -292,17 +292,22 @@ struct PrescriptionCard: View {
         }
     }
 
+    /// The logged sets by the phase each was logged under (position for
+    /// rows without one), so a skipped working set does not move a back-off
+    /// into its chip.
+    private var split: WorkoutSet.PhaseSplit {
+        WorkoutSet.splitByPhase(loggedSets, workingPrescribed: prescription.workingSets.count)
+    }
+
     private func loggedSetFor(_ target: SetTarget) -> WorkoutSet? {
-        let warmups = loggedSets.filter { $0.isWarmup == true }
-        let nonWarmups = loggedSets.filter { $0.isWarmup != true }
+        let s = split
         switch target.kind {
         case .warmup:
-            return target.index < warmups.count ? warmups[target.index] : nil
+            return target.index < s.warmups.count ? s.warmups[target.index] : nil
         case .working:
-            return target.index < nonWarmups.count ? nonWarmups[target.index] : nil
+            return target.index < s.working.count ? s.working[target.index] : nil
         case .backoff:
-            let backoffIndex = prescription.workingSets.count + target.index
-            return backoffIndex < nonWarmups.count ? nonWarmups[backoffIndex] : nil
+            return target.index < s.backoff.count ? s.backoff[target.index] : nil
         }
     }
 
@@ -318,13 +323,11 @@ struct PrescriptionCard: View {
     }
 
     private func isSetCompleted(_ target: SetTarget) -> Bool {
-        let warmupsDone = loggedSets.filter { $0.isWarmup == true }.count
-        let nonWarmupsDone = loggedSets.count - warmupsDone
-        let workingPrescribed = prescription.workingSets.count
+        let s = split
         switch target.kind {
-        case .warmup: return warmupsDone > target.index
-        case .working: return nonWarmupsDone > target.index
-        case .backoff: return nonWarmupsDone > workingPrescribed + target.index
+        case .warmup: return s.warmups.count > target.index
+        case .working: return s.working.count > target.index
+        case .backoff: return s.backoff.count > target.index
         }
     }
 

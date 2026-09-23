@@ -216,3 +216,7 @@ CREATE TABLE IF NOT EXISTS coach_flags (
     issue_url    TEXT
 );
 CREATE INDEX IF NOT EXISTS coach_flags_date_idx ON coach_flags (date);
+
+-- 014: the phase a set was logged under; NULL for rows before it existed.
+ALTER TABLE workout_sets ADD COLUMN IF NOT EXISTS phase TEXT
+    CHECK (phase IN ('warmup', 'working', 'backoff'));

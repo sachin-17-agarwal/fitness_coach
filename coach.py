@@ -446,7 +446,11 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 step = lift_step(programme_out.get("steps"), exercise, programme_out.get("aliases"))
                 if step:
                     stored = {**stored, "step": step}
-                done = logged_sets_for(set_log_session, exercise)
+                # The next set by the phase each row was logged under
+                # (migration 014), position for rows without one.
+                from plan import last_logged_slot, latest_logged_sets, next_set_index  # local: import order
+                logged_rows = latest_logged_sets(set_log_session, exercise)
+                done = next_set_index(logged_rows, stored) if logged_rows else logged_sets_for(set_log_session, exercise)
                 total = len(stored.get("working") or []) + len(stored.get("backoff") or [])
                 reply, set_notes = request_set_reply(
                     get_anthropic_client(),
@@ -457,11 +461,10 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 for note in set_notes:
                     log.info("SET CONTRACT (%s): %s", exercise, note)
                 if reply is not None:
-                    from plan import (adapted_plan, latest_logged_sets, owed_set_decision,  # local: import order
-                                      record_plan_update)
-                    logged_rows = latest_logged_sets(set_log_session, exercise)
+                    from plan import adapted_plan, owed_set_decision, record_plan_update  # local: import order
                     logged_top = max((float(r.get("actual_weight_kg") or 0) for r in logged_rows[:1]), default=None) or None
-                    owed = owed_set_decision(logged_rows[-1] if logged_rows else None, stored, done)
+                    owed = owed_set_decision(logged_rows[-1] if logged_rows else None, stored, done,
+                                             last=last_logged_slot(logged_rows, stored))
                     if owed and (reply.get("decision") or "hold") in ("hold", "more_reps", "harder", "heavier"):
                         log.warning("SET CONTRACT (%s): programme owes %s — %s (model said %s)", exercise,
                                     owed["decision"], owed["reason"], reply.get("decision"))

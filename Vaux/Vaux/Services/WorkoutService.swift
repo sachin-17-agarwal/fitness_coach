@@ -64,9 +64,13 @@ struct WorkoutSet: Codable, Identifiable, Sendable {
     var restSeconds: Int?
     var notes: String?
     var loggedAt: String?
+    /// warmup | working | backoff, as logged (migration 014); nil on rows
+    /// from before the column existed, which fall back to position.
+    var phase: String?
 
     enum CodingKeys: String, CodingKey {
         case id
+        case phase
         case workoutSessionId = "workout_session_id"
         case date
         case exercise
@@ -81,6 +85,39 @@ struct WorkoutSet: Codable, Identifiable, Sendable {
         case restSeconds = "rest_seconds"
         case notes
         case loggedAt = "logged_at"
+    }
+}
+
+extension WorkoutSet {
+    /// The logged sets of one exercise split into the card's three phases.
+    ///
+    /// A row that recorded its phase goes where it says. A row without one
+    /// (logged before the phase column existed) is placed by position, as
+    /// every phase count used to be: warm-ups by `is_warmup`, then the
+    /// working slots fill first and the back-offs after. So a skipped working
+    /// set no longer makes the first back-off read as "working set 1".
+    struct PhaseSplit {
+        var warmups: [WorkoutSet] = []
+        var working: [WorkoutSet] = []
+        var backoff: [WorkoutSet] = []
+    }
+
+    static func splitByPhase(_ sets: [WorkoutSet], workingPrescribed: Int) -> PhaseSplit {
+        var out = PhaseSplit()
+        var unplaced: [WorkoutSet] = []
+        for set in sets {
+            switch set.phase?.lowercased() {
+            case "warmup": out.warmups.append(set)
+            case "working": out.working.append(set)
+            case "backoff": out.backoff.append(set)
+            default:
+                if set.isWarmup == true { out.warmups.append(set) } else { unplaced.append(set) }
+            }
+        }
+        let fill = min(unplaced.count, max(0, workingPrescribed - out.working.count))
+        out.working.append(contentsOf: unplaced.prefix(fill))
+        out.backoff.append(contentsOf: unplaced.dropFirst(fill))
+        return out
     }
 }
 
@@ -330,7 +367,8 @@ final class WorkoutService: Sendable {
         isWarmup: Bool = false,
         targetWeight: Double? = nil,
         targetReps: Int? = nil,
-        targetRpe: Double? = nil
+        targetRpe: Double? = nil,
+        phase: String? = nil
     ) async throws -> WorkoutSet {
         let today = Self.todayString()
         let now = ISO8601DateFormatter().string(from: Date())
@@ -376,6 +414,11 @@ final class WorkoutService: Sendable {
         if let targetRpe {
             body["target_rpe"] = targetRpe
         }
+        // The phase the set was logged under (migration 014), so nothing
+        // has to infer it from position later.
+        if let phase {
+            body["phase"] = phase
+        }
 
         // Retried here rather than through withRetry, because this operation is
         // idempotent in a way the generic helper cannot see and the insert body
@@ -414,6 +457,12 @@ final class WorkoutService: Sendable {
                     lastNetworkError = nil
                     break
                 }
+            } catch where body["phase"] != nil {
+                // A store that has not run migration 014 rejects the phase
+                // column; the set is worth more than the label. Once more
+                // without it.
+                body["phase"] = nil
+                continue
             }
         }
         guard let logged else {
