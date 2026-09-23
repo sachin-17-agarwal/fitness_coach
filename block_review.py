@@ -29,7 +29,11 @@ from data import get_supabase, now_local
 
 log = logging.getLogger(__name__)
 
-DRY_RUN = True            # the first block: written and shown, nothing recordable
+# The first block's review (19 Sep 2026) was a dry run: written and shown,
+# nothing recordable, the answer kept to compare. It matched on 2 of 3 and
+# the third was reasoned in chat; live from 23 Sep on the athlete's word. A
+# row stored with dry_run true stays a dry run whatever this says.
+DRY_RUN = False
 MAX_PROPOSALS = 3
 E1RM_MAX_REPS = 12
 # A set past 12 reps still counts when nothing tighter exists for the same

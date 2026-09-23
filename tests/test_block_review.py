@@ -374,3 +374,9 @@ class PrepareIfDueTests(unittest.TestCase):
         self.assertIsNone(br.prepare_if_due({"mesocycle_week": 2, "mesocycle_day": 3}, "P", None))
         with patch("workout.get_workout_state", return_value={"workout_mode": "active"}):
             self.assertIsNone(br.prepare_if_due({"mesocycle_week": 1, "mesocycle_day": 1}, "P", None))
+
+
+class LiveFromSecondBlockTests(unittest.TestCase):
+    def test_the_review_records_from_the_second_block(self):
+        import block_review
+        self.assertFalse(block_review.DRY_RUN)
