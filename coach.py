@@ -413,6 +413,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 proposal=programme_out.get("computed") or {},
                 weak_points=programme_out.get("weak_points"),
                 ceilings=programme_out.get("ceilings"),
+                steps=programme_out.get("steps"),
             )
             for note in plan_notes:
                 log.info("PLAN CONTRACT (%s): %s", today_type, note)

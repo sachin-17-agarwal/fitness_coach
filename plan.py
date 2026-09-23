@@ -367,7 +367,7 @@ def _backoff_problems(e: ExercisePlan) -> list[str]:
 
 def validate(plan: SessionPlan, session_type: str, prompt: str,
              proposal: dict | None = None, weak_points: list | None = None,
-             ceilings: dict | None = None) -> list[str]:
+             ceilings: dict | None = None, steps: dict | None = None) -> list[str]:
     """Every way the plan breaks the programme, as sentences the model can act on.
 
     Mechanical rules only — set counts from the template, the shape of the
@@ -485,6 +485,23 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
                                 f"programme's ({programme_top:g}kg) and the reason names no cause — say the "
                                 f"recovery reading, the joint, the machine's step or the time that drove it, "
                                 f"or accept the programme's number.{SOFT}")
+        if e.decision == "adjust" and computed.get("working") and e.working:
+            # The mirror of the cut: a reach ABOVE the programme is at most one
+            # step of the lift. The pre-flight holds the programme's own jumps
+            # to this; the coach's were unbounded, and on 22 Sep 2026 it put
+            # the Machine Chest Press at 168kg against the programme's ~152
+            # (149 x11 the block before): 165 x5 @9, under the range. Not
+            # soft — no cause makes a bigger jump right; a set that turns out
+            # easy moves the card through the set reply.
+            from prescribe import INCREMENT, classify  # local: keeps import order flat
+            programme_top = float(computed["working"][0].get("weight") or 0)
+            step = lift_step(steps, e.exercise) or 0.0
+            allowance = max(2 * INCREMENT[classify(e.exercise)], step, 2.5)  # one cable step at least
+            if programme_top > 0 and e.working[0].load_kg > programme_top + allowance + 1e-6:
+                problems.append(f"{e.exercise}: today's top set ({e.working[0].load_kg:g}kg) is "
+                                f"{e.working[0].load_kg - programme_top:g}kg over the programme's ({programme_top:g}kg), "
+                                f"more than one step up ({allowance:g}kg) — the programme's number stands; if the "
+                                f"set proves easy the card moves through the set reply.")
         if e.decision == "accept" and computed.get("working"):
             same = _same_set(e.working[0], computed["working"][0]) and \
                 len(e.backoff) == len(computed.get("backoff", [])) and \
@@ -668,7 +685,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
                          proposal: dict | None = None, model: str = MODEL,
                          weak_points: list | None = None,
                          budget_seconds: float = PLAN_TIME_BUDGET_SECONDS,
-                         ceilings: dict | None = None) -> tuple:
+                         ceilings: dict | None = None, steps: dict | None = None) -> tuple:
     """Ask for the plan, check it, and make sure a plan comes back.
 
     Returns (plan, log_lines). `plan` is None only when the model's output
@@ -736,7 +753,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
             notes.append(f"attempt {attempt}: plan did not parse ({exc})")
             plan = None
             break
-        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps)
         if not problems:
             notes.append(f"attempt {attempt}: plan accepted")
             return plan, notes
@@ -763,7 +780,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
     # Soft problems are the coach's to keep: they never send a lift to the fill.
     if plan is None:
         plan = SessionPlan(opening="", exercises=[])
-        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps)
     soft = [x for x in problems if is_soft(x)]
     if soft:
         notes.append("coach's call stands: " + " | ".join(x[:-len(SOFT)] for x in soft))

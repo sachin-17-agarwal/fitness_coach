@@ -62,6 +62,7 @@ The two categories beyond the four you named:
 | S8 | The missing "Logged warm-up 2 of 3" message | S | idea | App side; noticed 18 Sep. |
 | S9 | Hygiene dry run of session statuses/types, then execute | S | blocked on the athlete pasting the log | Migration 010 run. |
 | S10 | Late coach review applied after 3 minutes | — | done (#277) | |
+| S13 | A coach `adjust` above the programme's top set is at most one step of the lift (`plan.validate`); beyond that the programme's card stands | S | done 24 Sep | Machine Chest Press 168 vs ~152 on 22 Sep → 165 x5 @9. The pre-flight bounded the programme's jumps; the coach's were unbounded. |
 | S12 | Logged sets carry their phase (`workout_sets.phase`, migration 014); card and set replies count by phase, position only for older rows | S | done 24 Sep | A skipped working set no longer relabels the back-offs after it. |
 | S11 | Coach flag log: a wrong reply is flagged from the coach sheet; the exchange, card, sets and contract record are kept (`coach_flags`), shared from Settings as one text, and filed as a GitHub issue when `GITHUB_FLAGS_TOKEN` is set | S | done 23 Sep | Migration 013 to run. Optional: a fine-grained token with issues write on this repo, set on Railway. |
 
