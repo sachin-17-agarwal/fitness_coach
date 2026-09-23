@@ -43,6 +43,12 @@ struct SettingsView: View {
     @State private var exportFiles: [URL] = []
     @State private var isExporting = false
 
+    // Coach flags: the replies flagged as wrong in the last two weeks, as one
+    // Markdown text for the share sheet.
+    @State private var flagsStatus: StatusMessage?
+    @State private var flagsMarkdown: String?
+    @State private var isLoadingFlags = false
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -55,6 +61,7 @@ struct SettingsView: View {
                         blockSection
                         librarySection
                         exportSection
+                        flagsSection
                         healthSection
                         liveActivitySection
                         backendSection
@@ -328,6 +335,51 @@ struct SettingsView: View {
             .frame(height: 44)
             .padding(.horizontal, Editorial.gutter)
         }
+    }
+
+    private var flagsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Coach flags")
+            Text("Replies you flagged as wrong in the last 14 days, with the card, the sets and what the reply contract did. One text to share.")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.fg2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Editorial.gutter)
+                .padding(.top, 12)
+            HStack {
+                if let status = flagsStatus { statusLabel(status) }
+                Spacer()
+                if let flagsMarkdown {
+                    ShareLink(item: flagsMarkdown) {
+                        Text("Share →")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.signal)
+                    }
+                } else {
+                    linkButton(isLoadingFlags ? "Loading…" : "Load coach flags →") {
+                        guard !isLoadingFlags else { return }
+                        Haptic.light()
+                        Task { await loadFlags() }
+                    }
+                    .disabled(isLoadingFlags)
+                }
+            }
+            .frame(height: 44)
+            .padding(.horizontal, Editorial.gutter)
+        }
+    }
+
+    private func loadFlags() async {
+        isLoadingFlags = true
+        flagsStatus = StatusMessage(text: "Reading…", isError: false)
+        do {
+            let result = try await ChatService().coachFlags(days: 14)
+            flagsMarkdown = result.markdown
+            flagsStatus = StatusMessage(text: result.count == 0 ? "No flags in 14 days" : "\(result.count) flag\(result.count == 1 ? "" : "s")", isError: false)
+        } catch {
+            flagsStatus = StatusMessage(text: "Could not load: \(error.localizedDescription)", isError: true)
+        }
+        isLoadingFlags = false
     }
 
     private func runExport() async {

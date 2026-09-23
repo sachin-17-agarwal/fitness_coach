@@ -77,6 +77,10 @@ final class WorkoutViewModel {
     // Coach feedback
     var coachNote: String?
     var isCoachThinking = false
+    /// The id the last coach reply was requested under, so a flag on it
+    /// keeps the right exchange; and what the last flag did.
+    var lastCoachClientID: String?
+    var flagStatus: String?
     /// A set message whose reply has not arrived: kept with its delivery id
     /// so the same message is asked about again when the app comes back,
     /// never sent as a new one. Switching apps while the coach was thinking
@@ -863,6 +867,8 @@ final class WorkoutViewModel {
     /// `resumePendingCoachMessage`; a definite failure gives up.
     private func deliverSetMessage(_ pending: PendingCoachMessage) async {
         do {
+            lastCoachClientID = pending.id.uuidString.lowercased()
+            flagStatus = nil
             let response = try await chatService.sendMessage(pending.text, clientID: pending.id)
             pendingCoachMessage = nil
             applyAIResponse(response, allowExerciseChange: false)
@@ -909,8 +915,11 @@ final class WorkoutViewModel {
         let athleteAskedToMove = athleteRequestedExerciseChange(text)
         let athleteAskedToSwap = athleteRequestedSwap(text)
 
+        let clientID = UUID()
+        lastCoachClientID = clientID.uuidString.lowercased()
+        flagStatus = nil
         do {
-            let response = try await chatService.sendMessage(text, exercise: currentPrescription?.exerciseName)
+            let response = try await chatService.sendMessage(text, clientID: clientID, exercise: currentPrescription?.exerciseName)
             // A chat reply may not move the card off an unfinished exercise
             // unless the athlete asked to move. The guard that refuses a
             // premature exercise change ran only on set-log replies; a
@@ -932,6 +941,29 @@ final class WorkoutViewModel {
             errorMessage = error.localizedDescription
         }
         isCoachThinking = false
+    }
+
+    /// Mark the coach's last reply as wrong. Whatever is typed in the reply
+    /// field goes with it as the note and is cleared; the server keeps the
+    /// exchange, the card, the sets and the reply contract's record.
+    func flagCoachReply() async {
+        let note = inlineChatText.trimmingCharacters(in: .whitespacesAndNewlines)
+        flagStatus = "Flagging…"
+        do {
+            let out = try await chatService.flagCoachReply(note: note,
+                                                           exercise: currentPrescription?.exerciseName,
+                                                           clientID: lastCoachClientID)
+            inlineChatText = ""
+            if out.issueUrl != nil {
+                flagStatus = "Flagged and filed for review"
+            } else if out.stored == true {
+                flagStatus = "Flagged — kept for review"
+            } else {
+                flagStatus = "Flagged — not stored; share it from Settings"
+            }
+        } catch {
+            flagStatus = "Flag failed: \(error.localizedDescription)"
+        }
     }
 
     /// True when the athlete's message asks to leave the current exercise:

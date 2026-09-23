@@ -504,13 +504,20 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # Every check on the reply, in one fixed order, with one record of what
     # each did (reply_contract.py). Adding a check means adding a step there.
     from reply_contract import ReplyContext, apply_contract  # local: keeps import order flat
-    assistant_message = apply_contract(ReplyContext(
+    _ctx = ReplyContext(
         reply=assistant_message, reply_kind=reply_kind, system_prompt=system_prompt, today_type=today_type,
         programme_out=programme_out, set_log_session=set_log_session or card_session, memory=memory, user_message=user_message,
         truncated=response is not None and getattr(response, "stop_reason", None) == "max_tokens",
         card_exercise=_card_exercise, card_stored=_card_stored,
         context_text=_handed_text(stable_context, live_context, messages_to_send),
-        rewrite=lambda reply, bad: _rewrite_numbers(blocks, messages_to_send, reply, bad)))
+        rewrite=lambda reply, bad: _rewrite_numbers(blocks, messages_to_send, reply, bad))
+    assistant_message = apply_contract(_ctx)
+    # Kept in process for a flag on this reply (flags.py): what the contract did.
+    try:
+        import flags  # local: keeps import order flat
+        flags.remember(client_id, _ctx.reply_kind, _ctx.record, _card_exercise or (on_screen or ""))
+    except Exception:
+        log.exception("flags.remember failed")
 
     conversation_history.append({"role": "assistant", "content": assistant_message})
     save_conversation_message("assistant", assistant_message, client_id=client_id)

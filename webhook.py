@@ -569,6 +569,36 @@ def _app_authorised() -> bool:
     return bool(expected) and secrets.compare_digest(token, expected)
 
 
+@app.route("/api/flag", methods=["POST"])
+def api_flag():
+    """The athlete marks the coach's last reply as wrong. Everything around
+    it is stored (flags.py) and, with a token configured, filed as an issue."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    import flags  # local: keeps import order flat
+    out = flags.record_flag(
+        note=str(data.get("note") or "")[:500],
+        exercise=str(data.get("exercise") or "").strip()[:80] or None,
+        client_id=str(data.get("client_id") or "").strip()[:64] or None,
+    )
+    return jsonify(out), 200
+
+
+@app.route("/api/flags", methods=["GET"])
+def api_flags():
+    """The recent flags as one Markdown text, for the share sheet."""
+    if not _app_authorised():
+        return jsonify({"error": "Unauthorized"}), 401
+    import flags  # local: keeps import order flat
+    try:
+        days = max(1, min(int(request.args.get("days", 14)), 90))
+    except ValueError:
+        days = 14
+    rows = flags.list_flags(days)
+    return jsonify({"count": len(rows), "days": days, "markdown": flags.format_flags(rows)})
+
+
 @app.route("/api/session/open", methods=["POST"])
 def api_session_open():
     """START pressed: the programme's card at once, the coach's review on a
@@ -639,6 +669,11 @@ def status():
         supabase = get_supabase()
         out["emphasis_next"] = [f"{p['muscle']}: {p.get('note') or ''}".strip(": ")
                                 for p in (_pending_emphasis(supabase) if supabase else [])]
+        try:
+            import flags  # local: keeps import order flat
+            out["coach_flags_14d"] = len(flags.list_flags(14))
+        except Exception:
+            pass
         raw = memory.get("preflight_last")
         if raw:
             try:

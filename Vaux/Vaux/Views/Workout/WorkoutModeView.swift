@@ -618,7 +618,9 @@ struct WorkoutModeView: View {
                 coachNote: viewModel.coachNote,
                 isThinking: viewModel.isCoachThinking,
                 onSend: { Task { await viewModel.sendInlineMessage() } },
-                openInCoach: openInCoachAction
+                openInCoach: openInCoachAction,
+                onFlag: { Task { await viewModel.flagCoachReply() } },
+                flagStatus: viewModel.flagStatus
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
