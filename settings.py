@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # reason. Off, the opening is prose as before. Any failure of the plan
     # call falls back to prose on its own.
     plan_contract: bool = True
+    # reply_contract.numbers: a number the coach states about a lift must be
+    # in the context it was handed, or one rewrite is asked for.
+    numbers_contract: bool = True
 
     # Athlete profile (used in coach context block)
     athlete_name: str = "Athlete"

@@ -74,6 +74,83 @@ class ContractTests(unittest.TestCase):
         self.assertIn(("decisions", "failed"), [(r["step"], r["action"]) for r in ctx.record])
 
     def test_the_order_and_the_editing_set_are_fixed(self):
-        self.assertEqual([n for n, _ in STEPS], ["truncation", "set_counts", "plan_follows", "revise_claim",
-                                                 "weak_points", "programme_live", "set_count_drift", "decisions", "captures"])
+        self.assertEqual([n for n, _ in STEPS], ["truncation", "numbers", "set_counts", "plan_follows", "revise_claim",
+                                                 "weak_points", "programme_live", "decisions", "captures"])
         self.assertTrue(set(EDITING_STEPS) <= {n for n, _ in STEPS})
+
+
+class NumbersStepTests(unittest.TestCase):
+    """S1: a number the coach states about a lift must be in the context it
+    was handed, or one rewrite is asked for."""
+    CONTEXT = "Leg Press: 180kg x10 @ RPE 8 on 16 Sep. Standing Calf Raise: 125kg x12 RPE 7."
+
+    def test_claims_outside_the_context_are_found(self):
+        from reply_contract import unsupported_numbers
+        reply = "Last week you pressed 200kg for 10 reps at RPE 9, so 180kg today is fine."
+        self.assertEqual(unsupported_numbers(reply, self.CONTEXT), ["9", "200"])
+
+    def test_context_numbers_small_counts_steps_and_percentages_pass(self):
+        from reply_contract import unsupported_numbers
+        reply = ("Your 180kg x10 at RPE 8 on 16 Sep was 3 reps clear; add 2.5kg next week — about 5% up. "
+                 "Rest 120 seconds, 3 sets.")
+        self.assertEqual(unsupported_numbers(reply, self.CONTEXT), [])
+
+    def test_block_and_card_lines_are_the_programmes_numbers(self):
+        from reply_contract import unsupported_numbers
+        reply = ("Working Set: 190kg x8-10 RPE 8\nBack-off: 150kg x10-12 RPE 7\n"
+                 "Card: Back-off 2: 155kg (from 150kg).\nKeep the tempo.")
+        self.assertEqual(unsupported_numbers(reply, self.CONTEXT), [])
+
+    def _ctx(self, reply, rewrite, kind="prose"):
+        from reply_contract import ReplyContext
+        return ReplyContext(reply=reply, reply_kind=kind, system_prompt="", today_type="Legs",
+                            context_text=self.CONTEXT, rewrite=rewrite)
+
+    def test_one_rewrite_is_asked_for_and_recorded(self):
+        from reply_contract import numbers
+        calls = []
+        def rewrite(reply, bad):
+            calls.append(bad)
+            return "Your last logged press was 180kg x10 at RPE 8; hold it today."
+        ctx = self._ctx("Last week you pressed 200kg at RPE 9.", rewrite)
+        numbers(ctx)
+        self.assertEqual(calls, [["9", "200"]])
+        self.assertTrue(ctx.reply.startswith("Your last logged press was 180kg"))
+        self.assertEqual([(r["step"], r["action"]) for r in ctx.record], [("numbers", "rewritten")])
+
+    def test_a_rewrite_that_still_invents_is_kept_and_flagged(self):
+        from reply_contract import numbers
+        ctx = self._ctx("You pressed 200kg.", lambda r, b: "You pressed 210kg then.")
+        numbers(ctx)
+        self.assertEqual(ctx.reply, "You pressed 210kg then.")
+        self.assertEqual(ctx.record[0]["action"], "rewritten_still_unsupported")
+        self.assertEqual(ctx.record[0]["detail"], "210")
+
+    def test_no_rewrite_available_logs_only(self):
+        from reply_contract import numbers
+        ctx = self._ctx("You pressed 200kg.", None)
+        numbers(ctx)
+        self.assertEqual(ctx.reply, "You pressed 200kg.")
+        self.assertEqual(ctx.record[0]["action"], "logged")
+
+    def test_plan_replies_are_logged_not_rewritten(self):
+        from reply_contract import numbers
+        ctx = self._ctx("Why: you pressed 200kg last week.\nWorking Set: 180kg x10 RPE 8", lambda r, b: "changed", kind="plan")
+        numbers(ctx)
+        self.assertTrue(ctx.reply.startswith("Why:"))
+        self.assertEqual(ctx.record[0]["action"], "logged")
+
+    def test_set_replies_are_code_rendered_and_skipped(self):
+        from reply_contract import numbers
+        ctx = self._ctx("Card: 200kg.", lambda r, b: "changed", kind="set_reply")
+        numbers(ctx)
+        self.assertEqual(ctx.reply, "Card: 200kg.")
+        self.assertEqual(ctx.record, [])
+
+    def test_off_switch(self):
+        from types import SimpleNamespace
+        import reply_contract
+        ctx = self._ctx("You pressed 200kg.", lambda r, b: "changed")
+        with patch.object(reply_contract, "get_settings", return_value=SimpleNamespace(numbers_contract=False)):
+            reply_contract.numbers(ctx)
+        self.assertEqual(ctx.reply, "You pressed 200kg.")

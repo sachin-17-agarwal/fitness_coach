@@ -52,7 +52,7 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| S1 | In-session coach: any number it states about history must be in the context it was handed, or the reply is rewritten | M | approved 20 Sep | The block review already has this rule (`numbers_not_in_sheet`). |
+| S1 | In-session coach: any number it states about history must be in the context it was handed, or the reply is rewritten | M | done 23 Sep | `reply_contract.numbers`: kg, reps, RPE and dates in prose checked against the handed context; one rewrite; off with `NUMBERS_CONTRACT=false`. `set_count_drift` folded into `set_counts`. |
 | S2 | One `blocks` module for block identity: start, boundary, ended range, picks | M | done 20 Sep (#307) | |
 | S3 | Prune the applied dated fixes into a history note; keep the mechanism | S | done 20 Sep (#307); delete `fixes_2026_09.py` once `/status` shows all eight applied | |
 | S4 | Session stamping: every finished session carries its mesocycle week and day; hygiene check and backfill | S | idea | `block_start` and the review lean on stamps; the 2 Sep opener had none. |
