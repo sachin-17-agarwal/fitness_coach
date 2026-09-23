@@ -169,20 +169,29 @@ UDID="$(python3 - "$DEVICES_JSON" "$WANT" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
 want = sys.argv[2].strip().lower()
+# A paired iPhone is a candidate whatever its tunnel reads. "disconnected"
+# only means no tunnel is open right now; devicectl opens one on demand for
+# install and launch, exactly as Xcode does. Requiring an open tunnel made
+# the nightly re-sign give up on a phone Xcode could install to (Sep 2026).
+# Prefer a phone whose tunnel is already up, then a wired one, then any.
+best = None
 for d in data.get("result", {}).get("devices", []):
     hw = d.get("hardwareProperties", {})
     props = d.get("deviceProperties", {})
     conn = d.get("connectionProperties", {})
     if hw.get("platform") != "iOS":
         continue
-    if conn.get("tunnelState") not in ("connected", "available"):
+    if conn.get("pairingState") not in (None, "paired"):
         continue
-    name = (props.get("name") or "").lower()
+    name = (props.get("name") or "").strip().lower()
     udid = hw.get("udid") or ""
     if want and want not in (name, udid.lower()):
         continue
-    print(udid)
-    break
+    rank = 0 if conn.get("tunnelState") in ("connected", "available") else (1 if conn.get("transportType") == "wired" else 2)
+    if best is None or rank < best[0]:
+        best = (rank, udid)
+if best:
+    print(best[1])
 PY
 )"
 
@@ -214,7 +223,7 @@ for d in data.get("result", {}).get("devices", []):
             pass
 if too_new:
     for name, os_v in too_new:
-        print(f"{name} runs iOS {os_v}, but {xcode} only carries developer services up to iOS {sdk_ios}.")
+        print(f"{name} runs iOS {os_v}; {xcode} ships an iOS {sdk_ios} SDK. That is usually fine (Xcode fetches the device support on first connect), but if installs keep failing, a newer Xcode is the fix.")
     print("No cable, Wi-Fi or pairing step fixes that. Install an Xcode whose iOS SDK is at least the phone's major")
     print("version (a beta phone needs the matching beta Xcode) into /Applications; this script picks the newest one.")
 else:
@@ -280,7 +289,18 @@ fi
 
 # ── Install ─────────────────────────────────────────────────────────────────
 log "Installing"
-"$DEVICECTL" device install app --device "$UDID" "$APP"
+# devicectl brings the tunnel up itself; give it a few tries, since a phone
+# on Wi-Fi that has just woken can take a moment to answer.
+installed=0
+for attempt in 1 2 3; do
+    if "$DEVICECTL" device install app --device "$UDID" "$APP"; then installed=1; break; fi
+    log "Install attempt $attempt failed; the phone may be asleep or off the network. Retrying in 20s…"
+    sleep 20
+done
+if [ "$installed" != 1 ]; then
+    log "Could not install on $UDID. Is the phone unlocked, on the same Wi-Fi as this Mac (or plugged in), and is Developer Mode on?"
+    exit 2
+fi
 
 if [ "$LAUNCH" = 1 ]; then
     log "Launching $BUNDLE_ID"
