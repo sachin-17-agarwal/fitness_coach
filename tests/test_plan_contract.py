@@ -1425,7 +1425,9 @@ class OnePlanTests(unittest.TestCase):
         self.assertIsNone(adapted_plan({"decision": "hold", "note": "Fine."}, "45° Back Extension", self.STORED, 1))
         e = adapted_plan({"decision": "heavier", "steps": 1, "reason": "four reps clear again"},
                          "45° Back Extension", self.STORED, 1)
-        self.assertEqual([b.load_kg for b in e.backoff], [12.0, 12.0])
+        # Both back-offs move together, and never to the top set's load: 12kg
+        # would be no drop at all; 10kg is the heaviest inside 15-25% (:64).
+        self.assertEqual([b.load_kg for b in e.backoff], [10.0, 10.0])
         self.assertEqual(e.tempo, "2-1-2")
         self.assertEqual(e.reason, "four reps clear again")
 

@@ -170,28 +170,30 @@ def find_current_loads(rows: list[dict]) -> list[dict]:
 
 
 def _load_step(sessions: dict[str, list[dict]]) -> float | None:
-    """The smallest step this lift's logged loads have taken: the gap between
-    its two closest distinct loads, over every working set in the window.
+    """The smallest step this lift's TOP-SET load has moved between sessions:
     2.5 on a cable stack, 5 on a leg press, 1.25 with microplates. None when
-    only one load was ever used, or the gap is implausible for equipment.
+    the top set never moved, or the gap is implausible for equipment.
+
+    Only top sets, never top against back-off: a single session's top set and
+    its back-off are 20% apart by design, and taking that gap as the step made
+    the programme add a whole back-off drop as "one increment" (Single Leg
+    Sumo Press 132.5 -> 150kg on 23 Sep 2026). A plausible step is at most
+    the larger of 5kg and 5% of the load.
 
     Feeds prescribe.PriorSet.step: a percentage cut then lands on a load the
-    stack has (12.5kg cut 5% stayed 12.5, not the 12 nobody can load) and an
-    increment is never smaller than the stack allows."""
-    loads = set()
+    stack has and an increment is never smaller than the stack allows."""
+    tops = set()
     for rows in sessions.values():
-        for row in rows:
-            if row.get("is_warmup"):
-                continue
-            value = _as_float(row.get("actual_weight_kg"))
-            if value is not None and value > 0:
-                loads.add(round(value, 3))
-    ordered = sorted(loads)
+        top = _top_set(rows)
+        value = _as_float(top.get("actual_weight_kg")) if top else None
+        if value is not None and value > 0:
+            tops.add(round(value, 3))
+    ordered = sorted(tops)
     if len(ordered) < 2:
         return None
     gaps = [round(b - a, 3) for a, b in zip(ordered, ordered[1:]) if b - a > 0]
     step = min(gaps) if gaps else None
-    if step is None or step < 0.5 or step > 25:
+    if step is None or step < 0.5 or step > max(5.0, 0.05 * ordered[-1]):
         return None
     return step
 

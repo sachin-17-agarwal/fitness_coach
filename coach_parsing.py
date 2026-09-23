@@ -875,7 +875,41 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
         revision = next((l for l in body if l.strip().lower().startswith(("revised:", "revision:"))), None)
         if revision is not None and _revision_names_a_cause(revision):
             continue
-        trim_allowed = revision is None
+        # A Revised block's surplus is trimmed too unless the revision says it
+        # ADDS a set: "Revised: corrected the back-off count" with three
+        # back-offs reached the card as three on 22 Sep.
+        trim_allowed = revision is None or not _REVISION_ADDS_RE.search(revision)
+
+        # One line per phase. Both parsers keep only the LAST Back-off: line,
+        # so two lines (or a numbered "Back-off 1 of 2:") passed this count as
+        # two sets and reached the card as one. Fold them before counting.
+        by_phase: dict = {"working": [], "backoff": []}
+        for i in span:
+            if lines[i] is None:
+                continue
+            lower = _canonicalise_phase_label(lines[i].strip().lower())
+            if any(lower.startswith(p) for p in _WORKING_PREFIXES):
+                by_phase["working"].append(i)
+            elif any(lower.startswith(p) for p in _BACKOFF_PREFIXES):
+                by_phase["backoff"].append(i)
+        for phase, idxs in by_phase.items():
+            if len(idxs) < 2:
+                if idxs:
+                    label, _sep, rest = lines[idxs[0]].partition(":")
+                    canon = _canonicalise_phase_label(label.lower() + ":")
+                    if canon != label.lower() + ":":
+                        lines[idxs[0]] = ("Back-off" if phase == "backoff" else "Working Set") + ":" + rest
+                continue
+            first = lines[idxs[0]]
+            _label, _sep, rest = first.partition(":")
+            head, pipe, tail = rest.partition("|")
+            parts = [head.strip()] + [lines[i].partition(":")[2].partition("|")[0].strip() for i in idxs[1:]]
+            prefix = "Back-off" if phase == "backoff" else "Working Set"
+            lines[idxs[0]] = f"{prefix}: " + ", ".join(p for p in parts if p) + (f" |{tail}" if pipe else "")
+            for i in idxs[1:]:
+                lines[i] = None
+            corrections.append({"exercise": block["name"], "phase": phase, "dropped": 0, "added": 0,
+                                "target": None, "folded": len(idxs)})
 
         key = _normalise_exercise(block["name"])
         target = expected.get(key)
@@ -894,7 +928,9 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
         counted = {"working": 0, "backoff": 0}
         last_line = {"working": None, "backoff": None}
         for i in span:
-            lower = lines[i].strip().lower()
+            if lines[i] is None:
+                continue
+            lower = _canonicalise_phase_label(lines[i].strip().lower())
             if any(lower.startswith(p) for p in _WORKING_PREFIXES):
                 phase = "working"
             elif any(lower.startswith(p) for p in _BACKOFF_PREFIXES):
@@ -932,7 +968,10 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
                     "target": target,
                 })
 
-    return ("\n".join(lines), corrections) if corrections else (reply, [])
+    return ("\n".join(l for l in lines if l is not None), corrections) if corrections else (reply, [])
+
+
+_REVISION_ADDS_RE = re.compile(r"\b(?:add(?:s|ed|ing)?|extra|another|third|fourth|fifth|one more)\b", re.IGNORECASE)
 
 
 # What can justify owing FEWER SETS. Narrower than the plan contract's cause
@@ -940,10 +979,16 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
 # load and the RPE, never the count ("Deload weeks follow the same structure
 # ... keep the set count"), so neither appears here. Pain, the joint, the
 # equipment, the clock and illness do.
+# Whole words only: as bare substrings "back" matched "back-off", "late" matched
+# "lateral" and "plate", "cable" matched every cable lift and "ill" matched
+# "will", so an ordinary load revision was read as a reason to owe fewer sets
+# and the second back-off of a 3-set lift vanished (22 Sep 2026).
 _SET_DROP_CAUSE_RE = re.compile(
-    r"pain|hurt|injur|sore|tight|niggl|tweak|strain|cramp|spasm|elbow|shoulder|knee|wrist|back\b|"
-    r"machine|equipment|cable|stack|available|busy|occupied|taken|broken|"
-    r"time|late|minutes|clock|closing|sick|ill\b|unwell|nausea|dizzy",
+    r"\b(?:pain\w*|hurts?|hurting|injur\w*|sore|tight|niggl\w*|tweak\w*|strain\w*|cramp\w*|spasm\w*)\b|"
+    r"\b(?:elbow|shoulder|knee|wrist|hip|lower back)s?\b[^.;]{0,20}\b(?:pain|hurt\w*|sore|niggl\w*|tight|flar\w*)\b|"
+    r"\b(?:machine|equipment|station|bench|rack)\b[^.;]{0,15}\b(?:taken|busy|occupied|broken|in use|unavailable)\b|"
+    r"\b(?:out of time|short on time|running late|no time|minutes left|gym (?:is )?closing)\b|"
+    r"\b(?:sick|ill|unwell|nause\w*|dizzy)\b",
     re.IGNORECASE)
 
 

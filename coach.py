@@ -259,7 +259,9 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     session_type: str | None = None,
                     record_user_message: bool = True,
                     save_user: bool = True,
-                    client_id: str | None = None) -> str:
+                    client_id: str | None = None,
+                    on_screen: str | None = None,
+                    card_session: str | None = None) -> str:
     """`session_type` is the session the app named when it opened — it
     outranks the rotation for this reply, so the plan is for the session on
     the athlete's screen even when the backend's day counter has drifted.
@@ -305,12 +307,20 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     # reasoning from its opening plan or an earlier suggestion is how it told
     # the athlete a load was "already prescribed" that was never on his screen.
     _card_exercise, _card_stored = "", None
-    if set_log_session:
+    _live_session = set_log_session or card_session
+    if _live_session:
         try:
             from plan import card_line, latest_exercise, load_today_plan  # local: import order
-            _card_exercise = latest_exercise(set_log_session) or (get_workout_state() or {}).get("current_exercise_name") or ""
+            _card_exercise = (on_screen if not set_log_session else None) or latest_exercise(_live_session) \
+                or (get_workout_state() or {}).get("current_exercise_name") or ""
             _card_stored = load_today_plan(_card_exercise) if _card_exercise else None
-            if _card_stored:
+            if on_screen and not set_log_session:
+                blocks = blocks + [{"type": "text", "text": (
+                    f"ON SCREEN — {_card_exercise}"
+                    + (f": {card_line(_card_stored)}" if _card_stored else "")
+                    + ". His message is about THIS lift unless he names another. Answer from this lift's own "
+                      "history and today's sets on it — another lift's sets are never evidence for this one.")}]
+            elif _card_stored:
                 blocks = blocks + [{"type": "text", "text": (
                     f"CARD NOW — {_card_exercise}: {card_line(_card_stored)}. These are the numbers on his "
                     f"screen and the plan in force. Anything you said earlier that differs has not reached "
@@ -395,11 +405,19 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 for note in set_notes:
                     log.info("SET CONTRACT (%s): %s", exercise, note)
                 if reply is not None:
-                    assistant_message = render_set_reply(reply, exercise, stored, done)
+                    from plan import (adapted_plan, latest_logged_sets, owed_set_decision,  # local: import order
+                                      record_plan_update)
+                    logged_rows = latest_logged_sets(set_log_session, exercise)
+                    logged_top = max((float(r.get("actual_weight_kg") or 0) for r in logged_rows[:1]), default=None) or None
+                    owed = owed_set_decision(logged_rows[-1] if logged_rows else None, stored, done)
+                    if owed and (reply.get("decision") or "hold") in ("hold", "more_reps", "harder", "heavier"):
+                        log.warning("SET CONTRACT (%s): programme owes %s — %s (model said %s)", exercise,
+                                    owed["decision"], owed["reason"], reply.get("decision"))
+                        reply = {**reply, **owed}
+                    assistant_message = render_set_reply(reply, exercise, stored, done, logged_top)
                     reply_kind = "set_reply"
                     # What just reached the card is the plan from now on.
-                    from plan import adapted_plan, record_plan_update  # local: import order
-                    moved = adapted_plan(reply, exercise, stored, done) if assistant_message else None
+                    moved = adapted_plan(reply, exercise, stored, done, logged_top) if assistant_message else None
                     if moved is not None:
                         record_plan_update(moved, today_type, _safe_int(memory.get("mesocycle_week", 1)),
                                            reason=f"mid-session {reply.get('decision')}: {reply.get('reason') or ''}",
@@ -436,7 +454,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
     from reply_contract import ReplyContext, apply_contract  # local: keeps import order flat
     assistant_message = apply_contract(ReplyContext(
         reply=assistant_message, reply_kind=reply_kind, system_prompt=system_prompt, today_type=today_type,
-        programme_out=programme_out, set_log_session=set_log_session, memory=memory, user_message=user_message,
+        programme_out=programme_out, set_log_session=set_log_session or card_session, memory=memory, user_message=user_message,
         truncated=response is not None and getattr(response, "stop_reason", None) == "max_tokens",
         card_exercise=_card_exercise, card_stored=_card_stored))
 
@@ -497,7 +515,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                             recovery_override: dict | None = None,
                             allow_set_logging: bool = True,
                             save_user: bool = True,
-                            client_id: str | None = None) -> str:
+                            client_id: str | None = None,
+                            on_screen: str | None = None) -> str:
     """Process a user message, log any sets, and return the coach reply.
 
     `allow_set_logging` MUST be False for callers whose client persists its own
@@ -921,12 +940,20 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
     # The app's own "Logged working set 2 of 3: …" line, during a live session,
     # is the one message whose reply may move the next set.
     set_log_session = None
+    card_session = None
     if is_ios_structured_log(incoming_text):
         set_log_session = session_id or None
         if not set_log_session:
             from workout import _find_live_session  # local: keeps import order flat
             live = _find_live_session()
             set_log_session = (live or {}).get("id") or None
+    elif on_screen:
+        # A question typed mid-session: no set contract, but the coach is told
+        # the card on screen and the stored plan follows any block it sends.
+        card_session = session_id or None
+        if not card_session:
+            from workout import _find_live_session  # local: keeps import order flat
+            card_session = ((_find_live_session() or {}).get("id")) or None
     # The app names the session it opened. That name outranks the rotation
     # position for this reply: the athlete is standing in the session on
     # the screen, and a plan for any other day is wrong however well formed.
@@ -941,7 +968,8 @@ def handle_incoming_message(incoming_text: str, memory: dict, send_reply: bool =
                                plan_request=is_plan_request(incoming_text, reply_type),
                                set_log_session=set_log_session,
                                session_type=named_type,
-                               save_user=save_user, client_id=client_id)
+                               save_user=save_user, client_id=client_id,
+                               on_screen=on_screen, card_session=card_session)
 
     if inherited_attribution:
         guessed, count = inherited_attribution

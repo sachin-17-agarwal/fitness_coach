@@ -39,6 +39,15 @@ class PromptDietTests(unittest.TestCase):
                        "Proposed: Emphasis-next:", "Session done"):
             self.assertIn(needle, DIET, needle)
 
+    def test_the_rules_the_22_and_23_sep_sessions_broke_are_said(self):
+        for needle in ("Back-off: 85kg x10 RPE7, 85kg x8 RPE7", "Never two `Back-off:` lines",
+                       "only a week 3 that reached the top of the range opens one increment up",
+                       "15-25% under the top set he actually lifted", "beats the top of its range at or under the target RPE",
+                       "transition parser", "Another lift's sets are never evidence for this one",
+                       "the calf raise keeps its `Warm-up:` line", "a recovery-cut rep band is today's reps in reserve".capitalize()[0:0] + "A recovery-cut rep band is today's reps in reserve",
+                       "refusing twice is not"):
+            self.assertIn(needle, DIET, needle)
+
     def test_the_diet_is_a_fraction_of_the_full_prompt_and_has_no_briefing(self):
         self.assertLess(len(DIET), 0.45 * len(FULL))
         self.assertGreater(len(DIET), 20_000)

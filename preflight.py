@@ -31,7 +31,7 @@ import logging
 from dataclasses import replace
 
 from constraints import norm_name
-from prescribe import TOP_SET_RANGE, Proposal, SetSpec, _is_straight_set, _round_load
+from prescribe import INCREMENT, OVERSHOOT_CAP, TOP_SET_RANGE, Proposal, SetSpec, _is_straight_set, _round_load
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +108,29 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
                 fixes.append(f"no rule lowers this lift below its last top set of {float(anchor.load):g}kg, so it holds there")
                 findings.append({"exercise": p.exercise, "kind": "regression", "fixed": True,
                                  "detail": f"top {old:g}kg → {float(anchor.load):g}kg (anchor {anchor.load:g} x{anchor.reps})"})
+
+        # jump: an increase is one increment (2.5-5kg compounds, 1-2.5kg
+        # isolations, :181/:202) or, when the reason says it was sized to an
+        # overshoot, at most OVERSHOOT_CAP. Nothing else may put a top set
+        # further above its anchor: Single Leg Sumo Press opened 132.5 -> 150
+        # on 23 Sep 2026 from a mis-measured step and nothing caught it.
+        if (working and anchor is not None and getattr(anchor, "load", None) and week != 4
+                and working[0].weight_kg is not None and not working[0].bodyweight):
+            base = float(anchor.load)
+            inc = max(INCREMENT.get(p.kind, 2.5), step or 0.0)
+            reasons_text = " ".join(p.reasons).lower()
+            limit = base * (1 + OVERSHOOT_CAP) + (step or 0.5) if "sized" in reasons_text else base + max(2 * INCREMENT.get(p.kind, 2.5), step or 0.0)
+            if working[0].weight_kg > limit + 1e-9:
+                old = working[0].weight_kg
+                new_top = _round_load(base + inc, step) if step else base + inc
+                ratio = new_top / old
+                working = [replace(working[0], weight_kg=new_top)] + [_scaled(w, ratio, step) for w in working[1:]]
+                backoff = [_scaled(b, ratio, step) for b in backoff]
+                warmup = [_scaled(w, ratio, step) for w in warmup]
+                fixes.append(f"{old:g}kg is {old - base:g}kg above the {base:g}kg it progresses from, more than one "
+                             f"increment; {new_top:g}kg is one increment up")
+                findings.append({"exercise": p.exercise, "kind": "jump", "fixed": True,
+                                 "detail": f"top {old:g}kg → {new_top:g}kg (anchor {base:g})"})
 
         # range: inside the programme's band, one step under the floor allowed.
         # Ab work and a weak-point slot are straight sets with their own range;
