@@ -991,6 +991,16 @@ def warmup_ramp(exercise: str, top: SetSpec, muscles_warm: set[str],
                 f"for this movement (:132)."
             )
             return ramp([0.65], [8])
+        # :137 a lift that loads a compromised joint under real load gets at
+        # least ONE ramp even when the muscle is warm: his knees, on the leg
+        # extension and the calf raise.
+        name = (exercise or "").lower()
+        if not top.bodyweight and top.weight_kg and ("leg extension" in name or "calf raise" in name):
+            reasons.append(
+                f"One ramp set: {primary} is warm, but this loads the knee under real load and the "
+                f"knee is a stated constraint (:137)."
+            )
+            return ramp([0.65], [8])
         reasons.append(
             f"No ramp: {primary} is already warm from earlier in the session and a "
             f"ramp here only adds fatigue (:131)."

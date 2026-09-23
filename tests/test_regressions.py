@@ -1464,7 +1464,7 @@ class LoadProgressionStallTests(unittest.TestCase):
         text = progression.format_stalls(stalls)
         self.assertIn("NOT A STALL", text)
         flat = [dict(r, actual_reps=10, actual_rpe=8) for r in rows]
-        self.assertIn("Stalled: the load has not moved and the reps have not climbed",
+        self.assertIn("Held by the programme's own rule",
                       progression.format_stalls(progression.find_stalls(flat, min_sessions=3)))
 
     def test_stalled_load_is_flagged_with_increase_indicated(self):

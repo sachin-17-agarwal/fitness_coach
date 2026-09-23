@@ -165,3 +165,21 @@ class SetCountGuardTests(unittest.TestCase):
         added = three.replace("corrected the back-off count", "an extra back-off today, he asked for one")
         out, _ = enforce_set_counts(added, self._prompt(), "Push")
         self.assertEqual(len(parse_all_prescriptions(out)[0]["backoff"]), 3)
+
+
+class WatchAgreesWithTheProgrammeTests(unittest.TestCase):
+    def test_a_deload_done_as_prescribed_is_not_ready_to_load(self):
+        # Leg Extension: 115 x11 @9 in week 3, then 115 x8 @6 on the deload card.
+        rows = [dict(_row("Leg Extension", d, 115, r, rpe), target_reps=t, target_rpe=tr)
+                for d, r, rpe, t, tr in (("2026-09-09", 10, 8, 8, 8), ("2026-09-14", 11, 9, 8, 9), ("2026-09-18", 8, 6, 8, 6))]
+        stall = progression.find_stalls(rows, min_sessions=3)[0]
+        self.assertFalse(stall["increase_indicated"])
+        self.assertNotIn("READY TO LOAD", progression.format_stalls([stall]))
+        rows[1] = dict(rows[1], actual_reps=12)          # week 3 reached the top of 8-12
+        self.assertTrue(progression.find_stalls(rows, min_sessions=3)[0]["increase_indicated"])
+
+    def test_leg_extension_keeps_one_ramp_when_the_quads_are_warm(self):
+        p = prescribe_exercise("Leg Extension", 2, ISOLATION, 1, PriorSet(115.0, 11, 9.0, week=3, step=5.0), {"Quads"})
+        self.assertEqual(len(p.warmup), 1)
+        curl = prescribe_exercise("Seated Leg Curl", 3, ISOLATION, 1, PriorSet(110.0, 11, 8.0, week=3, step=5.0), {"Hamstrings"})
+        self.assertEqual(curl.warmup, [])
