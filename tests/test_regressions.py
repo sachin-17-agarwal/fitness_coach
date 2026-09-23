@@ -4496,17 +4496,17 @@ class ProgrammeShadowModeTests(unittest.TestCase):
         import reply_contract
         from reply_contract import EDITING_STEPS, ReplyContext, STEPS, apply_contract
         self.assertEqual([n for n, _ in STEPS],
-                         ["truncation", "set_counts", "plan_follows", "revise_claim", "weak_points",
-                          "programme_live", "set_count_drift", "decisions", "captures"])
-        self.assertEqual(set(EDITING_STEPS), {"set_counts", "revise_claim", "weak_points", "programme_live"})
+                         ["truncation", "numbers", "set_counts", "plan_follows", "revise_claim", "weak_points",
+                          "programme_live", "decisions", "captures"])
+        self.assertEqual(set(EDITING_STEPS), {"numbers", "set_counts", "revise_claim", "weak_points", "programme_live"})
 
         def rogue(ctx):
             ctx.reply = "REWRITTEN"
 
-        with patch.object(reply_contract, "STEPS", (("set_count_drift", rogue),)):
+        with patch.object(reply_contract, "STEPS", (("decisions", rogue),)):
             ctx = ReplyContext(reply="as written", reply_kind="prose", system_prompt="", today_type="Legs")
             self.assertEqual(apply_contract(ctx), "as written")
-        self.assertIn({"step": "set_count_drift", "action": "reverted", "detail": ""}, ctx.record)
+        self.assertIn({"step": "decisions", "action": "reverted", "detail": ""}, ctx.record)
 
     def test_no_computed_answer_means_no_comparison_at_all(self):
         from coach_parsing import substitute_computed_blocks

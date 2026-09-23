@@ -205,6 +205,52 @@ def system_blocks(system_prompt: str, stable_context: str, live_context: str,
     return blocks
 
 
+def _handed_text(*parts) -> str:
+    """Every number the coach could legitimately cite lives in what it was
+    handed: the context blocks and the conversation (the athlete's own
+    messages included). The system prompt is left out on purpose — its
+    worked examples carry loads that are nobody's history."""
+    out = []
+    for part in parts:
+        if isinstance(part, str):
+            out.append(part)
+        elif isinstance(part, list):
+            for m in part:
+                c = m.get("content") if isinstance(m, dict) else None
+                if isinstance(c, str):
+                    out.append(c)
+                elif isinstance(c, list):
+                    out.extend(str(b.get("text") or "") for b in c if isinstance(b, dict))
+    return "\n".join(out)
+
+
+def _rewrite_numbers(blocks: list, messages_to_send: list, reply: str, bad: list[str]) -> str | None:
+    """One more call: the same context, the reply it wrote, and the numbers it
+    made up. Blocks and Card lines are the programme's and must stay."""
+    messages = list(messages_to_send) + [
+        {"role": "assistant", "content": reply},
+        {"role": "user", "content": (
+            "These numbers are not in the context you were given: " + ", ".join(bad) + ". "
+            "Rewrite your last reply using only loads, reps, RPEs and dates that appear in the context. "
+            "Where you cannot see a past set, say so instead of stating one. Keep every Warm-up, Working "
+            "Set, Back-off and Card line exactly as written. Reply with the rewritten message only.")},
+    ]
+    try:
+        import time as _time
+        _t0 = _time.monotonic()
+        response = _prose_reply(blocks, messages)
+        try:
+            from usage import record_call  # local: keeps import order flat
+            record_call("prose", _time.monotonic() - _t0, response, ok=bool(response.content), note="numbers rewrite")
+        except Exception:
+            pass
+        text = response.content[0].text if response.content else ""
+        return text or None
+    except Exception:
+        log.exception("Numbers rewrite failed; reply left as it was")
+        return None
+
+
 def _prose_reply(blocks: list, messages_to_send: list):
     """The coach's ordinary reply: prose, one call, thinking off.
 
@@ -462,7 +508,9 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         reply=assistant_message, reply_kind=reply_kind, system_prompt=system_prompt, today_type=today_type,
         programme_out=programme_out, set_log_session=set_log_session or card_session, memory=memory, user_message=user_message,
         truncated=response is not None and getattr(response, "stop_reason", None) == "max_tokens",
-        card_exercise=_card_exercise, card_stored=_card_stored))
+        card_exercise=_card_exercise, card_stored=_card_stored,
+        context_text=_handed_text(stable_context, live_context, messages_to_send),
+        rewrite=lambda reply, bad: _rewrite_numbers(blocks, messages_to_send, reply, bad)))
 
     conversation_history.append({"role": "assistant", "content": assistant_message})
     save_conversation_message("assistant", assistant_message, client_id=client_id)

@@ -9,8 +9,13 @@ nothing said which had acted. This module is that pipeline made explicit.
 Steps, in order. Only the ones marked EDITS may rebind the reply.
 
   truncation      the model hit its token ceiling: logged, cannot be repaired
+  numbers         EDITS  a number the reply states about a lift (kg, reps,
+                          RPE, a date) that the context handed to the coach
+                          does not carry: one rewrite is asked for, using
+                          only the context's numbers
   set_counts      EDITS  surplus sets trimmed, a shortfall filled from the
-                          block's own last set (coach_parsing.enforce_set_counts)
+                          block's own last set (coach_parsing.enforce_set_counts);
+                          what is still off-template after the edit, logged
   plan_follows           a block for a lift in today's plan becomes the plan
                           in force (plan.record_plan_update)
   revise_claim    EDITS  "Revising:" with no block gets the card's standing
@@ -19,7 +24,6 @@ Steps, in order. Only the ones marked EDITS may rebind the reply.
                           computation, whatever the coach wrote
   programme_live  EDITS  behind PROGRAMME_SUBSTITUTION: every computed block
                           replaces the coach's
-  set_count_drift        what is still off-template after the edits, logged
   decisions              `Decision:` lines become standing constraints
   captures               `Proposed:` lines are held for the athlete
 
@@ -31,6 +35,8 @@ here, and one comes out or is folded in.
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from coach_parsing import (check_set_counts, enforce_set_counts, parse_all_prescriptions,
@@ -53,6 +59,12 @@ class ReplyContext:
     truncated: bool = False
     card_exercise: str = ""
     card_stored: dict | None = None
+    # Everything the coach was handed, as text: the context blocks and the
+    # conversation. A number about a lift that is not in it was made up.
+    context_text: str = ""
+    # (reply, unsupported numbers) -> a rewrite, or None. coach.py supplies
+    # the model call; tests supply a function.
+    rewrite: Callable[[str, list[str]], str | None] | None = None
     record: list = field(default_factory=list)
 
     def note(self, step: str, action: str, detail: str = "") -> None:
@@ -64,6 +76,83 @@ def _norm(name: str) -> str:
 
 
 # ── Steps ────────────────────────────────────────────────────────────────────
+
+# ── numbers ─────────────────────────────────────────────────────────────────
+# The block review has had this rule since 19 Sep (block_review.numbers_not_in
+# _sheet). The in-session coach did not, and it argued from loads and reps the
+# context never showed it. Only numbers that read as a claim about a lift are
+# checked — a load in kg, a rep count, an RPE, a day of a month — so a
+# percentage, a set count or a rest time is left alone. The lines the card
+# reads (Warm-up / Working Set / Back-off) and the code-written "Card:"
+# sentence are the programme's numbers, checked elsewhere, and are skipped.
+_CLAIM_RE = re.compile(
+    r"(?P<kg>\d+(?:\.\d+)?)\s*(?:kg|kgs|kilos?)\b"
+    r"|\bx\s*(?P<x>\d+)\b"
+    r"|\b(?P<reps>\d+)\s*reps?\b"
+    r"|\bRPE\s*(?P<rpe>\d+(?:\.\d+)?)\b"
+    r"|@\s*(?P<at>\d+(?:\.\d+)?)\b"
+    r"|\b(?P<day>\d{1,2})\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\b",
+    re.IGNORECASE)
+# Letters may touch the number ("x10", "RPE8"): the context writes them so.
+_ANY_NUM_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)?(?!\.?\d)")
+_BLOCK_LINE_RE = re.compile(r"(?i)^\s*(?:\*\*)?(?:warm-?up|ramp|working set|back-?off|top set)s?\b.*:|^\s*Card:")
+# Loads the programme itself moves by; "add 2.5kg" is arithmetic, not history.
+_PROGRAMME_STEPS = {"1", "1.25", "2.5", "5"}
+
+
+def _num_key(text: str) -> str:
+    try:
+        return f"{float(text):g}"
+    except ValueError:
+        return text
+
+
+def unsupported_numbers(reply: str, context_text: str) -> list[str]:
+    """Every number the reply states as a claim about a lift that the
+    context does not carry, as written in the reply."""
+    have = {_num_key(n) for n in _ANY_NUM_RE.findall(context_text or "")}
+    bad = []
+    for line in (reply or "").splitlines():
+        if _BLOCK_LINE_RE.match(line):
+            continue
+        for m in _CLAIM_RE.finditer(line):
+            n = next(v for v in m.groupdict().values() if v is not None)
+            key = _num_key(n)
+            if key in have or key in _PROGRAMME_STEPS:
+                continue
+            try:
+                if 0 <= float(n) <= 4 and float(n).is_integer():
+                    continue
+            except ValueError:
+                pass
+            bad.append(n)
+    return sorted(set(bad), key=lambda n: float(n))
+
+
+def numbers(ctx: ReplyContext) -> None:
+    if ctx.reply_kind == "set_reply" or not get_settings().numbers_contract or not ctx.context_text:
+        return
+    bad = unsupported_numbers(ctx.reply, ctx.context_text)
+    if not bad:
+        return
+    log.warning("NUMBERS NOT IN CONTEXT (%s): %s", ctx.reply_kind, ", ".join(bad))
+    # A plan reply is rendered by code around the model's reasons; a prose
+    # rewrite of it could disturb the blocks the card reads. Logged only.
+    if ctx.rewrite is None or ctx.reply_kind != "prose":
+        ctx.note("numbers", "logged", ", ".join(bad))
+        return
+    rewritten = ctx.rewrite(ctx.reply, bad)
+    if not rewritten or not rewritten.strip():
+        ctx.note("numbers", "logged", ", ".join(bad))
+        return
+    still = unsupported_numbers(rewritten, ctx.context_text)
+    ctx.reply = rewritten
+    if still:
+        log.warning("NUMBERS NOT IN CONTEXT after rewrite (%s): %s", ctx.reply_kind, ", ".join(still))
+        ctx.note("numbers", "rewritten_still_unsupported", ", ".join(still))
+    else:
+        ctx.note("numbers", "rewritten", ", ".join(bad))
+
 
 def truncation(ctx: ReplyContext) -> None:
     if ctx.truncated:
@@ -84,6 +173,19 @@ def set_counts(ctx: ReplyContext) -> None:
                         "removed before sending", ctx.today_type, fix["exercise"], fix["dropped"],
                         fix["phase"], fix["target"])
             ctx.note("set_counts", "trimmed", f"{fix['exercise']} -{fix['dropped']} {fix['phase']}")
+    # What is still off-template after the edit. Once its own step; folded
+    # here on 23 Sep 2026 when the numbers step came in (one in, one out).
+    counts = check_set_counts(ctx.reply, ctx.system_prompt, ctx.today_type)
+    for bad in counts["mismatches"]:
+        log.warning("SET COUNT DRIFT (%s): %s prescribed %d working sets, template says %d, and the reply "
+                    "gives no reason", ctx.today_type, bad["exercise"], bad["actual"], bad["expected"])
+        ctx.note("set_counts", "drift", f"{bad['exercise']} {bad['actual']} vs {bad['expected']}")
+    for chosen in counts["deliberate"]:
+        log.info("Set count deviated deliberately (%s): %s prescribed %d against a template of %d, marked Revised:",
+                 ctx.today_type, chosen["exercise"], chosen["actual"], chosen["expected"])
+    if counts["unmatched"]:
+        log.info("Set-count check skipped %d block(s) with no template entry: %s",
+                 len(counts["unmatched"]), ", ".join(counts["unmatched"]))
 
 
 def plan_follows(ctx: ReplyContext) -> None:
@@ -159,20 +261,6 @@ def programme_live(ctx: ReplyContext) -> None:
         ctx.note("programme_live", "substituted", ", ".join(swapped))
 
 
-def set_count_drift(ctx: ReplyContext) -> None:
-    counts = check_set_counts(ctx.reply, ctx.system_prompt, ctx.today_type)
-    for bad in counts["mismatches"]:
-        log.warning("SET COUNT DRIFT (%s): %s prescribed %d working sets, template says %d, and the reply "
-                    "gives no reason", ctx.today_type, bad["exercise"], bad["actual"], bad["expected"])
-        ctx.note("set_count_drift", "logged", f"{bad['exercise']} {bad['actual']} vs {bad['expected']}")
-    for chosen in counts["deliberate"]:
-        log.info("Set count deviated deliberately (%s): %s prescribed %d against a template of %d, marked Revised:",
-                 ctx.today_type, chosen["exercise"], chosen["actual"], chosen["expected"])
-    if counts["unmatched"]:
-        log.info("Set-count check skipped %d block(s) with no template entry: %s",
-                 len(counts["unmatched"]), ", ".join(counts["unmatched"]))
-
-
 def decisions(ctx: ReplyContext) -> None:
     from constraints import record_decisions  # local: keeps import order flat
     written = record_decisions(ctx.reply)
@@ -190,16 +278,16 @@ def captures(ctx: ReplyContext) -> None:
 
 STEPS = (
     ("truncation", truncation),
+    ("numbers", numbers),
     ("set_counts", set_counts),
     ("plan_follows", plan_follows),
     ("revise_claim", revise_claim),
     ("weak_points", weak_points),
     ("programme_live", programme_live),
-    ("set_count_drift", set_count_drift),
     ("decisions", decisions),
     ("captures", captures),
 )
-EDITING_STEPS = ("set_counts", "revise_claim", "weak_points", "programme_live")
+EDITING_STEPS = ("numbers", "set_counts", "revise_claim", "weak_points", "programme_live")
 
 
 def apply_contract(ctx: ReplyContext) -> str:
