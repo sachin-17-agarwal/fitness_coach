@@ -82,4 +82,24 @@ struct PrescriptionParserTests {
         #expect(PrescriptionParser.normalizeExerciseName("LEG PRESS") == "Leg Press")
         #expect(PrescriptionParser.normalizeExerciseName("Leg Press") == PrescriptionParser.normalizeExerciseName("leg press"))
     }
+
+    // 22 Sep: "Cable Chest Fly isn't next" moved the card back to Cable Chest Fly.
+    @Test func aNegatedMentionIsNotAHandoff() {
+        let text = "Cable Chest Fly isn't next though — that slot was already covered by the Machine Chest Fly swap earlier this session, so chest is fully done. Move to Face Pulls per the template instead."
+        let got = PrescriptionParser.detectExerciseTransition(
+            in: text, candidates: ["Cable Chest Fly", "Machine Chest Fly", "Face Pulls", "Tricep Pushdown"])
+        #expect(got == "Face Pulls")
+    }
+
+    @Test func theHandoffVerbWinsOverAnEarlierMention() {
+        let text = "Face Pulls is done; Cable Chest Fly was already covered by your earlier swap to Machine Chest Fly, so move to Tricep Pushdown next per the template."
+        let got = PrescriptionParser.detectExerciseTransition(
+            in: text, candidates: ["Cable Chest Fly", "Machine Chest Fly", "Tricep Pushdown"])
+        #expect(got == "Tricep Pushdown")
+    }
+
+    @Test func aPlainHandoffStillMatches() {
+        #expect(PrescriptionParser.detectExerciseTransition(
+            in: "Good work. Moving to Seated Leg Curl.", candidates: ["Seated Leg Curl", "Machine Calf Raise"]) == "Seated Leg Curl")
+    }
 }

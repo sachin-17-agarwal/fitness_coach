@@ -365,12 +365,12 @@ final class ChatService: Sendable {
     ///    reply arrives or `RetryConfig.chatTimeout` has passed.
     ///  - A caller that must not lose the reply keeps the id and calls again
     ///    later (WorkoutViewModel does this when the app comes back).
-    func sendMessage(_ text: String, clientID: UUID = UUID()) async throws -> ChatResponse {
+    func sendMessage(_ text: String, clientID: UUID = UUID(), exercise: String? = nil) async throws -> ChatResponse {
         let background = UIApplication.shared.beginBackgroundTask(withName: "coach-message", expirationHandler: nil)
         defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
         let id = clientID.uuidString.lowercased()
         do {
-            if let reply = try await callBackend(text, clientID: id) { return reply }
+            if let reply = try await callBackend(text, clientID: id, exercise: exercise) { return reply }
         } catch let error where Self.deliveryUnknown(error) {
             // The write may have landed: fall through and ask again by id.
         }
@@ -381,7 +381,7 @@ final class ChatService: Sendable {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             delay = min(delay * 1.5, 10)
             do {
-                if let reply = try await callBackend(text, clientID: id) { return reply }
+                if let reply = try await callBackend(text, clientID: id, exercise: exercise) { return reply }
                 lastError = CoachStillThinking()
             } catch let error where Self.deliveryUnknown(error) {
                 lastError = error
@@ -567,7 +567,7 @@ final class ChatService: Sendable {
 
     /// One POST. Returns nil when the backend answered 202: the message is
     /// its and the reply is still being written.
-    private func callBackend(_ message: String, clientID: String) async throws -> ChatResponse? {
+    private func callBackend(_ message: String, clientID: String, exercise: String? = nil) async throws -> ChatResponse? {
         let rawURL = Config.backendURL
         let token = Config.appAPIToken
 
@@ -590,6 +590,9 @@ final class ChatService: Sendable {
         req.timeoutInterval = RetryConfig.chatTimeout
 
         var payload: [String: Any] = ["message": message, "client_id": clientID]
+        // The lift on screen, so a question typed in the rest before it is
+        // answered about it rather than the last lift logged.
+        if let exercise, !exercise.isEmpty { payload["exercise"] = exercise }
         if let recovery = await recoverySnapshot() {
             payload["recovery"] = recovery
         }

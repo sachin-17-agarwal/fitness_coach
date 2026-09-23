@@ -34,8 +34,13 @@ final class WorkoutViewModel {
         )
         return allPrescriptions
             .dropFirst()
-            .filter { !completedNames.contains($0.exerciseName) }
+            .filter { !completedNames.contains($0.exerciseName) && !swappedOut.contains($0.exerciseName) }
     }
+
+    /// Template lifts replaced by a swap this session. A swap used to ADD the
+    /// replacement as a ninth exercise and leave the original queued ("Next:
+    /// Cable Chest Fly" after Machine Chest Fly had filled the slot, 22 Sep).
+    private var swappedOut: Set<String> = []
     var totalTonnage: Double = 0
     var setCount = 0
     var warmupCount = 0
@@ -599,6 +604,10 @@ final class WorkoutViewModel {
 
     func logSet() async {
         guard !isLoggingSet else { return }
+        // The sheet's YOU line is the last typed question; a set log answers
+        // something else, so the old question must not sit above its reply
+        // ("Remove the ramp up" above a Seated Leg Curl back-off, 23 Sep).
+        lastInlineQuestion = nil
         guard let session = currentSession, let sessionId = session.id else {
             errorMessage = "Session not saved — tap End and Begin session again to retry."
             return
@@ -900,7 +909,7 @@ final class WorkoutViewModel {
         let athleteAskedToMove = athleteRequestedExerciseChange(text)
 
         do {
-            let response = try await chatService.sendMessage(text)
+            let response = try await chatService.sendMessage(text, exercise: currentPrescription?.exerciseName)
             // A chat reply may not move the card off an unfinished exercise
             // unless the athlete asked to move. The guard that refuses a
             // premature exercise change ran only on set-log replies; a
@@ -1240,16 +1249,19 @@ final class WorkoutViewModel {
 
     /// Every set the plan calls for: logged so far plus what is still to come
     /// on the current exercise and the upcoming ones.
+    /// Working sets only: warm-ups are shown on each card and are not part
+    /// of the session's count, so a ramp added or dropped no longer moves the
+    /// total (it read 22, 24, 23, 25 on 23 Sep with no set asked for).
     var plannedSetTotal: Int {
         var remaining = 0
         if let rx = currentPrescription {
-            let done = exerciseSetsForCurrentExercise.count
-            remaining += max(0, rx.warmupSets.count + rx.workingSets.count + rx.backoffSets.count - done)
+            let done = exerciseSetsForCurrentExercise.filter { $0.isWarmup != true }.count
+            remaining += max(0, rx.workingSets.count + rx.backoffSets.count - done)
         }
         for rx in upcomingPrescriptions {
-            remaining += rx.warmupSets.count + rx.workingSets.count + rx.backoffSets.count
+            remaining += rx.workingSets.count + rx.backoffSets.count
         }
-        return setCount + warmupCount + remaining
+        return setCount + remaining
     }
 
     /// One word for the heart rate, in place of a colour: what the number
@@ -1698,6 +1710,7 @@ final class WorkoutViewModel {
     ) {
         let text = chatResponse.response
         let oldExercise = currentPrescription?.exerciseName
+        let oldCard = currentPrescription.map(Self.cardSummary)
 
         // Server-side parser only ever returns the first exercise it finds,
         // so we always also run the client parser — it handles multi-exercise
@@ -1773,7 +1786,14 @@ final class WorkoutViewModel {
                 } else {
                     currentPrescription = prescriptions.first
                 }
-                mergeIntoAllPrescriptions(prescriptions)
+                let incomingName = prescriptions.first?.exerciseName
+                let isSwap = allowExerciseChange
+                    && prescriptions.count < 3
+                    && exerciseSetsForCurrentExercise.filter { $0.isWarmup != true }.isEmpty
+                    && incomingName != nil && oldExercise != nil
+                    && incomingName != oldExercise
+                    && !planOrder.contains(incomingName ?? "")
+                mergeIntoAllPrescriptions(prescriptions, replacing: isSwap ? oldExercise : nil)
             } else {
                 // Coach tried to skip ahead — keep the current prescription
                 // so the back-off (or whichever phase is unfilled) stays on
@@ -1838,7 +1858,16 @@ final class WorkoutViewModel {
         // the structured lines; if nothing is left (e.g. the response didn't
         // match any expected format), fall back to the raw text so the user
         // doesn't stare at an empty screen.
-        let note = PrescriptionParser.extractCoachNote(text)
+        var note = PrescriptionParser.extractCoachNote(text)
+        // A block is taken out of the note and applied to the card silently,
+        // so a reply ended "Correcting it now:" with nothing after it. Say
+        // what the card now reads whenever the lift on screen changed.
+        if let rx = currentPrescription, rx.exerciseName == oldExercise,
+           let before = oldCard, Self.cardSummary(rx) != before,
+           !(note ?? "").contains("Card:") {
+            let line = "Card updated: " + Self.cardSummary(rx) + "."
+            note = (note?.isEmpty == false) ? note! + "\n\n" + line : line
+        }
         if let note, !note.isEmpty {
             coachNote = note
         } else if currentPrescription == nil {
@@ -1969,7 +1998,9 @@ final class WorkoutViewModel {
         in text: String,
         after current: String?
     ) -> ExercisePrescription? {
-        let candidates = allPrescriptions
+        // Only lifts still to come: a finished or swapped-out lift named in
+        // passing is never a handoff.
+        let candidates = upcomingPrescriptions
             .map(\.exerciseName)
             .filter { $0 != current }
         guard !candidates.isEmpty else { return nil }
@@ -2015,8 +2046,32 @@ final class WorkoutViewModel {
         return rx
     }
 
-    private func mergeIntoAllPrescriptions(_ incoming: [ExercisePrescription]) {
+    /// "120kg x7-11 @7 · back-off 100kg x9-12 @6, 100kg x9-12 @6" — the
+    /// numbers on a card, for saying what changed.
+    static func cardSummary(_ rx: ExercisePrescription) -> String {
+        func one(_ s: (weight: Double, reps: Int, repsHigh: Int?, rpe: Double?)) -> String {
+            let w = s.weight.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(s.weight)) : String(s.weight)
+            let reps = (s.repsHigh.map { $0 != s.reps ? "\(s.reps)-\($0)" : "\(s.reps)" }) ?? "\(s.reps)"
+            let rpe = s.rpe.map { " @" + ($0.truncatingRemainder(dividingBy: 1) == 0 ? String(Int($0)) : String($0)) } ?? ""
+            return "\(w)kg x\(reps)\(rpe)"
+        }
+        var parts: [String] = []
+        if !rx.warmupSets.isEmpty { parts.append("ramp " + rx.warmupSets.map { "\(Int($0.weight))x\($0.reps)" }.joined(separator: ", ")) }
+        if !rx.workingSets.isEmpty { parts.append(rx.workingSets.map(one).joined(separator: ", ")) }
+        if !rx.backoffSets.isEmpty { parts.append("back-off " + rx.backoffSets.map(one).joined(separator: ", ")) }
+        return parts.joined(separator: " · ")
+    }
+
+    private func mergeIntoAllPrescriptions(_ incoming: [ExercisePrescription], replacing: String? = nil) {
         guard !incoming.isEmpty else { return }
+        // A swap takes the replaced lift's slot instead of joining the plan.
+        if let replaced = replacing, let rx = incoming.first {
+            if let j = planOrder.firstIndex(of: replaced) { planOrder[j] = rx.exerciseName }
+            if let i = allPrescriptions.firstIndex(where: { $0.exerciseName == replaced }) {
+                allPrescriptions.remove(at: i)
+            }
+            swappedOut.insert(replaced)
+        }
         // Heuristic: if the coach sent 3+ prescriptions, treat it as a full
         // plan refresh (the start-of-session response or a "re-send the
         // plan" reply). Below that, merge.
@@ -2260,6 +2315,8 @@ final class WorkoutViewModel {
         currentPrescription = nil
         allPrescriptions = []
         planOrder = []
+        swappedOut = []
+        lastInlineQuestion = nil
         coachNote = nil
         totalTonnage = 0
         setCount = 0

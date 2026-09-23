@@ -315,19 +315,46 @@ final class PrescriptionParser {
     /// 3 sets 90kg x12 RPE7" for any name in `candidates` that the user's
     /// upcoming-exercise list already knows about. Returns the matched
     /// canonical name, or nil when no upcoming exercise is mentioned.
+    ///
+    /// A mention the coach negates in the same clause ("Cable Chest Fly isn't
+    /// next", "Face Pulls is done", "already covered") is not a handoff: on
+    /// 22 Sep that sentence moved the card BACK to Cable Chest Fly twice.
+    /// Of the mentions left, one right after a handoff verb ("move to",
+    /// "on to", "next is") wins; otherwise the latest in the text.
     static func detectExerciseTransition(
         in text: String,
         candidates: [String]
     ) -> String? {
         let haystack = text.lowercased()
+        let negations = ["isn't", "is not", "not next", "already", "covered", " done", "finished",
+                         "complete", "skip", " was ", "no longer"]
+        let handoffs = ["move to ", "moving to ", "move on to ", "on to ", "onto ", "next is ", "next up",
+                        "head to ", "go to ", "straight to ", "then "]
+        var best: (name: String, position: Int, handoff: Bool)?
         for candidate in candidates {
             let needle = candidate.lowercased()
             guard !needle.isEmpty else { continue }
-            if haystack.contains(needle) {
-                return candidate
+            var searchFrom = haystack.startIndex
+            while let range = haystack.range(of: needle, range: searchFrom..<haystack.endIndex) {
+                searchFrom = range.upperBound
+                let after = haystack[range.upperBound...]
+                let clauseEnd = after.firstIndex(where: { ".;!?\n".contains($0) }) ?? after.endIndex
+                let clause = String(after[..<clauseEnd].prefix(60))
+                if negations.contains(where: { clause.contains($0) }) { continue }
+                let beforeStart = haystack.index(range.lowerBound, offsetBy: -20, limitedBy: haystack.startIndex) ?? haystack.startIndex
+                let before = String(haystack[beforeStart..<range.lowerBound])
+                let isHandoff = handoffs.contains(where: { before.hasSuffix($0) || before.contains($0) })
+                let position = haystack.distance(from: haystack.startIndex, to: range.lowerBound)
+                if let current = best {
+                    if (isHandoff && !current.handoff) || (isHandoff == current.handoff && position > current.position) {
+                        best = (candidate, position, isHandoff)
+                    }
+                } else {
+                    best = (candidate, position, isHandoff)
+                }
             }
         }
-        return nil
+        return best?.name
     }
 
     // MARK: - Set parsing
