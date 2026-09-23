@@ -82,3 +82,5 @@ date,session,week,exercise,code,detail
 2026-09-20,Pull,1,Hammer Curl,rpe_under_target,"top set at RPE7 in week 1, which targets RPE8"
 2026-09-20,Pull,1,Hammer Curl,backoff_rpe_under_target,"back-off at RPE6 in week 1, which targets RPE7"
 2026-09-20,Pull,1,Hammer Curl,reps_below_range,top set at 7 reps against a 8-12 range
+2026-09-23,Legs,1,Leg Press,backoff_loads_differ,two back-offs at different loads
+2026-09-23,Legs,1,45° Back Extension,backoff_drop,"back-off -14% below the top set, outside 15-25%"

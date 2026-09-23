@@ -1,10 +1,10 @@
-<!-- generated 2026-09-22 · 477 prescriptions · 83 violations -->
+<!-- generated 2026-09-23 · 476 prescriptions · 85 violations -->
 
 **Protocol audit — last 90 days**
 
-- **477** prescriptions checked across **2286** replies on dated training days.
-- **55** of them broke at least one rule.
-- Week known for 337 prescriptions (284 from the coach's own words that day, 53 from the session stamp): every check ran. Week only reconstructed for 140: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 19 of 44 days.
+- **476** prescriptions checked across **2293** replies on dated training days.
+- **57** of them broke at least one rule.
+- Week known for 343 prescriptions (290 from the coach's own words that day, 53 from the session stamp): every check ran. Week only reconstructed for 133: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 20 of 45 days.
 
 **What was broken, and how often**
 
@@ -13,14 +13,16 @@
 - Top set below the exercise's rep range — **15**
 - Back-off below the week's RPE target — **15**
 - Second back-off not fewer reps — **8**
-- Two back-offs at different loads — **5**
+- Two back-offs at different loads — **6**
+- Back-off drop outside 15-25% — **1**
 
 **The most recent of each**
 
+- 2026-09-23 · Legs wk1 · 45° Back Extension — back-off -14% below the top set, outside 15-25%
+- 2026-09-23 · Legs wk1 · Leg Press — two back-offs at different loads
 - 2026-09-20 · Pull wk1 · Hammer Curl — top set at 7 reps against a 8-12 range
 - 2026-09-20 · Pull wk1 · Hammer Curl — back-off at RPE6 in week 1, which targets RPE7
 - 2026-09-20 · Pull wk1 · Hammer Curl — top set at RPE7 in week 1, which targets RPE8
-- 2026-09-18 · Legs wk4 · 45° Back Extension — two back-offs at different loads
 - 2026-08-26 · Legs wk3 · Machine Calf Raise — 1 working set(s) against a template of 5
 - 2026-07-29 · Push wk1 · Machine Shoulder Press — second back-off at 10 reps, not fewer than 10
 
