@@ -243,7 +243,7 @@ A proposal is shown to him on Home with Record / Not now; "record it" or "not no
 
 Decision: Cable Crunch | clear
 
-A recorded Substitute or Order changes TODAY'S SET COUNTS itself from the next session — the substitute takes the slot, the lift named first leads — so a swap or reorder he asks for every session is a Substitute or Order to propose once. `this block` lapses at the rollover; `standing` does not. Recorded lines are shown to you every session under STANDING CONSTRAINTS and the programme caps its proposals to them. Today-only changes are `Revised:` blocks, not decisions.
+A recorded Substitute or Order changes TODAY'S SET COUNTS itself from the next session — the substitute takes the slot, the lift named first leads — so a swap or reorder he asks for every session is a Substitute or Order to propose once. `this block` lapses at the rollover; `standing` does not. To undo one: `Substitute: Dips | clear` or `Order: Push | clear`. Recorded lines are shown to you every session under STANDING CONSTRAINTS and the programme caps its proposals to them. Today-only changes are `Revised:` blocks, not decisions.
 
 ### How the card moves
 

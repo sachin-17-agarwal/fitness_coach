@@ -50,7 +50,7 @@ class RememberTests(unittest.TestCase):
         self.assertEqual(flags.recall("abc")["record"][0]["detail"], "200")
         self.assertEqual(flags.recall("abc")["exercise"], "Leg Press")
         self.assertEqual(flags.recall(None)["reply_kind"], "set_reply")
-        self.assertEqual(flags.recall("unknown")["reply_kind"], "set_reply")
+        self.assertIsNone(flags.recall("unknown"))  # never another reply's record
 
 
 class RecordTests(unittest.TestCase):
@@ -125,3 +125,16 @@ class RouteTests(unittest.TestCase):
             r = self.client.get("/api/flags?days=7", headers=HEADERS)
             self.assertEqual(r.get_json()["count"], 1)
             self.assertIn("# Coach flags (1)", r.get_json()["markdown"])
+
+
+class ReviewFixTests(unittest.TestCase):
+    def test_times_are_shown_in_the_app_timezone(self):
+        text = flags.format_flag({**ROW, "created_at": "2026-09-23T11:14:03+00:00"})
+        self.assertIn("### 2026-09-23 21:14 · Standing Calf Raise", text)
+
+    def test_status_uses_a_count_query(self):
+        sb = MagicMock()
+        sb.table.return_value.select.return_value.gte.return_value.execute.return_value.count = 3
+        with patch("flags.get_supabase", return_value=sb):
+            self.assertEqual(flags.count_flags(14), 3)
+        sb.table.return_value.select.assert_called_with("id", count="exact")

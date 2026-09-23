@@ -155,6 +155,34 @@ def now_local() -> datetime:
     return datetime.now(get_app_timezone())
 
 
+def local_date_str(iso: str | None) -> str:
+    """The app-timezone calendar date of an ISO timestamp (Supabase returns
+    TIMESTAMPTZ in UTC), or "" when it cannot be read. A row written at
+    08:30 Sydney time is dated the previous day in UTC."""
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return str(iso)[:10]
+    if dt.tzinfo is None:
+        return str(iso)[:10]
+    return dt.astimezone(get_app_timezone()).strftime("%Y-%m-%d")
+
+
+def local_time_str(iso: str | None) -> str:
+    """'YYYY-MM-DD HH:MM' in the app timezone, or the raw prefix."""
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return str(iso)[:16].replace("T", " ")
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(get_app_timezone())
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
 def today_local_str() -> str:
     """Return today's date as YYYY-MM-DD in the app timezone."""
     return now_local().strftime("%Y-%m-%d")

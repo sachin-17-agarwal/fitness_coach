@@ -20,7 +20,7 @@ import urllib.request
 from collections import OrderedDict
 from datetime import timedelta
 
-from data import get_supabase, now_local, today_local_str
+from data import get_supabase, local_time_str, now_local, today_local_str
 from settings import get_settings
 
 log = logging.getLogger(__name__)
@@ -52,9 +52,12 @@ def remember(client_id: str | None, reply_kind: str, record: list, exercise: str
 
 
 def recall(client_id: str | None) -> dict | None:
+    """The record for this reply, or the newest only when the flag names no
+    id. An unknown id (after a redeploy, or an older reply) gets None rather
+    than another reply's record presented as this one's."""
     with _LOCK:
-        if client_id and client_id in _RECENT:
-            return dict(_RECENT[client_id])
+        if client_id:
+            return dict(_RECENT[client_id]) if client_id in _RECENT else None
         return dict(_RECENT[_LAST]) if _LAST in _RECENT else None
 
 
@@ -125,6 +128,18 @@ def record_flag(note: str, exercise: str | None, client_id: str | None) -> dict:
     return out
 
 
+def count_flags(days: int = 14) -> int:
+    supabase = get_supabase()
+    if not supabase:
+        return 0
+    since = (now_local() - timedelta(days=max(1, int(days)))).date().isoformat()
+    try:
+        res = supabase.table("coach_flags").select("id", count="exact").gte("date", since).execute()
+        return int(res.count if res.count is not None else len(res.data or []))
+    except Exception:
+        return 0
+
+
 def list_flags(days: int = 14) -> list[dict]:
     supabase = get_supabase()
     if not supabase:
@@ -150,7 +165,7 @@ def _one_set(s: dict) -> str:
 
 def format_flag(row: dict) -> str:
     """One flag as Markdown, the way it is shared and filed."""
-    when = str(row.get("created_at") or row.get("date") or "")[:16].replace("T", " ")
+    when = local_time_str(row.get("created_at")) or str(row.get("date") or "")
     head = " · ".join(p for p in [when, row.get("exercise") or ""] if p)
     lines = [f"### {head or 'Coach flag'}"]
     if row.get("note"):

@@ -32,8 +32,8 @@ log = logging.getLogger(__name__)
 RECORDABLE_RE = re.compile(
     r"^(?P<line>Decision: (?P<exercise>[^|\n]+?) \| (?:max load (?P<cap>\d+(?:\.\d+)?)kg \| (?P<why>.+)|clear)"
     r"|Emphasis-next: (?P<muscle>[A-Za-z ]+?) \| (?P<note>.+)"
-    r"|Substitute: (?P<sub_from>[^|>\n]+?) -> (?P<sub_to>[^|\n]+?) \| (?P<horizon>this block|standing) \| (?P<sub_why>.+)"
-    r"|Order: (?P<order_session>[A-Za-z+ ]+?) \| (?P<order_first>[^|\n]+?) first \| (?P<order_why>.+))$"
+    r"|Substitute: (?P<sub_from>[^|>\n]+?) (?:-> (?P<sub_to>[^|\n]+?) \| (?P<horizon>this block|standing) \| (?P<sub_why>.+)|\| clear)"
+    r"|Order: (?P<order_session>[A-Za-z+ ]+?) \| (?:(?P<order_first>[^|\n]+?) first \| (?P<order_why>.+)|clear))$"
 )
 PROPOSED_RE = re.compile(r"^\s*Proposed:\s*(?P<line>.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 _ANY_RECORDABLE_RE = re.compile(r"^\s*(Decision|Emphasis-next|Proposed|Substitute|Order):", re.IGNORECASE | re.MULTILINE)
@@ -84,9 +84,13 @@ def describe(line: str) -> str:
     if m.group("muscle"):
         return f"Next block's emphasis: {m.group('muscle').strip()} — {m.group('note').strip()}"
     if m.group("sub_from"):
+        if not m.group("sub_to"):
+            return f"{m.group('sub_from').strip()}: substitution cleared, back in the template"
         horizon = "for this block" if m.group("horizon") == "this block" else "from now on"
         return f"{m.group('sub_from').strip()} → {m.group('sub_to').strip()} {horizon} — {m.group('sub_why').strip()}"
     if m.group("order_session"):
+        if not m.group("order_first"):
+            return f"{m.group('order_session').strip()}: order cleared, template order again"
         return f"{m.group('order_session').strip()}: {m.group('order_first').strip()} first — {m.group('order_why').strip()}"
     exercise = m.group("exercise").strip()
     if m.group("cap"):
@@ -206,17 +210,24 @@ def answer(row: dict, verdict: str, prompt: str, answer_text: str = "") -> str:
     """record | decline. Applies on record; marks the row either way."""
     supabase = get_supabase()
     line = row.get("line", "")
-    applied = False
-    if verdict == "record":
-        applied = apply_line(line, prompt)
+    # The row is marked first: for a Substitute or Order the recorded row IS
+    # the store (shape.py reads status recorded), so "Recorded" may only be
+    # said once the update has landed.
+    stored = False
     if supabase and row.get("id"):
         try:
             supabase.table("decision_captures").update({
                 "status": "recorded" if verdict == "record" else "declined",
                 "answered_at": now_local().isoformat(), "answer_text": answer_text or verdict,
             }).eq("id", row["id"]).execute()
+            stored = True
         except Exception:
             log.exception("Could not store the decision answer")
+    applied = False
+    if verdict == "record":
+        applied = apply_line(line, prompt)
+        if kind_of(line) in ("substitute", "order"):
+            applied = applied and stored
     if verdict == "record":
         if applied:
             return f"Recorded: {describe(line)}."
