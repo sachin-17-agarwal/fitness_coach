@@ -102,6 +102,22 @@ struct CoachChatView: View {
                             ))
                     }
 
+                    // Proposals waiting for a word, under the reply that made
+                    // them; the same card Home shows the next morning.
+                    ForEach(viewModel.decisions) { capture in
+                        DecisionCaptureCard(capture: capture, isAnswering: viewModel.isAnsweringDecision) { record in
+                            Task { await viewModel.answerDecision(capture, record: record) }
+                        }
+                        .padding(.top, 12)
+                    }
+                    if viewModel.decisions.isEmpty, let reply = viewModel.decisionReply {
+                        Text(reply)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.fg2)
+                            .padding(.top, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     if viewModel.isLoading {
                         TypingIndicator()
                             .id("loading")

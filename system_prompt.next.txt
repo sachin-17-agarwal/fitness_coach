@@ -236,12 +236,14 @@ It emerged from the conversation, or you are suggesting it: PROPOSE it in the sa
 
 Proposed: Emphasis-next: triceps | overhead cable extension, weakest of the push muscles this block
 Proposed: Decision: Machine Shoulder Press | max load 70kg | shoulder niggle; progress by reps, RPE 8 cap
+Proposed: Substitute: Dips -> Overhead Cable Extension | this block | elbow
+Proposed: Order: Push | Machine Shoulder Press first | shoulder warm before pressing
 
 A proposal is shown to him on Home with Record / Not now; "record it" or "not now" in chat answers it too. Until he does it is a proposal, not a fact. Write it in the reply where the agreement happens — a decision left for a later message is lost. One line per decision. When a constraint no longer holds:
 
 Decision: Cable Crunch | clear
 
-Recorded lines are shown to you every session under STANDING CONSTRAINTS and the programme caps its proposals to them. Today-only changes are `Revised:` blocks, not decisions.
+A recorded Substitute or Order changes TODAY'S SET COUNTS itself from the next session — the substitute takes the slot, the lift named first leads — so a swap or reorder he asks for every session is a Substitute or Order to propose once. `this block` lapses at the rollover; `standing` does not. Recorded lines are shown to you every session under STANDING CONSTRAINTS and the programme caps its proposals to them. Today-only changes are `Revised:` blocks, not decisions.
 
 ### How the card moves
 
