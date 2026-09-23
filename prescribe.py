@@ -1113,7 +1113,12 @@ def prescribe_session(plan, week: int,
         key = norm_name(exercise)
         prior = folded.get(key)
         if week in (1, 4) and peak.get(key) is not None:
-            prior = peak[key]
+            # The peak's load, reps and RPE, but the EQUIPMENT step from the
+            # whole window: a single week-3 session holds only a top set and
+            # its back-offs, so its "step" was the back-off gap (25kg on the
+            # Single Leg Sumo Press, which then opened 17.5kg up on 23 Sep).
+            current = folded.get(key)
+            prior = replace(peak[key], step=(current.step if current and current.step else peak[key].step))
         straight_range = (straight_lifts or {}).get(key)
         proposal = prescribe_exercise(
             exercise, sets, kind, week, prior, set(muscles_warm), athlete_kg,
@@ -1383,10 +1388,13 @@ def render_block(proposal: "Proposal", tempo: str | None = None) -> str:
     """
     lines = [f"*{proposal.exercise}*"]
     straight = proposal.straight or _is_straight_set(proposal.exercise)
-    # :61 "Every exercise (EXCEPT ABS) follows this structure" — and the three
-    # parts it then lists are the warm-up, the working set and the back-off.
-    # Ab work gets neither a ramp nor a drop, only its sets.
-    if proposal.warmup and not straight:
+    # Only AB work goes without a ramp. "Straight sets" is a SHAPE (one load,
+    # no back-off) shared by abs, the calf raise and a weak-point slot; tying
+    # the no-ramp rule to the shape threw away the calf raise's computed
+    # 3-set ramp from 6 Sep to 23 Sep 2026, and the coach then invented one
+    # mid-session. The calf raise loads the knee and always ramps (:130, :137).
+    from volume import resolve_muscle_group  # local: keeps import order flat
+    if proposal.warmup and resolve_muscle_group(proposal.exercise) != "Abs":
         lines.append("Warm-up: " + ", ".join(
             _fmt_set(w, with_rpe=False) for w in proposal.warmup))
 

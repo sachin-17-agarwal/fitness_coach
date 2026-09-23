@@ -228,6 +228,10 @@ def api_chat():
     if not text:
         return jsonify({"error": "empty message"}), 400
     client_id = str((data or {}).get("client_id") or "").strip()[:64] or None
+    # The lift on the athlete's screen when he typed. Without it a question
+    # asked in the rest before the next lift was answered about the last
+    # LOGGED lift (the Sumo "+20kg" defended with Leg Press sets, 23 Sep).
+    on_screen = str((data or {}).get("exercise") or "").strip()[:80] or None
 
     recovery_override = _recovery_override_from(data)
 
@@ -252,7 +256,8 @@ def api_chat():
         response = handle_incoming_message(text, memory, send_reply=False, out_prs=prs,
                                            recovery_override=recovery_override,
                                            allow_set_logging=False,
-                                           save_user=client_id is None, client_id=client_id)
+                                           save_user=client_id is None, client_id=client_id,
+                                           on_screen=on_screen)
     except Exception as e:
         if client_id:
             import delivery

@@ -936,7 +936,11 @@ in well under or over the target RPE, the reps fell short or flew past, the ramp
 the working weight is wrong. A step lighter or heavier, a rep or two, a point easier or
 harder: pick the move and the size, and the programme computes the numbers. Say the
 reason in `reason`. Use `revise` only for a genuine departure (pain, equipment) and fill
-`revised` — it is shown to him as a revision.
+`revised` — it is shown to him as a revision. The card moves ONLY on `decision`: if your note
+tells him to go heavier or lighter, `decision` is that move. The programme writes the new
+numbers after your note, so never leave a change unsaid and never write the numbers yourself.
+A set that beat the top of its range at or under its target RPE is already moved up by the
+programme; say so in the note rather than asking for more reps at the same load.
 """.strip()
 
 
@@ -990,7 +994,9 @@ def record_plan_update(e: ExercisePlan, session_type: str, week: int, reason: st
         log.info("PLAN UPDATED (%s): %s", e.exercise, reason[:120])
         return True
     except Exception:
-        log.exception("Could not store the plan update for %s", e.exercise)
+        # Loud on purpose: a swallowed failure here left the stored plan at
+        # the opening's numbers for five days (migration 012).
+        log.exception("PLAN UPDATE NOT STORED (%s): the next set reply will compute from the old plan", e.exercise)
         return False
 
 
@@ -1051,6 +1057,24 @@ def load_today_plan(exercise: str) -> dict | None:
         if detail.get("working"):
             return detail
     return None
+
+
+def latest_logged_sets(session_id: str | None, exercise: str) -> list[dict]:
+    """This exercise's working sets logged against the session, in order."""
+    supabase = get_supabase()
+    if not supabase or not session_id:
+        return []
+    try:
+        rows = (
+            supabase.table("workout_sets")
+            .select("exercise, is_warmup, actual_weight_kg, actual_reps, actual_rpe, set_number, created_at")
+            .eq("workout_session_id", session_id)
+            .execute()
+        ).data or []
+    except Exception:
+        return []
+    mine = [r for r in rows if _same(r.get("exercise") or "", exercise) and not r.get("is_warmup")]
+    return sorted(mine, key=lambda r: (str(r.get("created_at") or ""), r.get("set_number") or 0))
 
 
 def logged_sets_for(session_id: str, exercise: str) -> int:
@@ -1168,18 +1192,71 @@ def note_is_broken(note: str) -> bool:
     return len(note_damage(note)) >= 2
 
 
-def set_reply_problems(reply: dict, exercise: str, stored: dict, done: int) -> list[str]:
+# An instruction to change the load, as the note words it. Reads of how a set
+# felt ("felt heavier than Thursday") are not instructions and do not count.
+_NOTE_HEAVIER_RE = re.compile(
+    r"\b(?:take|make|go|move|bump|put|load|push)\b[^.!?]{0,40}\b(?:heavier|up a (?:step|notch|plate|pin)|up)\b"
+    r"|\b(?:add|put on)\b[^.!?]{0,15}\b(?:weight|a plate|a pin|load)\b|\bgo heavier\b|\bheavier (?:on|for) the\b",
+    re.IGNORECASE)
+_NOTE_LIGHTER_RE = re.compile(
+    r"\b(?:take|make|go|move|drop|bring|put)\b[^.!?]{0,40}\b(?:lighter|down a (?:step|notch|plate|pin)|down)\b"
+    r"|\b(?:drop|strip|take off)\b[^.!?]{0,15}\b(?:weight|a plate|a pin|load)\b|\bgo lighter\b",
+    re.IGNORECASE)
+
+
+def note_direction(note: str) -> str | None:
+    """'heavier', 'lighter' or None: the load change the note tells him to make."""
+    text = note or ""
+    heavier, lighter = bool(_NOTE_HEAVIER_RE.search(text)), bool(_NOTE_LIGHTER_RE.search(text))
+    if heavier == lighter:
+        return None
+    return "heavier" if heavier else "lighter"
+
+
+def _sequence(stored: dict) -> list:
+    working = stored.get("working") or []
+    backoff = stored.get("backoff") or []
+    if len(working) > 1:
+        return [("working", i) for i in range(len(working))]
+    return [("working", 0)] + [("backoff", i) for i in range(len(backoff))]
+
+
+def set_reply_problems(reply: dict, exercise: str, stored: dict, done: int,
+                       logged_top: float | None = None) -> list[str]:
     """Only `revise` carries free numbers, and only its sanity is checked; a
     computed move cannot be malformed. The note is checked for damage: a
-    reply is text the athlete reads, and a broken one is worse than none."""
+    reply is text the athlete reads, and a broken one is worse than none.
+
+    The note and the decision must agree. On 23 Sep 2026 a note said "take the
+    last back-off heavier" while the card stayed at 100kg: the card moves only
+    on `decision`, so a note that tells him to change the load under any other
+    decision is handed back."""
     decision = (reply.get("decision") or "").strip().lower()
     if decision not in SET_DECISIONS:
         return [f"decision must be one of {', '.join(SET_DECISIONS)}."]
     if note_is_broken(reply.get("note") or ""):
         return ["the note reads as broken text (" + ", ".join(note_damage(reply.get("note") or ""))
                 + "): rewrite it as one to three plain sentences with no set numbers."]
+    sequence = _sequence(stored or {})
+    direction = note_direction(reply.get("note") or "")
+    if direction:
+        agrees = decision == direction
+        if decision == "revise" and done < len(sequence):
+            ph, i = sequence[done]
+            planned = ((stored.get(ph) or [])[i] or {}) if (stored.get(ph) or []) else {}
+            try:
+                target = float((reply.get("revised") or {}).get("load_kg"))
+                base = float(planned.get("load_kg"))
+                agrees = (target > base) if direction == "heavier" else (target < base)
+            except (TypeError, ValueError):
+                agrees = False
+        if not agrees:
+            return [f"the note tells him to go {direction} but decision is {decision}: the card moves only on "
+                    f"`decision`. Set decision to {direction} (with steps), or rewrite the note to match {decision}."]
     if decision == "hold":
         return []
+    if sequence and done >= len(sequence):
+        return [f"every set on the card is logged ({done} done): nothing is left to move, so decision is hold."]
     if len((reply.get("reason") or "").strip()) < 12:
         return ["a change to the next set carries the reason for it, in one sentence."]
     if decision == "revise":
@@ -1195,11 +1272,43 @@ def set_reply_problems(reply: dict, exercise: str, stored: dict, done: int) -> l
             out.append(f"revised RPE {rpe:g} is outside 5-10.")
         if load < 0:
             out.append("revised load is negative.")
+        # A revised back-off stays 15-25% under the top set he actually lifted
+        # (:64). 27.5kg under a 40kg top set (31%) reached the card on 22 Sep.
+        cause = _REVISE_CAUSE_RE.search(reply.get("reason") or "")
+        if done < len(sequence) and sequence[done][0] == "backoff" and load > 0 and not cause:
+            top = logged_top or _as_float_or_none(((stored.get("working") or [{}])[0] or {}).get("load_kg"))
+            if top:
+                drop = 1 - load / top
+                if drop > 0.25 + 1e-9 and load < _floor_to(0.75 * top, 2.5) - 1e-9:
+                    out.append(f"revised back-off {load:g}kg is {drop:.0%} under the {top:g}kg top set; the "
+                               f"band is 15-25%, so the lightest back-off is about {_floor_to(0.75 * top, 2.5):g}kg.")
+                elif load >= top:
+                    out.append(f"revised back-off {load:g}kg is not lighter than the {top:g}kg top set.")
         return out
     return []
 
 
-def adapted_plan(reply: dict, exercise: str, stored: dict, done: int) -> ExercisePlan | None:
+# A revision for a cause outside the numbers — pain, a joint, the machine, the
+# plates available — may leave the band; that is what `revise` is for.
+_REVISE_CAUSE_RE = re.compile(
+    r"\b(?:pain\w*|hurt\w*|sore|niggl\w*|tweak\w*|injur\w*|knee|elbow|shoulder|wrist|back pain|"
+    r"machine|stack|plates?|pin|equipment|taken|busy|broken|only has|time)\b", re.IGNORECASE)
+
+
+def _as_float_or_none(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _floor_to(value: float, grid: float) -> float:
+    import math
+    return math.floor(value / grid + 1e-9) * grid
+
+
+def adapted_plan(reply: dict, exercise: str, stored: dict, done: int,
+                 logged_top: float | None = None) -> ExercisePlan | None:
     """The exercise's plan with the set reply's decision applied, or None when
     nothing moves (hold, invalid, or every set already logged).
 
@@ -1209,7 +1318,7 @@ def adapted_plan(reply: dict, exercise: str, stored: dict, done: int) -> Exercis
     decision = (reply.get("decision") or "hold").strip().lower()
     working = [_as_set(s) for s in stored.get("working") or []]
     backoff = [_as_set(s) for s in stored.get("backoff") or []]
-    if not working or set_reply_problems(reply, exercise, stored, done) or decision == "hold":
+    if not working or set_reply_problems(reply, exercise, stored, done, logged_top) or decision == "hold":
         return None
     straight = len(working) > 1
     sequence = ([("working", i) for i in range(len(working))] if straight
@@ -1245,25 +1354,74 @@ def adapted_plan(reply: dict, exercise: str, stored: dict, done: int) -> Exercis
             break
         target_list = working if ph == "working" else backoff
         target_list[i] = moved(target_list[i], first=(k == done))
+    # A computed load move on a back-off never leaves the 15-25% band under
+    # the top set (:64): 'heavier' on a 100kg back-off under a 120kg top set
+    # would be 105, 12.5% under; it stays at the lightest in-band load.
+    if decision in ("heavier", "lighter") and phase == "backoff" and working:
+        top = logged_top or working[0].load_kg
+        if top and top > 0:
+            ceiling = _floor_to(0.85 * top, 2.5)
+            floor = _floor_to(0.75 * top, 2.5)
+            for i, b in enumerate(backoff):
+                if sequence.index(("backoff", i)) < done:
+                    continue
+                if decision == "heavier" and b.load_kg > ceiling:
+                    backoff[i] = SetPlan(max(ceiling, _as_float_or_none((stored.get("backoff") or [])[i].get("load_kg")) or 0.0),
+                                         b.reps_low, b.reps_high, b.rpe)
+                if decision == "lighter" and b.load_kg < floor:
+                    backoff[i] = SetPlan(floor, b.reps_low, b.reps_high, b.rpe)
     return ExercisePlan(exercise=exercise, decision="adjust", reason=str(reply.get("reason") or ""),
                         working=working, backoff=backoff,
                         tempo=str(stored.get("tempo") or ""), rest_seconds=int(stored.get("rest_seconds") or 0))
 
 
-def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str | None:
+def moved_sets_sentence(stored: dict, e: "ExercisePlan", done: int) -> str:
+    """What changed on the card, in words the athlete reads beside the note:
+    "Back-off 2: 105kg (from 100kg)." The model is told not to write numbers;
+    code writes them, so the new load is never left unsaid (the note "take the
+    last back-off heavier" on 23 Sep named no load and moved nothing)."""
+    parts = []
+    for k, (ph, i) in enumerate(_sequence(stored)):
+        if k < done:
+            continue
+        before = (stored.get(ph) or [])[i] if i < len(stored.get(ph) or []) else None
+        after_list = e.working if ph == "working" else e.backoff
+        after = after_list[i] if i < len(after_list) else None
+        if not before or not after:
+            continue
+        b = _as_set(before)
+        if (b.load_kg, b.reps_low, b.reps_high, b.rpe) == (after.load_kg, after.reps_low, after.reps_high, after.rpe):
+            continue
+        label = "Top set" if ph == "working" and len(e.working) == 1 else (
+            f"Set {i + 1}" if ph == "working" else f"Back-off {i + 1}")
+        reps = f"{after.reps_low}" if after.reps_low == after.reps_high else f"{after.reps_low}-{after.reps_high}"
+        was = f" (from {b.load_kg:g}kg)" if b.load_kg != after.load_kg else ""
+        parts.append(f"{label}: {after.load_kg:g}kg x{reps} @{after.rpe:g}{was}")
+    return ("Card: " + "; ".join(parts) + ".") if parts else ""
+
+
+def render_set_reply(reply: dict, exercise: str, stored: dict, done: int,
+                     logged_top: float | None = None) -> str | None:
     """The coach's note, plus the exercise's block with the decision applied.
 
     The whole block is re-sent so the card's merge sees complete phases and
     nothing already on screen is lost. `revise` renders the given set with a
-    `Revised:` line, the prompt's own marker for a departure.
+    `Revised:` line, the prompt's own marker for a departure. When a move
+    changes a set, the note ends with the new numbers, written by code.
     """
     note = (reply.get("note") or "").strip()
     decision = (reply.get("decision") or "hold").strip().lower()
-    if not (stored.get("working") or []) or set_reply_problems(reply, exercise, stored, done):
+    if not (stored.get("working") or []) or set_reply_problems(reply, exercise, stored, done, logged_top):
         return None
-    e = adapted_plan(reply, exercise, stored, done)
+    e = adapted_plan(reply, exercise, stored, done, logged_top)
     if e is None:
         return note or None
+    said = moved_sets_sentence(stored, e, done)
+    if said:
+        note = f"{note} {said}".strip() if note else said
+    elif decision in ("heavier", "lighter"):
+        note = (f"{note} The card stays as it is: a back-off {decision} than this would leave the 15-25% band "
+                f"under the top set, so the lever is reps.").strip()
     # A computed move keeps the plan's shape by construction; a revision is
     # the athlete's and the coach's business, marked as such.
     lines = render_exercise(e).split("\n")
@@ -1271,6 +1429,38 @@ def render_set_reply(reply: dict, exercise: str, stored: dict, done: int) -> str
         lines.insert(1, f"Revised: {(reply.get('reason') or '').strip()}")
     block = "\n".join(lines)
     return f"{note}\n\n{block}" if note else block
+
+
+def owed_set_decision(logged: dict | None, stored: dict, done: int) -> dict | None:
+    """The move the programme owes after a logged set, whatever the model said.
+
+    A set that beats the top of its range at the prescribed load, at or under
+    its target RPE, means the load is light (:204, "the rep range polices the
+    load"); the remaining sets of the exercise go up now. 270kg x11 @7 against
+    5-9 @7 on 23 Sep was answered with `hold` twice, and the back-offs stayed
+    at 215kg. None when nothing is owed or nothing is left to move."""
+    if not logged or done < 1:
+        return None
+    sequence = _sequence(stored or {})
+    if done >= len(sequence):
+        return None
+    ph, i = sequence[done - 1]
+    planned_list = stored.get(ph) or []
+    if i >= len(planned_list):
+        return None
+    planned = _as_set(planned_list[i])
+    reps = logged.get("actual_reps")
+    load = _as_float_or_none(logged.get("actual_weight_kg"))
+    rpe = _as_float_or_none(logged.get("actual_rpe"))
+    if reps is None or load is None or rpe is None:
+        return None
+    reps = int(reps)
+    over = reps - planned.reps_high
+    if over < 1 or load < planned.load_kg - 1e-9 or rpe > planned.rpe + 1e-9:
+        return None
+    return {"decision": "heavier", "steps": 2 if over >= 3 else 1, "scope": "remaining",
+            "reason": f"{reps} reps against {planned.reps_low}-{planned.reps_high} at RPE {rpe:g} (target "
+                      f"{planned.rpe:g}): the range polices the load, so the remaining sets go up."}
 
 
 def request_set_reply(client, system_blocks: list, messages: list, exercise: str,

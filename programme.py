@@ -225,6 +225,11 @@ def build_proposal(prompt: str, session_type: str, week: int,
         return [], {}, {}
 
 
+def _is_ab_work(exercise: str) -> bool:
+    from volume import resolve_muscle_group  # local: keeps import order flat
+    return resolve_muscle_group(exercise) == "Abs"
+
+
 def format_proposal(proposals: list, session_type: str, week: int,
                     renamed: dict | None = None,
                     ambiguous: dict | None = None) -> str:
@@ -245,17 +250,21 @@ def format_proposal(proposals: list, session_type: str, week: int,
     grouped_deferred: dict = {}
     for proposal in proposals:
         top = proposal.working[0].render() if proposal.working else "load TBD"
-        backoff = proposal.backoff[0].render() if proposal.backoff else None
+        backoff = ", ".join(b.render() for b in proposal.backoff) if proposal.backoff else None
         count = proposal.working_set_count
         if _is_straight_set(proposal.exercise):
             # Ab work is straight sets at one load (:145). The coach was shown
             # a top set plus back-offs here and, correctly, "adjusted" every
             # ab exercise to undo a shape the programme never meant.
             detail = f"{count} straight set{'' if count == 1 else 's'} at one load · {top}"
+            if proposal.warmup and not _is_ab_work(proposal.exercise):
+                detail += " · ramp " + ", ".join(w.render().split(" RPE")[0] for w in proposal.warmup)
         else:
             detail = f"{count} working set{'' if count == 1 else 's'} · top {top}"
             if backoff:
                 detail += f" · back-off {backoff}"
+            if proposal.warmup:
+                detail = f"ramp {', '.join(w.render().split(' RPE')[0] for w in proposal.warmup)} · " + detail
         lines.append(f"- {proposal.exercise} — {detail}")
         # Recovery notes are never truncated: :321 requires saying which rules
         # applied when more than one matches, and :323 requires stating which

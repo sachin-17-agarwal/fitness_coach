@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS prescription_decisions (
     session_type    TEXT NOT NULL,
     mesocycle_week  INTEGER,
     exercise        TEXT NOT NULL,
-    decision        TEXT NOT NULL CHECK (decision IN ('accept', 'adjust')),
+    decision        TEXT NOT NULL CHECK (decision IN ('accept', 'adjust', 'update')),
     reason          TEXT,
     top_load_kg     NUMERIC,
     top_reps        INTEGER,
