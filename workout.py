@@ -262,6 +262,12 @@ def end_session(session_id: str, end_at: str | None = None) -> dict:
             "end_time": end_at,
             "tonnage_kg": round(tonnage, 1)
         }).eq("id", session_id).execute()
+        # Was every number right? Scored now, while the session is whole.
+        try:
+            import scorecard  # local: keeps import order flat
+            scorecard.score_session(session_id)
+        except Exception:
+            log.exception("scorecard: scoring at session close failed")
 
         set_workout_state({
             "workout_mode": "inactive",

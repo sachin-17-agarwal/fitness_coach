@@ -177,7 +177,8 @@ def build_proposal(prompt: str, session_type: str, week: int,
                    peak_week_loads: list[dict] | None = None,
                    ceilings: dict | None = None,
                    athlete_kg: float | None = None,
-                   weak_points: list | None = None) -> tuple:
+                   weak_points: list | None = None,
+                   verdicts: dict | None = None) -> tuple:
     """The programme's proposal for today.
 
     `weak_points` is this block's pick (weakpoints.current_block_weak_points
@@ -205,6 +206,7 @@ def build_proposal(prompt: str, session_type: str, week: int,
         proposals = prescribe_session(plan, week, history, recovery=recovery,
                                       peak_history=peak_history, athlete_kg=athlete_kg,
                                       straight_lifts=straight_lifts)
+        proposals = sized_to_outcomes(proposals, verdicts, week, recovery)
         if ceilings:
             from constraints import apply_ceilings  # local: keeps import order flat
             proposals = apply_ceilings(proposals, ceilings)
@@ -225,6 +227,46 @@ def build_proposal(prompt: str, session_type: str, week: int,
         # session down with it.
         log.exception("Could not compute the programme proposal")
         return [], {}, {}
+
+
+def sized_to_outcomes(proposals: list, verdicts: dict | None, week: int, recovery: dict | None) -> list:
+    """The programme's own number came in LIGHT the last two scored sessions
+    of a lift (the range beaten at or under the target RPE, twice): today's
+    opens one step higher than the rule alone. The reason says "sized", the
+    word the pre-flight's jump invariant reads for a sized increase.
+
+    Not on the deload, not on a recovery session, never on a lift without a
+    load. This is the loop the scorecard closes: a trend nobody moved on for
+    a block (Leg Press 245 x15, Leg Curl 110 x16, 3-19 Sep 2026) now moves
+    the number itself."""
+    from dataclasses import replace
+    from data import deload_week  # local: keeps import order flat
+    from prescribe import INCREMENT, _round_load, recovery_adjustment  # local: keeps import order flat
+    import scorecard  # local: keeps import order flat
+    if not verdicts or week == deload_week() or recovery_adjustment(recovery).recovery_session:
+        return proposals
+    out = []
+    for p in proposals:
+        top = p.working[0] if p.working else None
+        already_sized = any("sized" in r.lower() for r in p.reasons)   # this session's miss already moved it
+        if (top is None or not top.weight_kg or top.bodyweight or already_sized
+                or not scorecard.ran_light_twice(verdicts, p.exercise)):
+            out.append(p); continue
+        grid = top.grid if top.grid and top.grid > 0.5 else None
+        step = max(INCREMENT.get(p.kind, 2.5), grid or 0.0)
+        new_top = _round_load(top.weight_kg + step, grid, top.weight_kg)
+        ratio = new_top / top.weight_kg
+        def scaled(spec):
+            if spec.weight_kg is None or spec.bodyweight:
+                return spec
+            return replace(spec, weight_kg=_round_load(spec.weight_kg * ratio, grid, spec.weight_kg))
+        working = [replace(top, weight_kg=new_top)] + [scaled(w) for w in p.working[1:]]
+        reasons = [f"Sized to the outcomes: the programme's number came in LIGHT the last two sessions "
+                   f"(the range beaten at or under the target RPE), so today opens one step higher "
+                   f"({top.weight_kg:g} → {new_top:g}kg) than the rule alone."] + list(p.reasons)
+        out.append(replace(p, working=working, backoff=[scaled(b) for b in p.backoff],
+                           warmup=[scaled(w) for w in p.warmup], reasons=reasons))
+    return out
 
 
 def _is_ab_work(exercise: str) -> bool:

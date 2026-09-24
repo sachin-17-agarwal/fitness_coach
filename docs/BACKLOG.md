@@ -80,6 +80,7 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
+| C11 | **Decision scorecard**: every finished session scored per lift (right / light / heavy) against the range and RPE prescribed, the programme's number kept beside the coach's; verdicts back to the coach (OUTCOMES block), to the Sunday report, and into the programme (two lights → one step up); an unexamined `accept` on a two-miss trend is asked about | M | done 24 Sep | Migration 015. Measured before building: the coach overrode 4 of 68 decisions in the 3–19 Sep block; the programme ran light 15 of 64. Read after one block (~29 Oct): does the coach's judgement, now exercised, beat the programme's number? |
 | C7 | Deload by SETS: back-offs dropped, straight sets halved, load held, top set RPE 7; no readiness cut stacked on it | S | done 24 Sep | Consensus practice (Bell et al.): 25-50% less volume, intensity held. The rep-only deload kept every set. |
 | C8 | Back-offs at RPE 8 in every loading week (were 7 in weeks 1-2) | S | done 24 Sep | Proximity-to-failure meta-regressions (Robinson et al. 2024). |
 | C9 | Block length is a setting: 5 weeks on a bulk (4 loading + deload), 4 on a cut; `data.block_weeks()` reads memory `block_weeks`, set from Settings → Training block | S | done 24 Sep | Every week rule reads it; peak week = last loading week. |
@@ -97,9 +98,10 @@ The two categories beyond the four you named:
 |---|---|---|---|---|
 | P1 | Cloud build: Xcode Cloud → TestFlight; retire `deploy_device.sh` and the launchd job | M | declined 24 Sep | Not paying for the programme. `deploy_device.sh` + launchd stay the deploy path (any paired iPhone, 3 install retries since #314). |
 | P2 | One export from Settings for the replay harness (F8) | S | done 24 Sep | Re-export after each block to refresh `tests/fixtures/export/` (not recovery.csv). |
+| P6 | Claims ledger (`docs/CLAIMS.md`): every claim Claude makes about the system carries its basis — measured / inferred / assumed — and is verified or marked wrong | — | standing from 24 Sep | The athlete's ask: accountability for the developer as well as the coach. |
 | P3 | Rules we hold: a new check is a step in `reply_contract.py` and one comes out; every gym screenshot becomes a pre-flight invariant; nothing merges while a session is live | — | standing | |
 | P4 | The Sunday report is read by Claude, not the athlete; sections only a human would read are removed | S | in progress | Shadow removed 20 Sep. |
-| P5 | Migrations: 011–013 run; 014 pending | — | waiting on the athlete | `migrations/014_workout_sets_phase.sql`. |
+| P5 | Migrations: 011–014 run; 015 pending | — | waiting on the athlete | `migrations/015_decision_outcomes.sql`. |
 
 ---
 

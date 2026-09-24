@@ -299,6 +299,12 @@ _CAUSE_RE = re.compile(
     re.IGNORECASE)
 
 
+# An accept on a two-miss trend needs a reason that speaks to it: the trend
+# itself, the range, or a cause that holds the number today.
+_OUTCOME_RE = re.compile(r"light|heavy|range|reps|outcome|hold|stand|niggl|pain|hurt|sore|recover|hrv|sleep|"
+                         r"joint|form|technique|step|stack|machine|first|warm", re.IGNORECASE)
+
+
 # A problem the coach is ASKED about, never overruled on. The cause rule is
 # the one judgement call in validate: a cut below the programme is coaching
 # when the coach can say why, and the code cannot know every why. So it is
@@ -368,7 +374,7 @@ def _backoff_problems(e: ExercisePlan) -> list[str]:
 def validate(plan: SessionPlan, session_type: str, prompt: str,
              proposal: dict | None = None, weak_points: list | None = None,
              ceilings: dict | None = None, steps: dict | None = None,
-             week: int | None = None) -> list[str]:
+             week: int | None = None, verdicts: dict | None = None) -> list[str]:
     """Every way the plan breaks the programme, as sentences the model can act on.
 
     Mechanical rules only — set counts from the template, the shape of the
@@ -503,6 +509,17 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
                                 f"{e.working[0].load_kg - programme_top:g}kg over the programme's ({programme_top:g}kg), "
                                 f"more than one step up ({allowance:g}kg) — the programme's number stands; if the "
                                 f"set proves easy the card moves through the set reply.")
+        if e.decision == "accept" and verdicts and not _OUTCOME_RE.search(e.reason or ""):
+            # An unexamined accept on a lift whose last two outcomes agreed on
+            # a miss. The coach rubber-stamped 94% of decisions in the 3-19
+            # Sep block while the programme ran light 15 times; the outcomes
+            # block shows it the trend, and this asks it to act or say why not.
+            import scorecard  # local: keeps import order flat
+            miss = scorecard.last_two_missed(verdicts, e.exercise)
+            if miss:
+                problems.append(f"{e.exercise}: the last two sessions came in {miss.upper()} on this number "
+                                f"(see OUTCOMES) — adjust {'up' if miss == 'light' else 'down'} with the reason, "
+                                f"or keep accept and give the reason it should stand today.{SOFT}")
         if e.decision == "accept" and computed.get("working"):
             same = _same_set(e.working[0], computed["working"][0]) and \
                 len(e.backoff) == len(computed.get("backoff", [])) and \
@@ -686,7 +703,8 @@ def request_session_plan(client, system_blocks: list, messages: list,
                          proposal: dict | None = None, model: str = MODEL,
                          weak_points: list | None = None,
                          budget_seconds: float = PLAN_TIME_BUDGET_SECONDS,
-                         ceilings: dict | None = None, steps: dict | None = None) -> tuple:
+                         ceilings: dict | None = None, steps: dict | None = None,
+                         verdicts: dict | None = None) -> tuple:
     """Ask for the plan, check it, and make sure a plan comes back.
 
     Returns (plan, log_lines). `plan` is None only when the model's output
@@ -754,7 +772,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
             notes.append(f"attempt {attempt}: plan did not parse ({exc})")
             plan = None
             break
-        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps, week)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps, week, verdicts)
         if not problems:
             notes.append(f"attempt {attempt}: plan accepted")
             return plan, notes
@@ -781,7 +799,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
     # Soft problems are the coach's to keep: they never send a lift to the fill.
     if plan is None:
         plan = SessionPlan(opening="", exercises=[])
-        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps, week)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps, week, verdicts)
     soft = [x for x in problems if is_soft(x)]
     if soft:
         notes.append("coach's call stands: " + " | ".join(x[:-len(SOFT)] for x in soft))
@@ -805,16 +823,21 @@ def request_session_plan(client, system_blocks: list, messages: list,
 # ── The decision log ─────────────────────────────────────────────────────────
 
 def save_decisions(plan: SessionPlan, session_type: str, week: int,
-                   session_id: str | None = None) -> int:
-    """Write every exercise's decision and reason. Returns rows written; a
-    missing table or a failed write costs a log line, never the reply."""
+                   session_id: str | None = None, proposal: dict | None = None) -> int:
+    """Write every exercise's decision and reason, with the PROGRAMME's top
+    set beside the coach's (migration 015) so the scorecard can judge an
+    adjust against what it departed from. Returns rows written; a missing
+    table or a failed write costs a log line, never the reply."""
     supabase = get_supabase()
     if not supabase:
         return 0
     today = now_local().strftime("%Y-%m-%d")
+    proposal_by_key = {_normalise_exercise(k): v for k, v in (proposal or {}).items()}
     rows = []
     for e in plan.exercises:
         top = e.working[0] if e.working else None
+        computed = _proposal_numbers(proposal_by_key.get(_normalise_exercise(e.exercise), "")) if proposal_by_key else {}
+        prog = (computed.get("working") or [{}])[0] if computed else {}
         rows.append({
             "date": today,
             "session_id": session_id or None,
@@ -826,6 +849,10 @@ def save_decisions(plan: SessionPlan, session_type: str, week: int,
             "top_load_kg": top.load_kg if top else None,
             "top_reps": top.reps_low if top else None,
             "top_rpe": top.rpe if top else None,
+            "programme_load_kg": _as_float_or_none(prog.get("weight")) if prog else None,
+            "programme_reps_low": prog.get("reps") if prog else None,
+            "programme_reps_high": prog.get("reps_high", prog.get("reps")) if prog else None,
+            "programme_rpe": _as_float_or_none(prog.get("rpe")) if prog else None,
             "plan": json.dumps({
                 "warmup": e.warmup,
                 "working": [s.__dict__ for s in e.working],
@@ -837,7 +864,15 @@ def save_decisions(plan: SessionPlan, session_type: str, week: int,
         supabase.table("prescription_decisions").insert(rows).execute()
         return len(rows)
     except Exception:
-        log.exception("Could not store the session's decisions")
+        # A store without migration 015 rejects the programme_* columns; the
+        # decision is worth more than the comparison.
+        try:
+            stripped = [{k: v for k, v in r.items() if not k.startswith("programme_")} for r in rows]
+            supabase.table("prescription_decisions").insert(stripped).execute()
+            log.warning("prescription_decisions has no programme_* columns (migration 015?); stored without them")
+            return len(stripped)
+        except Exception:
+            log.exception("Could not store the session's decisions")
         return 0
 
 

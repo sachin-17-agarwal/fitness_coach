@@ -301,6 +301,17 @@ def _block_weak_points(memory: dict, prompt: str):
     return current_block_weak_points(memory, prompt)
 
 
+def _outcomes() -> list:
+    """The scorecard's verdicts, with any finished session not yet scored
+    scored first (once a day per process)."""
+    import scorecard  # local: keeps import order flat
+    try:
+        scorecard.score_pending()
+    except Exception:
+        log.debug("scorecard: pending scoring failed", exc_info=True)
+    return scorecard.recent_outcomes()
+
+
 def _recent_decisions() -> list:
     from plan import load_recent_decisions  # local: keeps import order flat
     return load_recent_decisions()
@@ -409,6 +420,7 @@ def build_context_block(memory: dict, athlete_name: str,
             executor.submit(_timed, _recovery_rows): "recovery_rows",
             executor.submit(_timed, _block_weak_points, memory, system_prompt): "block_weak_points",
             executor.submit(_timed, latest_bodyweight_kg): "bodyweight",
+            executor.submit(_timed, _outcomes): "outcomes",
         }
         # Only hit the DB for today's recovery when the client hasn't supplied
         # its own authoritative snapshot.
@@ -530,6 +542,8 @@ def build_context_block(memory: dict, athlete_name: str,
     # the mesocycle week, both of which move.
     from programme import build_proposal, format_proposal
     from prescribe import is_determined, render_block, render_session  # local: import order
+    import scorecard as _scorecard  # local: keeps import order flat
+    _verdicts = _scorecard.verdicts_by_lift(results.get("outcomes") or [])
     _proposals, _renamed, _ambiguous = ([], {}, {}) if not system_prompt else build_proposal(
         system_prompt, today_session, _safe_int(mesocycle_week),
         _current_loads or [],
@@ -538,6 +552,7 @@ def build_context_block(memory: dict, athlete_name: str,
         ceilings=__import__("constraints").ceilings(results.get("constraints") or []),
         athlete_kg=results.get("bodyweight"),
         weak_points=(results.get("block_weak_points") or {}).get("picks") if results.get("block_weak_points") else None,
+        verdicts=_verdicts,
     )
     # Handed back to the caller rather than rendered into the prompt. The
     # numbers are already here — the loads, the week and today's recovery all
@@ -588,6 +603,16 @@ def build_context_block(memory: dict, athlete_name: str,
     )
     from plan import format_decisions  # local: keeps import order flat
     programme_proposal += "\n" + format_decisions(results.get("decisions") or [])
+    # What the last numbers did, on today's lifts, and whose judgement has
+    # been right: the coach reads it before it accepts or adjusts.
+    try:
+        programme_proposal += _scorecard.format_outcomes(
+            [p.exercise for p in _proposals], _verdicts,
+            _scorecard.track_record(results.get("outcomes") or []))
+    except Exception:
+        log.exception("Could not render the outcomes block")
+    if out is not None:
+        out["verdicts"] = _verdicts
     from constraints import format_constraints, ceilings as _ceilings  # local: keeps import order flat
     programme_proposal += format_constraints(results.get("constraints") or [])
     if out is not None:

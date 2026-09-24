@@ -455,6 +455,8 @@ def main() -> None:
     from decisions import fetch_captures, format_captures, summarise_captures  # local: import order
     captures = fetch_captures(args.report)
     text += "\n" + format_captures(None if captures is None else summarise_captures(captures), args.report)
+    import scorecard  # local: import order
+    text += "\n" + scorecard.format_report(scorecard.recent_outcomes(args.report), args.report)
     print(text)
     if args.out:
         import os
