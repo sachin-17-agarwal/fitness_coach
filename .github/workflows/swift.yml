@@ -61,8 +61,12 @@ jobs:
             -project Vaux/Vaux.xcodeproj -scheme Vaux
 
       - name: Build and test
+        # xcodebuild's exit code is the verdict, taken directly. The first
+        # version of this step piped through grep with "|| true" and read
+        # PIPESTATUS afterwards, which reported the "true" — a failing test
+        # run went green on 26 Sep 2026. Never again: no pipeline here.
         run: |
-          set -o pipefail
+          set +e
           xcodebuild test \
             -project Vaux/Vaux.xcodeproj \
             -scheme Vaux \
@@ -70,9 +74,11 @@ jobs:
             -only-testing:VauxTests \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             -resultBundlePath TestResults.xcresult \
-            | tee xcodebuild.log | grep -E "error:|warning: unre|Test Suite|Test Case.*(passed|failed)|BUILD|TEST" || true
-          # xcodebuild's own exit code decides, not grep's.
-          test "${PIPESTATUS[0]}" -eq 0
+            > xcodebuild.log 2>&1
+          status=$?
+          grep -E "error:|Failing tests|Test Suite|Test Case.*(passed|failed)|Executed|BUILD|TEST" xcodebuild.log || true
+          echo "xcodebuild exit: $status"
+          exit $status
 
       - name: Upload the result bundle on failure
         if: failure()

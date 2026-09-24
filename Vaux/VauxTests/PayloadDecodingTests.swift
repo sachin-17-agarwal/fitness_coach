@@ -69,13 +69,14 @@ struct PayloadDecodingTests {
          "verdict": "READY — PULL TODAY", "session_type": "Pull", "done": false, "week": 2, "day": 1,
          "phase": "VOLUME", "hrv": 61.5, "hrv_delta": 3, "sleep_hours": 7.1, "resting_hr": 51, "rhr_delta": -1,
          "strength": {"median_gain_pct": 6.4, "lifts": 12},
-         "week_sessions": 3, "week_tonnage_kg": 41250, "week_tonnage_delta_pct": -4}
+         "week_sessions": 3, "week_tonnage_kg": 41300, "week_tonnage_delta_pct": -4}
         """.data(using: .utf8)!
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let payload = try decoder.decode(WidgetPayload.self, from: json)
         #expect(payload.sessionType == "Pull" && payload.week == 2 && payload.day == 1)
         #expect(payload.strength?.lifts == 12)
+        #expect(payload.weekSessions == 3 && payload.weekTonnageKg == 41300)
         #expect(payload.weekLine == "3 · 41.3t")
         // A payload from before the week line existed still decodes.
         let older = #"{"date": "2026-09-01", "level": "amber", "verdict": "EASY DAY", "session_type": "Push", "done": true, "week": 4, "day": 2, "phase": "DELOAD"}"#.data(using: .utf8)!
