@@ -26,11 +26,11 @@ The two categories beyond the four you named:
 |---|---|---|---|---|
 | E1 | Prompt diet: `system_prompt.next.txt`, a third the size, every code-enforced rule removed | M | live from the 21 Sep rest day | Roll back with `PROMPT_FILE=system_prompt.txt`. Gate: the audit's rule-break rate must not rise over the first week; read in the 27 Sep report. |
 | E2 | Context shape: older sessions one line each, last week in full (Optimisation stage 4) | M | proposed | Gated on E1. |
-| E3 | History caching as a second cut of cache hygiene (stage 5) | S | proposed | First cut shipped 15 Sep; read the 20 Sep report first. |
-| E4 | Plan before prose as a second streamed call (2.1d) | M | proposed | Gated on the thinking/text split showing prose is a real share. Real quality risk: a Why line written after the decision. |
+| E3 | History caching as a second cut of cache hygiene (stage 5) | S | approved 25 Sep | Cache breakpoint under the older turns of today's history; ~6k of the ~8.9k uncached tokens per set reply (20 Sep report) → about −30% per call, ~$20/month, no change to content. Batch with the next weekly PR. |
+| E4 | Plan before prose as a second streamed call (2.1d) | M | on hold to 9 Oct | Real quality risk: a Why line written after the decision. The opening card is already instant (2.1b), so the wait it would shorten is one the athlete no longer stands in. Revisit 9 Oct. |
 | E5 | Thinking depth on set replies and plans (2.1e) | S | proposed | Largest lever, real quality risk. Not before two more weeks of data. |
-| E6 | Gym-arrival geofence that pre-computes the plan (2.1c) | S | proposed | Review 30 Sep: does START still feel slow after 2.1b? |
-| E7 | Block review prepared off the request path (Home gets 202, polls) | S | idea | Home's first fetch timed out on 19 Sep; the app's one retry covers it today. |
+| E6 | Gym-arrival geofence that pre-computes the plan (2.1c) | S | dropped 25 Sep | START is not slow any more — the programme card is instant and the coach review lands during the ramp. Not worth Always-location permission. |
+| E7 | Block review prepared at rollover, not when Home first asks | S | approved 25 Sep | 24 s median, 9 retries in 40 calls, one Home timeout (19 Sep). Build it with the ~29 Oct block-review touch. |
 | E8 | Monthly cost view in the Sunday report | S | done (#234) | |
 
 ## Features — new, and improving what exists
