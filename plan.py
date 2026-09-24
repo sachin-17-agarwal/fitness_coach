@@ -223,7 +223,8 @@ def _fill_sets_from_block(e: ExercisePlan, block: str) -> bool:
     if not e.note and parsed.get("note"):
         e.note = str(parsed["note"])
     if not e.rest_seconds:
-        e.rest_seconds = _rest_seconds(parsed.get("rest")) or 120
+        from prescribe import REST_SECONDS, classify  # local: keeps import order flat
+        e.rest_seconds = _rest_seconds(parsed.get("rest")) or REST_SECONDS[classify(e.exercise)]
     return True
 
 
@@ -1055,6 +1056,12 @@ def record_plan_update(e: ExercisePlan, session_type: str, week: int, reason: st
         return False
 
 
+def _default_rest(exercise: str) -> int:
+    """The kind's rest (prescribe.REST_SECONDS) when a block names none — C13."""
+    from prescribe import REST_SECONDS, classify  # local: keeps import order flat
+    return REST_SECONDS[classify(exercise)]
+
+
 def plan_from_block(block: dict, stored: dict | None = None) -> ExercisePlan:
     """A parsed reply block (coach_parsing shape: weight/reps/reps_high/rpe)
     as an ExercisePlan, keeping the stored tempo and rest."""
@@ -1066,7 +1073,7 @@ def plan_from_block(block: dict, stored: dict | None = None) -> ExercisePlan:
                         warmup=[(float(w.get("weight") or 0), int(w.get("reps") or 0)) for w in block.get("warmup") or []],
                         working=rows(block.get("working")), backoff=rows(block.get("backoff")),
                         tempo=str((stored or {}).get("tempo") or ""),
-                        rest_seconds=int((stored or {}).get("rest_seconds") or 0))
+                        rest_seconds=int((stored or {}).get("rest_seconds") or 0) or _default_rest(str(block.get("exercise") or "")))
 
 
 def block_differs(block: dict, stored: dict) -> bool:

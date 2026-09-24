@@ -143,6 +143,35 @@ def _history(plan, current_loads: list[dict], week: int | None = None) -> tuple:
     return history, renamed, ambiguous
 
 
+def _ladder_notes(plan, current_loads: list[dict]) -> dict:
+    """{folded template name: reason line} for lifts the programme is
+    progressing from an on-ladder load because the newest one sits off it
+    (C19). The card says so; Home carries the question."""
+    rows = {}
+    for row in current_loads or []:
+        name = (row.get("exercise") or "").strip()
+        if name and row.get("off_ladder"):
+            rows[name] = row
+    if not rows:
+        return {}
+    matches, _ambiguous = match_logged_names([e for e, _, _ in plan], rows)
+    notes = {}
+    for exercise, logged_name in matches.items():
+        off = rows[logged_name]["off_ladder"]
+        if off.get("treated") == "stray":
+            notes[norm_name(exercise)] = (
+                f"{off['load']:g}kg on {off['date']} is not a whole number of {off['step']:g}kg steps from this "
+                f"lift's ladder — another machine, or a typo — so today progresses from {off['anchor_load']:g}kg "
+                f"({off['anchor_date']}). Home has the question; answer it once and this line goes."
+            )
+        else:
+            notes[norm_name(exercise)] = (
+                f"{off['load']:g}kg on {off['date']} is off this lift's usual {off['step']:g}kg ladder but you said "
+                f"it was real, so today progresses from it."
+            )
+    return notes
+
+
 def weak_point_slots(plan: tuple, entries: list, weak_points: list | None) -> tuple:
     """Fill the template's weak-point slots with this block's named lifts.
 
@@ -221,6 +250,11 @@ def build_proposal(prompt: str, session_type: str, week: int,
         LAST_PREFLIGHT = findings
         if findings:
             log.warning("PRE-FLIGHT corrected %s wk%s: %s", session_type, week, summarise(findings))
+        notes = _ladder_notes(plan, current_loads)
+        if notes:
+            from dataclasses import replace as _replace  # local: keeps import order flat
+            proposals = [_replace(p, reasons=[notes[norm_name(p.exercise)]] + list(p.reasons))
+                         if norm_name(p.exercise) in notes else p for p in proposals]
         return proposals, renamed, ambiguous
     except Exception:
         # A proposal is an aid, never a precondition. The coach has run without

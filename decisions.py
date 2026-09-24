@@ -33,10 +33,15 @@ RECORDABLE_RE = re.compile(
     r"^(?P<line>Decision: (?P<exercise>[^|\n]+?) \| (?:max load (?P<cap>\d+(?:\.\d+)?)kg \| (?P<why>.+)|clear)"
     r"|Emphasis-next: (?P<muscle>[A-Za-z ]+?) \| (?P<note>.+)"
     r"|Substitute: (?P<sub_from>[^|>\n]+?) (?:-> (?P<sub_to>[^|\n]+?) \| (?P<horizon>this block|standing) \| (?P<sub_why>.+)|\| clear)"
-    r"|Order: (?P<order_session>[A-Za-z+ ]+?) \| (?:(?P<order_first>[^|\n]+?) first \| (?P<order_why>.+)|clear))$"
+    r"|Order: (?P<order_session>[A-Za-z+ ]+?) \| (?:(?P<order_first>[^|\n]+?) first \| (?P<order_why>.+)|clear)"
+    # C19 (25 Sep 2026): a logged load off the lift's ladder — another
+    # machine, or a typo — questioned rather than progressed from. `stray`
+    # ignores it; `real` accepts it. The recorded row IS the store
+    # (progression reads it through ladder_answers).
+    r"|Ladder: (?P<ladder_exercise>[^|\n]+?) \| (?P<ladder_load>\d+(?:\.\d+)?)kg (?P<ladder_verdict>stray|real) \| (?P<ladder_why>.+))$"
 )
 PROPOSED_RE = re.compile(r"^\s*Proposed:\s*(?P<line>.+?)\s*$", re.IGNORECASE | re.MULTILINE)
-_ANY_RECORDABLE_RE = re.compile(r"^\s*(Decision|Emphasis-next|Proposed|Substitute|Order):", re.IGNORECASE | re.MULTILINE)
+_ANY_RECORDABLE_RE = re.compile(r"^\s*(Decision|Emphasis-next|Proposed|Substitute|Order|Ladder):", re.IGNORECASE | re.MULTILINE)
 
 # What the athlete says when something is meant to outlive today. Kept to
 # phrases that carry a number or a horizon so ordinary set talk ("max
@@ -63,7 +68,8 @@ def kind_of(line: str) -> str | None:
     if not m:
         return None
     head = m.group("line").split(":", 1)[0]
-    return {"Decision": "constraint", "Emphasis-next": "emphasis", "Substitute": "substitute", "Order": "order"}[head]
+    return {"Decision": "constraint", "Emphasis-next": "emphasis", "Substitute": "substitute", "Order": "order",
+            "Ladder": "ladder"}[head]
 
 
 def subject_of(line: str) -> str:
@@ -72,7 +78,8 @@ def subject_of(line: str) -> str:
     m = RECORDABLE_RE.match((line or "").strip())
     if not m:
         return ""
-    subject = m.group("exercise") or m.group("muscle") or m.group("sub_from") or m.group("order_session") or ""
+    subject = (m.group("exercise") or m.group("muscle") or m.group("sub_from") or m.group("order_session")
+               or m.group("ladder_exercise") or "")
     return "".join(ch for ch in subject.lower() if ch.isalnum())
 
 
@@ -83,6 +90,13 @@ def describe(line: str) -> str:
         return line
     if m.group("muscle"):
         return f"Next block's emphasis: {m.group('muscle').strip()} — {m.group('note').strip()}"
+    if m.group("ladder_exercise"):
+        load = float(m.group("ladder_load"))
+        if m.group("ladder_verdict") == "stray":
+            return (f"{m.group('ladder_exercise').strip()}: {load:g} kg is off this machine's ladder — "
+                    f"{m.group('ladder_why').strip()}. Record = another machine or a typo, ignore it. "
+                    f"Not now = it was this machine, use it.")
+        return f"{m.group('ladder_exercise').strip()}: {load:g} kg counts — {m.group('ladder_why').strip()}"
     if m.group("sub_from"):
         if not m.group("sub_to"):
             return f"{m.group('sub_from').strip()}: substitution cleared, back in the template"
@@ -203,7 +217,72 @@ def apply_line(line: str, prompt: str) -> bool:
         import shape  # local: keeps import order flat
         shape.invalidate()
         return True
+    if kind == "ladder":
+        return True   # the row is the store: progression.get_current_loads reads it
     return False
+
+
+def ladder_answers() -> dict:
+    """{folded exercise: {load: "stray" | "real"}} from every answered Ladder
+    row. Recorded keeps the line's verdict; declined means the opposite (the
+    card's "Not now" on a `stray` proposal says the load was real)."""
+    supabase = get_supabase()
+    if not supabase:
+        return {}
+    try:
+        rows = (supabase.table("decision_captures").select("line, status")
+                .eq("kind", "ladder").in_("status", ["recorded", "declined"]).execute()).data or []
+    except Exception:
+        log.warning("decision_captures could not be read for ladder answers")
+        return {}
+    out: dict = {}
+    for r in rows:
+        if r.get("status") not in ("recorded", "declined"):
+            continue
+        m = RECORDABLE_RE.match((r.get("line") or "").strip())
+        if not m or not m.group("ladder_exercise"):
+            continue
+        verdict = m.group("ladder_verdict")
+        if r.get("status") == "declined":
+            verdict = "real" if verdict == "stray" else "stray"
+        out.setdefault(subject_of(r["line"]), {})[round(float(m.group("ladder_load")), 2)] = verdict
+    return out
+
+
+def ladder_line(off: dict, exercise: str) -> str:
+    """The `Ladder:` proposal for a progression `off_ladder` record."""
+    return (f"Ladder: {exercise} | {off['load']:g}kg stray | not a whole number of {off['step']:g}kg steps "
+            f"from {off['anchor_load']:g}kg ({off['date']}); the card progresses from {off['anchor_load']:g}kg until you answer")
+
+
+def propose_ladder_questions(current_loads: list[dict], source: str = "preflight") -> int:
+    """F4/C19: every lift the programme is treating as off its ladder gets
+    one open question on Home, once. Returns rows written."""
+    supabase = get_supabase()
+    if not supabase:
+        return 0
+    written = 0
+    try:
+        rows = (supabase.table("decision_captures").select("id, line, status")
+                .eq("kind", "ladder").execute()).data or []
+        seen = {(r.get("line") or "").strip() for r in rows}
+        for row in current_loads or []:
+            off = row.get("off_ladder")
+            if not off or off.get("treated") != "stray":
+                continue
+            line = ladder_line(off, row.get("exercise") or "")
+            if line in seen:
+                continue
+            supabase.table("decision_captures").insert({
+                "line": line, "kind": "ladder", "source": source, "status": "proposed",
+                "rationale": f"{off['load']:g}kg on {off['date']}: off the {off['step']:g}kg ladder; programme default is to ignore it",
+            }).execute()
+            seen.add(line)
+            written += 1
+            log.info("LADDER QUESTION: %s", line)
+    except Exception:
+        log.warning("Ladder questions could not be written (migration 009?)", exc_info=True)
+    return written
 
 
 def answer(row: dict, verdict: str, prompt: str, answer_text: str = "") -> str:

@@ -1,0 +1,85 @@
+name: Swift
+
+# P7 (25 Sep 2026): the app is built and its tests run on every PR that
+# touches Swift, so a compile error surfaces here and not in the athlete's
+# nightly build (WorkoutViewModel.swift:69 on 25 Sep went out in #323 and
+# was found a day later). Simulator only, no signing: the runner has no
+# certificate and needs none.
+on:
+  pull_request:
+    paths:
+      - "Vaux/**"
+      - ".github/workflows/swift.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Vaux/**"
+      - ".github/workflows/swift.yml"
+
+concurrency:
+  group: swift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # macos-26 carries Xcode 26.x and the iOS 26 simulator runtimes the
+    # project's deployment target (26.2) needs.
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode and simulators on this runner
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes | grep -i ios || true
+
+      - name: Pick a simulator
+        id: sim
+        run: |
+          # The newest available iPhone on the newest iOS runtime.
+          DEVICE=$(xcrun simctl list devices available -j \
+            | python3 -c '
+          import json, sys, re
+          d = json.load(sys.stdin)["devices"]
+          best = None
+          for runtime, devs in d.items():
+              if "iOS" not in runtime: continue
+              ver = tuple(int(x) for x in re.findall(r"\d+", runtime.split("iOS")[-1])[:2] or (0,))
+              for dev in devs:
+                  if not dev.get("isAvailable") or "iPhone" not in dev["name"]: continue
+                  key = (ver, dev["name"])
+                  if best is None or key > best[0]: best = (key, dev["udid"], dev["name"], runtime)
+          if not best: sys.exit("no iPhone simulator available")
+          print(best[1]); sys.stderr.write(f"using {best[2]} on {best[3]}\n")
+          ')
+          echo "udid=$DEVICE" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project Vaux/Vaux.xcodeproj -scheme Vaux
+
+      - name: Build and test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Vaux/Vaux.xcodeproj \
+            -scheme Vaux \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -only-testing:VauxTests \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            -resultBundlePath TestResults.xcresult \
+            | tee xcodebuild.log | grep -E "error:|warning: unre|Test Suite|Test Case.*(passed|failed)|BUILD|TEST" || true
+          # xcodebuild's own exit code decides, not grep's.
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Upload the result bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcresult
+          path: |
+            TestResults.xcresult
+            xcodebuild.log
+          if-no-files-found: ignore
