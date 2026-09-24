@@ -22,6 +22,10 @@ turned out wrong stays here with what was wrong about it.
 | 24 Sep | Machine Chest Press stack moves in 8kg; 151.5 came from the step cap + half-kilo rounding | measured (export, replay) | 24 Sep | held; fixed in #322 |
 | 24 Sep | Triceps and hamstrings are under-served | **wrong** — counted single-muscle credit | 24 Sep | withdrawn the same hour; fractional credit puts both inside their bands |
 | 24 Sep | Deload by sets, back-offs RPE 8, 5-week block are supported by the literature cited | inferred (search summaries; full papers not fetchable from this environment) | — | to verify: read Bell et al. 2023 and Robinson et al. 2024 in full |
-| 24 Sep | The scorecard (#324) will show within one block whether the coach's judgement beats the programme's number | assumed | — | due ~29 Oct |
-| 24 Sep | The Swift changes of 23–24 Sep compile | **assumed** — no compiler here | — | the nightly build decides |
+| 24 Sep | The scorecard (#324) will show within one block whether the coach's judgement beats the programme's number | assumed — grace runs to 8 Oct; by then: does the OUTCOMES block appear in the coach's context and does the plan contract ask on a two-miss lift? | — | due 8 Oct (mechanism), ~29 Oct (verdict) |
+| 24 Sep | The Swift changes of 23–24 Sep compile | **assumed** — no compiler here | — | the nightly build decides; if it fails, the athlete sends the error and this row records it |
 | 24 Sep | "813 tests pass" (#323, #324) | measured — under `discover -s tests` only | 24 Sep | **wrong for CI**: CI ran `python -m unittest tests.test_regressions`, where `import blockfix` fails (tests/ not on sys.path). Two red runs on main; the coach was unaffected. Fixed in #325; CI now runs the whole suite both ways |
+| 24 Sep | CI is green on main after #325 | measured (run 35949577498: success) | 24 Sep | held |
+| 24 Sep | `block_review.PEAK_WEEK = 3` would have compared this block's peak with the old block's deload at the next review | inferred (read `block_review._render_strength` window logic) | — | to verify at the ~29 Oct review: the strength rows name week-4 sets for this block, week-3 for the last |
+
+Rules for this ledger: `CLAUDE.md`. Teeth: `tests/test_claims_ledger.py` fails the suite when an *assumed* row is neither verified nor marked wrong after 14 days.
