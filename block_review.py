@@ -42,7 +42,19 @@ E1RM_MAX_REPS = 12
 # week read as a drop here while the app read it as a rise, because the
 # review threw the set away and fell back to a lighter week-1 set.
 E1RM_LOOSE_MAX_REPS = 20
-PEAK_WEEK = 3
+
+
+def _peak_week_of(rows: list, week_of) -> int:
+    """The block's peak week from its own stamped rows: the week before its
+    last (the deload) once the block has run its deload, else its last week.
+    Block lengths differ (4 weeks to 19 Sep 2026, 5 from 20 Sep), so a
+    constant read the old block's deload as its peak."""
+    weeks = {w for w in (week_of(r) for r in rows) if isinstance(w, int) and w > 0}
+    if not weeks:
+        from data import peak_week  # local: keeps import order flat
+        return peak_week()
+    m = max(weeks)
+    return m - 1 if m >= 4 else m
 # Bumped whenever the fact sheet's rules change; an unanswered review built
 # on an older version is removed at the next start so Home prepares it again
 # with numbers that match the app (data_fixes keys a fix on this number).
@@ -263,8 +275,8 @@ def strength_facts(rows: list[dict], weeks: dict, window: dict, held: set | None
         prev_rows = [r for r in rs if in_range(r, window.get("prev_since"), window.get("prev_until"))]
         if not this_rows:
             continue
-        this_peak = [r for r in this_rows if week_of(r) == PEAK_WEEK]
-        prev_peak = [r for r in prev_rows if week_of(r) == PEAK_WEEK]
+        this_peak = [r for r in this_rows if week_of(r) == _peak_week_of(this_rows, week_of)]
+        prev_peak = [r for r in prev_rows if week_of(r) == _peak_week_of(prev_rows, week_of)]
         peak_best = best(this_peak)
         this_best = peak_best or best(this_rows)
         prev_best = best(prev_peak) or best(prev_rows)
