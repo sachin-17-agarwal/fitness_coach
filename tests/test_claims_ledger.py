@@ -45,7 +45,10 @@ class LedgerTests(unittest.TestCase):
             if r["verified"] not in ("", "—", "-"):
                 continue
             made = _parse(r["date"], today.year) or today
-            if made > today:  # a January row read in December
+            # A January row read in December belongs to the year before; a
+            # row dated tomorrow (the ledger is kept in Sydney, CI runs in UTC)
+            # does not.
+            if (made - today).days > 180:
                 made = made.replace(year=today.year - 1)
             if (today - made).days > GRACE_DAYS:
                 overdue.append(f"{r['date']}: {r['claim'][:80]}")

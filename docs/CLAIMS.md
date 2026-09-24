@@ -32,5 +32,6 @@ turned out wrong stays here with what was wrong about it.
 | 25 Sep | 12 lifts logged under case/spacing variants; a rename of the minority spelling merges each history | measured (export) | — | verify after the fix runs at boot: `/status` lists `2026-09-25-exercise-case-variants`, strength page shows one Leg Press line |
 | 25 Sep | The missing warm-up fact line came from the last warm-up (phase already advanced) and unplanned ramps going to the coach | inferred (read `logSet`) | — | verify on the phone: "Logged warm-up 3 of 3" appears at once |
 | 25 Sep | The 25 Sep batch's Swift compiles (alias sheet, widget line, fact line, session-end reload) | **assumed** — no compiler here | — | the nightly build decides |
+| 25 Sep | Commit ce6d95b: "both test invocations pass" | **wrong** — the shell chain gated on `tail`, not on unittest; `discover` was red (the ledger test's own year-wrap bug on a row dated tomorrow) | 25 Sep | fixed in the next commit; the gate now checks unittest's exit status |
 
 Rules for this ledger: `CLAUDE.md`. Teeth: `tests/test_claims_ledger.py` fails the suite when an *assumed* row is neither verified nor marked wrong after 14 days.
