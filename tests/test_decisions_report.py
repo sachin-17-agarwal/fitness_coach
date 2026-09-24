@@ -2,6 +2,7 @@
 prescription_decisions table."""
 
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from unittest.mock import patch
 
 from usage import format_decisions, is_coach_decision, summarise_decisions

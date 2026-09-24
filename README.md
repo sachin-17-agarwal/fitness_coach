@@ -69,6 +69,7 @@ Expected variables:
 - `SUPABASE_URL`
 - `SUPABASE_KEY`
 - `APP_API_TOKEN` — shared secret the iOS app sends as `Authorization: Bearer <token>`
+- `BLOCK_WEEKS` (optional, default 5) — the block's length when the memory row `block_weeks` is not set: 5 on a bulk (four loading weeks and a deload), 4 on a cut. The app's Settings → Training block writes the memory row, which wins.
 - `GITHUB_FLAGS_TOKEN` (optional) — a fine-grained GitHub token with issues write on this repository; with it, every coach flag (`flags.py`) is also filed as an issue labelled `coach-flag`. `GITHUB_FLAGS_REPO` defaults to this repository.
 - `HEALTH_WEBHOOK_TOKEN` — shared secret the Apple Health webhook sends as `X-Health-Token`
 - `APP_TIMEZONE` (optional, defaults to `Australia/Sydney`)

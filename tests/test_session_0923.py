@@ -2,6 +2,7 @@
 
 import re
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 
 import preflight
 import progression

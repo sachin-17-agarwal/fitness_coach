@@ -11,6 +11,7 @@ from data import (
     CYCLE, SESSION_OVERRIDE_KEY, NON_SLOT_TYPES, YOGA_SESSION_TYPE, get_supabase,
     next_session_type_for, now_local, session_type_for, today_local_str,
 )
+import data as _block  # block_weeks read through the module so a changed length is seen
 
 log = logging.getLogger(__name__)
 
@@ -37,8 +38,8 @@ def load_memory() -> dict:
         # coach prompt says "Week N of 4" — without this it was coaching
         # "Week 6 of 4".
         week = memory.get("mesocycle_week")
-        if isinstance(week, int) and week > 4:
-            memory["mesocycle_week"] = ((week - 1) % 4) + 1
+        if isinstance(week, int) and week > _block.block_weeks():
+            memory["mesocycle_week"] = ((week - 1) % _block.block_weeks()) + 1
 
         # Same for the day. The rotation used to be five long with Yoga as
         # position 5; a value left over from then satisfies the end-of-cycle
@@ -271,7 +272,7 @@ def advance_mesocycle(memory: dict):
     fresh_memory["mesocycle_day"] = next_day
 
     if current_day == len(CYCLE):
-        fresh_memory["mesocycle_week"] = (int(fresh_memory.get("mesocycle_week", 1)) % 4) + 1
+        fresh_memory["mesocycle_week"] = (int(fresh_memory.get("mesocycle_week", 1)) % _block.block_weeks()) + 1
 
     fresh_memory["last_advanced_date"] = today
     save_memory(fresh_memory)

@@ -1,6 +1,7 @@
 """Roadmap 2.12: the hygiene plan is pure, so it is tested from rows."""
 
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 
 from cleanup import infer_session_type, plan_session_hygiene
 

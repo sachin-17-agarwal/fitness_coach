@@ -35,6 +35,63 @@ def get_supabase():
 # straight back into Pull — and is NOT interrupted by yoga.
 CYCLE = ["Pull", "Push", "Legs", "Cardio+Abs"]
 
+# The block's length: loading weeks plus one deload. 4 on a cut (3+1), 5 on
+# a bulk (4+1) — changed a few times a year from the app (Settings → Training
+# block writes the memory row `block_weeks`), never week to week. Every week
+# rule reads these functions, never a literal: the deload is the last week,
+# the peak — the reference the deload holds and the next block opens above —
+# the week before it. Cached for five minutes; the app's save invalidates by
+# time.
+DEFAULT_BLOCK_WEEKS = 5
+BLOCK_WEEKS_KEY = "block_weeks"
+_block_cache: dict = {"at": 0.0, "weeks": None}
+
+
+def block_weeks() -> int:
+    import time
+    now = time.monotonic()
+    if _block_cache["weeks"] and now - _block_cache["at"] < 300:
+        return _block_cache["weeks"]
+    weeks = None
+    try:
+        supabase = get_supabase()
+        if supabase:
+            rows = supabase.table("memory").select("value").eq("key", BLOCK_WEEKS_KEY).execute().data or []
+            if rows:
+                weeks = int(str(rows[0].get("value")).strip())
+    except Exception:
+        weeks = None
+    if weeks not in (4, 5, 6):
+        try:
+            weeks = int(get_settings().block_weeks or DEFAULT_BLOCK_WEEKS)
+        except Exception:
+            weeks = DEFAULT_BLOCK_WEEKS
+        if weeks not in (4, 5, 6):
+            weeks = DEFAULT_BLOCK_WEEKS
+    _block_cache["at"], _block_cache["weeks"] = now, weeks
+    return weeks
+
+
+def invalidate_block_weeks() -> None:
+    _block_cache["at"], _block_cache["weeks"] = 0.0, None
+
+
+def deload_week() -> int:
+    return block_weeks()
+
+
+def peak_week() -> int:
+    """The last loading week: the reference the deload holds and the next
+    block opens above."""
+    return block_weeks() - 1
+
+
+def peak_weeks() -> tuple:
+    """The RPE-9 weeks: the last loading week, and the one before it when the
+    block has four loading weeks (peak by reps, then by load)."""
+    bw = block_weeks()
+    return (bw - 1,) if bw <= 4 else (bw - 2, bw - 1)
+
 # There is no rest weekday. The rotation moves only when a session is
 # completed, so a day with no training simply holds it — whichever day that
 # is. "Rest" is a type the athlete can set as a one-day override to say so on

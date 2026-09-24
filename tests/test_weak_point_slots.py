@@ -5,6 +5,7 @@ in the records go in by code, once."""
 
 import json
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from unittest.mock import patch
 
 import data_fixes
@@ -58,13 +59,13 @@ class SlotTests(unittest.TestCase):
 
 
 class StraightLiftTests(unittest.TestCase):
-    def test_a_weak_point_lift_renders_three_straight_sets_on_a_deload(self):
+    def test_a_weak_point_lift_renders_half_its_straight_sets_on_a_deload(self):
         plan = (("Overhead Cable Extension", 3, ISOLATION),)
         history = {"Overhead Cable Extension": PriorSet(25.0, 12, 9.0, week=3)}
         [p] = prescribe_session(plan, 4, history, straight_lifts={"overheadcableextension": WEAK_POINT_RANGE})
         self.assertTrue(p.straight)
         block = render_block(p)
-        self.assertIn("Working Set: 25kg x10 RPE7, 25kg x10 RPE7, 25kg x10 RPE7", block)
+        self.assertIn("Working Set: 25kg x10 RPE7, 25kg x10 RPE7 | Rest", block)  # 3 sets halve to 2 on the deload
         self.assertNotIn("Back-off", block)
 
     def test_a_weak_point_lift_progresses_by_reps_inside_its_own_band(self):

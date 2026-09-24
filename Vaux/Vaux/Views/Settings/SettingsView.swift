@@ -14,6 +14,8 @@ import UIKit
 struct SettingsView: View {
     @State private var mesocycleWeek = 1
     @State private var mesocycleDay = 1
+    /// 5 on a bulk (four loading weeks and a deload), 4 on a cut.
+    @State private var blockWeeks = Config.mesocycleWeeks
     /// Today's manual swap, if one is set — so the session line below the
     /// steppers agrees with the rest of the app.
     @State private var todayOverride: String?
@@ -133,12 +135,17 @@ struct SettingsView: View {
 
     private var blockSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Training block", right: "\(Config.mesocycleWeeks)-week mesocycle")
+            sectionHeader("Training block", right: "\(blockWeeks)-week mesocycle")
 
             ledgerRow(first: true, height: 58) {
+                rowLabel("Block length")
+                Spacer()
+                stepper(value: $blockWeeks, range: 4...5, label: "weeks")
+            }
+            ledgerRow(height: 58) {
                 rowLabel("Week")
                 Spacer()
-                stepper(value: $mesocycleWeek, range: 1...Config.mesocycleWeeks, label: "week")
+                stepper(value: $mesocycleWeek, range: 1...blockWeeks, label: "week")
             }
             ledgerRow(height: 58) {
                 rowLabel("Day")
@@ -173,15 +180,7 @@ struct SettingsView: View {
         return type
     }
 
-    private static func phaseLabel(week: Int) -> String? {
-        switch week {
-        case 1: return "Baseline"
-        case 2: return "Volume"
-        case 3: return "Peak"
-        case 4: return "Deload"
-        default: return nil
-        }
-    }
+    private static func phaseLabel(week: Int) -> String? { Config.phaseName(week: week) }
 
     // MARK: - Exercise library
 
@@ -607,7 +606,10 @@ struct SettingsView: View {
 
     private func saveMesocycle() async {
         do {
-            let state = MesocycleState(day: mesocycleDay, week: mesocycleWeek)
+            if blockWeeks != Config.mesocycleWeeks {
+                try await mesocycleService.saveBlockWeeks(blockWeeks)
+            }
+            let state = MesocycleState(day: mesocycleDay, week: min(mesocycleWeek, blockWeeks))
             try await mesocycleService.saveState(state)
             saveStatus = StatusMessage(text: "Saved", isError: false)
             Haptic.success()
@@ -619,6 +621,7 @@ struct SettingsView: View {
 
     private func loadMesocycle() async {
         if let state = try? await mesocycleService.loadState() {
+            blockWeeks = Config.mesocycleWeeks
             mesocycleWeek = state.week
             mesocycleDay = state.day
             todayOverride = state.todayOverride

@@ -5,6 +5,7 @@ fix. They are grouped by where the defect lived, not by severity.
 """
 
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 
 import prescribe
 import programme
@@ -271,7 +272,7 @@ class CoachFailureBenchmarkTests(unittest.TestCase):
                                 {"Leg Press": PriorSet(222.5, 8, 8.0)}, recovery=recovery)
         self.assertEqual(p.working[0].rpe, 7.0)
         self.assertEqual(p.working[0].reps_low, 8, "one point of RPE is one rep: 9 becomes 8")
-        self.assertTrue(all(b.rpe == 6.0 for b in p.backoff))
+        self.assertTrue(all(b.rpe == 7.0 for b in p.backoff))  # 8 minus one
         self.assertTrue(p.recovery_reasons)
 
     def test_the_same_inputs_always_give_the_same_session(self):

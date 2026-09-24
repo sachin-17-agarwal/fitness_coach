@@ -2,6 +2,7 @@
 issue when a token is set."""
 import json
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from unittest.mock import MagicMock, patch
 
 import flags

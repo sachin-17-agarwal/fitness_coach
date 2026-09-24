@@ -4,6 +4,7 @@ wherever code reads the prompt, and is a fraction of its size."""
 import os
 import re
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 
 from coach_parsing import _WEAK_POINT_SLOT_RE, parse_session_template
 from weakpoints import parse_volume_bands
@@ -41,7 +42,7 @@ class PromptDietTests(unittest.TestCase):
 
     def test_the_rules_the_22_and_23_sep_sessions_broke_are_said(self):
         for needle in ("Back-off: 85kg x10 RPE7, 85kg x8 RPE7", "Never two `Back-off:` lines",
-                       "only a week 3 that reached the top of the range opens one increment up",
+                       "only a peak week that reached the top of the range opens one step of the lift's own stack up",
                        "15-25% under the top set he actually lifted", "beats the top of its range at or under the target RPE",
                        "transition parser", "Another lift's sets are never evidence for this one",
                        "the calf raise keeps its `Warm-up:` line", "a recovery-cut rep band is today's reps in reserve".capitalize()[0:0] + "A recovery-cut rep band is today's reps in reserve",

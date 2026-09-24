@@ -60,9 +60,31 @@ struct BlockPosition: Hashable, Comparable, Sendable {
 }
 
 extension Config {
-    static let weeksPerBlock = 4
-    static let peakWeek = 3
-    static let deloadWeek = 4
+    /// Derived from `mesocycleWeeks` (the setting): the deload is the last
+    /// week, the peak the one before it.
+    static var weeksPerBlock: Int { mesocycleWeeks }
+    static var peakWeek: Int { mesocycleWeeks - 1 }
+    static var deloadWeek: Int { mesocycleWeeks }
+
+    /// The week's name for the block length in force. Nil outside the block.
+    static func phaseName(week: Int) -> String? {
+        switch week {
+        case 1: return "Baseline"
+        case 2: return "Volume"
+        case deloadWeek: return "Deload"
+        case peakWeek: return weeksPerBlock >= 5 ? "Peak · load" : "Peak"
+        case peakWeek - 1 where weeksPerBlock >= 5: return "Peak · reps"
+        default: return nil
+        }
+    }
+
+    /// The week's RPE targets, as the card's header shows them.
+    static func rpeTarget(week: Int) -> String? {
+        guard phaseName(week: week) != nil else { return nil }
+        if week == deloadWeek { return "RPE 7 · top set only" }
+        if week >= peakWeek - (weeksPerBlock >= 5 ? 1 : 0) { return "RPE 9 · back-off 8" }
+        return "RPE 8 · back-off 8"
+    }
 }
 
 struct BlockCalendar: Sendable {

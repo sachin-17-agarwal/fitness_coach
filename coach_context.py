@@ -12,7 +12,7 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import timedelta
 
 from data import (
-    latest_bodyweight_kg,
+    block_weeks, deload_week, latest_bodyweight_kg, peak_week,
     SESSION_OVERRIDE_KEY, get_athlete_context, get_supabase,
     next_session_type_for, now_local, session_type_for,
 )
@@ -621,8 +621,8 @@ APPLE WATCH WORKOUTS (last 30 days, before today):
 CURRENT WORKING LOADS — the load each lift is ON, to progress FROM (today excluded):
 {current_loads}
 
-PEAK WEEK REFERENCE LOADS — top set of the most recent WEEK 3 session per lift.
-This is what a week 4 deload holds and what week 1 of the next cycle opens above.
+PEAK WEEK REFERENCE LOADS — top set of the most recent WEEK {peak_week()} session per lift.
+This is what the week {deload_week()} deload holds and what week 1 of the next cycle opens above.
 Read it here; never from a load written into the prompt or one you remember:
 {peak_week_loads}
 
@@ -642,7 +642,7 @@ PROGRESSION WATCH — top-set load unchanged across 3+ sessions (today excluded)
     # before progress, and the price of a set reply.
     live_day = f"""
 TODAY — {today}
-Mesocycle: Week {mesocycle_week} of 4 | Rotation day {mesocycle_day}/4 (Pull→Push→Legs→Cardio+Abs, rolling; a day with no session holds the position; Rest is not a slot and does not advance it)
+Mesocycle: Week {mesocycle_week} of {block_weeks()} | Rotation day {mesocycle_day}/4 (Pull→Push→Legs→Cardio+Abs, rolling; a day with no session holds the position; Rest is not a slot and does not advance it)
 TODAY'S SESSION TYPE: {today_session}
 NEXT SESSION: {next_session}
 

@@ -4,6 +4,7 @@ on it, and never runs the coach twice."""
 
 import json
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from datetime import datetime, timedelta
 from unittest.mock import patch
 

@@ -228,7 +228,7 @@ def _fill_sets_from_block(e: ExercisePlan, block: str) -> bool:
 
 
 def fill_from_programme(plan: SessionPlan, problems: list[str], session_type: str, prompt: str,
-                        proposal: dict | None) -> tuple[SessionPlan, list[str], list[str]]:
+                        proposal: dict | None, week: int | None = None) -> tuple[SessionPlan, list[str], list[str]]:
     """Replace every exercise a problem names with the programme's own, and
     add any template exercise the plan left out.
 
@@ -252,7 +252,7 @@ def fill_from_programme(plan: SessionPlan, problems: list[str], session_type: st
             key = _normalise_exercise(name.strip())
             bad_keys.add(key)
             reasons.setdefault(key, rest.strip())
-    pairs, _total = parse_session_template(prompt, session_type)
+    pairs, _total = parse_session_template(prompt, session_type, week)
     template_keys = [_normalise_exercise(n) for n, _ in pairs if not _WEAK_POINT_SLOT_RE.match(n)]
 
     kept = []
@@ -281,7 +281,7 @@ def fill_from_programme(plan: SessionPlan, problems: list[str], session_type: st
         if _fill_sets_from_block(added, block):
             kept.append(added); present.add(key); filled.append(name)
     plan.exercises = kept
-    return plan, validate(plan, session_type, prompt, proposal), filled
+    return plan, validate(plan, session_type, prompt, proposal, week=week), filled
 
 
 # ── Checking the plan against the athlete's rules ────────────────────────────
@@ -367,7 +367,8 @@ def _backoff_problems(e: ExercisePlan) -> list[str]:
 
 def validate(plan: SessionPlan, session_type: str, prompt: str,
              proposal: dict | None = None, weak_points: list | None = None,
-             ceilings: dict | None = None, steps: dict | None = None) -> list[str]:
+             ceilings: dict | None = None, steps: dict | None = None,
+             week: int | None = None) -> list[str]:
     """Every way the plan breaks the programme, as sentences the model can act on.
 
     Mechanical rules only — set counts from the template, the shape of the
@@ -377,7 +378,7 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
     the coach's job, and the reason field is where it is done.
     """
     problems: list[str] = []
-    pairs, _total = parse_session_template(prompt, session_type)
+    pairs, _total = parse_session_template(prompt, session_type, week)
     # The Cardio+Abs template carries two placeholder slots — "Weak-Point
     # Exercise 1/2", 3 sets each — filled at prescription time with a real
     # movement for the two lowest muscles. A slot is satisfied by any exercise
@@ -753,7 +754,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
             notes.append(f"attempt {attempt}: plan did not parse ({exc})")
             plan = None
             break
-        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps, week)
         if not problems:
             notes.append(f"attempt {attempt}: plan accepted")
             return plan, notes
@@ -780,7 +781,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
     # Soft problems are the coach's to keep: they never send a lift to the fill.
     if plan is None:
         plan = SessionPlan(opening="", exercises=[])
-        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps, week)
     soft = [x for x in problems if is_soft(x)]
     if soft:
         notes.append("coach's call stands: " + " | ".join(x[:-len(SOFT)] for x in soft))

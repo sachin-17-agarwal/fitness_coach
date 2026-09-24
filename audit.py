@@ -35,7 +35,8 @@ from coach_parsing import (get_session_type_for_day, parse_all_prescriptions,
                            parse_session_template, _normalise_exercise,
                            _set_shape)
 from data import get_supabase, is_session_finished, now_local
-from prescribe import (TOP_SET_RANGE, WAVE, classify, infer_session_weeks,
+from data import block_weeks, deload_week  # the block's shape
+from prescribe import (TOP_SET_RANGE, WAVE, classify, infer_session_weeks, targets_for,
                        is_bodyweight, recovery_adjustment)
 from volume import resolve_contributions
 
@@ -138,7 +139,7 @@ def fetch_session_weeks(days: int) -> tuple[dict, dict]:
     weeks, counts = {}, {"stamped": 0, "reconstructed": 0, "by_date": {}}
     for row, stamp, guess in zip(sessions, stamped, inferred):
         week = stamp or guess
-        if not week or week not in WAVE:
+        if not week or not 1 <= int(week) <= block_weeks():
             continue
         date = row["date"]
         if date in weeks:
@@ -279,7 +280,7 @@ def _violations(block: dict, week: int, session_type: str, prompt: str,
     known = bool(resolve_contributions(name))
     kind = classify(name)
     low, high = TOP_SET_RANGE[kind]
-    targets = WAVE.get(week)
+    targets = targets_for(week) if week and 1 <= int(week) <= block_weeks() else None
 
     # The day's readings shift the targets before anything is compared against
     # them. A recovery session is not audited at all: :316 says switch session,
@@ -319,11 +320,11 @@ def _violations(block: dict, week: int, session_type: str, prompt: str,
     # Only for a movement the catalog can classify: an unknown name falls to
     # the isolation range, and a compound under a spelling the map has not
     # met would be reported as under-repped at 7.
-    if known and week_known and week != 4 and reps is not None and reps < low:
+    if known and week_known and week != deload_week() and reps is not None and reps < low:
         out.append(("reps_below_range",
                     f"top set at {reps} reps against a {low}-{high} range"))
 
-    pairs, _total = parse_session_template(prompt, session_type)
+    pairs, _total = parse_session_template(prompt, session_type, week)
     expected = {_normalise_exercise(n): c for n, c in pairs}
     target = expected.get(_normalise_exercise(name)) if full_reply else None
     if target:
@@ -393,7 +394,7 @@ def audit(days: int, prompt: str) -> dict:
             undated += 1
             continue
         session_type, week = known
-        if not session_type or week not in WAVE:
+        if not session_type or not week or not 1 <= int(week) <= block_weeks():
             undated += 1
             continue
         dated += 1
@@ -416,7 +417,7 @@ def audit(days: int, prompt: str) -> dict:
         # The session-opening reply lays the whole day out; anything shorter
         # is a mid-session re-statement of one lift, and its set count means
         # nothing on its own.
-        pairs, _total = parse_session_template(prompt, session_type)
+        pairs, _total = parse_session_template(prompt, session_type, week)
         full_reply = len(blocks) >= max(2, len(pairs) // 2) if pairs else False
         for block in blocks:
             key = (date, _normalise_exercise(block.get("exercise") or ""))

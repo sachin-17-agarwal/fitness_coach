@@ -212,7 +212,7 @@ final class TrainingBlockViewModel {
             parts.append((record ? ", the heaviest week on record. " : ". ", false))
             let w4 = vm.currentWave.first { $0.position.isDeload }?.tonnage ?? 0
             if vm.current.isDeload {
-                parts.append((w4 > 0 && w4 < peak ? "Deload is on plan: same loads, two reps off." : "Deload week is under way.", false))
+                parts.append((w4 > 0 && w4 < peak ? "Deload is on plan: same loads, back-offs dropped." : "Deload week is under way.", false))
             }
         } else {
             let n = vm.blockSessions

@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from datetime import datetime
 from unittest.mock import patch
 
@@ -1941,7 +1942,7 @@ class SetCountLookupTests(unittest.TestCase):
 
     def test_it_reaches_the_prompt_for_the_session_being_trained(self):
         src = open("coach.py", encoding="utf-8").read()
-        self.assertIn("session_template = format_session_template(system_prompt, today_type)", src)
+        self.assertIn("session_template = format_session_template(system_prompt, today_type, _safe_int(memory.get(\"mesocycle_week\", 1)))", src)
         # It rides in the DAY part of the live half, inside the second breakpoint.
         self.assertIn("live_day += session_template", src)
 
@@ -4360,7 +4361,7 @@ class ProtocolAuditTests(unittest.TestCase):
         # that fires set_count for a reason that has nothing to do with
         # recovery — which is what the next test is for.
         soft = ("*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 2min\n"
-                "Back-off: 176kg x9-11 @6, 176kg x7-9 @6\n")
+                "Back-off: 176kg x9-11 @7, 176kg x7-9 @7\n")   # week 1 back-offs are RPE 8; a point under
         hrv_down = {"hrv": 51.6, "hrv_avg": 60, "sleep_hours": 7.5,
                     "resting_hr": 55, "resting_hr_baseline": 55}
         self.assertEqual(self._check(soft, 1, recovery=hrv_down), set())
@@ -4375,7 +4376,7 @@ class ProtocolAuditTests(unittest.TestCase):
                     "resting_hr": 55, "resting_hr_baseline": 55}
         found = self._check(
             "*Seated Leg Curl*\nWorking Set: 100kg x8 @7 | Rest: 90s\n"
-            "Back-off: 80kg x12 @6\n", 1, recovery=hrv_down)
+            "Back-off: 80kg x12 @7\n", 1, recovery=hrv_down)
         self.assertEqual(found, {"set_count"})
 
     def test_every_table_the_audit_reads_exists(self):
@@ -4399,14 +4400,14 @@ class ProtocolAuditTests(unittest.TestCase):
     def test_a_correct_block_is_clean(self):
         self.assertEqual(self._check(
             "*Leg Press*\nWorking Set: 222.5kg x6 RPE8 | Rest: 2min\n"
-            "Back-off: 178kg x10-12 RPE7, 178kg x8-10 RPE7\n", 1), set())
+            "Back-off: 178kg x10-12 RPE8, 178kg x8-10 RPE8\n", 1), set())   # back-offs RPE 8 (24 Sep 2026)
 
     def test_a_deload_below_range_is_not_a_violation(self):
         """Week 4 is SUPPOSED to stop short. Counting it would report the
         protocol working as a fault and drown the real findings."""
+        # The deload is the top set alone (24 Sep 2026): no back-off line.
         self.assertEqual(self._check(
-            "*Leg Press*\nWorking Set: 220kg x4 RPE7 | Rest: 2min\n"
-            "Back-off: 176kg x8 RPE6, 176kg x6 RPE6\n", 4), set())
+            "*Leg Press*\nWorking Set: 220kg x4 RPE7 | Rest: 2min\n", 4), set())
 
     def test_an_rpe_ABOVE_the_target_is_not_a_violation(self):
         """The audit counts the coach prescribing SOFT, which is the documented
@@ -4577,7 +4578,7 @@ class ComputedBlocksReplaceTheCoachsTests(unittest.TestCase):
         card = parse_all_prescriptions(out)[0]
         self.assertEqual(card["working"][0],
                          {"weight": 222.5, "reps": 6, "reps_high": 10, "rpe": 8.0})
-        self.assertEqual([b["rpe"] for b in card["backoff"]], [7.0, 7.0])
+        self.assertEqual([b["rpe"] for b in card["backoff"]], [8.0, 8.0])  # back-offs RPE 8 from 24 Sep 2026
         self.assertEqual(len(card["warmup"]), 3)
 
     def test_the_coaching_around_the_numbers_is_kept(self):
@@ -4709,7 +4710,7 @@ class RecoveryIsComputedNotProsedTests(unittest.TestCase):
 
     def test_the_backoffs_move_with_the_top_set(self):
         p = self._leg_press({**self.NORMAL, "hrv": 51.6})
-        self.assertTrue(all(b.rpe == 6.0 for b in p.backoff))
+        self.assertTrue(all(b.rpe == 7.0 for b in p.backoff))  # 8 minus one
         self.assertEqual([b.reps_low for b in p.backoff], [9, 7])
 
     def test_short_sleep_cuts_the_load_and_leaves_the_effort(self):
@@ -4774,8 +4775,10 @@ class RecoveryIsComputedNotProsedTests(unittest.TestCase):
         # own test — asserting it here passed only in my head.
         self.assertIn("HRV", rendered)
         self.assertIn("sleep", rendered)
-        self.assertLess(p.working[0].weight_kg, 220.0,
-                        "and the numbers moved, not just the prose")
+        # On the deload the reading is said but not applied (the deload is
+        # already the cut, 24 Sep 2026): the load holds.
+        self.assertEqual(p.working[0].weight_kg, 220.0)
+        self.assertIn("not applied", rendered)
 
     def test_the_resting_hr_threshold_uses_the_baseline_as_the_denominator(self):
         """62 over a 55 baseline is 12.7% up, not 11.3%. Swapping the arguments
@@ -4787,10 +4790,13 @@ class RecoveryIsComputedNotProsedTests(unittest.TestCase):
         self.assertFalse(any("resting HR" in r for r in quiet.reasons),
                          "9% up is under the threshold")
 
-    def test_a_deload_week_is_still_adjusted(self):
-        """Week 4 is not exempt: the recovery rules apply every week."""
-        top = self._leg_press({**self.NORMAL, "hrv": 51.6}, week=4).working[0]
-        self.assertEqual(top.rpe, 6.0, "deload 7 minus one")
+    def test_a_readiness_cut_is_not_stacked_on_the_deload(self):
+        """The deload is already the cut. On 18-19 Sep 2026 a readiness cut
+        on top of it made RPE 6 at 5% under the peak week; the reading is
+        said, not applied."""
+        p = self._leg_press({**self.NORMAL, "hrv": 51.6}, week=4)
+        self.assertEqual(p.working[0].rpe, 7.0, "deload target, no cut stacked")
+        self.assertTrue(any("not applied" in r for r in p.recovery_reasons), p.recovery_reasons)
 
     def test_the_load_lever_is_used_when_reps_would_run_out(self):
         """:323 — "If subtracting the reps leaves fewer than 5, hold the reps

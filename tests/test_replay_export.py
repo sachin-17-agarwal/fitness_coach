@@ -8,6 +8,7 @@ recovery.csv is health data and is not committed; when it is not beside the
 other files every session replays as a day with no reading, which changes a
 few loads, so the bounds hold with or without it."""
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 
 import replay_export as R
 
