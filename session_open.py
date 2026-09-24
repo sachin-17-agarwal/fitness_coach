@@ -64,7 +64,7 @@ def open_session(session_type: str, memory: dict, opening_message: str,
         e.reason = PROGRAMME_REASON
     text = render_plan(plan, computed)
     week = _safe_int(memory.get("mesocycle_week", 1))
-    save_decisions(plan, session_type, week, session_id=session_id)
+    save_decisions(plan, session_type, week, session_id=session_id, proposal=computed)
     save_conversation_message("user", opening_message)
     today = now_local().strftime("%Y-%m-%d")
     _write_status({"date": today, "session_type": session_type, "status": "reviewing",

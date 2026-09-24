@@ -414,6 +414,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                 weak_points=programme_out.get("weak_points"),
                 ceilings=programme_out.get("ceilings"),
                 steps=programme_out.get("steps"),
+                verdicts=programme_out.get("verdicts"),
             )
             for note in plan_notes:
                 log.info("PLAN CONTRACT (%s): %s", today_type, note)
@@ -424,7 +425,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
                     session_id = (get_workout_state() or {}).get("current_session_id") or None
                 except Exception:
                     session_id = None
-                save_decisions(plan, today_type, _safe_int(memory.get("mesocycle_week", 1)),
+                save_decisions(plan, today_type, _safe_int(memory.get("mesocycle_week", 1)), proposal=programme_out.get("computed"),
                                session_id=session_id)
         except Exception:
             log.exception("Plan contract failed; falling back to the prose reply")
