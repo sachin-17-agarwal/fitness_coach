@@ -1,6 +1,7 @@
 """Logged sets carry their phase (migration 014). The card and the set reply
 count by it; rows without one fall back to position."""
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from unittest.mock import MagicMock, patch
 
 from plan import last_logged_slot, latest_logged_sets, next_set_index, owed_set_decision, phase_counts

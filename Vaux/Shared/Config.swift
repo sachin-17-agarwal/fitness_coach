@@ -126,5 +126,15 @@ struct Config {
     /// Weeks in one mesocycle: baseline → volume → peak → deload, then the
     /// next cycle restarts at week 1. Must match the server's wrap in
     /// memory.py's advance_mesocycle.
-    static let mesocycleWeeks = 4
+    /// The block's length: 5 on a bulk (four loading weeks and a deload), 4 on a
+    /// cut. Set from Settings → Training block, stored in memory.block_weeks and
+    /// read back by MesocycleService.loadState; the backend reads the same row.
+    static var mesocycleWeeks: Int {
+        get {
+            let n = UserDefaults.standard.integer(forKey: blockWeeksKey)
+            return (4...6).contains(n) ? n : 5
+        }
+        set { UserDefaults.standard.set(min(6, max(4, newValue)), forKey: blockWeeksKey) }
+    }
+    static let blockWeeksKey = "block_weeks"
 }

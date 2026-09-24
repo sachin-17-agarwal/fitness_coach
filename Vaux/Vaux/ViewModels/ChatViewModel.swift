@@ -44,13 +44,7 @@ final class ChatViewModel {
     }
 
     private static func phaseLabel(week: Int) -> String? {
-        switch week {
-        case 1: return "Baseline"
-        case 2: return "Volume"
-        case 3: return "Peak"
-        case 4: return "Deload"
-        default: return nil
-        }
+        Config.phaseName(week: week)
     }
 
     /// Loads the header context. Failures leave the line at the day alone —

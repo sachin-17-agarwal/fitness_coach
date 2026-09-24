@@ -3,6 +3,7 @@ gated by a second signal, the athlete's own readiness."""
 
 import math
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from datetime import date, timedelta
 
 from recovery import (RecoveryRead, Trend, build_read, decide, format_read,

@@ -307,8 +307,12 @@ def replay_session(export: dict, session: dict, prompt: str) -> dict:
     _FrozenDateTime.frozen = start_dt
     out: dict = {}
     error = None
+    # The block length in force when the session was trained: four weeks
+    # until 24 Sep 2026, five from then (data.block_weeks is a setting now).
+    weeks_then = 4 if session["date"] < "2026-09-24" else data.block_weeks()
     with patch.object(data, "_supabase_client", store), patch.object(data, "datetime", _FrozenDateTime), \
-         patch.object(programme, "build_proposal", recording_build):
+         patch.object(programme, "build_proposal", recording_build), \
+         patch.object(data, "block_weeks", lambda: weeks_then):
         try:
             coach_context.build_context_block(memory, "Athlete", 0, 0, log, system_prompt=prompt, out=out,
                                               session_type=session["type"])

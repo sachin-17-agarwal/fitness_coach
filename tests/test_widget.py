@@ -3,6 +3,7 @@ to the server, pinned to the Swift anchors, and the route that serves it."""
 
 import json
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from unittest.mock import patch
 
 import readiness

@@ -41,10 +41,10 @@ DEFAULT_MIN_SESSIONS = 3
 # produced the flag rather than trusting the flag alone.
 _RECENT_SETS_SHOWN = 4
 
-# Week 3 of the 4-week wave is peak intensity; week 4 deloads by holding week
-# 3's load and cutting reps. "What did he lift in the peak week" is therefore
-# the anchor for both the deload and the next cycle's opening loads.
-PEAK_WEEK = 3
+# The last loading week of the block is the peak (data._block_peak_week()); the deload
+# holds its load and the next block opens above it. "What did he lift in the
+# peak week" is therefore the anchor for both.
+from data import peak_week as _block_peak_week  # noqa: E402  (the block's shape, in one place)
 
 # The peak-week lookup needs a longer window than the stall/current-load ones.
 # A mesocycle is four completed rotations, and a rotation takes 4-7 calendar
@@ -279,7 +279,7 @@ def format_current_loads(loads: list[dict] | None) -> str:
     return "\n".join(lines)
 
 
-def find_peak_week_loads(rows: list[dict], peak_week: int = PEAK_WEEK) -> list[dict]:
+def find_peak_week_loads(rows: list[dict], peak_week: int | None = None) -> list[dict]:
     """Top set per exercise from the most recent PEAK-week (week 3) session.
 
     Deload holds week 3's load, and week 1 of the next cycle opens above what
@@ -300,11 +300,13 @@ def find_peak_week_loads(rows: list[dict], peak_week: int = PEAK_WEEK) -> list[d
     be recovered from its date, because the week advances per completed rotation,
     not per calendar week.
     """
+    if peak_week is None:
+        peak_week = _block_peak_week()
     peak_rows = [r for r in rows if _as_int(r.get("mesocycle_week")) == peak_week]
     return find_current_loads(peak_rows)
 
 
-def format_peak_week_loads(loads: list[dict] | None, peak_week: int = PEAK_WEEK) -> str:
+def format_peak_week_loads(loads: list[dict] | None, peak_week: int | None = None) -> str:
     """Render the peak-week block.
 
     The empty case is load-bearing, not cosmetic. Sessions are only stamped with
@@ -313,6 +315,8 @@ def format_peak_week_loads(loads: list[dict] | None, peak_week: int = PEAK_WEEK)
     exactly the sort of gap that gets filled with a remembered number. It says
     what to use instead.
     """
+    if peak_week is None:
+        peak_week = _block_peak_week()
     if loads is None:
         return LOOKUP_FAILED
     if not loads:
@@ -534,12 +538,14 @@ def get_current_loads(days: int = 42) -> list[dict] | None:
     return find_current_loads(rows)
 
 
-def get_peak_week_loads(days: int = PEAK_WINDOW_DAYS, peak_week: int = PEAK_WEEK) -> list[dict] | None:
+def get_peak_week_loads(days: int = PEAK_WINDOW_DAYS, peak_week: int | None = None) -> list[dict] | None:
     """Top set per exercise from the most recent peak-week session.
 
     None when the data can't be read, [] when nothing is stamped yet; the
     formatter renders those as different sentences.
     """
+    if peak_week is None:
+        peak_week = _block_peak_week()
     rows = _fetch_sets_before_today(days)
     if rows is None:
         return None

@@ -25,7 +25,7 @@ final class MesocycleService: Sendable {
     func loadState() async throws -> MesocycleState {
         let rows: [MemoryRow] = try await client.fetch(
             "memory",
-            query: ["key": "in.(mesocycle_day,mesocycle_week,\(Config.sessionOverrideKey))"]
+            query: ["key": "in.(mesocycle_day,mesocycle_week,block_weeks,\(Config.sessionOverrideKey))"]
         )
 
         var day = 1
@@ -38,6 +38,10 @@ final class MesocycleService: Sendable {
                 day = Int(row.value) ?? 1
             case "mesocycle_week":
                 week = Int(row.value) ?? 1
+            case "block_weeks":
+                // The block's length (4 on a cut, 5 on a bulk) — the same row
+                // the backend reads, so the wave and the card agree.
+                if let n = Int(row.value), (4...6).contains(n) { Config.mesocycleWeeks = n }
             case Config.sessionOverrideKey:
                 // Returns nil for anything stamped for another date, so a
                 // stale row expires on its own rather than needing clearing.
@@ -63,6 +67,15 @@ final class MesocycleService: Sendable {
         }
 
         return MesocycleState(day: day, week: week, todayOverride: override)
+    }
+
+    /// The block's length, written to the row the backend reads
+    /// (data.block_weeks). Changed a few times a year, with a cut or a bulk.
+    func saveBlockWeeks(_ weeks: Int) async throws {
+        let n = min(6, max(4, weeks))
+        try await setMemory(key: "block_weeks", value: String(n))
+        Config.mesocycleWeeks = n
+        NotificationCenter.default.post(name: .mesocycleDidChange, object: nil)
     }
 
     // MARK: - Per-day override

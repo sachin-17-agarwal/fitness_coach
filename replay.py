@@ -19,7 +19,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from data import get_supabase, now_local
+from data import deload_week, get_supabase, now_local
 from prescribe import (PULL_DAY, PriorSet, infer_session_weeks, norm_name,
                        prescribe_pull)
 
@@ -344,7 +344,7 @@ def analyse(sessions: list[dict], default_week: int = 1,
         # the running history fills the gaps. Passing `peak` alone would report
         # any lift missing from that one week-3 session as never trained, which
         # is the mistake this whole area keeps making.
-        if week in (1, 4) and peak:
+        if week in (1, deload_week()) and peak:
             history = {**running, **peak}
         else:
             history = dict(running)

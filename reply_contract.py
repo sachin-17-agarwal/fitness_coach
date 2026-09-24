@@ -71,6 +71,13 @@ class ReplyContext:
         self.record.append({"step": step, "action": action, "detail": detail})
 
 
+def _week(ctx: ReplyContext) -> int | None:
+    try:
+        return int((ctx.memory or {}).get("mesocycle_week") or 0) or None
+    except (TypeError, ValueError):
+        return None
+
+
 def _norm(name: str) -> str:
     return "".join(ch for ch in (name or "").lower() if ch.isalnum())
 
@@ -182,7 +189,7 @@ def truncation(ctx: ReplyContext) -> None:
 
 
 def set_counts(ctx: ReplyContext) -> None:
-    ctx.reply, fixes = enforce_set_counts(ctx.reply, ctx.system_prompt, ctx.today_type)
+    ctx.reply, fixes = enforce_set_counts(ctx.reply, ctx.system_prompt, ctx.today_type, _week(ctx))
     for fix in fixes:
         if fix.get("added"):
             log.warning("SET COUNT FILLED (%s): %s had %d %s set(s) too few against a template of %d — "
@@ -200,7 +207,7 @@ def _log_drift(ctx: ReplyContext) -> None:
     """What is still off-template once every editing step has run. Once its
     own step after programme_live; folded on 23 Sep 2026 when the numbers
     step came in (one in, one out) and kept at the same point in the order."""
-    counts = check_set_counts(ctx.reply, ctx.system_prompt, ctx.today_type)
+    counts = check_set_counts(ctx.reply, ctx.system_prompt, ctx.today_type, _week(ctx))
     for bad in counts["mismatches"]:
         log.warning("SET COUNT DRIFT (%s): %s prescribed %d working sets, template says %d, and the reply "
                     "gives no reason", ctx.today_type, bad["exercise"], bad["actual"], bad["expected"])

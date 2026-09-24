@@ -6,6 +6,7 @@ now a function with one right answer, and these are the answers.
 """
 
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 
 from prescribe import (
     COMPOUND, ISOLATION, PriorSet, SetSpec, backoff_sets,
@@ -15,15 +16,19 @@ from prescribe import (
 
 
 class WaveTests(unittest.TestCase):
-    """The 4-week wave: RPE targets and what each week moves."""
+    """The wave on the four-week block (three loading weeks and a deload):
+    RPE targets and what each week moves. Back-offs are RPE 8 in every
+    loading week (24 Sep 2026); the deload drops them."""
 
     def test_each_week_targets_its_stated_rpe(self):
         prior = PriorSet(80.0, 8, 8.0)
-        for week, top, back in ((1, 8.0, 7.0), (2, 8.0, 7.0), (3, 9.0, 8.0), (4, 7.0, 6.0)):
+        for week, top, back in ((1, 8.0, 8.0), (2, 8.0, 8.0), (3, 9.0, 8.0)):
             with self.subTest(week=week):
                 p = prescribe_exercise("Cable Row", 2, COMPOUND, week, prior, set())
                 self.assertEqual(p.working[0].rpe, top)
                 self.assertEqual(p.backoff[0].rpe, back)
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 4, prior, set())
+        self.assertEqual((p.working[0].rpe, p.backoff), (7.0, []))  # deload: top set only
 
     def test_a_week_outside_one_to_four_is_refused(self):
         with self.assertRaises(ValueError):
@@ -256,17 +261,20 @@ class PullSessionTests(unittest.TestCase):
     }
 
     def test_the_session_always_totals_sixteen_working_sets(self):
-        for week in (1, 2, 3, 4):
+        for week in (1, 2, 3):
             with self.subTest(week=week):
                 total = sum(p.working_set_count for p in prescribe_pull(week, self.HISTORY))
                 self.assertEqual(total, 16)
+        # The deload keeps the top set alone on every lift: seven sets for seven lifts.
+        self.assertEqual(sum(p.working_set_count for p in prescribe_pull(4, self.HISTORY)), 7)
 
-    def test_the_set_count_is_identical_in_every_week(self):
+    def test_the_set_count_is_identical_in_every_loading_week(self):
         """:167 'Set count stays fixed within a cycle.' The thing that has been
-        varying run to run cannot vary here — it is not an output of the model."""
+        varying run to run cannot vary here — it is not an output of the model.
+        The deload is the one designed exception (fewer sets, load held)."""
         counts = [
             tuple(p.working_set_count for p in prescribe_pull(week, self.HISTORY))
-            for week in (1, 2, 3, 4)
+            for week in (1, 2, 3)
         ]
         self.assertEqual(len(set(counts)), 1, f"set counts differ by week: {counts}")
 

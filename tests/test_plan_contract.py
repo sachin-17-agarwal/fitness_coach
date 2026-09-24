@@ -3,6 +3,7 @@
 import json
 import os
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from unittest.mock import patch
 
 import plan as plan_module
@@ -968,7 +969,7 @@ class NamedSessionTests(unittest.TestCase):
         memory = {"mesocycle_week": 2, "mesocycle_day": 2}
         with patch("coach.build_context_block", side_effect=fake_context), \
              patch("coach.load_system_prompt", return_value=""), \
-             patch("coach.format_session_template", side_effect=lambda p, t: seen.setdefault("template_type", t) or ""), \
+             patch("coach.format_session_template", side_effect=lambda p, t, *_a: seen.setdefault("template_type", t) or ""), \
              patch("coach.save_conversation_message", lambda *a, **k: None), \
              patch("coach.get_settings", return_value=type("S", (), {"plan_contract": True, "programme_substitution": False})()), \
              patch("coach.get_anthropic_client", return_value=None), \
@@ -991,7 +992,7 @@ class NamedSessionTests(unittest.TestCase):
         memory = {"mesocycle_week": 2, "mesocycle_day": 2}
         with patch("coach.build_context_block", side_effect=fake_context), \
              patch("coach.load_system_prompt", return_value=""), \
-             patch("coach.format_session_template", side_effect=lambda p, t: seen.setdefault("template_type", t) or ""), \
+             patch("coach.format_session_template", side_effect=lambda p, t, *_a: seen.setdefault("template_type", t) or ""), \
              patch("coach.save_conversation_message", lambda *a, **k: None), \
              patch("coach.get_settings", return_value=type("S", (), {"plan_contract": True, "programme_substitution": False})()), \
              patch("coach._prose_reply", return_value=_FakeProse()):

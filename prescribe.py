@@ -2,7 +2,7 @@
 
 Every rule in system_prompt.txt that produces a NUMBER is a deterministic
 function of (session type, mesocycle week, what was logged last time). The
-4-week wave, the load-increase trigger, the back-off drop, the deload
+5-week wave, the load-increase trigger, the back-off drop, the deload
 arithmetic, the warm-up ramp — each has exactly one correct answer, and each
 has been executed by a language model reading prose, at a temperature that
 cannot be set, with thinking disabled.
@@ -33,6 +33,8 @@ rather than silently resolved — see `Proposal.deferred`.
 
 import re
 from dataclasses import dataclass, field, replace
+
+from data import block_weeks, deload_week, peak_week, peak_weeks  # the block's shape
 
 # ── Exercise classification ──────────────────────────────────────────────────
 #
@@ -216,12 +218,43 @@ REST_SECONDS = {COMPOUND: 120, ISOLATION: 90}
 
 # :64 "RPE follows the weekly wave (7 in weeks 1-2, 8 in week 3, 6 on deload)"
 # :177-186 for the top-set targets.
+# Back-offs at RPE 8 throughout (two in reserve): the proximity-to-failure
+# meta-regressions (Robinson et al. 2024) put hypertrophy closer to failure,
+# and a back-off at RPE 7 was the least productive set on the card. Weeks 3
+# and 4 both peak at RPE 9 — by reps, then by load — and week 5 deloads by
+# dropping the back-offs, not the load (Bell et al. consensus: 25-50% less
+# volume, intensity held).
+# WAVE is the five-week table (the bulk's block); targets_for() derives any
+# block length from data.block_weeks(): the last week deloads, the week
+# before peaks by load, and a block with four loading weeks peaks by reps
+# the week before that.
 WAVE = {
-    1: {"top": 8.0, "backoff": 7.0, "name": "Baseline"},
-    2: {"top": 8.0, "backoff": 7.0, "name": "Volume progression"},
-    3: {"top": 9.0, "backoff": 8.0, "name": "Peak intensity"},
-    4: {"top": 7.0, "backoff": 6.0, "name": "Deload"},
+    1: {"top": 8.0, "backoff": 8.0, "name": "Baseline"},
+    2: {"top": 8.0, "backoff": 8.0, "name": "Volume progression"},
+    3: {"top": 9.0, "backoff": 8.0, "name": "Peak by reps"},
+    4: {"top": 9.0, "backoff": 8.0, "name": "Peak by load"},
+    5: {"top": 7.0, "backoff": 6.0, "name": "Deload"},
 }
+_BASELINE = {"top": 8.0, "backoff": 8.0, "name": "Baseline"}
+_VOLUME = {"top": 8.0, "backoff": 8.0, "name": "Volume progression"}
+_PEAK_REPS = {"top": 9.0, "backoff": 8.0, "name": "Peak by reps"}
+_PEAK_LOAD = {"top": 9.0, "backoff": 8.0, "name": "Peak by load"}
+_DELOAD = {"top": 7.0, "backoff": 6.0, "name": "Deload"}
+
+
+def targets_for(week: int) -> dict:
+    """The week's RPE targets for the block length in force (data.block_weeks)."""
+    bw = deload_week()   # == block_weeks(), through data so a patched length is seen
+    week = int(week or 0)
+    if week < 1 or week > bw:
+        raise ValueError(f"week {week} is outside a {bw}-week block")
+    if week == bw:
+        return dict(_DELOAD)
+    if week == bw - 1:
+        return dict(_PEAK_LOAD)
+    if week == bw - 2 and bw >= 5:
+        return dict(_PEAK_REPS)
+    return dict(_BASELINE if week <= 1 else _VOLUME)
 
 # :186 "if subtracting the reps leaves fewer than 5, do not prescribe a
 # near-single ... Deload by LOAD instead — hold the week 3 reps and drop the
@@ -634,7 +667,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     deload a six-rep peak set and turned "stop two reps short" into a 17.5%
     load cut. "Reps reset to the bottom" is the floor of the band, not a cap.
     """
-    targets = WAVE[week]
+    targets = targets_for(week)
     low, high = rep_range or TOP_SET_RANGE[kind]
     bodyweight = is_bodyweight(exercise) or bool(prior and prior.bodyweight)
 
@@ -661,7 +694,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     # been read (22 Sep 2026); 2.5 is at least a load a compound can take.
     grid = step or _increment(kind, bodyweight)
 
-    if prior.reps is not None and prior.reps < low and week != 4:
+    if prior.reps is not None and prior.reps < low and week != deload_week():
         # :70 "That flexibility runs UPWARD only ... drifting BELOW an
         # exercise's range is not." Reported rather than silently corrected:
         # bringing the reps back in means dropping the load, and how far is a
@@ -689,7 +722,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         #
         # Without this, weeks 2-4 progress from a Week 1 that simply repeated
         # the last cycle, and the wave loops forever without moving.
-        if prior.week is not None and prior.week != 3:
+        if prior.week is not None and prior.week != peak_week():
             deferred.append(
                 f"{exercise}: opening week 1 from a week {prior.week} session. "
                 f"Week 1 anchors to the WEEK 3 peak — a deload result would "
@@ -723,7 +756,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
 
     if (prior.held >= STALL_SESSIONS and prior.reps is not None
-            and low <= prior.reps < high and week != 4):
+            and low <= prior.reps < high and week != deload_week()):
         # The same load and the same reps for three sessions is a stall, and
         # "add reps toward the top of the range" has been the prescription
         # for every one of them. Ab Wheel Rollout sat at bodyweight x8 for
@@ -791,7 +824,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         )
         return SetSpec(load, target_low, high, targets["top"], bodyweight=bodyweight, grid=grid)
 
-    if week == 3:
+    if week in peak_weeks():
         # :183 — "Reach it by adding load (preferred when reps are already at the
         # top of the range) OR by grinding 1-2 more reps at the same weight.
         # State which lever you used and why."
@@ -817,7 +850,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         return SetSpec(load, target_low, min(target_low + 1, high),
                        targets["top"], bodyweight=bodyweight, grid=grid)
 
-    if week == 4:
+    if week == deload_week():
         # :185 "Same exercises and same weights as Week 3, but deliberately
         # STOP SHORT so the set lands at RPE 7." RPE is reps-in-reserve, so at a
         # fixed load dropping the target N points costs N reps.
@@ -827,17 +860,17 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
         # thing but is not when a session was missed or run light — and there the
         # subtraction silently yields zero and the "deload" repeats week 3's
         # actual effort. Flagged rather than guessed.
-        if prior.week is not None and prior.week != 3:
+        if prior.week is not None and prior.week != peak_week():
             deferred.append(
                 f"{exercise}: deloading against a week {prior.week} session, but "
-                f"a deload anchors to WEEK 3. The rep subtraction is only "
+                f"a deload anchors to WEEK {peak_week()}. The rep subtraction is only "
                 f"correct against a peak-week set."
             )
         elif prior.rpe is not None and prior.rpe <= targets["top"]:
             deferred.append(
                 f"{exercise}: last session was already at RPE {prior.rpe:g}, at or "
                 f"below the deload target of {targets['top']:g}, so there is nothing "
-                f"to subtract and this 'deload' repeats it. Anchor to the week 3 set."
+                f"to subtract and this 'deload' repeats it. Anchor to the week {peak_week()} set."
             )
         drop = int(round((prior.rpe or targets["top"]) - targets["top"]))
         reps = (prior.reps or high) - max(drop, 0)
@@ -923,7 +956,7 @@ def backoff_sets(top: SetSpec, kind: str, count: int, week: int,
     if count < 1:
         return []
     low, high = BACKOFF_RANGE[kind]
-    rpe = WAVE[week]["backoff"]
+    rpe = targets_for(week)["backoff"]
 
     if top.bodyweight:
         # A weighted pull-up backs off by shedding the added load, not by
@@ -1038,6 +1071,14 @@ def warmup_ramp(exercise: str, top: SetSpec, muscles_warm: set[str],
     return ramp([0.65], [8])
 
 
+def deload_set_count(sets: int, straight: bool = False) -> int:
+    """The deload's set count: the top set alone on a top/back-off lift, half
+    (rounded up) on a straight-set lift."""
+    if sets <= 1:
+        return sets
+    return (sets + 1) // 2 if straight else 1
+
+
 def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
                        prior: PriorSet | None, muscles_warm: set[str],
                        athlete_kg: float | None = None,
@@ -1050,6 +1091,16 @@ def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
     """
     reasons: list[str] = []
     deferred: list[str] = []
+
+    if week == deload_week() and sets > 1:
+        # The deload is a cut in VOLUME with the load held: the back-offs go
+        # (top set only), straight sets run half. The rep cut on the top set
+        # (below) stays; until 24 Sep 2026 that rep cut was the whole deload
+        # and every set was kept, which is no deload by any definition.
+        kept = deload_set_count(sets, straight)
+        reasons.append(f"Deload: {kept} of {sets} sets — {'the back-offs are dropped' if not straight else 'straight sets halved'}, "
+                       f"the load is held. The volume comes down; the weight does not.")
+        sets = kept
 
     top = next_top_set(exercise, kind, week, prior, reasons, deferred, athlete_kg, rep_range=rep_range)
     if (top.bodyweight and top.weight_kg and prior is not None and not prior.load
@@ -1133,7 +1184,7 @@ def prescribe_session(plan, week: int,
     for exercise, sets, kind in plan:
         key = norm_name(exercise)
         prior = folded.get(key)
-        if week in (1, 4) and peak.get(key) is not None:
+        if week in (1, deload_week()) and peak.get(key) is not None:
             # The peak's load, reps and RPE, but the EQUIPMENT step from the
             # whole window: a single week-3 session holds only a top set and
             # its back-offs, so its "step" was the back-off gap (25kg on the
@@ -1145,7 +1196,13 @@ def prescribe_session(plan, week: int,
             exercise, sets, kind, week, prior, set(muscles_warm), athlete_kg,
             rep_range=straight_range, straight=straight_range is not None,
         )
-        if adjustment.adjusted:
+        if adjustment.adjusted and week == deload_week() and not adjustment.recovery_session:
+            # A readiness cut on a deload double-dips: on 18-19 Sep 2026 it
+            # turned the deload into RPE 6 at 5% under week 3. The deload is
+            # already the cut; the reading is said, not applied.
+            proposal = replace(proposal, recovery_reasons=tuple(adjustment.reasons) + (
+                "Readiness cut not applied: the deload is already the cut this week.",))
+        elif adjustment.adjusted:
             proposal = _adjusted(proposal, adjustment)
         proposals.append(proposal)
         muscles_warm.update(warms(exercise))

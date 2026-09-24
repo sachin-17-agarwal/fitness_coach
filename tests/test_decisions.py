@@ -3,6 +3,7 @@ window, the routes and the report section (docs/DECISION_CAPTURE.md)."""
 
 import json
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 

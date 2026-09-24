@@ -7,6 +7,7 @@ import logging
 import re
 
 from data import session_type_for
+from data import deload_week, peak_week  # the block's shape
 from exercises import find_exercise
 from volume import resolve_muscle_group
 
@@ -334,7 +335,17 @@ _DAYS_REQUIRING_A_TEMPLATE = ("Push", "Pull", "Legs", "Cardio+Abs")
 _EXERCISE_RE = re.compile(r"^(?P<name>.+?)\s+(?P<sets>\d+)$")
 
 
-def parse_session_template(prompt: str, session_type: str) -> tuple[list[tuple[str, int]], int]:
+def deload_counts(pairs: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    """The template on the deload week: one set (the top set) on a top/back-off
+    lift, half the sets on a straight-set lift (abs, calves, weak-point slots)."""
+    out = []
+    for name, sets in pairs:
+        straight = resolve_muscle_group(name) in ("Abs", "Calves") or _WEAK_POINT_SLOT_RE.match(name or "")
+        out.append((name, (sets + 1) // 2 if straight else 1))
+    return out
+
+
+def parse_session_template(prompt: str, session_type: str, week: int | None = None) -> tuple[list[tuple[str, int]], int]:
     """Per-exercise working-set counts for a session type, from the programme.
 
     The prompt enumerates them on one line per day —
@@ -363,6 +374,9 @@ def parse_session_template(prompt: str, session_type: str) -> tuple[list[tuple[s
             pairs = shape.apply(pairs, session_type)
         except Exception:
             log.exception("Session shape could not be applied; template as written")
+        if week is not None and int(week) == deload_week():
+            pairs = deload_counts(pairs)
+            return pairs, sum(n for _, n in pairs)
         return pairs, int(match.group("total"))
     return [], 0
 
@@ -398,7 +412,7 @@ def _set_shape(exercise: str, sets: int) -> str:
     )
 
 
-def format_session_template(prompt: str, session_type: str) -> str:
+def format_session_template(prompt: str, session_type: str, week: int | None = None) -> str:
     """Render the template as a lookup table for the live context.
 
     Written because stating the rule in prose did not hold. The prompt already
@@ -411,7 +425,7 @@ def format_session_template(prompt: str, session_type: str) -> str:
     So the count is computed and handed over, and the log is explicitly
     demoted where the numbers are read.
     """
-    pairs, total = parse_session_template(prompt, session_type)
+    pairs, total = parse_session_template(prompt, session_type, week)
     if not pairs:
         if (session_type or "").strip() in _DAYS_REQUIRING_A_TEMPLATE:
             log.error(
@@ -431,6 +445,9 @@ def format_session_template(prompt: str, session_type: str) -> str:
             lines.append(f"  Recorded session shape applied above: {shaped}")
     except Exception:
         pass
+    if week is not None and int(week) == deload_week():
+        lines.append(f"  DELOAD WEEK: these counts are already the cut — top set only on top/back-off lifts, "
+                     f"straight sets halved, loads held at week {peak_week()}'s. No Back-off lines.")
     body = "\n".join(lines)
     return (
         f"\nTODAY'S SET COUNTS — the programme's template, and a LOOKUP rather "
@@ -729,7 +746,7 @@ def _match_template_key(key: str, expected: dict) -> int | None:
     return hits[0] if len(hits) == 1 else None
 
 
-def check_set_counts(reply: str, prompt: str, session_type: str) -> dict:
+def check_set_counts(reply: str, prompt: str, session_type: str, week: int | None = None) -> dict:
     """Compare the reply's working-set counts against the session template.
 
     This is the missing half of the set-count machinery. `parse_session_template`
@@ -764,7 +781,7 @@ def check_set_counts(reply: str, prompt: str, session_type: str) -> dict:
         fills them is decided at prescription time. Reported so the check's
         real coverage is visible rather than assumed from a silent zero.
     """
-    pairs, _total = parse_session_template(prompt, session_type)
+    pairs, _total = parse_session_template(prompt, session_type, week)
     expected = {_normalise_exercise(name): count for name, count in pairs}
 
     findings = {"mismatches": [], "deliberate": [], "unmatched": [], "checked": 0}
@@ -827,7 +844,7 @@ def _trim_set_line(line: str, keep: int) -> tuple[str, int]:
     return (prefix + ":" + "|".join(segments)).rstrip(), len(dropped)
 
 
-def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str, list[dict]]:
+def enforce_set_counts(reply: str, prompt: str, session_type: str, week: int | None = None) -> tuple[str, list[dict]]:
     """Trim a prescription back to the template count when it exceeds it.
 
     Observation was not enough. The count was computed, rendered into context as
@@ -857,7 +874,7 @@ def enforce_set_counts(reply: str, prompt: str, session_type: str) -> tuple[str,
     coach saying the numbers are deliberate. Their under-count is still filled
     unless the revision names a cause (see the loop below).
     """
-    pairs, _total = parse_session_template(prompt, session_type)
+    pairs, _total = parse_session_template(prompt, session_type, week)
     expected = {_normalise_exercise(name): count for name, count in pairs}
     if not expected:
         return reply, []

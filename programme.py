@@ -22,6 +22,8 @@ it should carry.
 
 import logging
 
+from data import peak_week  # the block's shape
+
 from coach_parsing import parse_session_template
 from prescribe import PriorSet, _is_straight_set, day_plan, norm_name, prescribe_session
 
@@ -194,12 +196,12 @@ def build_proposal(prompt: str, session_type: str, week: int,
     from the most recent week 3. Weeks 1 and 4 anchor to it (:181, :185).
     """
     try:
-        entries, _total = parse_session_template(prompt, session_type)
+        entries, _total = parse_session_template(prompt, session_type, week)
         plan, straight_lifts = weak_point_slots(day_plan(entries), entries, weak_points)
         if not plan:
             return [], {}, {}
         history, renamed, ambiguous = _history(plan, current_loads)
-        peak_history, _r, _a = _history(plan, peak_week_loads or [], week=3)
+        peak_history, _r, _a = _history(plan, peak_week_loads or [], week=peak_week())
         proposals = prescribe_session(plan, week, history, recovery=recovery,
                                       peak_history=peak_history, athlete_kg=athlete_kg,
                                       straight_lifts=straight_lifts)

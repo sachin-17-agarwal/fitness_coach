@@ -14,10 +14,12 @@ This is the "won't break anything" test. It runs in about two seconds.
 
 import math
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 
 from coach_parsing import (parse_all_prescriptions, parse_session_template,
                            substitute_computed_blocks)
-from prescribe import (TOP_SET_RANGE, WAVE, _is_straight_set, day_plan,
+from data import deload_week
+from prescribe import (TOP_SET_RANGE, WAVE, _is_straight_set, day_plan, deload_set_count, targets_for,
                        is_determined, prescribe_session, recovery_adjustment,
                        render_block, render_session)
 from programme import _history, format_proposal
@@ -89,19 +91,21 @@ class ProgrammeSweepTests(unittest.TestCase):
             if adjustment.recovery_session:
                 self.assertFalse(proposal.working, "a recovery day prescribes nothing")
                 continue
-            self.assertEqual(proposal.working_set_count, sets, f"{name}: set count")
+            expected_sets = deload_set_count(sets, proposal.straight) if week == deload_week() else sets
+            self.assertEqual(proposal.working_set_count, expected_sets, f"{name}: set count")
             top = proposal.working[0]
             low, high = TOP_SET_RANGE[kind]
-            self.assertAlmostEqual(top.rpe, WAVE[week]["top"] + adjustment.rpe_delta, msg=name)
+            cut = 0.0 if week == deload_week() else adjustment.rpe_delta  # no readiness cut on the deload
+            self.assertAlmostEqual(top.rpe, targets_for(week)["top"] + cut, msg=name)
             self.assertTrue(1 <= top.reps_low <= top.reps_high, f"{name}: reps {top}")
-            if week != 4:
+            if week != deload_week():
                 self.assertGreaterEqual(top.reps_low, low - 1, f"{name}: below range")
                 self.assertLessEqual(top.reps_high, high, f"{name}: above range")
             if top.weight_kg is not None:
                 self.assertGreaterEqual(top.weight_kg, 0, name)
                 self.assertAlmostEqual(top.weight_kg * 2, round(top.weight_kg * 2), msg=f"{name}: off the half-kilo grid")
             for back in proposal.backoff:
-                self.assertAlmostEqual(back.rpe, WAVE[week]["backoff"] + adjustment.rpe_delta, msg=name)
+                self.assertAlmostEqual(back.rpe, targets_for(week)["backoff"] + cut, msg=name)
                 self.assertTrue(1 <= back.reps_low <= back.reps_high, name)
                 if top.weight_kg and back.weight_kg is not None and not top.bodyweight:
                     self.assertLess(back.weight_kg, top.weight_kg, f"{name}: back-off not lighter")
@@ -118,7 +122,7 @@ class ProgrammeSweepTests(unittest.TestCase):
                 self.assertEqual(card["rpe"], top.rpe, name)
                 self.assertEqual(card["weight"], top.weight_kg or 0.0, name)
                 if _is_straight_set(name):
-                    self.assertEqual(len(parsed[name]["working"]), sets, name)
+                    self.assertEqual(len(parsed[name]["working"]), expected_sets, name)
                     self.assertFalse(parsed[name].get("backoff"), name)
                 else:
                     self.assertEqual(len(parsed[name].get("backoff", [])), len(proposal.backoff), name)

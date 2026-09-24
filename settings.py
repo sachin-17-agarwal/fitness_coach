@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     # in the context it was handed, or one rewrite is asked for.
     numbers_contract: bool = True
 
+    # The block's length when the memory row `block_weeks` is not set: 4 on
+    # a cut (three loading weeks and a deload), 5 on a bulk (four and one).
+    # Changed a few times a year from Settings → Training block in the app.
+    block_weeks: int = 5
+
     # flags.py: with a token, every coach flag is also filed as an issue on
     # this repository. A fine-grained token with issues write, set on the
     # server only.

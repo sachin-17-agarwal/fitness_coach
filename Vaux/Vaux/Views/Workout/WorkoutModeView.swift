@@ -429,13 +429,7 @@ struct WorkoutModeView: View {
     }
 
     private static func phaseName(week: Int) -> String? {
-        switch week {
-        case 1: return "Baseline"
-        case 2: return "Volume"
-        case 3: return "Peak"
-        case 4: return "Deload"
-        default: return nil
-        }
+        Config.phaseName(week: week)
     }
 
     private static func rpeTargets(week: Int?) -> (top: String, backoff: String) {

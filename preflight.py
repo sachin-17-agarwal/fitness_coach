@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import json
 import logging
+
+from data import deload_week  # the block's shape
 from dataclasses import replace
 
 from constraints import norm_name
@@ -88,7 +90,7 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
     for p in proposals:
         key = norm_name(p.exercise)
         prior = folded.get(key)
-        anchor = peak.get(key) if week in (1, 4) and peak.get(key) is not None else prior
+        anchor = peak.get(key) if week in (1, deload_week()) and peak.get(key) is not None else prior
         step = (getattr(prior, "step", None) or getattr(peak.get(key), "step", None)) or None
         reasons = list(p.reasons)
         fixes: list[str] = []
@@ -108,7 +110,7 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
                                          "detail": f"{name} {spec.weight_kg:g}kg → {fixed:g}kg (step {step:g})"})
 
         # regression: below the anchor with no rule naming why.
-        if (working and anchor is not None and getattr(anchor, "load", None) and week != 4
+        if (working and anchor is not None and getattr(anchor, "load", None) and week != deload_week()
                 and not p.recovery_session and working[0].weight_kg is not None
                 and working[0].weight_kg < float(anchor.load) - 1e-9):
             text = " ".join(list(p.reasons) + list(getattr(p, "recovery_reasons", [])) + list(p.deferred)).lower()
@@ -127,7 +129,7 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
         # overshoot, at most OVERSHOOT_CAP. Nothing else may put a top set
         # further above its anchor: Single Leg Sumo Press opened 132.5 -> 150
         # on 23 Sep 2026 from a mis-measured step and nothing caught it.
-        if (working and anchor is not None and getattr(anchor, "load", None) and week != 4
+        if (working and anchor is not None and getattr(anchor, "load", None) and week != deload_week()
                 and working[0].weight_kg is not None and not working[0].bodyweight):
             base = float(anchor.load)
             inc = max(INCREMENT.get(p.kind, 2.5), step or 0.0)

@@ -3,6 +3,7 @@ pick by shortfall, the stored decision, and the plan's slot check."""
 
 import json
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from unittest.mock import patch
 
 import weakpoints

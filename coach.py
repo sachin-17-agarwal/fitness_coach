@@ -338,7 +338,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         _safe_int(memory.get("mesocycle_day", 1)),
         override=memory.get(SESSION_OVERRIDE_KEY),
     )
-    session_template = format_session_template(system_prompt, today_type)
+    session_template = format_session_template(system_prompt, today_type, _safe_int(memory.get("mesocycle_week", 1)))
     live_context += session_template
     # The template is read against today's session type and never changes
     # within a day, so it belongs to the day part of the live half.

@@ -4,6 +4,7 @@ first block a dry run."""
 
 import json
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from unittest.mock import patch
 
 import block_review as br

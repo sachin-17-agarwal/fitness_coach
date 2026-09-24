@@ -65,22 +65,11 @@ final class WorkoutViewModel {
 
     /// Week name and RPE targets, mirroring the coach's mesocycle protocol.
     var mesocyclePhaseLabel: String? {
-        switch mesocycleWeek {
-        case 1: return "BASELINE"
-        case 2: return "VOLUME"
-        case 3: return "PEAK"
-        case 4: return "DELOAD"
-        default: return nil
-        }
+        Config.phaseName(week: mesocycleWeek)?.uppercased()
     }
 
     var mesocycleRPETarget: String? {
-        switch mesocycleWeek {
-        case 1, 2: return "RPE 8 · back-off 7"
-        case 3: return "RPE 9 · back-off 8"
-        case 4: return "RPE 7 · back-off 6"
-        default: return nil
-        }
+        Config.rpeTarget(week: mesocycleWeek)
     }
 
     // Coach feedback

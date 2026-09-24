@@ -2,6 +2,7 @@
 Order grammar, recorded rows applied inside parse_session_template, the
 block horizon."""
 import unittest
+import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
 from unittest.mock import patch
 
 import decisions
