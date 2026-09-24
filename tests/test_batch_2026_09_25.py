@@ -156,3 +156,113 @@ class ReadyToLoadTests(unittest.TestCase):
         # Never at bodyweight, where the step is a plate the coach decides.
         bw = prescribe_exercise("Pull-Ups", 2, COMPOUND, 2, PriorSet(None, 6, 9.5, bodyweight=True, ready=True), set())
         self.assertTrue(bw.working[0].bodyweight)
+
+
+class UnloadableBodyweightTests(unittest.TestCase):
+    """C17: a rollout has nothing to load; it progresses by reps, then a variation."""
+
+    def test_the_range_moves_not_the_load(self):
+        from prescribe import ISOLATION, PriorSet, is_unloadable, prescribe_exercise
+        self.assertTrue(is_unloadable("Ab Wheel Rollout"))
+        self.assertFalse(is_unloadable("Hanging Leg Raises"))   # a dumbbell between the feet
+        self.assertFalse(is_unloadable("Pull-Ups"))
+        top = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 12, 8.0, bodyweight=True), set()).working[0]
+        self.assertEqual((top.weight_kg, top.bodyweight, top.reps_low, top.reps_high), (None, True, 11, 15))
+        mid = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 9, 8.0, bodyweight=True), set()).working[0]
+        self.assertEqual((mid.weight_kg, mid.reps_low, mid.reps_high), (None, 10, 12))
+        p = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 1, PriorSet(None, 12, 8.0, bodyweight=True, week=3), set())
+        self.assertIsNone(p.working[0].weight_kg, "week 1 opens without inventing a plate")
+        self.assertTrue(any("No load to add" in r for r in p.reasons))
+
+    def test_past_the_cap_a_variation_is_the_coachs_call(self):
+        from prescribe import ISOLATION, PriorSet, prescribe_exercise
+        p = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 20, 8.0, bodyweight=True), set(), rep_range=(17, 20))
+        self.assertIsNone(p.working[0].weight_kg)
+        self.assertTrue(any("harder variation" in d for d in p.deferred))
+
+
+class BigStepRangeTests(unittest.TestCase):
+    """A machine whose smallest step exceeds 6% of the load stretches the
+    rep range instead of taking a jump that misses (25 Sep 2026).
+
+    Measured on the export, top sets June-23 Sep: Hammer Curl moves in 2kg on
+    20kg (10%) and all 3 increases landed under the range; Reverse Cable Fly
+    2.5kg on 15kg (17%), 2 of 4; Tricep Pushdown 2.5kg on 40kg (6.25%), 2 of 4.
+    """
+
+    def test_the_range_stretches_to_where_one_step_lands_back_inside_it(self):
+        from prescribe import stretched_top
+        self.assertEqual(stretched_top(20.0, 2.0, 8, 12), 13)     # hammer curl
+        self.assertEqual(stretched_top(15.0, 2.5, 8, 12), 16)     # reverse cable fly
+        self.assertEqual(stretched_top(40.0, 2.5, 8, 12), 12)     # pushdown: 6.25%, but 12 already lands it
+        self.assertEqual(stretched_top(100.0, 2.5, 6, 10), 10)    # a 2.5% step: untouched
+        self.assertEqual(stretched_top(10.0, 5.0, 8, 12), 18)     # 50%: capped at +6
+
+    def test_the_top_of_the_standard_range_holds_the_load_on_a_big_step_machine(self):
+        from prescribe import prescribe_exercise, PriorSet, ISOLATION
+        p = prescribe_exercise("Hammer Curl", 3, ISOLATION, 2, PriorSet(20.0, 12, 8.0, step=2.0), set())
+        self.assertEqual(p.working[0].weight_kg, 20.0)
+        self.assertEqual(p.working[0].reps_high, 13)
+        self.assertTrue(any("10% of 20kg" in r for r in p.reasons))
+        p = prescribe_exercise("Hammer Curl", 3, ISOLATION, 2, PriorSet(20.0, 13, 8.0, step=2.0), set())
+        self.assertEqual(p.working[0].weight_kg, 22.0)
+        self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (8, 13))
+
+    def test_a_small_step_machine_still_loads_at_the_standard_top(self):
+        from prescribe import prescribe_exercise, PriorSet, COMPOUND
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 2, PriorSet(80.0, 10, 8.0, step=2.5), set())
+        self.assertEqual(p.working[0].weight_kg, 82.5)
+        self.assertFalse(any("smallest step" in r for r in p.reasons))
+
+    def test_a_step_no_stretch_can_absorb_is_deferred_to_the_coach(self):
+        from prescribe import prescribe_exercise, PriorSet, ISOLATION
+        p = prescribe_exercise("Reverse Cable Fly", 3, ISOLATION, 2, PriorSet(10.0, 12, 8.0, step=5.0), set())
+        self.assertEqual(p.working[0].weight_kg, 10.0)
+        self.assertEqual(p.working[0].reps_high, 18)
+        self.assertTrue(any("Microplates" in d for d in p.deferred))
+
+    def test_preflight_does_not_clip_a_stretched_range(self):
+        import preflight
+        from prescribe import Proposal, SetSpec, PriorSet, ISOLATION
+        prior = {"Hammer Curl": PriorSet(20.0, 12, 8.0, step=2.0)}
+        p = Proposal(exercise="Hammer Curl", kind=ISOLATION, working=[SetSpec(20.0, 8, 13, 8.0, grid=2.0)])
+        out, findings = preflight.enforce([p], prior, {}, 2)
+        self.assertEqual(out[0].working[0].reps_high, 13)
+        self.assertEqual([f for f in findings if f["kind"] == "range"], [])
+
+    def test_ready_to_load_waits_for_the_stretched_top(self):
+        from progression import _programme_due
+        tops = [{"actual_weight_kg": "20", "actual_reps": "12", "actual_rpe": "8"}]
+        self.assertFalse(_programme_due("Hammer Curl", tops, step=2.0))
+        self.assertTrue(_programme_due("Hammer Curl", tops, step=1.0))
+        tops[0]["actual_reps"] = "13"
+        self.assertTrue(_programme_due("Hammer Curl", tops, step=2.0))
+
+
+class StepFromTheCommonGapTests(unittest.TestCase):
+    """One load off the lift's grid — another machine, a typo — must not set
+    the step (25 Sep 2026: 9 of 28 lifts carried such a load, measured)."""
+
+    def _sessions(self, loads):
+        return {f"2026-09-{i+1:02d}": [{"actual_weight_kg": str(w), "actual_reps": "10", "is_warmup": "0", "set_number": "1"}]
+                for i, w in enumerate(loads)}
+
+    def test_the_chest_press_reads_its_eight_kilo_stack_despite_a_half_kilo_stray(self):
+        from progression import _load_step
+        self.assertEqual(_load_step(self._sessions([132.5, 133.0, 141.0, 149.0, 165.0])), 8.0)
+
+    def test_the_cable_row_reads_four_not_one(self):
+        from progression import _load_step
+        self.assertEqual(_load_step(self._sessions([73.5, 74.5, 78.5, 82.5, 86.5, 90.5])), 4.0)
+
+    def test_a_finer_gap_that_divides_the_common_one_is_the_real_step(self):
+        from progression import _load_step
+        # Sumo press: moved in 5s by habit, but 132.5 proves the 2.5 exists.
+        self.assertEqual(_load_step(self._sessions([105.0, 110.0, 115.0, 120.0, 125.0, 130.0, 132.5, 150.0])), 2.5)
+        # Face pulls: 35, 40, 42.5, 47.5 — the 2.5 is half the 5.
+        self.assertEqual(_load_step(self._sessions([35.0, 40.0, 42.5, 47.5])), 2.5)
+
+    def test_a_clean_grid_is_unchanged_and_a_tie_goes_to_the_smaller_gap(self):
+        from progression import _load_step
+        self.assertEqual(_load_step(self._sessions([100.0, 102.5, 105.0, 107.5])), 2.5)
+        self.assertEqual(_load_step(self._sessions([10.0, 12.5, 17.5])), 2.5)

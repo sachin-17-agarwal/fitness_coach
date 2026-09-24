@@ -786,15 +786,15 @@ final class WorkoutViewModel {
         // A set that fell short of its prescribed reps at the prescribed load
         // is the most important signal in the log — the weight was too heavy.
         // Spell it out rather than leaving the coach to diff two numbers, and
-        // flag the RPE as untrustworthy: the slider pre-fills with the TARGET
-        // RPE, so a missed set logged without touching it reports reps left in
-        // the tank on a set that was actually a grind, and the coach would
-        // progress the load off the back of it.
+        // flag the RPE as not a reading: the app carries the card's TARGET
+        // RPE through on every set (the slider was retired 25 Sep 2026), so a
+        // missed set reports reps left in the tank on a set that was actually
+        // a grind, and the coach would progress the load off the back of it.
         var shortfall = ""
         if let t = target, loggedReps < t.reps, loggedWeight >= t.weight {
             let missed = t.reps - loggedReps
             let rpeCaveat = (t.rpe.map { abs($0 - loggedRPE) < 0.01 } ?? false)
-                ? " The logged RPE exactly equals the prescribed RPE, which usually means the slider was left on its pre-filled default — do not read it as reported effort; assume this set was at or near failure and ask him what it felt like."
+                ? " The logged RPE is the card's target carried through by the app, not reported effort — read the effort from the reps: this set fell short at the prescribed load, so treat it as at or near failure."
                 : ""
             // Falling short on a REPEAT set at the same load (back-off 2,
             // working set 3) is accumulated fatigue doing what it is supposed

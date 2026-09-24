@@ -52,9 +52,8 @@ struct WorkoutDock: View {
                 Spacer()
                 repsValue
                 Spacer()
-                if phase != .warmup {
-                    rpeScale
-                }
+                // RPE picker retired 25 Sep 2026 — see SetLogInput. The set
+                // logs the card's target; progression reads reps.
             }
             .padding(.top, 10)
 
@@ -160,33 +159,6 @@ struct WorkoutDock: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Decrease \(label)")
-        }
-    }
-
-    /// 5 … 10 as digits, the chosen one lime and larger. No boxes, no slider.
-    /// Five is on the scale because a deload back-off is prescribed at RPE 5
-    /// (week 4 back-off 6, minus one on a poor recovery read).
-    private var rpeScale: some View {
-        let chosen = Int(rpe.rounded())
-        return VStack(alignment: .trailing, spacing: 6) {
-            EditorialEyebrow(text: "RPE", color: Editorial.muted, size: 8.5, kerning: 1)
-            HStack(alignment: .lastTextBaseline, spacing: 12) {
-                ForEach(5...10, id: \.self) { value in
-                    Button {
-                        Haptic.selection()
-                        withAnimation(Motion.snappy) { rpe = Double(value) }
-                    } label: {
-                        Text("\(value)")
-                            .font(.display(value == chosen ? 26 : 18))
-                            .foregroundStyle(value == chosen ? Color.signal : Color.ink4)
-                            .frame(minWidth: 18, minHeight: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("RPE \(value)")
-                    .accessibilityAddTraits(value == chosen ? .isSelected : [])
-                }
-            }
         }
     }
 

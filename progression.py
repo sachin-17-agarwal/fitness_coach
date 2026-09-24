@@ -1,3 +1,4 @@
+from collections import Counter
 """Per-exercise load stalls, for the coach context.
 
 The programme already carries a load-increase trigger: hit the top of the rep
@@ -127,20 +128,25 @@ def _day(iso: str) -> str:
     return f"{d.day} {d.strftime('%b')}"
 
 
-def _programme_due(exercise: str, tops: list[dict]) -> bool:
+def _programme_due(exercise: str, tops: list[dict], step: float | None = None) -> bool:
     """The programme's own load-increase trigger, so the watch and the card
     cannot disagree: a top set at this load reached the TOP of the lift's
-    range (:180, :203) at a known RPE of 9 or under.
+    range (:180, :203). Reps only since 25 Sep 2026 (see
+    prescribe._met_top_of_range); an RPE of 10, a failed rep, is the one
+    reading that holds it.
 
     The watch used to fire on _met_target — the newest set hitting its own
     card's reps at its RPE — and a deload set done as prescribed always does,
     so Leg Extension read READY TO LOAD on 23 Sep while the programme,
     correctly, held it (week 3 finished at 11 of 8-12)."""
-    from prescribe import TOP_SET_RANGE, classify  # local: prescribe imports widely
-    high = TOP_SET_RANGE[classify(exercise)][1]
+    from prescribe import TOP_SET_RANGE, classify, stretched_top  # local: prescribe imports widely
+    low, high = TOP_SET_RANGE[classify(exercise)]
+    load = _as_float(tops[0].get("actual_weight_kg")) if tops else None
+    # A machine step over 6% of the load stretches the range (prescribe.stretched_top).
+    high = stretched_top(load, step, low, high)
     for top in tops:
         reps, rpe = _as_int(top.get("actual_reps")), _as_float(top.get("actual_rpe"))
-        if reps is not None and rpe is not None and reps >= high and rpe <= 9:
+        if reps is not None and reps >= high and (rpe is None or rpe < 10):
             return True
     return False
 
@@ -191,11 +197,11 @@ def find_current_loads(rows: list[dict]) -> list[dict]:
             "held": _held_sessions(sessions, top),
             "step": _load_step(sessions),
             # READY TO LOAD, the watch's own flag: some session at this load
-            # reached the top of the range at RPE 9 or under. Carried to the
-            # programme (PriorSet.ready) so it steps the load itself rather
-            # than telling the coach (C2, 25 Sep 2026: 21 such runs since
-            # June, the load moved next session in 9).
-            "ready": _programme_due(exercise, _tops_at_load(sessions, top)),
+            # reached the top of the range. Carried to the programme
+            # (PriorSet.ready) so it steps the load itself rather than
+            # telling the coach (C2, 25 Sep 2026: 21 such runs since June,
+            # the load moved next session in 9).
+            "ready": _programme_due(exercise, _tops_at_load(sessions, top), _load_step(sessions)),
         })
     # Alphabetical: this is a lookup table, and the coach arrives knowing the
     # exercise name, not the date.
@@ -243,7 +249,22 @@ def _load_step(sessions: dict[str, list[dict]]) -> float | None:
     if len(ordered) < 2:
         return None
     gaps = [round(b - a, 3) for a, b in zip(ordered, ordered[1:]) if b - a > 0]
-    step = min(gaps) if gaps else None
+    # The MOST COMMON gap, not the smallest: one session on a different
+    # machine, or a typo, leaves a load off the lift's grid and the smallest
+    # gap then reads a step neither machine has — the Machine Chest Press
+    # (132.5, 133, 141, 149, 165) read 0.5kg, the Cable Row (73.5, 74.5,
+    # 78.5, ...) 1kg. Nine of 28 lifts carried such a load (measured on the
+    # export, 25 Sep 2026). A finer gap still wins when it divides the common
+    # one cleanly and is at least a quarter of it: the Single Leg Sumo Press
+    # moved in 5s by habit but its 132.5 shows the machine takes 2.5. Ties
+    # go to the smallest, as before.
+    if gaps:
+        counts = Counter(gaps)
+        mode = min(g for g, n in counts.items() if n == max(counts.values()))
+        finer = [g for g in gaps if g < mode and abs(mode / g - round(mode / g)) < 1e-6 and mode / g < 4]
+        step = min(finer) if finer else mode
+    else:
+        step = None
     if step is None or step < 0.5 or step > max(8.0, 0.06 * ordered[-1]):
         return None
     return step
@@ -391,7 +412,7 @@ def find_stalls(rows: list[dict], min_sessions: int = DEFAULT_MIN_SESSIONS) -> l
             "last_date": streak_entries[0][0],
             # Oldest-to-newest so the trend reads left to right.
             "recent": [top for _, top in reversed(streak_entries[:_RECENT_SETS_SHOWN])],
-            "increase_indicated": _programme_due(exercise, [top for _, top in streak_entries]),
+            "increase_indicated": _programme_due(exercise, [top for _, top in streak_entries], _load_step(sessions)),
             # A load that sat still while the reps climbed is progressing, not
             # stuck: Reverse Cable Fly at 12.5kg for five sessions, reps 10 to
             # 12, was called "stalled" to the athlete's face.

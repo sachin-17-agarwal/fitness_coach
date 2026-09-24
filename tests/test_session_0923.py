@@ -39,13 +39,23 @@ class SumoStepTests(unittest.TestCase):
         self.assertEqual(out[0].working[0].weight_kg, 135.0)
         self.assertEqual([f["kind"] for f in findings], ["jump"])
 
-    def test_a_sized_overshoot_within_the_cap_is_left_alone(self):
+    def test_a_sized_overshoot_within_the_six_percent_cap_is_left_alone(self):
+        peak = {"Leg Press": PriorSet(245.0, 15, 9.0, week=3, step=5.0)}
+        p = Proposal(exercise="Leg Press", kind=COMPOUND, working=[SetSpec(255.0, 5, 9, 7.0)],
+                     reasons=["Week 1 opens ABOVE last cycle, sized to the miss."])
+        out, findings = preflight.enforce([p], {}, peak, 1)
+        self.assertEqual(out[0].working[0].weight_kg, 255.0)
+        self.assertEqual([f for f in findings if f["kind"] == "jump"], [])
+
+    def test_any_increase_over_six_percent_is_cut_to_one_increment(self):
+        """From any path — sized, coach or programme (25 Sep 2026): 270 is
+        +10% on 245 and comes back as one 5kg stack step."""
         peak = {"Leg Press": PriorSet(245.0, 15, 9.0, week=3, step=5.0)}
         p = Proposal(exercise="Leg Press", kind=COMPOUND, working=[SetSpec(270.0, 5, 9, 7.0)],
                      reasons=["Week 1 opens ABOVE last cycle, sized to the miss."])
         out, findings = preflight.enforce([p], {}, peak, 1)
-        self.assertEqual(out[0].working[0].weight_kg, 270.0)
-        self.assertEqual([f for f in findings if f["kind"] == "jump"], [])
+        self.assertEqual(out[0].working[0].weight_kg, 250.0)
+        self.assertEqual([f["kind"] for f in findings], ["jump"])
 
 
 class CalfRampTests(unittest.TestCase):

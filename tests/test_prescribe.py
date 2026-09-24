@@ -150,13 +150,25 @@ class LoadProgressionTests(unittest.TestCase):
                                PriorSet(20.0, 12, 8.0), set())
         self.assertLessEqual(p.working[0].weight_kg - 20.0, 2.5)
 
-    def test_a_missing_rep_or_rpe_never_reads_as_a_pass(self):
-        """Week 2, because that is where the trigger consults RPE at all —
-        week 1's rule is rep-only by design (:181)."""
-        for prior in (PriorSet(80.0, None, 8.0), PriorSet(80.0, 10, None)):
-            with self.subTest(prior=prior):
-                p = prescribe_exercise("Cable Row", 2, COMPOUND, 2, prior, set())
-                self.assertEqual(p.working[0].weight_kg, 80.0)
+    def test_a_missing_rep_count_never_reads_as_a_pass_and_a_missing_rpe_never_blocks(self):
+        """Reps only since 25 Sep 2026: the RPE is the card's pre-fill, not a
+        reading (74-81% of sets carry it unchanged, measured), so its absence
+        cannot hold a load that the reps have earned."""
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 2, PriorSet(80.0, None, 8.0), set())
+        self.assertEqual(p.working[0].weight_kg, 80.0)
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 2, PriorSet(80.0, 10, None), set())
+        self.assertEqual(p.working[0].weight_kg, 82.5)
+
+    def test_the_top_of_the_range_at_the_target_rpe_or_over_it_still_loads(self):
+        """The RPE half of the gate decided 3 of 76 top-of-range hits and the
+        load held next session in 2 of them anyway (measured); 7-8-9 is not a
+        distinction the athlete can make. Only a failed rep (RPE 10) holds."""
+        for rpe in (7.0, 8.0, 9.0, 9.5):
+            with self.subTest(rpe=rpe):
+                p = prescribe_exercise("Cable Row", 2, COMPOUND, 2, PriorSet(80.0, 10, rpe), set())
+                self.assertEqual(p.working[0].weight_kg, 82.5)
+        p = prescribe_exercise("Cable Row", 2, COMPOUND, 2, PriorSet(80.0, 10, 10.0), set())
+        self.assertEqual(p.working[0].weight_kg, 80.0, "a failed rep holds the load")
 
 
 class BackOffTests(unittest.TestCase):
@@ -386,21 +398,23 @@ class OvershootStepTests(unittest.TestCase):
                             PriorSet(load, reps, rpe, week=3 if week == 1 else week - 1), reasons, deferred)
         return spec, " ".join(reasons)
 
-    def test_four_over_is_sized_from_the_set_and_capped_at_ten_percent(self):
+    def test_four_over_is_sized_from_the_set_and_capped_at_six_percent(self):
         from prescribe import TOP_SET_RANGE
         low, high = TOP_SET_RANGE[ISOLATION]
         spec, why = self._top(110.0, high + 4, ISOLATION, 3)
-        # Epley 110 x 16 = 168.7; mid-range reps sit near 126.5; +10% caps at 121.
-        self.assertEqual(spec.weight_kg, 121.0)
-        self.assertIn("capped at +10%", why)
+        # Epley 110 x 16 = 168.7; mid-range reps sit near 126.5; +6% caps at 116.5
+        # (measured 25 Sep 2026: jumps over 6% cost 1.7 reps and landed under
+        # the range 20% of the time; 3-6% cost none and missed 11%).
+        self.assertEqual(spec.weight_kg, 116.5)
+        self.assertIn("capped at +6%", why)
         self.assertIn("(:205)", why)
 
     def test_three_over_inside_the_cap_lands_at_the_mid_range_load(self):
         from prescribe import TOP_SET_RANGE
         low, high = TOP_SET_RANGE[ISOLATION]
         spec, why = self._top(100.0, high + 3, ISOLATION, 3)
-        # 100 x 15 -> e1RM 150 -> 10 reps near 112.5; +10% cap = 110.
-        self.assertEqual(spec.weight_kg, 110.0)
+        # 100 x 15 -> e1RM 150 -> 10 reps near 112.5; +6% cap = 106.
+        self.assertEqual(spec.weight_kg, 106.0)
 
     def test_one_or_two_over_keeps_the_single_increment(self):
         from prescribe import TOP_SET_RANGE, INCREMENT
@@ -416,7 +430,7 @@ class OvershootStepTests(unittest.TestCase):
         low, high = TOP_SET_RANGE[ISOLATION]
         for week in (1, 2):
             spec, why = self._top(110.0, high + 4, ISOLATION, week)
-            self.assertEqual(spec.weight_kg, 121.0, f"week {week}")
+            self.assertEqual(spec.weight_kg, 116.5, f"week {week}")
             self.assertIn("sized to the miss", why)
 
     def test_a_compound_never_steps_below_its_own_increment(self):
@@ -452,7 +466,7 @@ class BodyweightProgressionTests(unittest.TestCase):
     def test_a_heavier_overshoot_sizes_a_bigger_step(self):
         p = prescribe_exercise("Pull-Ups", 3, COMPOUND, 3,
                                PriorSet(10.0, 13, 8.0, bodyweight=True), set(), athlete_kg=80.0)
-        self.assertEqual(p.working[0].weight_kg, 20.0)   # 90kg lifted, +10% cap, in plates
+        self.assertEqual(p.working[0].weight_kg, 15.0)   # 90kg lifted, +6% cap (5.4kg), in plates
 
     def test_without_a_weigh_in_the_single_plate_stands(self):
         p = prescribe_exercise("Hanging Leg Raises", 3, ISOLATION, 2,
@@ -460,33 +474,37 @@ class BodyweightProgressionTests(unittest.TestCase):
         self.assertEqual(p.working[0].weight_kg, 7.5)
         self.assertNotIn("lifted", " ".join(p.reasons))
 
-    def test_a_movement_with_no_body_share_is_not_sized(self):
-        """A rollout lifts no meaningful share of the athlete; the step is a
-        plate and the reason says what a plate means on this movement."""
+    def test_a_movement_with_nothing_to_load_moves_its_range_not_a_plate(self):
+        """A rollout has nothing to load (25 Sep 2026: the card showed BW+2.5kg).
+        Its range moves up instead; past the cap a variation is the coach's call."""
         p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
                                PriorSet(None, 15, 7.0, bodyweight=True), set(), athlete_kg=80.0)
-        self.assertEqual(p.working[0].weight_kg, 2.5)
-        self.assertIn("plate on the back or a vest", " ".join(p.reasons))
+        self.assertIsNone(p.working[0].weight_kg)
+        self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (11, 15))
+        self.assertIn("No load to add", " ".join(p.reasons))
 
     def test_the_lifts_own_step_drives_rounding_and_increments(self):
         # Reverse Cable Fly, 20 Sep 2026: peak 12.5 x 11 @8 on a 2.5kg cable
         # stack. Week 1 opens at 12.5 x 8-12; a readiness cut (RPE down a
         # point, load down 5%) then produced "12kg x 7-11" — 11.875 rounded
-        # to the half-kilo, a load the stack does not have.
+        # to the half-kilo, a load the stack does not have. Since 25 Sep 2026
+        # the 2.5kg step (20% of 12.5kg) also stretches the range to 17 reps
+        # before the load moves (prescribe.stretched_top).
         from prescribe import RecoveryAdjustment, _adjusted
         p = prescribe_exercise("Reverse Cable Fly", 3, ISOLATION, 1,
                                PriorSet(12.5, 11, 8.0, week=3, step=2.5), set())
         top = p.working[0]
-        self.assertEqual((top.weight_kg, top.reps_low, top.reps_high, top.grid), (12.5, 8, 12, 2.5))
+        self.assertEqual((top.weight_kg, top.reps_low, top.reps_high, top.grid), (12.5, 8, 17, 2.5))
         base_rpe = top.rpe
         cut = _adjusted(p, RecoveryAdjustment(rpe_delta=-1.0, load_multiplier=0.95, reasons=("tired",)))
         top = cut.working[0]
-        self.assertEqual((top.weight_kg, top.reps_low, top.reps_high, top.rpe), (12.5, 7, 11, base_rpe - 1))
+        self.assertEqual((top.weight_kg, top.reps_low, top.reps_high, top.rpe), (12.5, 7, 16, base_rpe - 1))
         self.assertIn("effort down, load held — a 5% cut is under this lift's 2.5kg step",
                       " ".join(cut.reasons + cut.recovery_reasons))
-        # Week 1 after a top-of-range peak steps by the stack, not by the 1kg guide.
+        # Week 1 after a top-of-range peak steps by the stack, not by the 1kg guide
+        # (the top is 17 here: a 2.5kg step on 12.5kg stretches the range).
         p = prescribe_exercise("Reverse Cable Fly", 3, ISOLATION, 1,
-                               PriorSet(12.5, 12, 7.0, week=3, step=2.5), set())
+                               PriorSet(12.5, 17, 7.0, week=3, step=2.5), set())
         self.assertEqual(p.working[0].weight_kg, 15.0)
         # Without a known step the grid is the kind's own increment (1kg for
         # an isolation lift), never the half-kilo, and the move is one whole
@@ -511,13 +529,24 @@ class BodyweightProgressionTests(unittest.TestCase):
         self.assertEqual((p.working[0].weight_kg, p.working[0].reps_low, p.working[0].reps_high),
                          (80.0, 10, 10))
 
-    def test_a_stall_at_the_target_rpe_is_deferred_not_pinned(self):
-        """RPE 8 on an RPE 8 week means the reps are not there; asking for
-        twelve would prescribe a set the athlete cannot do."""
+    def test_a_stall_logged_harder_than_the_card_is_deferred_not_pinned(self):
+        """An RPE ABOVE the week's target is the one slider move that carries
+        information (142 of 230 moves were exactly +1, measured); it says the
+        reps are not there, and asking for twelve would prescribe a set the
+        athlete cannot do."""
+        from prescribe import targets_for
+        over = targets_for(2)["top"] + 1
         p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
-                               PriorSet(None, 8, 8.0, bodyweight=True, held=4), set())
+                               PriorSet(None, 8, over, bodyweight=True, held=4), set())
         self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (9, 12))
         self.assertTrue(any("coaching decision" in d for d in p.deferred))
+
+    def test_a_stall_at_the_prefilled_rpe_pins_the_reps(self):
+        """RPE equal to the card's target is the app's pre-fill, not a reading;
+        the rep lever is pulled rather than deferred (25 Sep 2026)."""
+        p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
+                               PriorSet(None, 8, 8.0, bodyweight=True, held=4), set())
+        self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (12, 12))
 
     def test_two_sessions_is_not_a_stall(self):
         p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
