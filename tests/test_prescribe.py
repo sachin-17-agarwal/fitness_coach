@@ -475,9 +475,10 @@ class BodyweightProgressionTests(unittest.TestCase):
         self.assertNotIn("lifted", " ".join(p.reasons))
 
     def test_a_movement_with_nothing_to_load_moves_its_range_not_a_plate(self):
-        """A rollout has nothing to load (25 Sep 2026: the card showed BW+2.5kg).
-        Its range moves up instead; past the cap a variation is the coach's call."""
-        p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
+        """A plank has nothing to load (25 Sep 2026: the rollout's card showed
+        BW+2.5kg). Its range moves up instead; past the cap a variation is the
+        coach's call. The rollout itself moves by lever, tested in the batch file."""
+        p = prescribe_exercise("Plank", 3, ISOLATION, 2,
                                PriorSet(None, 15, 7.0, bodyweight=True), set(), athlete_kg=80.0)
         self.assertIsNone(p.working[0].weight_kg)
         self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (11, 15))

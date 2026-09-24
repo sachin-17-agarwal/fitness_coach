@@ -174,10 +174,46 @@ def is_unloadable(exercise: str) -> bool:
     return is_bodyweight(exercise) and any(tag in name for tag in UNLOADABLE_BODYWEIGHT)
 
 
+# The Ab Wheel Rollout does not progress by reps (the programme's own rule,
+# system_prompt.next.txt): it progresses by lengthening the lever. The rungs,
+# with no weighted vest available (athlete, 25 Sep 2026). The coach never
+# moved it — 14 kneeling sessions July–Sep, 8 reps up to 12–14 at RPE 6–8
+# (measured on the export) — so the prescription names the next rung itself.
+ROLLOUT_LADDER = (
+    "kneeling",
+    "standing, rolled out to a wall or a box that stops the wheel",
+    "standing, the stop moved farther out",
+    "full standing, chest to the floor",
+)
+
+# Rep ranges the movement, not the muscle map, decides (keys lower-case).
+RANGE_OVERRIDES = {"standing ab wheel rollout": (6, 10)}
+
+
+def _is_rollout(exercise: str) -> bool:
+    return "rollout" in (exercise or "").lower()
+
+
+def _next_rung(exercise: str) -> str:
+    """The rung after the one the exercise name says he is on."""
+    name = (exercise or "").lower()
+    if "standing" in name:
+        return (f"the stop farther out, then {ROLLOUT_LADDER[3]} — the top of the ladder with no band or "
+                f"vest available; past it, a slower lowering. A new distance is the same exercise: say which")
+    return f"{ROLLOUT_LADDER[1]} — log it as `Standing Ab Wheel Rollout`, 6-10 reps, so it carries its own history"
+
+
 def _unloadable_top(exercise: str, prior: "PriorSet", low: int, high: int, targets: dict, grid,
                     reasons: list, deferred: list, week_one: bool = False) -> "SetSpec":
     """The top set of a movement with nothing to load: reps within the range,
-    the range moved up when its top is reached, a variation past the cap."""
+    the range moved up when its top is reached, a variation past the cap.
+    The rollout is the exception: its lever moves at the top, never its reps."""
+    if prior.reps is not None and prior.reps >= high and _is_rollout(exercise):
+        deferred.append(
+            f"{exercise}: {prior.reps} reps at the top of {low}-{high} at bodyweight. This movement does "
+            f"NOT progress by reps — lengthen the lever. Next rung: {_next_rung(exercise)}."
+        )
+        return SetSpec(None, low, high, targets["top"], bodyweight=True, grid=grid)
     if prior.reps is not None and prior.reps >= high:
         if high + UNLOADABLE_RANGE_STEP > UNLOADABLE_RANGE_CAP:
             deferred.append(
@@ -756,7 +792,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     load cut. "Reps reset to the bottom" is the floor of the band, not a cap.
     """
     targets = targets_for(week)
-    low, high = rep_range or TOP_SET_RANGE[kind]
+    low, high = rep_range or RANGE_OVERRIDES.get((exercise or "").strip().lower()) or TOP_SET_RANGE[kind]
     bodyweight = is_bodyweight(exercise) or bool(prior and prior.bodyweight)
 
     # A bodyweight movement with a logged set HAS a load — the athlete — and

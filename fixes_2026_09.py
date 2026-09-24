@@ -344,10 +344,39 @@ def _fix_2026_09_25_stamp_backfill() -> str:
     return f"{n} sessions stamped by rotation inference"
 
 
+ROLLOUT_STANDING_LINE = ("Substitute: Ab Wheel Rollout -> Standing Ab Wheel Rollout | standing | "
+                         "12-14 reps kneeling at RPE 6-8 since 10 Sep 2026; the programme progresses "
+                         "the rollout by lever, never reps (athlete, 25 Sep 2026)")
+
+
+def _fix_2026_09_25_rollout_standing() -> str:
+    """The athlete's decision of 25 Sep 2026: the rollout goes standing. Recorded
+    as the Substitute decision the session shape already reads (shape.py), so
+    the card names `Standing Ab Wheel Rollout` in the rollout's slot and the
+    new movement carries its own history. Idempotent: skipped when a recorded
+    substitution for the rollout already exists."""
+    from data import get_supabase, now_local
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    rows = (supabase.table("decision_captures").select("id, line").eq("kind", "substitute")
+            .eq("status", "recorded").execute()).data or []
+    if any("ab wheel rollout ->" in (r.get("line") or "").lower() for r in rows):
+        return "a recorded rollout substitution already exists; nothing written"
+    stamp = now_local().isoformat()
+    supabase.table("decision_captures").insert({
+        "line": ROLLOUT_STANDING_LINE, "kind": "substitute", "source": "review", "status": "recorded",
+        "rationale": "Ab Wheel Rollout at 12-14 kneeling reps, RPE 6-8, three sessions running; the lever rule",
+        "proposed_at": stamp, "answered_at": stamp, "answer_text": "athlete, 25 Sep 2026",
+    }).execute()
+    return "recorded: Ab Wheel Rollout -> Standing Ab Wheel Rollout (standing)"
+
+
 FIXES_2026_09 = [
     ("2026-09-25-exercise-case-variants", _fix_2026_09_25_exercise_case_variants),
     ("2026-09-25-session-hygiene", _fix_2026_09_25_session_hygiene),
     ("2026-09-25-stamp-backfill", _fix_2026_09_25_stamp_backfill),
+    ("2026-09-25-rollout-standing", _fix_2026_09_25_rollout_standing),
     ("2026-09-19-emphasis-triceps-chest", _fix_2026_09_19_emphasis_triceps_chest),
     ("2026-09-19-block-review-window", _fix_2026_09_19_block_review_window),
     ("2026-09-19-block-review-emphasis", _fix_2026_09_19_block_review_emphasis),

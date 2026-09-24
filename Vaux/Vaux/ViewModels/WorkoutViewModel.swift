@@ -66,11 +66,11 @@ final class WorkoutViewModel {
 
     /// Week name and RPE targets, mirroring the coach's mesocycle protocol.
     var mesocyclePhaseLabel: String? {
-        Config.phaseName(week: mesocycleWeek)?.uppercased()
+        mesocycleWeek.flatMap { Config.phaseName(week: $0) }?.uppercased()
     }
 
     var mesocycleRPETarget: String? {
-        Config.rpeTarget(week: mesocycleWeek)
+        mesocycleWeek.flatMap { Config.rpeTarget(week: $0) }
     }
 
     // Coach feedback
