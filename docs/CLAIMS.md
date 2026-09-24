@@ -39,5 +39,6 @@ turned out wrong stays here with what was wrong about it.
 | 24 Sep | "The opening card is instant (2.1b)" — said when arguing against E4 and E6 | inferred, and **broken the same day** by #324's inline scoring | 25 Sep | wrong for the first call after the migration; corrected above |
 | 25 Sep | The wave chart hid last block's number under this week's bar when the outline was barely taller (screenshot) | inferred (drawing order in `WaveBarsChart`) | — | verify on the phone after the build: both numbers readable on W1 |
 | 25 Sep | "At most 4 PRs in 4 weeks" as accountability for the developer | **wrong** — it constrained the athlete, not the developer | 25 Sep | withdrawn; replaced by the rework rate and the regression count (`docs/RELIABILITY.md`) |
+| 25 Sep | A set logged just before switching apps lost its coach reply because the error was classed as a rejection (screenshot) | inferred (`deliveryUnknown`'s list; the write itself held) | — | verify: switch apps mid-set after the build; the reply lands on return |
 
 Rules for this ledger: `CLAUDE.md`. Teeth: `tests/test_claims_ledger.py` fails the suite when an *assumed* row is neither verified nor marked wrong after 14 days.

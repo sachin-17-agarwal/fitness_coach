@@ -72,4 +72,16 @@ struct PayloadDecodingTests {
         #expect(Config.rpeTarget(week: 1) == "RPE 8 · back-off 8" && Config.rpeTarget(week: 3) == "RPE 9 · back-off 8")
         #expect(Config.peakWeek == 4 && Config.deloadWeek == 5)
     }
+
+    @Test func aPendingSetReplyIsKeptOnEveryFailureButARejection() {
+        #expect(ChatService.deliveryUnknown(ChatServiceError.backendError(statusCode: 502, body: "bad gateway")))
+        #expect(ChatService.deliveryUnknown(ChatServiceError.backendError(statusCode: 504, body: "")))
+        #expect(ChatService.deliveryUnknown(URLError(.cannotConnectToHost)))
+        #expect(ChatService.deliveryUnknown(URLError(.secureConnectionFailed)))
+        #expect(ChatService.deliveryUnknown(CoachStillThinking()))
+        #expect(!ChatService.deliveryUnknown(ChatServiceError.backendError(statusCode: 401, body: "")))
+        #expect(ChatService.definitelyRejected(ChatServiceError.backendError(statusCode: 400, body: "empty message")))
+        #expect(!ChatService.definitelyRejected(ChatServiceError.backendError(statusCode: 502, body: "")))
+        #expect(!ChatService.definitelyRejected(URLError(.timedOut)))
+    }
 }

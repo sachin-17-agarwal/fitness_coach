@@ -424,14 +424,34 @@ final class ChatService: Sendable {
            case .allAttemptsFailed(let underlying) = retryError {
             return deliveryUnknown(underlying)
         }
+        // A 5xx, 408 or 429 from the server or its edge says nothing about
+        // whether the coach is working on it — Railway's edge answers 502/504
+        // after a long wait while the request is still running behind it. On
+        // 25 Sep 2026 a set logged just before switching apps came back
+        // "Couldn't reach the coach" for exactly this: the pending message was
+        // dropped and the scene-active resume had nothing to ask for.
+        if let backend = error as? ChatServiceError, case .backendError(let status, _) = backend {
+            return status >= 500 || status == 408 || status == 429
+        }
         guard let urlError = error as? URLError else { return false }
         switch urlError.code {
         case .timedOut, .networkConnectionLost, .resourceUnavailable,
-             .cancelled, .backgroundSessionWasDisconnected, .notConnectedToInternet:
+             .cancelled, .backgroundSessionWasDisconnected, .notConnectedToInternet,
+             .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .secureConnectionFailed,
+             .internationalRoamingOff, .dataNotAllowed, .callIsActive, .badServerResponse:
             return true
         default:
             return false
         }
+    }
+
+    /// The one class of failure that means the server rejected the message
+    /// and asking again by the same id would be rejected the same way.
+    static func definitelyRejected(_ error: Error) -> Bool {
+        if let backend = error as? ChatServiceError, case .backendError(let status, _) = backend {
+            return (400...499).contains(status) && status != 408 && status != 429
+        }
+        return false
     }
 
     // MARK: - Conversation history

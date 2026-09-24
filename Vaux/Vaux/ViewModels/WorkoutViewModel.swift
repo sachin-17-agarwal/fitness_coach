@@ -888,11 +888,15 @@ final class WorkoutViewModel {
             // The fact line is authored locally and is always correct for the
             // set just logged, so it is what stays on screen — never the
             // previous set's note, which read as a reply to the wrong set.
-            if ChatService.deliveryUnknown(error) {
-                coachNote = "\(pending.factPrefix)\n\nStill waiting on the coach for this set — it's logged. The reply lands when you're back in the app."
-            } else {
+            // The set is written by id, so asking again is always safe: the
+            // pending message is kept for the scene-active resume on every
+            // failure but a definite 4xx rejection (25 Sep 2026: a 502 after
+            // switching apps was read as rejection and the reply was lost).
+            if ChatService.definitelyRejected(error) {
                 pendingCoachMessage = nil
-                coachNote = "\(pending.factPrefix)\n\nCouldn't reach the coach for feedback on this set — it's logged. Ask again if you need the next target."
+                coachNote = "\(pending.factPrefix)\n\nThe coach declined this message — the set is logged. Ask again if you need the next target."
+            } else {
+                coachNote = "\(pending.factPrefix)\n\nStill waiting on the coach for this set — it's logged. The reply lands when you're back in the app."
             }
         }
     }
