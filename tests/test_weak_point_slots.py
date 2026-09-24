@@ -5,7 +5,10 @@ in the records go in by code, once."""
 
 import json
 import unittest
-import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+try:
+    import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+except ImportError:  # run as tests.test_x (CI), where tests/ is not on sys.path
+    from tests import blockfix  # noqa: F401
 from unittest.mock import patch
 
 import data_fixes

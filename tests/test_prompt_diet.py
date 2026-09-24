@@ -4,7 +4,10 @@ wherever code reads the prompt, and is a fraction of its size."""
 import os
 import re
 import unittest
-import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+try:
+    import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+except ImportError:  # run as tests.test_x (CI), where tests/ is not on sys.path
+    from tests import blockfix  # noqa: F401
 
 from coach_parsing import _WEAK_POINT_SLOT_RE, parse_session_template
 from weakpoints import parse_volume_bands
