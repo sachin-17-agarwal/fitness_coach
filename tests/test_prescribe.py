@@ -460,13 +460,14 @@ class BodyweightProgressionTests(unittest.TestCase):
         self.assertEqual(p.working[0].weight_kg, 7.5)
         self.assertNotIn("lifted", " ".join(p.reasons))
 
-    def test_a_movement_with_no_body_share_is_not_sized(self):
-        """A rollout lifts no meaningful share of the athlete; the step is a
-        plate and the reason says what a plate means on this movement."""
+    def test_a_movement_with_nothing_to_load_moves_its_range_not_a_plate(self):
+        """A rollout has nothing to load (25 Sep 2026: the card showed BW+2.5kg).
+        Its range moves up instead; past the cap a variation is the coach's call."""
         p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,
                                PriorSet(None, 15, 7.0, bodyweight=True), set(), athlete_kg=80.0)
-        self.assertEqual(p.working[0].weight_kg, 2.5)
-        self.assertIn("plate on the back or a vest", " ".join(p.reasons))
+        self.assertIsNone(p.working[0].weight_kg)
+        self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (11, 15))
+        self.assertIn("No load to add", " ".join(p.reasons))
 
     def test_the_lifts_own_step_drives_rounding_and_increments(self):
         # Reverse Cable Fly, 20 Sep 2026: peak 12.5 x 11 @8 on a 2.5kg cable

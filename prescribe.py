@@ -159,6 +159,46 @@ _BODYWEIGHT_FRACTIONS = (
 )
 
 
+# Bodyweight movements with nothing to load: no belt, no plate on the back, no
+# dumbbell between the feet. They progress by reps, tempo and a harder
+# variation, never by "BW+2.5kg" — which the card showed for the Ab Wheel
+# Rollout on 25 Sep 2026 once the coach stopped overriding it to zero.
+UNLOADABLE_BODYWEIGHT = ("ab wheel", "rollout", "plank", "dead bug", "hollow", "bird dog")
+UNLOADABLE_RANGE_STEP = 3      # the range moves up by this many reps when its top is reached
+UNLOADABLE_RANGE_CAP = 20      # past this, a harder variation is the coach's call
+
+
+def is_unloadable(exercise: str) -> bool:
+    name = (exercise or "").lower()
+    return is_bodyweight(exercise) and any(tag in name for tag in UNLOADABLE_BODYWEIGHT)
+
+
+def _unloadable_top(exercise: str, prior: "PriorSet", low: int, high: int, targets: dict, grid,
+                    reasons: list, deferred: list, week_one: bool = False) -> "SetSpec":
+    """The top set of a movement with nothing to load: reps within the range,
+    the range moved up when its top is reached, a variation past the cap."""
+    if prior.reps is not None and prior.reps >= high:
+        if high + UNLOADABLE_RANGE_STEP > UNLOADABLE_RANGE_CAP:
+            deferred.append(
+                f"{exercise}: {prior.reps} reps at bodyweight, at the top of a range already raised to "
+                f"{high}. There is no load to add; a harder variation (longer rollout, feet elevated, a "
+                f"slower tempo) is the coach's call — name it."
+            )
+            return SetSpec(None, low, high, targets["top"], bodyweight=True, grid=grid)
+        low, high = low + UNLOADABLE_RANGE_STEP, high + UNLOADABLE_RANGE_STEP
+        reasons.append(
+            f"No load to add on {exercise}: the range moves up to {low}-{high} instead. When {high} lands "
+            f"cleanly, a harder variation is the coach's call, not more reps."
+        )
+        return SetSpec(None, low, high, targets["top"], bodyweight=True, grid=grid)
+    if week_one:
+        reasons.append(f"Week 1 reopens {exercise} at bodyweight, reps reset to the bottom of {low}-{high}; there is no load to add.")
+        return SetSpec(None, low, high, targets["top"], bodyweight=True, grid=grid)
+    target_low = max(low, min((prior.reps or low) + 1, high))
+    reasons.append(f"{exercise} at bodyweight: one more rep toward {high}; there is no load to add.")
+    return SetSpec(None, target_low, high, targets["top"], bodyweight=True, grid=grid)
+
+
 def bodyweight_fraction(exercise: str) -> float | None:
     """Fraction of bodyweight `exercise` moves, or None for a stack lift."""
     name = (exercise or "").lower()
@@ -740,6 +780,8 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"recorded mesocycle week, so which week it belonged to "
                 f"cannot be verified."
             )
+        if bodyweight and is_unloadable(exercise) and not (prior.load or 0):
+            return _unloadable_top(exercise, prior, low, high, targets, grid, reasons, deferred, week_one=True)
         sized = _sized_overshoot(prior, load, low, high, kind, exercise, athlete_kg) if prior.reps is not None else None
         if sized:
             load, why = sized
@@ -789,6 +831,10 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             f"is a coaching decision, not arithmetic; the programme repeats the rep "
             f"prescription below until one is made."
         )
+
+    if bodyweight and is_unloadable(exercise) and not (prior.load or 0) and week != deload_week():
+        # Nothing to load (a rollout): reps, then a variation — never "BW+2.5kg".
+        return _unloadable_top(exercise, prior, low, high, targets, grid, reasons, deferred)
 
     if week == 2:
         # :182 — "Keep the Week 1 weight and reach RPE 8 by adding reps toward

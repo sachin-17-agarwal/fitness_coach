@@ -97,6 +97,7 @@ The two categories beyond the four you named:
 | C14 | Bodyweight-plus lifts: the added-load step sized on the athlete plus the plate | S | proposed 25 Sep, saved for review | Measured: Dips 15 vs 20 lifted, Pull-Ups 14 vs 17.5 twice among the 8 replay outliers. |
 | C15 | Light stacks: when one step exceeds ~10% of the load, progress by widening the rep range before the load | S | proposed 25 Sep, saved for review | Measured: Reverse Cable Fly three times among the outliers (12.5 ↔ 10 ↔ 15); lateral raise and Pallof the same shape. |
 | C16 | Bulk-rate readout: weekly weight rate in the Sunday report and a one-line note to the coach above ~0.5%/week | S | proposed 25 Sep, saved for review | Measured: 80.8 → 82.6 over the last seven weigh-ins; ~1 kg/week for six weeks. |
+| C17 | Unloadable bodyweight movements (ab wheel, plank, dead bug, hollow, bird dog) progress by reps then a variation, never "BW+2.5kg" | S | in PR 25 Sep, unverified — the card showed Ab Wheel Rollout at BW+2.5kg once the coach stopped overriding the programme to zero (screenshot) |
 
 ## Process — how we build and ship
 

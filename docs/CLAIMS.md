@@ -40,5 +40,6 @@ turned out wrong stays here with what was wrong about it.
 | 25 Sep | The wave chart hid last block's number under this week's bar when the outline was barely taller (screenshot) | inferred (drawing order in `WaveBarsChart`) | — | verify on the phone after the build: both numbers readable on W1 |
 | 25 Sep | "At most 4 PRs in 4 weeks" as accountability for the developer | **wrong** — it constrained the athlete, not the developer | 25 Sep | withdrawn; replaced by the rework rate and the regression count (`docs/RELIABILITY.md`) |
 | 25 Sep | A set logged just before switching apps lost its coach reply because the error was classed as a rejection (screenshot) | inferred (`deliveryUnknown`'s list; the write itself held) | — | verify: switch apps mid-set after the build; the reply lands on return |
+| 25 Sep | Merged #331–#334 between the athlete's 5:25 and 6:00 screenshots (3 → 8 of 16 sets: a live Cardio+Abs session) without checking; each merge redeploys Railway and kills in-flight requests | measured (screenshots) | 25 Sep | **regression of process**: the "Couldn't reach the coach" at 5:32 may be a redeploy, not iOS. No merge without checking the session state or asking, from now |
 
 Rules for this ledger: `CLAUDE.md`. Teeth: `tests/test_claims_ledger.py` fails the suite when an *assumed* row is neither verified nor marked wrong after 14 days.

@@ -156,3 +156,26 @@ class ReadyToLoadTests(unittest.TestCase):
         # Never at bodyweight, where the step is a plate the coach decides.
         bw = prescribe_exercise("Pull-Ups", 2, COMPOUND, 2, PriorSet(None, 6, 9.5, bodyweight=True, ready=True), set())
         self.assertTrue(bw.working[0].bodyweight)
+
+
+class UnloadableBodyweightTests(unittest.TestCase):
+    """C17: a rollout has nothing to load; it progresses by reps, then a variation."""
+
+    def test_the_range_moves_not_the_load(self):
+        from prescribe import ISOLATION, PriorSet, is_unloadable, prescribe_exercise
+        self.assertTrue(is_unloadable("Ab Wheel Rollout"))
+        self.assertFalse(is_unloadable("Hanging Leg Raises"))   # a dumbbell between the feet
+        self.assertFalse(is_unloadable("Pull-Ups"))
+        top = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 12, 8.0, bodyweight=True), set()).working[0]
+        self.assertEqual((top.weight_kg, top.bodyweight, top.reps_low, top.reps_high), (None, True, 11, 15))
+        mid = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 9, 8.0, bodyweight=True), set()).working[0]
+        self.assertEqual((mid.weight_kg, mid.reps_low, mid.reps_high), (None, 10, 12))
+        p = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 1, PriorSet(None, 12, 8.0, bodyweight=True, week=3), set())
+        self.assertIsNone(p.working[0].weight_kg, "week 1 opens without inventing a plate")
+        self.assertTrue(any("No load to add" in r for r in p.reasons))
+
+    def test_past_the_cap_a_variation_is_the_coachs_call(self):
+        from prescribe import ISOLATION, PriorSet, prescribe_exercise
+        p = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 20, 8.0, bodyweight=True), set(), rep_range=(17, 20))
+        self.assertIsNone(p.working[0].weight_kg)
+        self.assertTrue(any("harder variation" in d for d in p.deferred))
