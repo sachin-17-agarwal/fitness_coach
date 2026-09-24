@@ -122,9 +122,13 @@ class WeekTwoBacklogTests(unittest.TestCase):
         self.assertEqual((spec.reps_low, spec.reps_high), (6, 10))
         self.assertTrue(any("OVERDUE" in r for r in reasons))
 
-    def test_week_two_at_the_top_of_the_range_over_target_still_adds_reps(self):
-        """Exactly AT the top at RPE 9 is not a backlog: :182 wants RPE <= 8."""
+    def test_week_two_at_the_top_of_the_range_loads_whatever_the_rpe_said(self):
+        """Reps only since 25 Sep 2026: :182's "at RPE <= 8" read a number the
+        app pre-fills and the athlete cannot resolve to a point. At the top of
+        the range the load moves; only a failed rep (RPE 10) holds it."""
         spec = next_top_set("Cable Row", COMPOUND, 2, PriorSet(80.0, 10, 9.0), [], [])
+        self.assertEqual(spec.weight_kg, 82.5)
+        spec = next_top_set("Cable Row", COMPOUND, 2, PriorSet(80.0, 10, 10.0), [], [])
         self.assertEqual(spec.weight_kg, 80.0)
 
 

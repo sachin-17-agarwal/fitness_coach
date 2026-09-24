@@ -33,7 +33,7 @@ from data import deload_week  # the block's shape
 from dataclasses import replace
 
 from constraints import norm_name
-from prescribe import INCREMENT, OVERSHOOT_CAP, TOP_SET_RANGE, Proposal, SetSpec, _is_straight_set, _round_load
+from prescribe import INCREMENT, STEP_CAP, TOP_SET_RANGE, Proposal, SetSpec, _is_straight_set, _round_load
 
 log = logging.getLogger(__name__)
 
@@ -124,17 +124,17 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
                 findings.append({"exercise": p.exercise, "kind": "regression", "fixed": True,
                                  "detail": f"top {old:g}kg → {float(anchor.load):g}kg (anchor {anchor.load:g} x{anchor.reps})"})
 
-        # jump: an increase is one increment (2.5-5kg compounds, 1-2.5kg
-        # isolations, :181/:202) or, when the reason says it was sized to an
-        # overshoot, at most OVERSHOOT_CAP. Nothing else may put a top set
-        # further above its anchor: Single Leg Sumo Press opened 132.5 -> 150
-        # on 23 Sep 2026 from a mis-measured step and nothing caught it.
+        # jump: one increase is at most STEP_CAP (6%) of the anchor, from any
+        # path — sized overshoot, coach, programme — and never less than one
+        # increment the lift can take (:181/:202). Single Leg Sumo Press opened
+        # 132.5 -> 150 on 23 Sep 2026 from a mis-measured step and nothing
+        # caught it; the coach's own off-trigger increases landed under the
+        # range 11 times in 37 (measured, June–23 Sep 2026).
         if (working and anchor is not None and getattr(anchor, "load", None) and week != deload_week()
                 and working[0].weight_kg is not None and not working[0].bodyweight):
             base = float(anchor.load)
             inc = max(INCREMENT.get(p.kind, 2.5), step or 0.0)
-            reasons_text = " ".join(p.reasons).lower()
-            limit = base * (1 + OVERSHOOT_CAP) + (step or 0.5) if "sized" in reasons_text else base + max(2 * INCREMENT.get(p.kind, 2.5), step or 0.0)
+            limit = max(base * (1 + STEP_CAP), base + inc) + 1e-9
             if working[0].weight_kg > limit + 1e-9:
                 old = working[0].weight_kg
                 new_top = _round_load(base + inc, step, base) if step else base + inc
@@ -142,8 +142,8 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
                 working = [replace(working[0], weight_kg=new_top)] + [_scaled(w, ratio, step, anchor_load) for w in working[1:]]
                 backoff = [_scaled(b, ratio, step, anchor_load) for b in backoff]
                 warmup = [_scaled(w, ratio, step, anchor_load) for w in warmup]
-                fixes.append(f"{old:g}kg is {old - base:g}kg above the {base:g}kg it progresses from, more than one "
-                             f"increment; {new_top:g}kg is one increment up")
+                fixes.append(f"{old:g}kg is {old - base:g}kg above the {base:g}kg it progresses from, more than "
+                             f"{STEP_CAP:.0%} or one increment; {new_top:g}kg is one increment up")
                 findings.append({"exercise": p.exercise, "kind": "jump", "fixed": True,
                                  "detail": f"top {old:g}kg → {new_top:g}kg (anchor {base:g})"})
 

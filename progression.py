@@ -130,7 +130,9 @@ def _day(iso: str) -> str:
 def _programme_due(exercise: str, tops: list[dict]) -> bool:
     """The programme's own load-increase trigger, so the watch and the card
     cannot disagree: a top set at this load reached the TOP of the lift's
-    range (:180, :203) at a known RPE of 9 or under.
+    range (:180, :203). Reps only since 25 Sep 2026 (see
+    prescribe._met_top_of_range); an RPE of 10, a failed rep, is the one
+    reading that holds it.
 
     The watch used to fire on _met_target — the newest set hitting its own
     card's reps at its RPE — and a deload set done as prescribed always does,
@@ -140,7 +142,7 @@ def _programme_due(exercise: str, tops: list[dict]) -> bool:
     high = TOP_SET_RANGE[classify(exercise)][1]
     for top in tops:
         reps, rpe = _as_int(top.get("actual_reps")), _as_float(top.get("actual_rpe"))
-        if reps is not None and rpe is not None and reps >= high and rpe <= 9:
+        if reps is not None and reps >= high and (rpe is None or rpe < 10):
             return True
     return False
 

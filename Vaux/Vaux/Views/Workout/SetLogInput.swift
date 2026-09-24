@@ -74,9 +74,13 @@ struct SetLogInput: View {
                 )
             }
 
-            if !isWarmup {
-                RPESlider(value: $rpe)
-            }
+            // The RPE slider was retired on 25 Sep 2026. It pre-filled with the
+            // card's target and 74-81% of working sets each month carried it
+            // unchanged (measured on the export); the athlete cannot tell 7, 8
+            // and 9 apart, and the programme now progresses on reps alone. The
+            // binding keeps the card's target so the logged set still carries
+            // the instruction it was performed under. EditSetSheet still lets a
+            // set be marked 10 (a failed rep) after the fact.
 
             Button(action: {
                 Haptic.medium()

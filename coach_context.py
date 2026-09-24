@@ -132,7 +132,9 @@ def get_full_session_history(days: int = 30) -> str:
 
         all_sessions.sort(key=lambda x: x["date"], reverse=True)
 
-        lines = []
+        lines = ["RPE on a logged set is the card's target carried through by the app, "
+                 "not the athlete's reading — read effort from reps against the range. "
+                 "Only an RPE above the card's target was entered by hand; 10 means the rep failed."]
         for s in all_sessions:
             lines.append(f"\n{s['date']} — {s['type']} (tonnage: {s.get('tonnage_kg', '?')}kg)")
             if s["sets"]:
