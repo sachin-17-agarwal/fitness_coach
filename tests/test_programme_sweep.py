@@ -14,7 +14,10 @@ This is the "won't break anything" test. It runs in about two seconds.
 
 import math
 import unittest
-import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+try:
+    import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+except ImportError:  # run as tests.test_x (CI), where tests/ is not on sys.path
+    from tests import blockfix  # noqa: F401
 
 from coach_parsing import (parse_all_prescriptions, parse_session_template,
                            substitute_computed_blocks)

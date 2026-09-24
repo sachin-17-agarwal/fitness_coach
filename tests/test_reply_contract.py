@@ -3,7 +3,10 @@ with one record of what each did."""
 
 import contextlib
 import unittest
-import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+try:
+    import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+except ImportError:  # run as tests.test_x (CI), where tests/ is not on sys.path
+    from tests import blockfix  # noqa: F401
 from unittest.mock import patch
 
 from reply_contract import EDITING_STEPS, ReplyContext, STEPS, apply_contract

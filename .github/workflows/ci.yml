@@ -22,4 +22,6 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run regression tests
-        run: python -m unittest tests.test_regressions -v
+        # The whole suite, the way it is run locally (python -m unittest discover -s tests),
+        # not one module: until 24 Sep 2026 CI ran tests.test_regressions alone.
+        run: python -m unittest discover -s tests

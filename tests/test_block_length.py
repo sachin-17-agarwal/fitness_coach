@@ -5,7 +5,10 @@ switch, and the deload-by-sets rule that came in with it."""
 import unittest
 from unittest.mock import MagicMock, patch
 
-import blockfix  # noqa: F401
+try:
+    import blockfix  # noqa: F401
+except ImportError:
+    from tests import blockfix  # noqa: F401
 import data
 from prescribe import COMPOUND, ISOLATION, PriorSet, prescribe_exercise, targets_for, deload_set_count
 

@@ -24,3 +24,4 @@ turned out wrong stays here with what was wrong about it.
 | 24 Sep | Deload by sets, back-offs RPE 8, 5-week block are supported by the literature cited | inferred (search summaries; full papers not fetchable from this environment) | — | to verify: read Bell et al. 2023 and Robinson et al. 2024 in full |
 | 24 Sep | The scorecard (#324) will show within one block whether the coach's judgement beats the programme's number | assumed | — | due ~29 Oct |
 | 24 Sep | The Swift changes of 23–24 Sep compile | **assumed** — no compiler here | — | the nightly build decides |
+| 24 Sep | "813 tests pass" (#323, #324) | measured — under `discover -s tests` only | 24 Sep | **wrong for CI**: CI ran `python -m unittest tests.test_regressions`, where `import blockfix` fails (tests/ not on sys.path). Two red runs on main; the coach was unaffected. Fixed in #325; CI now runs the whole suite both ways |

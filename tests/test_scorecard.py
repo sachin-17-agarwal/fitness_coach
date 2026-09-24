@@ -5,7 +5,10 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-import blockfix  # noqa: F401
+try:
+    import blockfix  # noqa: F401
+except ImportError:  # run as tests.test_x (CI)
+    from tests import blockfix  # noqa: F401
 import scorecard
 from scorecard import HEAVY, LIGHT, RIGHT, UNKNOWN, verdict
 
@@ -146,7 +149,10 @@ class ProgrammeLearnsTests(unittest.TestCase):
 class AcceptIsADecisionTests(unittest.TestCase):
     def test_an_unexamined_accept_on_a_trend_is_asked_about_softly(self):
         from plan import validate
-        from test_plan_contract import _legs_plan, _legs_proposal, _prompt, parse_plan
+        try:
+            from test_plan_contract import _legs_plan, _legs_proposal, _prompt, parse_plan
+        except ImportError:
+            from tests.test_plan_contract import _legs_plan, _legs_proposal, _prompt, parse_plan
         plan = parse_plan(json.dumps(_legs_plan()), _legs_proposal())
         problems = validate(plan, "Legs", _prompt(), _legs_proposal(), verdicts=VERDICTS)
         hits = [p for p in problems if "came in LIGHT" in p]

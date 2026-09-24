@@ -6,7 +6,10 @@ now a function with one right answer, and these are the answers.
 """
 
 import unittest
-import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+try:
+    import blockfix  # noqa: F401  pins the block to four weeks for the legacy rules
+except ImportError:  # run as tests.test_x (CI), where tests/ is not on sys.path
+    from tests import blockfix  # noqa: F401
 
 from prescribe import (
     COMPOUND, ISOLATION, PriorSet, SetSpec, backoff_sets,
