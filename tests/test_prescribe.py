@@ -482,7 +482,7 @@ class BodyweightProgressionTests(unittest.TestCase):
         cut = _adjusted(p, RecoveryAdjustment(rpe_delta=-1.0, load_multiplier=0.95, reasons=("tired",)))
         top = cut.working[0]
         self.assertEqual((top.weight_kg, top.reps_low, top.reps_high, top.rpe), (12.5, 7, 11, base_rpe - 1))
-        self.assertIn("smaller than this lift's 2.5kg step, so the load holds at 12.5kg",
+        self.assertIn("effort down, load held — a 5% cut is under this lift's 2.5kg step",
                       " ".join(cut.reasons + cut.recovery_reasons))
         # Week 1 after a top-of-range peak steps by the stack, not by the 1kg guide.
         p = prescribe_exercise("Reverse Cable Fly", 3, ISOLATION, 1,

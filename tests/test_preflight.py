@@ -115,7 +115,7 @@ class ThroughTheProgrammeTests(unittest.TestCase):
         self.assertTrue(all(w.weight_kg is None or abs(w.weight_kg / 2.5 - round(w.weight_kg / 2.5)) < 1e-6
                             for w in fly.warmup + fly.working + fly.backoff),
                         "every load on the card exists on a 2.5kg stack")
-        self.assertIn("load holds at 12.5kg", " ".join(fly.reasons + fly.recovery_reasons))
+        self.assertIn("effort down, load held", " ".join(fly.reasons + fly.recovery_reasons))
 
     def test_the_dry_run_happens_once_a_day_and_never_inside_a_session(self):
         stored = {}

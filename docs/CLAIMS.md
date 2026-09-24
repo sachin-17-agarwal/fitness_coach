@@ -34,5 +34,6 @@ turned out wrong stays here with what was wrong about it.
 | 25 Sep | The 25 Sep batch's Swift compiles (alias sheet, widget line, fact line, session-end reload) | **assumed** — no compiler here | — | the nightly build decides |
 | 25 Sep | Commit ce6d95b: "both test invocations pass" | **wrong** — the shell chain gated on `tail`, not on unittest; `discover` was red (the ledger test's own year-wrap bug on a row dated tomorrow) | 25 Sep | fixed in the next commit; the gate now checks unittest's exit status |
 | 25 Sep | The stamp backfill (S4) places the Aug block's start at 11 Aug; the block review's own rotation estimate said 9–10 Aug | measured (export) — two sessions apart, both inferences | — | at the ~29 Oct review: the previous-block window the review names should match the stamps now on the rows; if not, the review's estimate wins and the stamps move |
+| 25 Sep | 21 READY-TO-LOAD runs since June; the load moved the next session in 9 | measured (export: same load two sessions running with reps at/over the range top at RPE ≤ 9) | 25 Sep | held; C2 makes the programme take the step |
 
 Rules for this ledger: `CLAUDE.md`. Teeth: `tests/test_claims_ledger.py` fails the suite when an *assumed* row is neither verified nor marked wrong after 14 days.

@@ -277,6 +277,12 @@ class PriorSet:
     week: int | None = None     # mesocycle week it was performed in, if known
     bodyweight: bool = False    # progression's "BW" key: a set at bodyweight
     held: int = 1               # consecutive sessions at this load AND these reps
+    # The watch's READY TO LOAD: a session at this load reached the top of
+    # the range at RPE 9 or under (progression._programme_due). The last
+    # session alone may not show it (11 of 8-12 at RPE 9.5 the day after
+    # 12 at RPE 9), so the rule that reads only the last set would hold;
+    # this makes the programme take the step (C2).
+    ready: bool = False
     # The smallest load step this lift's own history shows (2.5 on a cable
     # stack, 5 on a leg press, 1.25 with microplates), from progression's
     # find_current_loads; None when the log cannot tell. Every rounding and
@@ -625,9 +631,8 @@ def apply_recovery(spec: "SetSpec", adjustment: RecoveryAdjustment,
             # The stack decides — the load holds and the RPE/rep cut carries
             # the day. Said out loud so the card is not read as a regression.
             reasons.append(
-                f"Recovery load cut of {abs(1 - adjustment.load_multiplier) * 100:.0f}% is smaller than "
-                f"this lift's {spec.grid:g}kg step, so the load holds at {weight:g}kg and the "
-                f"RPE/rep cut carries it (:317)."
+                f"Readiness: effort down, load held — a {abs(1 - adjustment.load_multiplier) * 100:.0f}% cut is "
+                f"under this lift's {spec.grid:g}kg step (C1)."
             )
         weight = cut
 
@@ -817,6 +822,15 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"to go (:182). Reps reset to the bottom."
             )
             return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
+        if prior.ready and not bodyweight:
+            step = _increment(kind, bodyweight, step)
+            load = _round_load(load + step, grid, load)
+            reasons.append(
+                f"READY TO LOAD, ~{step:g}kg up: a session at this load already reached the top of "
+                f"the {low}-{high} range at RPE 9 or under, even if the last one did not quite. "
+                f"The programme takes the step itself (:203). Reps reset to the bottom."
+            )
+            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
         target_low = max(low, min((prior.reps or low) + 1, high))
         reasons.append(
             f"Week 2 holds the week 1 load and adds reps toward the top of the "
@@ -841,6 +855,15 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                     f"{prior.reps} reps, already at the top of the range, so load is the "
                     f"preferred lever (:183)."
                 )
+            return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
+        if prior.ready and not bodyweight:
+            step = _increment(kind, bodyweight, step)
+            load = _round_load(load + step, grid, load)
+            reasons.append(
+                f"Peak via LOAD, ~{step:g}kg up — READY TO LOAD: a session at this load already "
+                f"reached the top of the {low}-{high} range at RPE 9 or under. The programme takes "
+                f"the step itself (:203)."
+            )
             return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
         target_low = max(low, min((prior.reps or low) + 1, high))
         reasons.append(
