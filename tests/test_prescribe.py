@@ -477,10 +477,13 @@ class BodyweightProgressionTests(unittest.TestCase):
         p = prescribe_exercise("Reverse Cable Fly", 3, ISOLATION, 1,
                                PriorSet(12.5, 12, 7.0, week=3, step=2.5), set())
         self.assertEqual(p.working[0].weight_kg, 15.0)
-        # Without a known step the half-kilo default and the 1kg guide stand, as before.
+        # Without a known step the grid is the kind's own increment (1kg for
+        # an isolation lift), never the half-kilo, and the move is one whole
+        # step from the load he was at: 12.5 -> 13.5. (151.5kg went on a
+        # chest press whose stack had not been read, 22 Sep 2026.)
         p = prescribe_exercise("Reverse Cable Fly", 3, ISOLATION, 1,
                                PriorSet(12.5, 12, 7.0, week=3), set())
-        self.assertEqual((p.working[0].weight_kg, p.working[0].grid), (13.5, 0.5))
+        self.assertEqual((p.working[0].weight_kg, p.working[0].grid), (13.5, 1.0))
 
     def test_a_stall_with_reps_in_reserve_pins_the_top_of_the_range(self):
         p = prescribe_exercise("Ab Wheel Rollout", 3, ISOLATION, 2,

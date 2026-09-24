@@ -14,3 +14,6 @@ xcuserdata/
 
 # Local device builds from tools/deploy_device.sh
 build/
+
+# Health data from the app's export: read by replay_export.py when present, never committed.
+tests/fixtures/export/recovery.csv

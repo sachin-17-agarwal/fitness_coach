@@ -367,7 +367,7 @@ def _backoff_problems(e: ExercisePlan) -> list[str]:
 
 def validate(plan: SessionPlan, session_type: str, prompt: str,
              proposal: dict | None = None, weak_points: list | None = None,
-             ceilings: dict | None = None) -> list[str]:
+             ceilings: dict | None = None, steps: dict | None = None) -> list[str]:
     """Every way the plan breaks the programme, as sentences the model can act on.
 
     Mechanical rules only — set counts from the template, the shape of the
@@ -485,6 +485,23 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
                                 f"programme's ({programme_top:g}kg) and the reason names no cause — say the "
                                 f"recovery reading, the joint, the machine's step or the time that drove it, "
                                 f"or accept the programme's number.{SOFT}")
+        if e.decision == "adjust" and computed.get("working") and e.working:
+            # The mirror of the cut: a reach ABOVE the programme is at most one
+            # step of the lift. The pre-flight holds the programme's own jumps
+            # to this; the coach's were unbounded, and on 22 Sep 2026 it put
+            # the Machine Chest Press at 168kg against the programme's ~152
+            # (149 x11 the block before): 165 x5 @9, under the range. Not
+            # soft — no cause makes a bigger jump right; a set that turns out
+            # easy moves the card through the set reply.
+            from prescribe import INCREMENT, classify  # local: keeps import order flat
+            programme_top = float(computed["working"][0].get("weight") or 0)
+            step = lift_step(steps, e.exercise) or 0.0
+            allowance = max(2 * INCREMENT[classify(e.exercise)], step, 2.5)  # one cable step at least
+            if programme_top > 0 and e.working[0].load_kg > programme_top + allowance + 1e-6:
+                problems.append(f"{e.exercise}: today's top set ({e.working[0].load_kg:g}kg) is "
+                                f"{e.working[0].load_kg - programme_top:g}kg over the programme's ({programme_top:g}kg), "
+                                f"more than one step up ({allowance:g}kg) — the programme's number stands; if the "
+                                f"set proves easy the card moves through the set reply.")
         if e.decision == "accept" and computed.get("working"):
             same = _same_set(e.working[0], computed["working"][0]) and \
                 len(e.backoff) == len(computed.get("backoff", [])) and \
@@ -668,7 +685,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
                          proposal: dict | None = None, model: str = MODEL,
                          weak_points: list | None = None,
                          budget_seconds: float = PLAN_TIME_BUDGET_SECONDS,
-                         ceilings: dict | None = None) -> tuple:
+                         ceilings: dict | None = None, steps: dict | None = None) -> tuple:
     """Ask for the plan, check it, and make sure a plan comes back.
 
     Returns (plan, log_lines). `plan` is None only when the model's output
@@ -736,7 +753,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
             notes.append(f"attempt {attempt}: plan did not parse ({exc})")
             plan = None
             break
-        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps)
         if not problems:
             notes.append(f"attempt {attempt}: plan accepted")
             return plan, notes
@@ -763,7 +780,7 @@ def request_session_plan(client, system_blocks: list, messages: list,
     # Soft problems are the coach's to keep: they never send a lift to the fill.
     if plan is None:
         plan = SessionPlan(opening="", exercises=[])
-        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings)
+        problems = validate(plan, session_type, prompt, proposal, weak_points, ceilings, steps)
     soft = [x for x in problems if is_soft(x)]
     if soft:
         notes.append("coach's call stands: " + " | ".join(x[:-len(SOFT)] for x in soft))
@@ -1061,22 +1078,71 @@ def load_today_plan(exercise: str) -> dict | None:
     return None
 
 
+_SET_COLUMNS = "exercise, is_warmup, actual_weight_kg, actual_reps, actual_rpe, set_number, created_at"
+
+
 def latest_logged_sets(session_id: str | None, exercise: str) -> list[dict]:
-    """This exercise's working sets logged against the session, in order."""
+    """This exercise's working sets logged against the session, in order,
+    with the phase each was logged under when the row carries one."""
     supabase = get_supabase()
     if not supabase or not session_id:
         return []
-    try:
-        rows = (
-            supabase.table("workout_sets")
-            .select("exercise, is_warmup, actual_weight_kg, actual_reps, actual_rpe, set_number, created_at")
-            .eq("workout_session_id", session_id)
-            .execute()
-        ).data or []
-    except Exception:
+    rows = None
+    for columns in (_SET_COLUMNS + ", phase", _SET_COLUMNS):
+        try:
+            rows = (supabase.table("workout_sets").select(columns)
+                    .eq("workout_session_id", session_id).execute()).data or []
+            break
+        except Exception:
+            continue  # a store without the phase column (migration 014) still answers
+    if rows is None:
         return []
     mine = [r for r in rows if _same(r.get("exercise") or "", exercise) and not r.get("is_warmup")]
     return sorted(mine, key=lambda r: (str(r.get("created_at") or ""), r.get("set_number") or 0))
+
+
+def phase_counts(rows: list[dict], stored: dict) -> dict:
+    """Working and back-off sets done, by the phase each row was logged
+    under. Rows without a phase (before migration 014) fill the working
+    slots first and the back-offs after, as position always had it."""
+    n_working = len(stored.get("working") or [])
+    counts = {"working": 0, "backoff": 0}
+    unknown = 0
+    for r in rows or []:
+        ph = (r.get("phase") or "").lower()
+        if ph in counts:
+            counts[ph] += 1
+        elif ph != "warmup":
+            unknown += 1
+    fill = min(unknown, max(0, n_working - counts["working"]))
+    counts["working"] += fill
+    counts["backoff"] += unknown - fill
+    return counts
+
+
+def next_set_index(rows: list[dict], stored: dict) -> int:
+    """Position in the card's sequence of the next set to do: the first slot
+    whose phase has not logged that many sets. A skipped working set no
+    longer turns the first back-off into "working set 1"."""
+    counts = phase_counts(rows, stored)
+    sequence = _sequence(stored or {})
+    for k, (ph, i) in enumerate(sequence):
+        if i >= counts.get(ph, 0):
+            return k
+    return len(sequence)
+
+
+def last_logged_slot(rows: list[dict], stored: dict) -> tuple | None:
+    """(phase, index) of the most recent row, for the move it may owe."""
+    if not rows:
+        return None
+    ph = (rows[-1].get("phase") or "").lower()
+    if ph in ("working", "backoff"):
+        return ph, sum(1 for r in rows if (r.get("phase") or "").lower() == ph) - 1
+    # No phase on the row: position, as before.
+    done = next_set_index(rows, stored)
+    sequence = _sequence(stored or {})
+    return sequence[done - 1] if 0 < done <= len(sequence) else None
 
 
 def logged_sets_for(session_id: str, exercise: str) -> int:
@@ -1170,7 +1236,7 @@ def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: st
         if is_bodyweight(exercise) and load <= 0 and decision == "lighter":
             return planned
         step = _load_step(exercise, load, grid) * n
-        load = max(0.0, _round_load(load - step if decision == "lighter" else load + step, grid))
+        load = max(0.0, _round_load(load - step if decision == "lighter" else load + step, grid, load))
         return SetPlan(load, low, high, rpe)
     if decision in ("fewer_reps", "more_reps"):
         d = -n if decision == "fewer_reps" else n
@@ -1179,7 +1245,7 @@ def apply_set_decision(decision: str, steps: int, planned: SetPlan, exercise: st
         d = -n if decision == "easier" else n
         new_rpe = min(10.0, max(5.0, rpe + d))
         if decision == "easier" and low - n < DELOAD_MIN_REPS:
-            return SetPlan(_round_load(load * 0.925, grid) if load > 0 else load, low, high, new_rpe)
+            return SetPlan(_round_load(load * 0.925, grid, load) if load > 0 else load, low, high, new_rpe)
         return SetPlan(load, max(1, low + d), max(1, high + d), new_rpe)
     return None
 
@@ -1477,7 +1543,7 @@ def render_set_reply(reply: dict, exercise: str, stored: dict, done: int,
     return f"{note}\n\n{block}" if note else block
 
 
-def owed_set_decision(logged: dict | None, stored: dict, done: int) -> dict | None:
+def owed_set_decision(logged: dict | None, stored: dict, done: int, last: tuple | None = None) -> dict | None:
     """The move the programme owes after a logged set, whatever the model said.
 
     A set that beats the top of its range at the prescribed load, at or under
@@ -1485,12 +1551,14 @@ def owed_set_decision(logged: dict | None, stored: dict, done: int) -> dict | No
     load"); the remaining sets of the exercise go up now. 270kg x11 @7 against
     5-9 @7 on 23 Sep was answered with `hold` twice, and the back-offs stayed
     at 215kg. None when nothing is owed or nothing is left to move."""
-    if not logged or done < 1:
+    if not logged or (done < 1 and not last):
         return None
     sequence = _sequence(stored or {})
     if done >= len(sequence):
         return None
-    ph, i = sequence[done - 1]
+    # `last` is the slot the row was logged under (plan.last_logged_slot);
+    # without it, the slot before the next one, as position had it.
+    ph, i = last if last else sequence[done - 1]
     planned_list = stored.get(ph) or []
     if i >= len(planned_list):
         return None

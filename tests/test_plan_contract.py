@@ -1307,12 +1307,37 @@ class StandingConstraintTests(unittest.TestCase):
         raw = _legs_plan()
         raw["exercises"][2]["decision"] = "adjust"
         raw["exercises"][2]["reason"] = "Quads felt fresh after the presses, taking the step up today."
+        raw["exercises"][2]["working"][0]["load_kg"] = 102.5   # one step over the programme's 100
+        raw["exercises"][2]["backoff"][0]["load_kg"] = 82.0
+        plan = parse_plan(json.dumps(raw), _legs_proposal())
+        problems = validate(plan, "Legs", _prompt(), _legs_proposal(), ceilings={"leg extension": 100.0})
+        self.assertTrue(any("standing ceiling of 100kg" in p for p in problems), problems)
+        self.assertEqual(validate(plan, "Legs", _prompt(), _legs_proposal(), ceilings={"leg extension": 105.0}), [])
+
+    def test_a_reach_above_the_programme_is_at_most_one_step(self):
+        """22 Sep 2026: the coach put the Machine Chest Press at 168kg against
+        the programme's ~152 (149 x11 the block before) — 165 x5 @9, under
+        the range. The pre-flight bounds the programme's jumps; the coach's
+        were unbounded."""
+        raw = _legs_plan()
+        raw["exercises"][2]["decision"] = "adjust"
+        raw["exercises"][2]["reason"] = "Stalled four sessions but the last set met its reps at RPE 7 — reaching."
         raw["exercises"][2]["working"][0]["load_kg"] = 112.5
         raw["exercises"][2]["backoff"][0]["load_kg"] = 90.0
         plan = parse_plan(json.dumps(raw), _legs_proposal())
-        problems = validate(plan, "Legs", _prompt(), _legs_proposal(), ceilings={"leg extension": 110.0})
-        self.assertTrue(any("standing ceiling of 110kg" in p for p in problems), problems)
-        self.assertEqual(validate(plan, "Legs", _prompt(), _legs_proposal(), ceilings={"leg extension": 115.0}), [])
+        problems = validate(plan, "Legs", _prompt(), _legs_proposal())
+        self.assertTrue(any("12.5kg over the programme's (100kg), more than one step up" in p for p in problems), problems)
+        self.assertFalse(any(p.endswith("[soft]") for p in problems if "over the programme" in p), "not a question — a rule")
+        # The lift's own step widens the allowance: on a 15kg stack 112.5 is under one step.
+        self.assertEqual([p for p in validate(plan, "Legs", _prompt(), _legs_proposal(), steps={"Leg Extension": 15.0})
+                          if "over the programme" in p], [])
+        # And the problem is filled from the programme, with the rule as the reason.
+        from plan import fill_from_programme
+        filled, remaining, names = fill_from_programme(plan, problems, "Legs", _prompt(), _legs_proposal())
+        self.assertIn("Leg Extension", names)
+        ex = next(e for e in filled.exercises if e.exercise == "Leg Extension")
+        self.assertEqual(ex.working[0].load_kg, 100.0)
+        self.assertIn("broke a rule", ex.reason)
 
     def test_constraints_read_back_for_the_coach(self):
         from constraints import format_constraints, ceilings

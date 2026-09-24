@@ -39,12 +39,12 @@ The two categories beyond the four you named:
 |---|---|---|---|---|
 | F1 | Block review goes live: a tap records, no more dry run | S | done 23 Sep | `block_review.DRY_RUN = False`; the 19 Sep row stays a dry run. First live review at the next block rollover. |
 | F2 | Decision capture stages 2–3: the chat-bubble card, the session-shape grammar | M | done 23 Sep | Cards under the reply in Coach chat; `Substitute:`/`Order:` recorded and applied inside `parse_session_template` (`shape.py`), so coach and programme read one template. First shape line waits on the coach proposing one. |
-| F3 | Apple Watch: rest timer with haptics (stage 1), set logging from the wrist (stage 2) | L | proposed (2.8) | Mockups first. New target to sign; depends on P1. |
+| F3 | Apple Watch: rest timer with haptics (stage 1), set logging from the wrist (stage 2) | L | parked 24 Sep | Needed a second signed target through P1, which is declined. Revisit only if the free provisioning path can carry a watch extension. |
 | F4 | Pre-flight phase 2: findings that need a decision become Home decision cards; unanswered → programme default, stated | M | idea | Phase 1 (correct + log) shipped 20 Sep (#303). |
 | F5 | Standing decisions reviewed mid-block by age, not only at the block review | S | idea | The shoulder cap was never asked about until the review existed. |
 | F6 | Exercise aliases managed from the app: merge two spellings of one lift | S | idea | Incline Press / Incline Barbell Press; the review and strength page already honour the library. |
 | F7 | Widget: strength number kept fresh; a "this week" line | S | idea | Widget shipped 17 Sep, fixed 19–20 Sep. |
-| F8 | Replay of the whole pipeline against the real export, as a test | M | approved 20 Sep (in principle) | Needs one export from Settings. Also the biggest stability item. |
+| F8 | Replay of the whole pipeline against the real export, as a test | M | done 24 Sep | `replay_export.py` + `tests/test_replay_export.py`: 18 stamped sessions, offline, against the 23 Sep export (training tables committed; recovery read locally only — the repo is public). First run found the 8kg chest-press stack rounded to 151.5. |
 | F9 | Set reply as prose by default if note damage recurs | S | watch | Guard shipped 18 Sep; no recurrence seen. |
 | F10 | Morning briefing retired: route, prompt section, Home note and sheet, chat button, settings style, Telegram CLI mode | S | done 20 Sep | Nothing ever sent one; Home and the widget carry what it said. A Telegram-era feature. |
 
@@ -62,6 +62,8 @@ The two categories beyond the four you named:
 | S8 | The missing "Logged warm-up 2 of 3" message | S | idea | App side; noticed 18 Sep. |
 | S9 | Hygiene dry run of session statuses/types, then execute | S | blocked on the athlete pasting the log | Migration 010 run. |
 | S10 | Late coach review applied after 3 minutes | — | done (#277) | |
+| S13 | A coach `adjust` above the programme's top set is at most one step of the lift (`plan.validate`); beyond that the programme's card stands | S | done 24 Sep | Machine Chest Press 168 vs ~152 on 22 Sep → 165 x5 @9. The pre-flight bounded the programme's jumps; the coach's were unbounded. |
+| S12 | Logged sets carry their phase (`workout_sets.phase`, migration 014); card and set replies count by phase, position only for older rows | S | done 24 Sep | A skipped working set no longer relabels the back-offs after it. |
 | S11 | Coach flag log: a wrong reply is flagged from the coach sheet; the exchange, card, sets and contract record are kept (`coach_flags`), shared from Settings as one text, and filed as a GitHub issue when `GITHUB_FLAGS_TOKEN` is set | S | done 23 Sep | Migration 013 to run. Optional: a fine-grained token with issues write on this repo, set on Railway. |
 
 ## UI — how it looks
@@ -89,11 +91,11 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| P1 | Cloud build: Xcode Cloud → TestFlight; retire `deploy_device.sh` and the launchd job | M | proposed | The Intel Mac cannot run Xcode 27; iOS beta updates now off. Needs the paid programme. |
-| P2 | One export from Settings for the replay harness (F8) | S | waiting on the athlete | Training data only. |
+| P1 | Cloud build: Xcode Cloud → TestFlight; retire `deploy_device.sh` and the launchd job | M | declined 24 Sep | Not paying for the programme. `deploy_device.sh` + launchd stay the deploy path (any paired iPhone, 3 install retries since #314). |
+| P2 | One export from Settings for the replay harness (F8) | S | done 24 Sep | Re-export after each block to refresh `tests/fixtures/export/` (not recovery.csv). |
 | P3 | Rules we hold: a new check is a step in `reply_contract.py` and one comes out; every gym screenshot becomes a pre-flight invariant; nothing merges while a session is live | — | standing | |
 | P4 | The Sunday report is read by Claude, not the athlete; sections only a human would read are removed | S | in progress | Shadow removed 20 Sep. |
-| P5 | Migrations: 011 run; 012 and 013 pending | — | waiting on the athlete | Both in `migrations/`. |
+| P5 | Migrations: 011–013 run; 014 pending | — | waiting on the athlete | `migrations/014_workout_sets_phase.sql`. |
 
 ---
 
@@ -103,6 +105,6 @@ The two categories beyond the four you named:
 2. S1 in-session numbers check.
 3. F8/P2 replay harness, once the export is in.
 4. F1 block review live, on your word.
-5. P1 cloud build, when you have decided on the paid programme.
+5. ~~P1 cloud build~~ — declined 24 Sep; the nightly re-sign stays.
 
 Everything else waits its turn or a yes.
