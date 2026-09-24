@@ -432,12 +432,17 @@ struct WorkoutModeView: View {
         Config.phaseName(week: week)
     }
 
+    /// The block week's targets from the block length in force (Config), not
+    /// a fixed four-week table: on a five-week block week 4 is the load peak
+    /// at RPE 9 and week 5 the deload, and back-offs sit at RPE 8 in every
+    /// loading week since 24 Sep 2026 (C8). The old table showed "RPE 7" for
+    /// week 4 of a five-week block.
     private static func rpeTargets(week: Int?) -> (top: String, backoff: String) {
-        switch week {
-        case 3: return ("9", "Back-off 8")
-        case 4: return ("7", "Back-off 6")
-        default: return ("8", "Back-off 7")
-        }
+        guard let week else { return ("8", "Back-off 8") }
+        if week == Config.deloadWeek { return ("7", "Back-off 6") }
+        let firstPeak = Config.peakWeek - (Config.weeksPerBlock >= 5 ? 1 : 0)
+        if week >= firstPeak { return ("9", "Back-off 8") }
+        return ("8", "Back-off 8")
     }
 
     /// Three facts: the last session of this type, this week's sessions, and
