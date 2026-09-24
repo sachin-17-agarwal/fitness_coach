@@ -3,7 +3,7 @@
 Every upgrade we have named, in one place, so nothing gets lost. Six
 categories. The roadmap (`docs/ROADMAP.md`) keeps the reasoning behind each
 item and the record of what was decided; this file is the list we plan
-from. An item moves to **done** when it is merged and seen on the phone.
+from. An item moves to **done** when it is merged and seen on the phone — *merged, unverified* until the athlete has trained on it. (Rule restated 24 Sep after four days of "done" meaning "merged".)
 
 Sizes: S under a day, M a few days, L a week or more. Status: idea ·
 proposed (needs a yes) · approved · in progress · blocked (on what) · done.
@@ -37,14 +37,14 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| F1 | Block review goes live: a tap records, no more dry run | S | done 23 Sep | `block_review.DRY_RUN = False`; the 19 Sep row stays a dry run. First live review at the next block rollover. |
-| F2 | Decision capture stages 2–3: the chat-bubble card, the session-shape grammar | M | done 23 Sep | Cards under the reply in Coach chat; `Substitute:`/`Order:` recorded and applied inside `parse_session_template` (`shape.py`), so coach and programme read one template. First shape line waits on the coach proposing one. |
+| F1 | Block review goes live: a tap records, no more dry run | S | merged 23 Sep, unverified | `block_review.DRY_RUN = False`; the 19 Sep row stays a dry run. First live review at the next block rollover. |
+| F2 | Decision capture stages 2–3: the chat-bubble card, the session-shape grammar | M | merged 23 Sep, unverified | Cards under the reply in Coach chat; `Substitute:`/`Order:` recorded and applied inside `parse_session_template` (`shape.py`), so coach and programme read one template. First shape line waits on the coach proposing one. |
 | F3 | Apple Watch: rest timer with haptics (stage 1), set logging from the wrist (stage 2) | L | parked 24 Sep | Needed a second signed target through P1, which is declined. Revisit only if the free provisioning path can carry a watch extension. |
 | F4 | Pre-flight phase 2: findings that need a decision become Home decision cards; unanswered → programme default, stated | M | idea | Phase 1 (correct + log) shipped 20 Sep (#303). |
 | F5 | Standing decisions reviewed mid-block by age, not only at the block review | S | idea | The shoulder cap was never asked about until the review existed. |
 | F6 | Exercise aliases managed from the app: merge two spellings of one lift | S | idea | Incline Press / Incline Barbell Press; the review and strength page already honour the library. |
 | F7 | Widget: strength number kept fresh; a "this week" line | S | idea | Widget shipped 17 Sep, fixed 19–20 Sep. |
-| F8 | Replay of the whole pipeline against the real export, as a test | M | done 24 Sep | `replay_export.py` + `tests/test_replay_export.py`: 18 stamped sessions, offline, against the 23 Sep export (training tables committed; recovery read locally only — the repo is public). First run found the 8kg chest-press stack rounded to 151.5. |
+| F8 | Replay of the whole pipeline against the real export, as a test | M | merged 24 Sep, unverified | `replay_export.py` + `tests/test_replay_export.py`: 18 stamped sessions, offline, against the 23 Sep export (training tables committed; recovery read locally only — the repo is public). First run found the 8kg chest-press stack rounded to 151.5. |
 | F9 | Set reply as prose by default if note damage recurs | S | watch | Guard shipped 18 Sep; no recurrence seen. |
 | F10 | Morning briefing retired: route, prompt section, Home note and sheet, chat button, settings style, Telegram CLI mode | S | done 20 Sep | Nothing ever sent one; Home and the widget carry what it said. A Telegram-era feature. |
 
@@ -52,7 +52,7 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| S1 | In-session coach: any number it states about history must be in the context it was handed, or the reply is rewritten | M | done 23 Sep | `reply_contract.numbers`: kg, reps, RPE and dates in prose checked against the handed context; one rewrite; off with `NUMBERS_CONTRACT=false`. `set_count_drift` folded into `set_counts`. |
+| S1 | In-session coach: any number it states about history must be in the context it was handed, or the reply is rewritten | M | merged 23 Sep, unverified | `reply_contract.numbers`: kg, reps, RPE and dates in prose checked against the handed context; one rewrite; off with `NUMBERS_CONTRACT=false`. `set_count_drift` folded into `set_counts`. |
 | S2 | One `blocks` module for block identity: start, boundary, ended range, picks | M | done 20 Sep (#307) | |
 | S3 | Prune the applied dated fixes into a history note; keep the mechanism | S | done 20 Sep (#307); delete `fixes_2026_09.py` once `/status` shows all eight applied | |
 | S4 | Session stamping: every finished session carries its mesocycle week and day; hygiene check and backfill | S | idea | `block_start` and the review lean on stamps; the 2 Sep opener had none. |
@@ -62,9 +62,9 @@ The two categories beyond the four you named:
 | S8 | The missing "Logged warm-up 2 of 3" message | S | idea | App side; noticed 18 Sep. |
 | S9 | Hygiene dry run of session statuses/types, then execute | S | blocked on the athlete pasting the log | Migration 010 run. |
 | S10 | Late coach review applied after 3 minutes | — | done (#277) | |
-| S13 | A coach `adjust` above the programme's top set is at most one step of the lift (`plan.validate`); beyond that the programme's card stands | S | done 24 Sep | Machine Chest Press 168 vs ~152 on 22 Sep → 165 x5 @9. The pre-flight bounded the programme's jumps; the coach's were unbounded. |
-| S12 | Logged sets carry their phase (`workout_sets.phase`, migration 014); card and set replies count by phase, position only for older rows | S | done 24 Sep | A skipped working set no longer relabels the back-offs after it. |
-| S11 | Coach flag log: a wrong reply is flagged from the coach sheet; the exchange, card, sets and contract record are kept (`coach_flags`), shared from Settings as one text, and filed as a GitHub issue when `GITHUB_FLAGS_TOKEN` is set | S | done 23 Sep | Migration 013 to run. Optional: a fine-grained token with issues write on this repo, set on Railway. |
+| S13 | A coach `adjust` above the programme's top set is at most one step of the lift (`plan.validate`); beyond that the programme's card stands | S | merged 24 Sep, unverified | Machine Chest Press 168 vs ~152 on 22 Sep → 165 x5 @9. The pre-flight bounded the programme's jumps; the coach's were unbounded. |
+| S12 | Logged sets carry their phase (`workout_sets.phase`, migration 014); card and set replies count by phase, position only for older rows | S | merged 24 Sep, unverified | A skipped working set no longer relabels the back-offs after it. |
+| S11 | Coach flag log: a wrong reply is flagged from the coach sheet; the exchange, card, sets and contract record are kept (`coach_flags`), shared from Settings as one text, and filed as a GitHub issue when `GITHUB_FLAGS_TOKEN` is set | S | merged 23 Sep, unverified | Migration 013 to run. Optional: a fine-grained token with issues write on this repo, set on Railway. |
 
 ## UI — how it looks
 
@@ -80,11 +80,11 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| C11 | **Decision scorecard**: every finished session scored per lift (right / light / heavy) against the range and RPE prescribed, the programme's number kept beside the coach's; verdicts back to the coach (OUTCOMES block), to the Sunday report, and into the programme (two lights → one step up); an unexamined `accept` on a two-miss trend is asked about | M | done 24 Sep | Migration 015. Measured before building: the coach overrode 4 of 68 decisions in the 3–19 Sep block; the programme ran light 15 of 64. Read after one block (~29 Oct): does the coach's judgement, now exercised, beat the programme's number? |
-| C7 | Deload by SETS: back-offs dropped, straight sets halved, load held, top set RPE 7; no readiness cut stacked on it | S | done 24 Sep | Consensus practice (Bell et al.): 25-50% less volume, intensity held. The rep-only deload kept every set. |
-| C8 | Back-offs at RPE 8 in every loading week (were 7 in weeks 1-2) | S | done 24 Sep | Proximity-to-failure meta-regressions (Robinson et al. 2024). |
-| C9 | Block length is a setting: 5 weeks on a bulk (4 loading + deload), 4 on a cut; `data.block_weeks()` reads memory `block_weeks`, set from Settings → Training block | S | done 24 Sep | Every week rule reads it; peak week = last loading week. |
-| C10 | Pull order: Lat Pulldown before Cable Row | — | done 24 Sep | Two vertical pulls with a heavy row between them left the pulldown flat since June. |
+| C11 | **Decision scorecard**: every finished session scored per lift (right / light / heavy) against the range and RPE prescribed, the programme's number kept beside the coach's; verdicts back to the coach (OUTCOMES block), to the Sunday report, and into the programme (two lights → one step up); an unexamined `accept` on a two-miss trend is asked about | M | merged 24 Sep, unverified | Migration 015. Measured before building: the coach overrode 4 of 68 decisions in the 3–19 Sep block; the programme ran light 15 of 64. Read after one block (~29 Oct): does the coach's judgement, now exercised, beat the programme's number? |
+| C7 | Deload by SETS: back-offs dropped, straight sets halved, load held, top set RPE 7; no readiness cut stacked on it | S | merged 24 Sep, unverified | Consensus practice (Bell et al.): 25-50% less volume, intensity held. The rep-only deload kept every set. |
+| C8 | Back-offs at RPE 8 in every loading week (were 7 in weeks 1-2) | S | merged 24 Sep, unverified | Proximity-to-failure meta-regressions (Robinson et al. 2024). |
+| C9 | Block length is a setting: 5 weeks on a bulk (4 loading + deload), 4 on a cut; `data.block_weeks()` reads memory `block_weeks`, set from Settings → Training block | S | merged 24 Sep, unverified | Every week rule reads it; peak week = last loading week. |
+| C10 | Pull order: Lat Pulldown before Cable Row | — | merged 24 Sep, unverified | Two vertical pulls with a heavy row between them left the pulldown flat since June. |
 | C1 | Readiness cuts on light isolation lifts: whether a red morning should touch load at all when the cut is under one stack step (now: holds, says so) | S | idea | Reverse Cable Fly 20 Sep. |
 | C2 | The programme acts on READY TO LOAD (steps the load itself) instead of telling the coach | S | idea | Watch wording fixed 20 Sep. |
 | C3 | When an emphasis should be questioned: a muscle over its band with rising lifts (triceps) is queued for next block | S | idea | The review states it; the athlete decides. |
@@ -97,7 +97,7 @@ The two categories beyond the four you named:
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
 | P1 | Cloud build: Xcode Cloud → TestFlight; retire `deploy_device.sh` and the launchd job | M | declined 24 Sep | Not paying for the programme. `deploy_device.sh` + launchd stay the deploy path (any paired iPhone, 3 install retries since #314). |
-| P2 | One export from Settings for the replay harness (F8) | S | done 24 Sep | Re-export after each block to refresh `tests/fixtures/export/` (not recovery.csv). |
+| P2 | One export from Settings for the replay harness (F8) | S | merged 24 Sep, unverified | Re-export after each block to refresh `tests/fixtures/export/` (not recovery.csv). |
 | P6 | Claims ledger (`docs/CLAIMS.md`): every claim Claude makes about the system carries its basis — measured / inferred / assumed — and is verified or marked wrong | — | standing from 24 Sep | The athlete's ask: accountability for the developer as well as the coach. |
 | P3 | Rules we hold: a new check is a step in `reply_contract.py` and one comes out; every gym screenshot becomes a pre-flight invariant; nothing merges while a session is live | — | standing | |
 | P4 | The Sunday report is read by Claude, not the athlete; sections only a human would read are removed | S | in progress | Shadow removed 20 Sep. |
