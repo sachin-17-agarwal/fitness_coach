@@ -24,7 +24,7 @@ struct WeightLogSheet: View {
                 VStack(spacing: 24) {
                     VStack(spacing: 8) {
                         Text("Log your weight")
-                            .font(.serifMD)
+                            .font(.display(24))
                             .foregroundStyle(Color.fg0)
                         Eyebrow(text: "Today · \(Date().formatted(date: .abbreviated, time: .omitted))")
                     }

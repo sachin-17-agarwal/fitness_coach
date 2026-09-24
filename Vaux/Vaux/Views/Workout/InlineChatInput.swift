@@ -55,6 +55,12 @@ struct WorkoutCoachSheet: View {
                     if isThinking {
                         VStack(alignment: .leading, spacing: 12) {
                             EditorialEyebrow(text: "Coach", color: .mint, size: 10, kerning: 2.5)
+                            // The logged set's fact line, while the coach's reply is on its way.
+                            if let coachNote, coachNote.hasPrefix("Logged ") {
+                                Text(coachNote)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(Color.fg1)
+                            }
                             CoachTypingDots()
                         }
                         .padding(.top, 18)

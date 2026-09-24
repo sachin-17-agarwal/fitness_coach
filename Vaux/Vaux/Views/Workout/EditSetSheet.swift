@@ -108,7 +108,7 @@ struct EditSetSheet: View {
     private var header: some View {
         VStack(spacing: 4) {
             Text(loggedSet.exercise)
-                .font(.serifSM)
+                .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(Color.fg0)
             Text(isWarmup ? "WARM-UP · SET \(loggedSet.setNumber)" : "SET \(loggedSet.setNumber)")
                 .font(.eyebrowSmall)

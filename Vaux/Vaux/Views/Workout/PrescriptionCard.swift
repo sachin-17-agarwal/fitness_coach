@@ -299,6 +299,11 @@ struct PrescriptionCard: View {
         WorkoutSet.splitByPhase(loggedSets, workingPrescribed: prescription.workingSets.count)
     }
 
+    /// True when the pre-flight wrote a correction into this card's reason.
+    private var wasCorrected: Bool {
+        ((prescription.why ?? "") + " " + (prescription.note ?? "")).contains("Pre-flight corrected")
+    }
+
     private func loggedSetFor(_ target: SetTarget) -> WorkoutSet? {
         let s = split
         switch target.kind {
@@ -386,6 +391,18 @@ struct PrescriptionCard: View {
                 .overlay(alignment: .top) {
                     if prescription.tempo != nil { Rectangle().fill(Color.line).frame(height: 1) }
                 }
+            }
+            if wasCorrected {
+                // The programme's check changed a number on this card; the
+                // reason is in the line below, the mark says to read it.
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.shield")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.signal)
+                    EditorialEyebrow(text: "Corrected by the programme's check", color: .signal, size: 9.5, kerning: 1.8)
+                }
+                .padding(.top, 10)
+                .accessibilityLabel("A number on this card was corrected by the programme's pre-flight check; the reason is below")
             }
             if let note = prescription.note, !note.isEmpty {
                 HStack(alignment: .top, spacing: 16) {

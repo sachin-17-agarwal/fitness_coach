@@ -35,7 +35,7 @@ struct LoadErrorState: View {
 
             VStack(spacing: 8) {
                 Text(title)
-                    .font(.serifMD)
+                    .font(.display(24))
                     .foregroundStyle(Color.fg0)
                     .multilineTextAlignment(.center)
 

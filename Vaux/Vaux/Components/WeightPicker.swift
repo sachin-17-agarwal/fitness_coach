@@ -36,11 +36,11 @@ struct WeightPicker: View {
             // Display value
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(weight.wholeOrOne)
-                    .font(.system(size: 44, weight: .light, design: .serif))
+                    .font(.system(size: 44, weight: .light).monospacedDigit())
                     .foregroundStyle(Color.fg0)
                     .contentTransition(.numericText(value: weight))
                 Text("kg")
-                    .font(.serifSM)
+                    .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(Color.fg2)
             }
 

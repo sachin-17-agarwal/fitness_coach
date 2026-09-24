@@ -99,7 +99,7 @@ struct ScreenHeader: View {
             }
 
             Text(title)
-                .font(.serifLG)
+                .font(.display(34))
                 .foregroundStyle(Color.fg0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -385,12 +385,8 @@ extension Font {
     static var numMD: Font { scaled(22, weight: .medium, design: .monospaced, relativeTo: .title3, cap: 36).monospacedDigit() }
     static var numSM: Font { scaled(16, weight: .medium, design: .monospaced, relativeTo: .body).monospacedDigit() }
 
-    // Editorial serif titles
-    static var serifXL: Font { scaled(52, weight: .light, design: .serif, relativeTo: .largeTitle, cap: 74) }
-    static var serifLG: Font { scaled(34, weight: .light, design: .serif, relativeTo: .title, cap: 50) }
-    static var serifMD: Font { scaled(24, weight: .regular, design: .serif, relativeTo: .title2, cap: 38) }
-    static var serifSM: Font { scaled(18, weight: .medium, design: .serif, relativeTo: .headline) }
-    static var serifBrand: Font { scaled(22, weight: .medium, design: .serif, relativeTo: .title3, cap: 34) }
+    // The serif title face was retired on 25 Sep 2026 (U1): titles use the display face,
+    // numbers keep their own tokens above.
 
     // UI + labels
     static var eyebrow: Font { scaled(10, weight: .medium, design: .monospaced, relativeTo: .caption2) }

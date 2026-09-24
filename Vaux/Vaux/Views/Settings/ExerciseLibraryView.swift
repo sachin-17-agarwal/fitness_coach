@@ -88,11 +88,45 @@ final class ExerciseLibraryViewModel {
             return false
         }
     }
+
+    /// Record another spelling of a lift ("Machine Chest Fly" for "Cable
+    /// Chest Fly") so every reader — the strength page, the reviews, the
+    /// programme's history — treats the two as one. Twelve lifts in the log
+    /// had two or three spellings on 25 Sep 2026; the case-only ones were
+    /// merged by a data fix, the real variants are recorded here.
+    func addAlias(to exercise: Exercise, alias: String) async -> Bool {
+        let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let id = exercise.id else {
+            errorMessage = "Alias is required"
+            return false
+        }
+        if trimmed.caseInsensitiveCompare(exercise.name) == .orderedSame {
+            errorMessage = "That is the exercise's own name"
+            return false
+        }
+        if exercises.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            errorMessage = "\(trimmed) is a separate exercise in the library — remove it first if the two are one lift"
+            return false
+        }
+        var aliases = exercise.aliases ?? []
+        if aliases.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) { return true }
+        aliases.append(trimmed)
+        do {
+            _ = try await client.update("exercises", body: ["aliases": aliases], match: ["id": id.uuidString])
+            await load()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
 }
 
 struct ExerciseLibraryView: View {
     @State private var viewModel = ExerciseLibraryViewModel()
     @State private var showingAddSheet = false
+    /// The exercise an alias is being added to, when the sheet is up.
+    @State private var aliasTarget: Exercise?
 
     var body: some View {
         ZStack {
@@ -121,6 +155,13 @@ struct ExerciseLibraryView: View {
         .sheet(isPresented: $showingAddSheet) {
             AddExerciseSheet(onAdd: { name, group in
                 let ok = await viewModel.add(name: name, muscleGroup: group)
+                if ok { Haptic.success() } else { Haptic.error() }
+                return ok
+            })
+        }
+        .sheet(item: $aliasTarget) { exercise in
+            AddAliasSheet(exercise: exercise, onAdd: { alias in
+                let ok = await viewModel.addAlias(to: exercise, alias: alias)
                 if ok { Haptic.success() } else { Haptic.error() }
                 return ok
             })
@@ -217,16 +258,30 @@ struct ExerciseLibraryView: View {
     }
 
     private func exerciseRow(_ ex: Exercise) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(ex.name)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.fg0)
-            if let aliases = ex.aliases, !aliases.isEmpty {
-                Text(aliases.joined(separator: " • "))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.fg2)
-                    .lineLimit(1)
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ex.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.fg0)
+                if let aliases = ex.aliases, !aliases.isEmpty {
+                    Text(aliases.joined(separator: " • "))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.fg2)
+                        .lineLimit(1)
+                }
             }
+            Spacer(minLength: 0)
+            Button {
+                Haptic.light()
+                aliasTarget = ex
+            } label: {
+                Image(systemName: "text.badge.plus")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.fg2)
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add another spelling of \(ex.name)")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -239,6 +294,77 @@ struct ExerciseLibraryView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.cardBorder, lineWidth: 0.5)
         )
+    }
+}
+
+// MARK: - Alias sheet
+
+struct AddAliasSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let exercise: Exercise
+    /// Returns true when the alias was stored, so the sheet closes itself.
+    let onAdd: (String) async -> Bool
+
+    @State private var alias = ""
+    @State private var isSaving = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                TechBackground(accent: .signal)
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Eyebrow(text: "Another spelling of \(exercise.name)")
+                        TextField("e.g. Machine Chest Fly", text: $alias)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white)
+                            .focused($focused)
+                            .submitLabel(.done)
+                            .onSubmit { Task { await save() } }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.ink2))
+                    }
+                    Text("Sets already logged under this spelling count as \(exercise.name) everywhere — the strength page, the reviews, the programme's history.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.fg2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        Task { await save() }
+                    } label: {
+                        Text(isSaving ? "Saving…" : "Save alias")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.signalInk)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.signal))
+                    }
+                    .buttonStyle(PressScaleStyle(scale: 0.97))
+                    .disabled(isSaving || alias.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Spacer()
+                }
+                .padding(18)
+            }
+            .navigationTitle("Add alias")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(Color.textSecondary)
+                }
+            }
+            .onAppear { focused = true }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func save() async {
+        guard !isSaving else { return }
+        isSaving = true
+        let ok = await onAdd(alias)
+        isSaving = false
+        if ok { dismiss() }
     }
 }
 

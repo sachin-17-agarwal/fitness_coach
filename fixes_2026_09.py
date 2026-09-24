@@ -182,7 +182,172 @@ def _fix_2026_09_19_clear_leg_press_note() -> str:
     return _clear_constraint("Leg Press", "245kg x15 this block did what the note asked")
 
 
+def case_variant_plan(names: dict[str, int]) -> dict[str, str]:
+    """{variant spelling: canonical spelling} for names that differ only by
+    case or spacing; the most-logged spelling wins ("Leg press" 31 sets ->
+    "Leg Press" 143). Real variants ("Machine Chest Fly" vs "Cable Chest
+    Fly") are different lifts or aliases and are left alone."""
+    groups: dict[str, list] = {}
+    for name, count in names.items():
+        key = " ".join((name or "").split()).lower()
+        if key:
+            groups.setdefault(key, []).append((name, count))
+    plan = {}
+    for key, variants in groups.items():
+        if len(variants) < 2:
+            continue
+        canonical = max(variants, key=lambda v: (v[1], v[0] == v[0].title(), v[0]))[0]
+        for name, _ in variants:
+            if name != canonical:
+                plan[name] = canonical
+    return plan
+
+
+def _fix_2026_09_25_exercise_case_variants() -> str:
+    """Twelve lifts were logged under two or three spellings differing only
+    by case ("Leg press" 31 sets beside "Leg Press" 143; measured from the
+    23 Sep export). Each split a lift's history in two for the strength page,
+    the step inference and the reviews. Rename the minority spellings to the
+    majority's, in workout_sets."""
+    from data import get_supabase
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    rows = (supabase.table("workout_sets").select("exercise").execute()).data or []
+    counts: dict[str, int] = {}
+    for r in rows:
+        n = r.get("exercise")
+        if n:
+            counts[n] = counts.get(n, 0) + 1
+    plan = case_variant_plan(counts)
+    if not plan:
+        return "no case variants in workout_sets"
+    done = []
+    for variant, canonical in sorted(plan.items()):
+        supabase.table("workout_sets").update({"exercise": canonical}).eq("exercise", variant).execute()
+        done.append(f"{variant} -> {canonical} ({counts[variant]} sets)")
+    return "; ".join(done)
+
+
+_PUSH = {"Chest", "Shoulders", "Triceps", "Front Delts", "Side Delts"}
+_PULL = {"Back", "Biceps", "Rear Delts", "Lats", "Traps"}
+_LEGS = {"Quads", "Hamstrings", "Glutes", "Calves", "Legs"}
+
+
+def infer_session_type(exercises: list[str]) -> str | None:
+    """Pull / Push / Legs / Cardio+Abs from the muscles a session's sets
+    worked, by majority; None when nothing classifies."""
+    from volume import resolve_muscle_group
+    votes: dict[str, int] = {}
+    for name in exercises:
+        m = resolve_muscle_group(name) or ""
+        t = ("Push" if m in _PUSH else "Pull" if m in _PULL else "Legs" if m in _LEGS else
+             "Cardio+Abs" if m == "Abs" else None)
+        if t:
+            votes[t] = votes.get(t, 0) + 1
+    return max(votes, key=votes.get) if votes else None
+
+
+def _fix_2026_09_25_session_hygiene() -> str:
+    """S9. Thirty-six finished sessions hold no sets and no tonnage — app
+    tests and false starts, March to September — and two typed `Unknown`
+    hold real work. The first become `abandoned`, the second get the type
+    their sets say (docs/hygiene_2026-09-25.md is the dry run the athlete
+    approved)."""
+    from data import get_supabase, now_local
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    today = now_local().strftime("%Y-%m-%d")
+    sessions = (supabase.table("workout_sessions").select("id, date, type, tonnage_kg, status").execute()).data or []
+    sets = (supabase.table("workout_sets").select("workout_session_id, exercise, is_warmup").execute()).data or []
+    by_session: dict[str, list] = {}
+    for s in sets:
+        if not s.get("is_warmup"):
+            by_session.setdefault(s.get("workout_session_id"), []).append(s.get("exercise") or "")
+    abandoned = retyped = 0
+    for s in sessions:
+        if str(s.get("date") or "") >= today or s.get("status") == "abandoned":
+            continue
+        worked = by_session.get(s["id"], [])
+        if not worked and not (s.get("tonnage_kg") or 0):
+            supabase.table("workout_sessions").update({"status": "abandoned"}).eq("id", s["id"]).execute()
+            abandoned += 1
+        elif s.get("type") == "Unknown" and worked:
+            t = infer_session_type(worked)
+            if t:
+                supabase.table("workout_sessions").update({"type": t}).eq("id", s["id"]).execute()
+                retyped += 1
+    return f"{abandoned} empty sessions marked abandoned; {retyped} Unknown sessions typed from their sets"
+
+
+def backfill_stamps(sessions: list[dict], cycle: list[str], block_weeks: int = 4) -> dict[str, tuple[int, int]]:
+    """S4. Week and day for the resistance sessions before stamping began,
+    by walking the rotation BACKWARDS from the earliest stamped session:
+    each session is one slot; a session whose type is not the expected
+    slot's is a missed slot (or, when it repeats the type just placed, a
+    second session of the same day). Four rotations make a block. This is
+    inference from the rotation, not a record; the rows say so."""
+    order = {t: i for i, t in enumerate(cycle)}
+    rows = sorted((s for s in sessions if s.get("type") in order and (s.get("tonnage_kg") or 0) > 0),
+                  key=lambda s: (str(s.get("date")), str(s.get("start_time") or "")))
+    stamped = [s for s in rows if s.get("mesocycle_week") and s.get("mesocycle_day")]
+    if not stamped:
+        return {}
+    first = stamped[0]
+    week, day = int(first["mesocycle_week"]), int(first["mesocycle_day"])
+    out: dict[str, tuple[int, int]] = {}
+    last_type = first["type"]
+    for s in reversed([r for r in rows if str(r.get("date")) < str(first["date"]) or
+                       (str(r.get("date")) == str(first["date"]) and str(r.get("start_time") or "") < str(first.get("start_time") or ""))]):
+        if s.get("mesocycle_week") and s.get("mesocycle_day"):
+            week, day, last_type = int(s["mesocycle_week"]), int(s["mesocycle_day"]), s["type"]
+            continue
+        if s["type"] == last_type:
+            out[s["id"]] = (week, day)          # a second session of the same slot (a duplicate day)
+            continue
+        target = order[s["type"]] + 1
+        # step back one slot at a time until the slot is this session's type
+        for _ in range(len(cycle)):
+            day -= 1
+            if day < 1:
+                day = len(cycle)
+                week = block_weeks if week <= 1 else week - 1
+            if day == target:
+                break
+        out[s["id"]] = (week, day)
+        last_type = s["type"]
+    return out
+
+
+def _fix_2026_09_25_stamp_backfill() -> str:
+    """S4. 143 of 165 resistance sessions (April-August) carry no mesocycle
+    week or day; the block review, the peak-week reference and the replay
+    cannot place them. Stamped here by rotation inference (backfill_stamps),
+    marked as such in notes."""
+    from data import CYCLE, get_supabase
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    sessions = (supabase.table("workout_sessions")
+                .select("id, date, start_time, type, tonnage_kg, status, mesocycle_week, mesocycle_day, notes")
+                .neq("status", "abandoned").execute()).data or []
+    stamps = backfill_stamps(sessions, CYCLE, block_weeks=4)
+    n = 0
+    for s in sessions:
+        if s["id"] in stamps:
+            week, day = stamps[s["id"]]
+            note = ((s.get("notes") or "") + " ").strip()
+            note = (note + " " if note else "") + "week/day backfilled 2026-09-25 by rotation inference"
+            supabase.table("workout_sessions").update({"mesocycle_week": week, "mesocycle_day": day, "notes": note}).eq("id", s["id"]).execute()
+            n += 1
+    return f"{n} sessions stamped by rotation inference"
+
+
 FIXES_2026_09 = [
+    ("2026-09-25-exercise-case-variants", _fix_2026_09_25_exercise_case_variants),
+    ("2026-09-25-session-hygiene", _fix_2026_09_25_session_hygiene),
+    ("2026-09-25-stamp-backfill", _fix_2026_09_25_stamp_backfill),
     ("2026-09-19-emphasis-triceps-chest", _fix_2026_09_19_emphasis_triceps_chest),
     ("2026-09-19-block-review-window", _fix_2026_09_19_block_review_window),
     ("2026-09-19-block-review-emphasis", _fix_2026_09_19_block_review_emphasis),
