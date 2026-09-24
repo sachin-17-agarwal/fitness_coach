@@ -33,7 +33,7 @@ from data import deload_week  # the block's shape
 from dataclasses import replace
 
 from constraints import norm_name
-from prescribe import INCREMENT, STEP_CAP, TOP_SET_RANGE, Proposal, SetSpec, _is_straight_set, _round_load
+from prescribe import INCREMENT, STEP_CAP, TOP_SET_RANGE, Proposal, SetSpec, _is_straight_set, _round_load, stretched_top
 
 log = logging.getLogger(__name__)
 
@@ -156,6 +156,11 @@ def enforce(proposals: list, history: dict, peak_history: dict | None, week: int
             low, high = None, None
         else:
             low, high = TOP_SET_RANGE.get(p.kind, (None, None))
+            # A machine step over 6% of the load stretches the range before
+            # the load moves; the check must not clip the card back to 8-12.
+            if (low is not None and anchor is not None and getattr(anchor, "load", None)
+                    and step and working and not working[0].bodyweight):
+                high = stretched_top(float(anchor.load), step, low, high)
         if low is not None and working:
             for i, spec in enumerate(working):
                 lo, hi = spec.reps_low, spec.reps_high

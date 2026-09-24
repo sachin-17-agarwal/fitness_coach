@@ -111,7 +111,9 @@ class ThroughTheProgrammeTests(unittest.TestCase):
         props, _, _ = programme.build_proposal(_prompt(), "Pull", 1, current, recovery=recovery, peak_week_loads=peak)
         fly = next(p for p in props if p.exercise == "Reverse Cable Fly")
         top = fly.working[0]
-        self.assertEqual((top.weight_kg, top.reps_low, top.reps_high), (12.5, 7, 11))
+        # 2.5kg is 20% of 12.5kg, so the range stretches to 17 (16 after the
+        # one-rep readiness cut) before the load moves — 25 Sep 2026.
+        self.assertEqual((top.weight_kg, top.reps_low, top.reps_high), (12.5, 7, 16))
         self.assertTrue(all(w.weight_kg is None or abs(w.weight_kg / 2.5 - round(w.weight_kg / 2.5)) < 1e-6
                             for w in fly.warmup + fly.working + fly.backoff),
                         "every load on the card exists on a 2.5kg stack")

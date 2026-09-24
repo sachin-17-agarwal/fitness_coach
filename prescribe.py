@@ -31,6 +31,7 @@ is ambiguous or contradicts itself, the conflict is recorded on the proposal
 rather than silently resolved — see `Proposal.deferred`.
 """
 
+import math
 import re
 from dataclasses import dataclass, field, replace
 
@@ -452,6 +453,25 @@ OVERSHOOT_REPS = 3
 STEP_CAP = 0.06
 OVERSHOOT_CAP = STEP_CAP
 
+# A lift whose smallest step is MORE than STEP_CAP of its load cannot take
+# a 6% increase: the hammer curl moves in 2kg on 20kg (10%) and all three
+# of its increases since June landed under the range; the reverse cable
+# fly moves in 2.5kg on 15kg (17%), two of four. There the rep range
+# stretches upward instead — to the count at which one machine step lands
+# back at the bottom of the range with a rep to spare (Epley) — and the
+# load moves only when that count is reached. At most this many reps over
+# the standard top; past it the implement is the coach's call.
+STEP_RANGE_EXTENSION = 6
+
+
+def stretched_top(load: float | None, step: float | None, low: int, high: int) -> int:
+    """The top of the range for a lift whose smallest step exceeds STEP_CAP
+    of its load; `high` unchanged when the step is small enough."""
+    if not load or load <= 0 or not step or step <= load * STEP_CAP + 1e-9:
+        return high
+    need = math.ceil(30 * ((load + step) * (1 + (low + 1) / 30) / load - 1))
+    return max(high, min(need, high + STEP_RANGE_EXTENSION))
+
 
 def _overshoot_step(load: float, reps: int, low: int, high: int, kind: str) -> tuple[float, str]:
     """(new load, reason) for a top set `reps - high` reps over its range."""
@@ -691,7 +711,8 @@ def apply_recovery(spec: "SetSpec", adjustment: RecoveryAdjustment,
 FAILURE_RPE = 10.0
 
 
-def _met_top_of_range(prior: PriorSet, kind: str, target_rpe: float | None = None) -> bool:
+def _met_top_of_range(prior: PriorSet, kind: str, target_rpe: float | None = None,
+                      high: int | None = None) -> bool:
     """The load-increase trigger: the top set reached the TOP of its range.
 
     Reps only, since 25 Sep 2026. :203 also asked for "at or below the
@@ -713,7 +734,7 @@ def _met_top_of_range(prior: PriorSet, kind: str, target_rpe: float | None = Non
         return False
     if prior.rpe is not None and prior.rpe >= FAILURE_RPE:
         return False
-    return prior.reps >= TOP_SET_RANGE[kind][1]
+    return prior.reps >= (high if high is not None else TOP_SET_RANGE[kind][1])
 
 
 # The weak-point slot's band (:372 "reps 10-15", volume work after cardio).
@@ -760,6 +781,25 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     # half-kilo default put 151.5kg on a chest press whose stack had never
     # been read (22 Sep 2026); 2.5 is at least a load a compound can take.
     grid = step or _increment(kind, bodyweight)
+
+    if not bodyweight and rep_range is None and load and step:
+        # A machine step above 6% of the load: the range stretches before the
+        # load moves (STEP_RANGE_EXTENSION), so the card says where to stop.
+        stretched = stretched_top(load, step, low, high)
+        if stretched > high:
+            share = step / load
+            reasons.append(
+                f"{exercise}'s smallest step is {step:g}kg, {share:.0%} of {load:g}kg — more than the "
+                f"{STEP_CAP:.0%} one increase may add — so the range runs to {stretched} reps before the "
+                f"load moves; {step:g}kg more then lands near the bottom of {low}-{TOP_SET_RANGE[kind][1]}."
+            )
+            if stretched < math.ceil(30 * ((load + step) * (1 + (low + 1) / 30) / load - 1)):
+                deferred.append(
+                    f"{exercise}: even {stretched} reps at {load:g}kg does not make a {step:g}kg step land "
+                    f"inside the range. Microplates, a dumbbell in between, or another machine is the "
+                    f"coach's call — name it."
+                )
+            high = stretched
 
     if prior.reps is not None and prior.reps < low and week != deload_week():
         # :70 "That flexibility runs UPWARD only ... drifting BELOW an
@@ -885,7 +925,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                     f"(:205). Reps reset to the bottom."
                 )
             return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
-        if _met_top_of_range(prior, kind, targets["top"]):
+        if _met_top_of_range(prior, kind, targets["top"], high):
             step = _increment(kind, bodyweight, step)
             load = _round_load(load + step, grid, load)
             reasons.append(
@@ -1012,7 +1052,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             )
         return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
 
-    if _met_top_of_range(prior, kind, targets["top"]):
+    if _met_top_of_range(prior, kind, targets["top"], high):
         # :203 rep progression is exhausted, so the load moves.
         step = _increment(kind, bodyweight, step)
         load = _round_load(load + step, grid, load)
