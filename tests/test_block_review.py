@@ -384,3 +384,13 @@ class LiveFromSecondBlockTests(unittest.TestCase):
     def test_the_review_records_from_the_second_block(self):
         import block_review
         self.assertFalse(block_review.DRY_RUN)
+
+
+class PeakWeekOfBlockTests(unittest.TestCase):
+    def test_each_block_names_its_own_peak_week(self):
+        from block_review import _peak_week_of
+        wk = lambda r: r["w"]
+        self.assertEqual(_peak_week_of([{"w": w} for w in (1, 2, 3, 4)], wk), 3)        # the 3-19 Sep block: 4 weeks
+        self.assertEqual(_peak_week_of([{"w": w} for w in (1, 2, 3, 4, 5)], wk), 4)     # a 5-week block
+        self.assertEqual(_peak_week_of([{"w": w} for w in (1, 2, 3)], wk), 3)           # no deload yet: its last week
+        self.assertIn(_peak_week_of([], wk), (3, 4))                                    # nothing stamped: the setting
