@@ -39,7 +39,6 @@ The two categories beyond the four you named:
 |---|---|---|---|---|
 | F1 | Block review goes live: a tap records, no more dry run | S | merged 23 Sep, unverified | `block_review.DRY_RUN = False`; the 19 Sep row stays a dry run. First live review at the next block rollover. |
 | F2 | Decision capture stages 2–3: the chat-bubble card, the session-shape grammar | M | merged 23 Sep, unverified | Cards under the reply in Coach chat; `Substitute:`/`Order:` recorded and applied inside `parse_session_template` (`shape.py`), so coach and programme read one template. First shape line waits on the coach proposing one. |
-| F3 | Apple Watch: rest timer with haptics (stage 1), set logging from the wrist (stage 2) | L | parked 24 Sep | Needed a second signed target through P1, which is declined. Revisit only if the free provisioning path can carry a watch extension. |
 | F4 | Pre-flight phase 2: findings that need a decision become Home decision cards; unanswered → programme default, stated | M | idea | Phase 1 (correct + log) shipped 20 Sep (#303). |
 | F5 | Standing decisions reviewed mid-block by age, not only at the block review | S | idea | The shoulder cap was never asked about until the review existed. |
 | F6 | Exercise aliases managed from the app: merge two spellings of one lift | S | idea | Incline Press / Incline Barbell Press; the review and strength page already honour the library. |
@@ -96,12 +95,11 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| P1 | Cloud build: Xcode Cloud → TestFlight; retire `deploy_device.sh` and the launchd job | M | declined 24 Sep | Not paying for the programme. `deploy_device.sh` + launchd stay the deploy path (any paired iPhone, 3 install retries since #314). |
 | P2 | One export from Settings for the replay harness (F8) | S | merged 24 Sep, unverified | Re-export after each block to refresh `tests/fixtures/export/` (not recovery.csv). |
 | P6 | Claims ledger (`docs/CLAIMS.md`): every claim Claude makes about the system carries its basis — measured / inferred / assumed — and is verified or marked wrong | — | standing from 24 Sep | The athlete's ask: accountability for the developer as well as the coach. |
 | P3 | Rules we hold: a new check is a step in `reply_contract.py` and one comes out; every gym screenshot becomes a pre-flight invariant; nothing merges while a session is live | — | standing | |
 | P4 | The Sunday report is read by Claude, not the athlete; sections only a human would read are removed | S | in progress | Shadow removed 20 Sep. |
-| P5 | Migrations: 011–014 run; 015 pending | — | waiting on the athlete | `migrations/015_decision_outcomes.sql`. |
+| P5 | Migrations: 011–015 all run (24 Sep) | — | done | Nothing pending. |
 
 ---
 
@@ -111,6 +109,5 @@ The two categories beyond the four you named:
 2. S1 in-session numbers check.
 3. F8/P2 replay harness, once the export is in.
 4. F1 block review live, on your word.
-5. ~~P1 cloud build~~ — declined 24 Sep; the nightly re-sign stays.
 
 Everything else waits its turn or a yes.
