@@ -84,10 +84,10 @@ The two categories beyond the four you named:
 | C8 | Back-offs at RPE 8 in every loading week (were 7 in weeks 1-2) | S | merged 24 Sep, unverified | Proximity-to-failure meta-regressions (Robinson et al. 2024). |
 | C9 | Block length is a setting: 5 weeks on a bulk (4 loading + deload), 4 on a cut; `data.block_weeks()` reads memory `block_weeks`, set from Settings → Training block | S | merged 24 Sep, unverified | Every week rule reads it; peak week = last loading week. |
 | C10 | Pull order: Lat Pulldown before Cable Row | — | merged 24 Sep, unverified | Two vertical pulls with a heavy row between them left the pulldown flat since June. |
-| C1 | Readiness cuts on light isolation lifts: whether a red morning should touch load at all when the cut is under one stack step (now: holds, says so) | S | idea | Reverse Cable Fly 20 Sep. |
-| C2 | The programme acts on READY TO LOAD (steps the load itself) instead of telling the coach | S | idea | Watch wording fixed 20 Sep. |
-| C3 | When an emphasis should be questioned: a muscle over its band with rising lifts (triceps) is queued for next block | S | idea | The review states it; the athlete decides. |
-| C4 | Week 1 anchor when the peak week has no stamped set | S | idea | Falls back to block best with a note today. |
+| C1 | Readiness cuts on light isolation lifts: whether a red morning should touch load at all when the cut is under one stack step (now: holds, says so) | S | in PR 25 Sep, unverified — effort-only under one step, one clause on the card; 7 such lifts in the replayed block, none ever actually cut | Reverse Cable Fly 20 Sep. |
+| C2 | The programme acts on READY TO LOAD (steps the load itself) instead of telling the coach | S | in PR 25 Sep, unverified — `PriorSet.ready` from the watch's own flag; weeks 2 and peak-by-reps step. Measured: 21 ready runs since June, the load moved next session in 9 | Watch wording fixed 20 Sep. |
+| C3 | When an emphasis should be questioned: a muscle over its band with rising lifts (triceps) is queued for next block | S | folded into the ~29 Oct review (U3) — every muscle inside its band this block | The review states it; the athlete decides. |
+| C4 | Week 1 anchor when the peak week has no stamped set | S | dropped 25 Sep — 1 of 21 week-1 lifts, and only a spelling variant; F6 covers it | Falls back to block best with a note today. |
 | C5 | Coach tone under disagreement: check the athlete's last set before arguing from a rule | — | folded into S1 and E1 | |
 | C6 | Cable Crunch: reassess the heavier stacks at the next review; cap cleared 20 Sep | — | scheduled | |
 

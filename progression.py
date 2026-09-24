@@ -190,11 +190,30 @@ def find_current_loads(rows: list[dict]) -> list[dict]:
             "met_target": _met_target(top),
             "held": _held_sessions(sessions, top),
             "step": _load_step(sessions),
+            # READY TO LOAD, the watch's own flag: some session at this load
+            # reached the top of the range at RPE 9 or under. Carried to the
+            # programme (PriorSet.ready) so it steps the load itself rather
+            # than telling the coach (C2, 25 Sep 2026: 21 such runs since
+            # June, the load moved next session in 9).
+            "ready": _programme_due(exercise, _tops_at_load(sessions, top)),
         })
     # Alphabetical: this is a lookup table, and the coach arrives knowing the
     # exercise name, not the date.
     loads.sort(key=lambda entry: entry["exercise"].lower())
     return loads
+
+
+def _tops_at_load(sessions: dict[str, list[dict]], top: dict) -> list[dict]:
+    """The top sets of the consecutive latest sessions at the same load as
+    `top`, newest first."""
+    load = _load_key(top)
+    out = []
+    for date in sorted(sessions.keys(), reverse=True):
+        t = _top_set(sessions[date])
+        if t is None or _load_key(t) != load:
+            break
+        out.append(t)
+    return out
 
 
 def _load_step(sessions: dict[str, list[dict]]) -> float | None:

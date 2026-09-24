@@ -137,6 +137,7 @@ def _history(plan, current_loads: list[dict], week: int | None = None) -> tuple:
             bodyweight=bodyweight,
             held=int(row.get("held") or 1),
             step=_number(row.get("step")),
+            ready=bool(row.get("ready")),
         )
     renamed = {e: n for e, n in matches.items() if norm_name(e) != norm_name(n)}
     return history, renamed, ambiguous

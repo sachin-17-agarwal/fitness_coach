@@ -126,3 +126,33 @@ class HygieneAndBackfillTests(unittest.TestCase):
         from fixes_2026_09 import FIXES_2026_09
         keys = [k for k, _ in FIXES_2026_09]
         self.assertEqual(keys[:3], ["2026-09-25-exercise-case-variants", "2026-09-25-session-hygiene", "2026-09-25-stamp-backfill"])
+
+
+class ReadyToLoadTests(unittest.TestCase):
+    """C2: the watch's READY TO LOAD flag drives the number."""
+
+    def test_the_current_load_row_carries_ready(self):
+        from progression import find_current_loads
+        rows = [
+            {"exercise": "Leg Press", "date": "2026-09-09", "actual_weight_kg": 240, "actual_reps": 13, "actual_rpe": 8, "is_warmup": False, "workout_session_id": "a"},
+            {"exercise": "Leg Press", "date": "2026-09-14", "actual_weight_kg": 240, "actual_reps": 11, "actual_rpe": 9.5, "is_warmup": False, "workout_session_id": "b"},
+            {"exercise": "Cable Row", "date": "2026-09-14", "actual_weight_kg": 90.5, "actual_reps": 8, "actual_rpe": 9, "is_warmup": False, "workout_session_id": "b"},
+        ]
+        by = {r["exercise"]: r for r in find_current_loads(rows)}
+        self.assertTrue(by["Leg Press"]["ready"], "an earlier session at 240 reached the top at RPE 8")
+        self.assertFalse(by["Cable Row"]["ready"])
+
+    def test_week_two_steps_when_ready_even_if_the_last_set_did_not_quite(self):
+        from prescribe import COMPOUND, PriorSet, prescribe_exercise
+        # Last session 11 of 8-12 at RPE 9.5: the single-set rule holds the load.
+        held = prescribe_exercise("Leg Press", 3, COMPOUND, 2, PriorSet(240.0, 9, 9.5, step=2.5), set())
+        self.assertEqual(held.working[0].weight_kg, 240.0)
+        ready = prescribe_exercise("Leg Press", 3, COMPOUND, 2, PriorSet(240.0, 9, 9.5, step=2.5, ready=True), set())
+        self.assertEqual(ready.working[0].weight_kg, 242.5)
+        self.assertTrue(any("READY TO LOAD" in r for r in ready.reasons))
+        # The peak-by-reps branch too.
+        peak = prescribe_exercise("Leg Press", 3, COMPOUND, 3, PriorSet(240.0, 9, 9.5, step=2.5, ready=True), set())
+        self.assertEqual(peak.working[0].weight_kg, 242.5)
+        # Never at bodyweight, where the step is a plate the coach decides.
+        bw = prescribe_exercise("Pull-Ups", 2, COMPOUND, 2, PriorSet(None, 6, 9.5, bodyweight=True, ready=True), set())
+        self.assertTrue(bw.working[0].bodyweight)
