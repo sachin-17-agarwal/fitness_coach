@@ -339,10 +339,10 @@ struct WaveBarsChart: View {
                                 .stroke(Color.white.opacity(0.28), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                                 .frame(width: bw, height: gh)
                                 .position(x: cx, y: base - gh / 2)
-                            Text(format(g))
-                                .font(.system(size: 9.5, weight: .bold)).kerning(1)
-                                .foregroundStyle(Editorial.muted)
-                                .position(x: cx, y: base - gh + 11)
+                            // The number is drawn AFTER the bar below: when the
+                            // outline stands only a little above the bar, this
+                            // label sits inside the bar and was painted over
+                            // (45.4T hiding last block's week 1, 25 Sep 2026).
                         }
                     }
                     if b.value > 0 {
@@ -364,6 +364,15 @@ struct WaveBarsChart: View {
                                     .position(x: cx, y: base - gh + 10)
                             }
                         }
+                        if let g = b.ghost, g > 0, gh > bh {
+                            // Last block's number, inside the top of its outline;
+                            // light on the bar when the outline is barely taller,
+                            // muted on the background when it stands clear.
+                            Text(format(g))
+                                .font(.system(size: 9.5, weight: .bold)).kerning(1)
+                                .foregroundStyle(gh - bh < 14 ? Color.white.opacity(0.8) : Editorial.muted)
+                                .position(x: cx, y: base - gh + 11)
+                        }
                         // The bar's number sits over the bar — unless last
                         // block's outline stands just above it, where the two
                         // labels would collide; then the big number clears the
@@ -373,7 +382,12 @@ struct WaveBarsChart: View {
                             .font(.display(22))
                             .foregroundStyle(b.highlight ? .white : Editorial.mid)
                             .position(x: cx, y: base - (crowded ? gh : bh) - 16)
-                    } else if b.ghost == nil || b.ghost == 0 {
+                    } else if let g = b.ghost, g > 0 {
+                        Text(format(g))
+                            .font(.system(size: 9.5, weight: .bold)).kerning(1)
+                            .foregroundStyle(Editorial.muted)
+                            .position(x: cx, y: base - gh + 11)
+                    } else {
                         Text("—").font(.display(18)).foregroundStyle(Editorial.muted).position(x: cx, y: base - 16)
                     }
                     Text(b.label)

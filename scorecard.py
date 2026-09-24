@@ -23,6 +23,7 @@ right is then a count, not an impression.
 from __future__ import annotations
 
 import logging
+import threading
 from collections import Counter, defaultdict
 from datetime import timedelta
 
@@ -187,6 +188,18 @@ def score_pending(days: int = 14) -> int:
             continue
         n += len(score_session(s["id"]))
     return n
+
+
+def score_in_background(days: int = 14) -> None:
+    """Score what is pending on a daemon thread, so no request waits on it."""
+    def run():
+        try:
+            n = score_pending(days)
+            if n:
+                log.info("scorecard: %d lifts scored in the background", n)
+        except Exception:
+            log.exception("scorecard: background scoring failed")
+    threading.Thread(target=run, name="scorecard", daemon=True).start()
 
 
 # ── reading the verdicts ─────────────────────────────────────────────────────

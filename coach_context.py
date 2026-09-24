@@ -302,13 +302,12 @@ def _block_weak_points(memory: dict, prompt: str):
 
 
 def _outcomes() -> list:
-    """The scorecard's verdicts, with any finished session not yet scored
-    scored first (once a day per process)."""
+    """The scorecard's verdicts — a READ only. Scoring runs off the request
+    path (scorecard.score_in_background at boot, score_session at session
+    end): on 25 Sep 2026 the first context build after migration 015 scored
+    twelve sessions inline, ~120 sequential queries, and the athlete waited
+    110 s for a card that is meant to be instant."""
     import scorecard  # local: keeps import order flat
-    try:
-        scorecard.score_pending()
-    except Exception:
-        log.debug("scorecard: pending scoring failed", exc_info=True)
     return scorecard.recent_outcomes()
 
 
