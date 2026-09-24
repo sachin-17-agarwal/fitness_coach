@@ -736,6 +736,14 @@ def _apply_data_fixes_at_start() -> None:
 
 _apply_data_fixes_at_start()
 
+# Verdicts for any finished session not yet scored, off the request path.
+try:
+    if get_supabase():
+        import scorecard as _scorecard  # local: keeps import order flat
+        _scorecard.score_in_background()
+except Exception:
+    log.exception("scorecard: could not start background scoring")
+
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
 

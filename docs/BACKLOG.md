@@ -61,6 +61,8 @@ The two categories beyond the four you named:
 | S8 | The missing "Logged warm-up 2 of 3" message | S | in PR 25 Sep, unverified — the fact line shows the moment any set is logged, above the typing dots | App side; noticed 18 Sep. |
 | S9 | Hygiene dry run of session statuses/types, then execute | S | in PR 25 Sep, unverified — `2026-09-25-session-hygiene` executes the dry run (`docs/hygiene_2026-09-25.md`): 36 abandoned, 2 retyped from their sets (Push, Legs) | Migration 010 run. |
 | S10 | Late coach review applied after 3 minutes | — | done (#277) | |
+| N6 | A hard 30 s budget on set replies: past it a code-only reply goes out (card unchanged) and the coach's note lands later | S | proposed 25 Sep, saved for review | Measured (20 Sep report): set reply median 5.8 s, p90 11.4 s, max 335.9 s. |
+| N7 | Warm-up adherence: measure prescribed ramps against logged ramps per lift before building anything | S | proposed 25 Sep — measure first | Measured: 28 of 60 heavy lifts in September have no warm-up row; some are the programme's own "no ramp", some may be unlogged, some skipped. |
 | S13 | A coach `adjust` above the programme's top set is at most one step of the lift (`plan.validate`); beyond that the programme's card stands | S | merged 24 Sep, unverified | Machine Chest Press 168 vs ~152 on 22 Sep → 165 x5 @9. The pre-flight bounded the programme's jumps; the coach's were unbounded. |
 | S12 | Logged sets carry their phase (`workout_sets.phase`, migration 014); card and set replies count by phase, position only for older rows | S | merged 24 Sep, unverified | A skipped working set no longer relabels the back-offs after it. |
 | S11 | Coach flag log: a wrong reply is flagged from the coach sheet; the exchange, card, sets and contract record are kept (`coach_flags`), shared from Settings as one text, and filed as a GitHub issue when `GITHUB_FLAGS_TOKEN` is set | S | merged 23 Sep, unverified | Migration 013 to run. Optional: a fine-grained token with issues write on this repo, set on Railway. |
@@ -90,12 +92,18 @@ The two categories beyond the four you named:
 | C4 | Week 1 anchor when the peak week has no stamped set | S | dropped 25 Sep — 1 of 21 week-1 lifts, and only a spelling variant; F6 covers it | Falls back to block best with a note today. |
 | C5 | Coach tone under disagreement: check the athlete's last set before arguing from a rule | — | folded into S1 and E1 | |
 | C6 | Cable Crunch: reassess the heavier stacks at the next review; cap cleared 20 Sep | — | scheduled | |
+| N1 | **RPE is mostly the slider's default**: the app records whether the RPE was touched, stops prefilling the target as the value, and the scorecard treats an untouched RPE as unknown (verdict by reps alone) | S | proposed 25 Sep, saved for review | Measured: 260 of 312 September working sets (83%) carry an RPE exactly equal to the prefilled target. Decides whether the scorecard's "right" means anything. |
+| N2 | Rest reprogrammed to what is done: ~3 min between working sets (evidence favours ~3 min over 1 for hypertrophy) | S | proposed 25 Sep, saved for review | Measured: median rest 3.2–3.4 min, p90 4.5–4.9, against 90 s / 2 min prescribed; sessions 79 min median, 106 max. |
+| N3 | Bodyweight-plus lifts: the added-load step sized on the athlete plus the plate | S | proposed 25 Sep, saved for review | Measured: Dips 15 vs 20 lifted, Pull-Ups 14 vs 17.5 twice among the 8 replay outliers. |
+| N4 | Light stacks: when one step exceeds ~10% of the load, progress by widening the rep range before the load | S | proposed 25 Sep, saved for review | Measured: Reverse Cable Fly three times among the outliers (12.5 ↔ 10 ↔ 15); lateral raise and Pallof the same shape. |
+| N5 | Bulk-rate readout: weekly weight rate in the Sunday report and a one-line note to the coach above ~0.5%/week | S | proposed 25 Sep, saved for review | Measured: 80.8 → 82.6 over the last seven weigh-ins; ~1 kg/week for six weeks. |
 
 ## Process — how we build and ship
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
 | P2 | One export from Settings for the replay harness (F8) | S | merged 24 Sep, unverified | Re-export after each block to refresh `tests/fixtures/export/` (not recovery.csv). |
+| N8 | Swift built and tested in CI on a macOS runner, on PRs that touch Swift | S | proposed 25 Sep, saved for review | Every Swift claim in the ledger is "assumed"; the nightly Mac build is the only compiler. Free minutes while the repo is public, 10× cost once private — build only on Swift changes. |
 | P6 | Claims ledger (`docs/CLAIMS.md`): every claim Claude makes about the system carries its basis — measured / inferred / assumed — and is verified or marked wrong | — | standing from 24 Sep | The athlete's ask: accountability for the developer as well as the coach. |
 | P3 | Rules we hold: a new check is a step in `reply_contract.py` and one comes out; every gym screenshot becomes a pre-flight invariant; nothing merges while a session is live | — | standing | |
 | P4 | The Sunday report is read by Claude, not the athlete; sections only a human would read are removed | S | in progress | Shadow removed 20 Sep. |

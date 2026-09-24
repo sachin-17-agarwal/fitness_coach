@@ -162,3 +162,21 @@ class AcceptIsADecisionTests(unittest.TestCase):
         raw = _legs_plan(); raw["exercises"][0]["reason"] = "Knee is niggling; the programme's number stands today."
         plan = parse_plan(json.dumps(raw), _legs_proposal())
         self.assertEqual([p for p in validate(plan, "Legs", _prompt(), _legs_proposal(), verdicts=VERDICTS) if "came in" in p], [])
+
+
+class OffTheRequestPathTests(unittest.TestCase):
+    def test_the_context_build_only_reads_verdicts(self):
+        import coach_context
+        with patch("scorecard.score_pending") as scoring, patch("scorecard.recent_outcomes", return_value=[{"verdict": "light"}]):
+            rows = coach_context._outcomes()
+        scoring.assert_not_called()
+        self.assertEqual(rows, [{"verdict": "light"}])
+
+    def test_background_scoring_runs_on_a_thread(self):
+        import threading
+        done = threading.Event()
+        def fake(days=14):
+            done.set(); return 3
+        with patch("scorecard.score_pending", side_effect=fake):
+            scorecard.score_in_background()
+            self.assertTrue(done.wait(2))
