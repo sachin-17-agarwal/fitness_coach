@@ -124,16 +124,92 @@ def ceilings(rows: list[dict]) -> dict[str, float]:
     return out
 
 
-def format_constraints(rows: list[dict]) -> str:
+# A standing decision is questioned only at the block review; a cap set for a
+# niggle can outlive the niggle by weeks (Machine Shoulder Press, 70kg since
+# 16 Sep 2026, the one flat lift). After this many sessions of the lift under
+# the decision the coach is told to ask once, and not again for a week.
+REVIEW_AFTER_SESSIONS = 4
+REVIEW_EVERY_DAYS = 7
+_ASKED_KEY = "constraint_asked:{}"
+
+
+def _fold(name: str) -> str:
+    return "".join(ch for ch in (name or "").lower() if ch.isalnum())
+
+
+def sessions_held(rows: list[dict]) -> dict[str, int]:
+    """fold(exercise) -> distinct sessions of the lift since the decision was set."""
+    out: dict[str, int] = {}
+    if not rows:
+        return out
+    try:
+        supabase = get_supabase()
+        if not supabase:
+            return out
+        since = min(str(r.get("set_on") or "9999") for r in rows)
+        sets = (supabase.table("workout_sets").select("exercise, workout_session_id, date")
+                .gte("date", since).execute()).data or []
+    except Exception:
+        log.warning("Could not count sessions under the standing decisions", exc_info=True)
+        return out
+    for r in rows:
+        key = _fold(r.get("exercise"))
+        held = {s.get("workout_session_id") for s in sets
+                if _fold(s.get("exercise")) == key and str(s.get("date") or "") >= str(r.get("set_on") or "")}
+        out[key] = len(held)
+    return out
+
+
+def due_for_review(rows: list[dict], held: dict[str, int], memory: dict | None) -> list[str]:
+    """The decisions the coach should ask about today: held at least
+    REVIEW_AFTER_SESSIONS sessions and not asked in the last REVIEW_EVERY_DAYS."""
+    today = now_local().date()
+    due = []
+    for r in rows:
+        key = _fold(r.get("exercise"))
+        if held.get(key, 0) < REVIEW_AFTER_SESSIONS:
+            continue
+        asked = str((memory or {}).get(_ASKED_KEY.format(key)) or "")[:10]
+        try:
+            from datetime import date as _date
+            if asked and (today - _date.fromisoformat(asked)).days < REVIEW_EVERY_DAYS:
+                continue
+        except ValueError:
+            pass
+        due.append(r.get("exercise"))
+    return due
+
+
+def mark_asked(exercises: list[str]) -> None:
+    """Remember that the coach was told to ask today, so it is not told daily."""
+    if not exercises:
+        return
+    try:
+        from memory import set_memory_value  # local: keeps import order flat
+        today = now_local().strftime("%Y-%m-%d")
+        for name in exercises:
+            set_memory_value(_ASKED_KEY.format(_fold(name)), today)
+    except Exception:
+        log.warning("Could not record the constraint review ask", exc_info=True)
+
+
+def format_constraints(rows: list[dict], held: dict[str, int] | None = None, due: list[str] | None = None) -> str:
     if not rows:
         return ("\nSTANDING CONSTRAINTS — facts you have recorded with a `Decision:` line that outlive "
                 "the session (a machine's top plate, a movement off the table). None recorded.\n")
     lines = ["\nSTANDING CONSTRAINTS — facts you recorded with a `Decision:` line. The programme's "
              "proposal already respects them; your plan must too. `Decision: <Exercise> | clear` ends one."]
+    due_keys = {_fold(d) for d in (due or [])}
     for r in rows:
         cap = f" · max load {float(r['max_load_kg']):g}kg" if r.get("max_load_kg") is not None else ""
         note = f" — {r['note']}" if r.get("note") else ""
-        lines.append(f"- {r['exercise']}{cap} (since {r.get('set_on')}){note}")
+        n = (held or {}).get(_fold(r.get("exercise")))
+        age = f", {n} session{'s' if n != 1 else ''} under it" if n else ""
+        lines.append(f"- {r['exercise']}{cap} (since {r.get('set_on')}{age}){note}")
+        if _fold(r.get("exercise")) in due_keys:
+            lines.append(f"  ASK ONCE TODAY: {n} sessions under this decision. Ask him, in one line, whether it "
+                         f"still applies. If it does, keep it and say so; if not, end it with "
+                         f"`Decision: {r['exercise']} | clear`. Do not ask again this week.")
     return "\n".join(lines) + "\n"
 
 

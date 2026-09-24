@@ -614,7 +614,16 @@ def build_context_block(memory: dict, athlete_name: str,
     if out is not None:
         out["verdicts"] = _verdicts
     from constraints import format_constraints, ceilings as _ceilings  # local: keeps import order flat
-    programme_proposal += format_constraints(results.get("constraints") or [])
+    import constraints as _constraints  # local: keeps import order flat
+    _rows = results.get("constraints") or []
+    try:
+        _held = _constraints.sessions_held(_rows)
+        _due = _constraints.due_for_review(_rows, _held, memory)
+        _constraints.mark_asked(_due)
+    except Exception:
+        log.exception("Standing-decision review could not be computed")
+        _held, _due = {}, []
+    programme_proposal += format_constraints(_rows, _held, _due)
     if out is not None:
         out["ceilings"] = _ceilings(results.get("constraints") or [])
 

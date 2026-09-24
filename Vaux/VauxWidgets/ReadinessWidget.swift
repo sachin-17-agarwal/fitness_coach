@@ -42,12 +42,25 @@ nonisolated struct WidgetPayload: Codable, Hashable, Sendable {
     let restingHr: Double?
     let rhrDelta: Int?
     let strength: WidgetStrength?
+    /// This ISO week's finished sessions and tonnage, against last week's
+    /// (computed on the server at each read, so it is fresh without the app).
+    var weekSessions: Int? = nil
+    var weekTonnageKg: Double? = nil
+    var weekTonnageDeltaPct: Int? = nil
 
     static let sample = WidgetPayload(
         date: "2026-09-17", readDate: "2026-09-17", stale: false, score: 82, level: "green", verdict: "READY — PUSH TODAY",
         sessionType: "Push", done: false, week: 4, day: 2, phase: "DELOAD",
         hrv: 68, hrvDelta: 4, sleepHours: 7.33, restingHr: 52, rhrDelta: -1,
-        strength: WidgetStrength(medianGainPct: 8.1, lifts: 11))
+        strength: WidgetStrength(medianGainPct: 8.1, lifts: 11),
+        weekSessions: 4, weekTonnageKg: 61240, weekTonnageDeltaPct: 6)
+
+    /// "4 · 61.2t" — sessions this week and their tonnage.
+    var weekLine: String? {
+        guard let n = weekSessions, n > 0 else { return nil }
+        if let t = weekTonnageKg, t > 0 { return "\(n) · \(String(format: "%.1f", t / 1000))t" }
+        return "\(n)"
+    }
 }
 
 // MARK: - Fetch
@@ -328,6 +341,9 @@ private struct MediumView: View {
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 7) {
                     MetricLine(label: "WEEK \(p.week)", value: p.phase)
+                    if let w = p.weekLine {
+                        MetricLine(label: "THIS WEEK", value: w, delta: p.weekTonnageDeltaPct)
+                    }
                     if let g = p.strength?.medianGainPct {
                         MetricLine(label: "STRENGTH", value: WidgetStyle.signedPct(g))
                     }

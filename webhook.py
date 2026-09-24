@@ -376,7 +376,41 @@ def api_block_review_answer():
 
 
 # Short phase names for a widget line: "WEEK 4 · DELOAD".
-_PHASE_SHORT = {1: "BASELINE", 2: "VOLUME", 3: "PEAK", 4: "DELOAD"}
+def _phase_short(week: int) -> str:
+    """The week's name for the block length in force (prescribe.targets_for)."""
+    try:
+        from prescribe import targets_for  # local: keeps import order flat
+        name = targets_for(week)["name"]
+    except Exception:
+        return ""
+    return {"Baseline": "BASELINE", "Volume progression": "VOLUME", "Peak by reps": "PEAK · REPS",
+            "Peak by load": "PEAK · LOAD", "Deload": "DELOAD"}.get(name, name.upper())
+
+
+def _week_stats() -> dict:
+    """This ISO week's finished sessions and tonnage, against last week's."""
+    from datetime import timedelta
+    out = {"week_sessions": None, "week_tonnage_kg": None, "week_tonnage_delta_pct": None}
+    try:
+        supabase = get_supabase()
+        if not supabase:
+            return out
+        today = now_local().date()
+        monday = today - timedelta(days=today.weekday())
+        prev_monday = monday - timedelta(days=7)
+        rows = (supabase.table("workout_sessions").select("date, tonnage_kg, type")
+                .gte("date", prev_monday.isoformat()).execute()).data or []
+        def total(since, until):
+            mine = [r for r in rows if since.isoformat() <= str(r.get("date") or "") < until.isoformat()
+                    and (r.get("tonnage_kg") or 0) > 0]
+            return len(mine), sum(float(r["tonnage_kg"]) for r in mine)
+        n, t = total(monday, monday + timedelta(days=7))
+        _pn, pt = total(prev_monday, monday)
+        out.update(week_sessions=n, week_tonnage_kg=round(t, 1),
+                   week_tonnage_delta_pct=(round((t / pt - 1) * 100) if pt > 0 and n > 0 else None))
+    except Exception:
+        log.warning("widget: week stats unavailable", exc_info=True)
+    return out
 WIDGET_STRENGTH_KEY = "widget_strength"
 
 
@@ -447,8 +481,9 @@ def widget_payload(memory: dict, readiness: dict, finished) -> dict:
         elif session not in NON_SLOT_TYPES:
             # No stamp: step back one slot from the state, as Home does.
             if day == 1:
+                from data import block_weeks  # local: keeps import order flat
                 day = len(CYCLE)
-                week = 4 if week == 1 else week - 1
+                week = block_weeks() if week == 1 else week - 1
             else:
                 day -= 1
     strength = None
@@ -471,7 +506,8 @@ def widget_payload(memory: dict, readiness: dict, finished) -> dict:
         "done": done,
         "week": week,
         "day": day,
-        "phase": _PHASE_SHORT.get(week, ""),
+        "phase": _phase_short(week),
+        **_week_stats(),
         "hrv": readiness.get("hrv"),
         "hrv_delta": readiness.get("hrv_delta"),
         "sleep_hours": readiness.get("sleep_hours"),

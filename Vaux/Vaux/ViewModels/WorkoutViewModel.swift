@@ -2,6 +2,7 @@
 // Vaux
 
 import Foundation
+import WidgetKit
 import Observation
 import UIKit
 
@@ -845,9 +846,13 @@ final class WorkoutViewModel {
             guard loggedReps >= t.reps else { return false }
             return abs(loggedWeight - t.weight) < 0.01
         }()
+        // The fact line is on screen the moment the set is logged — for a
+        // warm-up as much as a working set. Until 25 Sep 2026 a last warm-up
+        // (the phase already advanced) or an unplanned one went to the coach
+        // and the athlete saw nothing for the seconds the reply took (S8).
+        coachNote = factPrefix
         let isMidRamp = isWarmup && currentPhase == .warmup
         if isMidRamp && rampWentToPlan {
-            coachNote = factPrefix
             isCoachThinking = false
             return
         }
@@ -1136,6 +1141,8 @@ final class WorkoutViewModel {
         if let session = currentSession, let sessionId = session.id {
             do {
                 try await workoutService.endSession(id: sessionId)
+                // The widget's THIS WEEK line and readiness verdict read the finished session.
+                WidgetCenter.shared.reloadAllTimelines()
             } catch {
                 errorMessage = error.localizedDescription
             }

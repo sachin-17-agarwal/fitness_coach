@@ -182,7 +182,55 @@ def _fix_2026_09_19_clear_leg_press_note() -> str:
     return _clear_constraint("Leg Press", "245kg x15 this block did what the note asked")
 
 
+def case_variant_plan(names: dict[str, int]) -> dict[str, str]:
+    """{variant spelling: canonical spelling} for names that differ only by
+    case or spacing; the most-logged spelling wins ("Leg press" 31 sets ->
+    "Leg Press" 143). Real variants ("Machine Chest Fly" vs "Cable Chest
+    Fly") are different lifts or aliases and are left alone."""
+    groups: dict[str, list] = {}
+    for name, count in names.items():
+        key = " ".join((name or "").split()).lower()
+        if key:
+            groups.setdefault(key, []).append((name, count))
+    plan = {}
+    for key, variants in groups.items():
+        if len(variants) < 2:
+            continue
+        canonical = max(variants, key=lambda v: (v[1], v[0] == v[0].title(), v[0]))[0]
+        for name, _ in variants:
+            if name != canonical:
+                plan[name] = canonical
+    return plan
+
+
+def _fix_2026_09_25_exercise_case_variants() -> str:
+    """Twelve lifts were logged under two or three spellings differing only
+    by case ("Leg press" 31 sets beside "Leg Press" 143; measured from the
+    23 Sep export). Each split a lift's history in two for the strength page,
+    the step inference and the reviews. Rename the minority spellings to the
+    majority's, in workout_sets."""
+    from data import get_supabase
+    supabase = get_supabase()
+    if not supabase:
+        raise RuntimeError("no database connection")
+    rows = (supabase.table("workout_sets").select("exercise").execute()).data or []
+    counts: dict[str, int] = {}
+    for r in rows:
+        n = r.get("exercise")
+        if n:
+            counts[n] = counts.get(n, 0) + 1
+    plan = case_variant_plan(counts)
+    if not plan:
+        return "no case variants in workout_sets"
+    done = []
+    for variant, canonical in sorted(plan.items()):
+        supabase.table("workout_sets").update({"exercise": canonical}).eq("exercise", variant).execute()
+        done.append(f"{variant} -> {canonical} ({counts[variant]} sets)")
+    return "; ".join(done)
+
+
 FIXES_2026_09 = [
+    ("2026-09-25-exercise-case-variants", _fix_2026_09_25_exercise_case_variants),
     ("2026-09-19-emphasis-triceps-chest", _fix_2026_09_19_emphasis_triceps_chest),
     ("2026-09-19-block-review-window", _fix_2026_09_19_block_review_window),
     ("2026-09-19-block-review-emphasis", _fix_2026_09_19_block_review_emphasis),

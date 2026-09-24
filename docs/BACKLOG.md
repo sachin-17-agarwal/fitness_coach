@@ -40,9 +40,9 @@ The two categories beyond the four you named:
 | F1 | Block review goes live: a tap records, no more dry run | S | merged 23 Sep, unverified | `block_review.DRY_RUN = False`; the 19 Sep row stays a dry run. First live review at the next block rollover. |
 | F2 | Decision capture stages 2–3: the chat-bubble card, the session-shape grammar | M | merged 23 Sep, unverified | Cards under the reply in Coach chat; `Substitute:`/`Order:` recorded and applied inside `parse_session_template` (`shape.py`), so coach and programme read one template. First shape line waits on the coach proposing one. |
 | F4 | Pre-flight phase 2: findings that need a decision become Home decision cards; unanswered → programme default, stated | M | idea | Phase 1 (correct + log) shipped 20 Sep (#303). |
-| F5 | Standing decisions reviewed mid-block by age, not only at the block review | S | idea | The shoulder cap was never asked about until the review existed. |
-| F6 | Exercise aliases managed from the app: merge two spellings of one lift | S | idea | Incline Press / Incline Barbell Press; the review and strength page already honour the library. |
-| F7 | Widget: strength number kept fresh; a "this week" line | S | idea | Widget shipped 17 Sep, fixed 19–20 Sep. |
+| F5 | Standing decisions reviewed mid-block by age, not only at the block review | S | in PR 25 Sep, unverified — after 4 sessions under a decision the coach is told to ask once, then not for a week | The shoulder cap was never asked about until the review existed. |
+| F6 | Exercise aliases managed from the app: merge two spellings of one lift | S | in PR 25 Sep, unverified — (a) dated fix merges the case-only variants (12 lifts); (b) Add-alias action on each library row | Incline Press / Incline Barbell Press; the review and strength page already honour the library. |
+| F7 | Widget: strength number kept fresh; a "this week" line | S | in PR 25 Sep, unverified — THIS WEEK sessions·tonnage vs last week, server-computed; widget reloads at session end; strength number still refreshes when History opens | Widget shipped 17 Sep, fixed 19–20 Sep. |
 | F8 | Replay of the whole pipeline against the real export, as a test | M | merged 24 Sep, unverified | `replay_export.py` + `tests/test_replay_export.py`: 18 stamped sessions, offline, against the 23 Sep export (training tables committed; recovery read locally only — the repo is public). First run found the 8kg chest-press stack rounded to 151.5. |
 | F9 | Set reply as prose by default if note damage recurs | S | watch | Guard shipped 18 Sep; no recurrence seen. |
 | F10 | Morning briefing retired: route, prompt section, Home note and sheet, chat button, settings style, Telegram CLI mode | S | done 20 Sep | Nothing ever sent one; Home and the widget carry what it said. A Telegram-era feature. |
@@ -54,12 +54,12 @@ The two categories beyond the four you named:
 | S1 | In-session coach: any number it states about history must be in the context it was handed, or the reply is rewritten | M | merged 23 Sep, unverified | `reply_contract.numbers`: kg, reps, RPE and dates in prose checked against the handed context; one rewrite; off with `NUMBERS_CONTRACT=false`. `set_count_drift` folded into `set_counts`. |
 | S2 | One `blocks` module for block identity: start, boundary, ended range, picks | M | done 20 Sep (#307) | |
 | S3 | Prune the applied dated fixes into a history note; keep the mechanism | S | done 20 Sep (#307); delete `fixes_2026_09.py` once `/status` shows all eight applied | |
-| S4 | Session stamping: every finished session carries its mesocycle week and day; hygiene check and backfill | S | idea | `block_start` and the review lean on stamps; the 2 Sep opener had none. |
+| S4 | Session stamping: every finished session carries its mesocycle week and day; hygiene check and backfill | S | approved 25 Sep — after the block (~29 Oct), backfill labelled as inference | `block_start` and the review lean on stamps; the 2 Sep opener had none. |
 | S5 | Pre-flight invariants grow with every gym screenshot; nightly record read from `/status` and the Sunday report | S each | standing | Loadable, regression, range, ceiling, slots so far. |
 | S6 | Verify idempotent delivery on a real dropped connection (switch apps mid-set) | S | blocked on a rebuild | Migration 011 run 20 Sep. |
-| S7 | Swift tests for the block review card decoding, the widget payload, the pending-reply resume | S | idea | 31 Swift tests exist for the numbers. |
-| S8 | The missing "Logged warm-up 2 of 3" message | S | idea | App side; noticed 18 Sep. |
-| S9 | Hygiene dry run of session statuses/types, then execute | S | blocked on the athlete pasting the log | Migration 010 run. |
+| S7 | Swift tests for the block review card decoding, the widget payload, the pending-reply resume | S | approved 25 Sep — with the next touch of those files | 31 Swift tests exist for the numbers. |
+| S8 | The missing "Logged warm-up 2 of 3" message | S | in PR 25 Sep, unverified — the fact line shows the moment any set is logged, above the typing dots | App side; noticed 18 Sep. |
+| S9 | Hygiene dry run of session statuses/types, then execute | S | dry run written 25 Sep (`docs/hygiene_2026-09-25.md`: 36 to abandon, 2 to retype) — execute on the athlete's yes | Migration 010 run. |
 | S10 | Late coach review applied after 3 minutes | — | done (#277) | |
 | S13 | A coach `adjust` above the programme's top set is at most one step of the lift (`plan.validate`); beyond that the programme's card stands | S | merged 24 Sep, unverified | Machine Chest Press 168 vs ~152 on 22 Sep → 165 x5 @9. The pre-flight bounded the programme's jumps; the coach's were unbounded. |
 | S12 | Logged sets carry their phase (`workout_sets.phase`, migration 014); card and set replies count by phase, position only for older rows | S | merged 24 Sep, unverified | A skipped working set no longer relabels the back-offs after it. |
@@ -73,7 +73,7 @@ The two categories beyond the four you named:
 | U2 | Widget with a Liquid Glass treatment | S | asked 18 Sep, undecided | Current widget: flat ink palette. |
 | U3 | Block review card: judge the rows after a real morning read; strength page parity on marks (~ and +BW) | S | watch | Rows, folds and toggles shipped 19–20 Sep. |
 | U4 | A visible mark on a card the pre-flight corrected, beyond the reason line | S | idea | Decide after the first correction is seen. |
-| U5 | Exercise Library screen for aliases (with F6) | S | idea | |
+| U5 | Exercise Library screen for aliases (with F6) | S | folded into F6(b) | |
 
 ## Coaching — what the coach prescribes and says
 

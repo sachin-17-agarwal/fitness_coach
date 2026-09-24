@@ -745,6 +745,14 @@ struct WorkoutModeView: View {
                 .frame(height: 30, alignment: .top)
                 .offset(y: -4)
             VStack(alignment: .leading, spacing: 12) {
+                // The logged set's fact line ("Logged warm-up 2 of 3: 85kg × 10")
+                // shows at once; the coach's words follow it.
+                if let note = viewModel.coachNote, note.hasPrefix("Logged ") {
+                    Text(note)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.fg1)
+                        .padding(.top, 4)
+                }
                 CoachTypingDots()
                     .padding(.top, 6)
                 EditorialEyebrow(text: "Coach · writing", color: Editorial.muted, size: 9.5, kerning: 1.8)
