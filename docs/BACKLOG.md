@@ -54,12 +54,12 @@ The two categories beyond the four you named:
 | S1 | In-session coach: any number it states about history must be in the context it was handed, or the reply is rewritten | M | merged 23 Sep, unverified | `reply_contract.numbers`: kg, reps, RPE and dates in prose checked against the handed context; one rewrite; off with `NUMBERS_CONTRACT=false`. `set_count_drift` folded into `set_counts`. |
 | S2 | One `blocks` module for block identity: start, boundary, ended range, picks | M | done 20 Sep (#307) | |
 | S3 | Prune the applied dated fixes into a history note; keep the mechanism | S | done 20 Sep (#307); delete `fixes_2026_09.py` once `/status` shows all eight applied | |
-| S4 | Session stamping: every finished session carries its mesocycle week and day; hygiene check and backfill | S | approved 25 Sep — after the block (~29 Oct), backfill labelled as inference | `block_start` and the review lean on stamps; the 2 Sep opener had none. |
+| S4 | Session stamping: every finished session carries its mesocycle week and day; hygiene check and backfill | S | in PR 25 Sep, unverified — `2026-09-25-stamp-backfill`: 103 sessions by rotation inference, notes say so; block starts 20 Apr, 15 May, 6 Jun, 3 Jul, 23 Jul, 11 Aug (the review's own estimate for the last: 9–10 Aug) | `block_start` and the review lean on stamps; the 2 Sep opener had none. |
 | S5 | Pre-flight invariants grow with every gym screenshot; nightly record read from `/status` and the Sunday report | S each | standing | Loadable, regression, range, ceiling, slots so far. |
 | S6 | Verify idempotent delivery on a real dropped connection (switch apps mid-set) | S | blocked on a rebuild | Migration 011 run 20 Sep. |
 | S7 | Swift tests for the block review card decoding, the widget payload, the pending-reply resume | S | approved 25 Sep — with the next touch of those files | 31 Swift tests exist for the numbers. |
 | S8 | The missing "Logged warm-up 2 of 3" message | S | in PR 25 Sep, unverified — the fact line shows the moment any set is logged, above the typing dots | App side; noticed 18 Sep. |
-| S9 | Hygiene dry run of session statuses/types, then execute | S | dry run written 25 Sep (`docs/hygiene_2026-09-25.md`: 36 to abandon, 2 to retype) — execute on the athlete's yes | Migration 010 run. |
+| S9 | Hygiene dry run of session statuses/types, then execute | S | in PR 25 Sep, unverified — `2026-09-25-session-hygiene` executes the dry run (`docs/hygiene_2026-09-25.md`): 36 abandoned, 2 retyped from their sets (Push, Legs) | Migration 010 run. |
 | S10 | Late coach review applied after 3 minutes | — | done (#277) | |
 | S13 | A coach `adjust` above the programme's top set is at most one step of the lift (`plan.validate`); beyond that the programme's card stands | S | merged 24 Sep, unverified | Machine Chest Press 168 vs ~152 on 22 Sep → 165 x5 @9. The pre-flight bounded the programme's jumps; the coach's were unbounded. |
 | S12 | Logged sets carry their phase (`workout_sets.phase`, migration 014); card and set replies count by phase, position only for older rows | S | merged 24 Sep, unverified | A skipped working set no longer relabels the back-offs after it. |
@@ -69,10 +69,10 @@ The two categories beyond the four you named:
 
 | # | Item | Size | Status | Notes |
 |---|---|---|---|---|
-| U1 | Retire the serif face app-wide (eight remaining uses) | S | proposed | Greeting moved to the display face 18 Sep. |
-| U2 | Widget with a Liquid Glass treatment | S | asked 18 Sep, undecided | Current widget: flat ink palette. |
-| U3 | Block review card: judge the rows after a real morning read; strength page parity on marks (~ and +BW) | S | watch | Rows, folds and toggles shipped 19–20 Sep. |
-| U4 | A visible mark on a card the pre-flight corrected, beyond the reason line | S | idea | Decide after the first correction is seen. |
+| U1 | Retire the serif face app-wide (eight remaining uses) | S | in PR 25 Sep, unverified — eight sites moved to the display face or plain system; the serif title tokens removed; the numeric tokens keep their face | Greeting moved to the display face 18 Sep. |
+| U2 | Widget with a Liquid Glass treatment | S | approved 25 Sep — next batch, needs a build-and-screenshot cycle | Current widget: flat ink palette. |
+| U3 | Block review card: judge the rows after a real morning read; strength page parity on marks (~ and +BW) | S | approved 25 Sep — judged at the ~29 Oct review | Rows, folds and toggles shipped 19–20 Sep. |
+| U4 | A visible mark on a card the pre-flight corrected, beyond the reason line | S | in PR 25 Sep, unverified — a shield mark above the reason when the pre-flight wrote a correction | Decide after the first correction is seen. |
 | U5 | Exercise Library screen for aliases (with F6) | S | folded into F6(b) | |
 
 ## Coaching — what the coach prescribes and says

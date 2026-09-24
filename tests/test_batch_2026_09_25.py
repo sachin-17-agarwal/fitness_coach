@@ -92,3 +92,37 @@ class WidgetWeekTests(unittest.TestCase):
         self.assertEqual((out["week_sessions"], out["week_tonnage_kg"], out["week_tonnage_delta_pct"]), (2, 28000.0, 12))
         with patch("webhook.get_supabase", return_value=None):
             self.assertEqual(webhook._week_stats()["week_sessions"], None)
+
+
+class HygieneAndBackfillTests(unittest.TestCase):
+    def test_session_type_from_the_sets(self):
+        from fixes_2026_09 import infer_session_type
+        self.assertEqual(infer_session_type(["Barbell Bench Press", "Barbell Bench Press", "Sled Leg Press"]), "Push")
+        self.assertEqual(infer_session_type(["Leg press", "Leg Press"]), "Legs")
+        self.assertEqual(infer_session_type(["Cable Row", "Lat Pulldown", "Hammer Curl"]), "Pull")
+        self.assertIsNone(infer_session_type([]))
+
+    def test_backfill_walks_the_rotation_backwards(self):
+        from data import CYCLE
+        from fixes_2026_09 import backfill_stamps
+        S = [{"id": "a", "date": "2026-08-28", "type": "Pull", "tonnage_kg": 1},
+             {"id": "b", "date": "2026-08-29", "type": "Push", "tonnage_kg": 1},
+             {"id": "c", "date": "2026-08-31", "type": "Legs", "tonnage_kg": 1},
+             {"id": "d", "date": "2026-09-01", "type": "Cardio+Abs", "tonnage_kg": 1},
+             {"id": "e", "date": "2026-09-01", "type": "Cardio+Abs", "tonnage_kg": 1, "start_time": "2026-09-01T09:00:00"},
+             {"id": "empty", "date": "2026-08-30", "type": "Legs", "tonnage_kg": 0},
+             {"id": "s", "date": "2026-09-02", "type": "Pull", "tonnage_kg": 1, "mesocycle_week": 1, "mesocycle_day": 1}]
+        out = backfill_stamps(S, CYCLE, 4)
+        self.assertEqual(out, {"d": (4, 4), "e": (4, 4), "c": (4, 3), "b": (4, 2), "a": (4, 1)})
+        self.assertNotIn("empty", out, "a session with no work is not a slot")
+        # a missed slot: no Legs between Push and Cardio
+        S2 = [{"id": "p", "date": "2026-08-29", "type": "Push", "tonnage_kg": 1},
+              {"id": "cardio", "date": "2026-09-01", "type": "Cardio+Abs", "tonnage_kg": 1},
+              {"id": "s", "date": "2026-09-02", "type": "Pull", "tonnage_kg": 1, "mesocycle_week": 1, "mesocycle_day": 1}]
+        self.assertEqual(backfill_stamps(S2, CYCLE, 4), {"cardio": (4, 4), "p": (4, 2)})
+        self.assertEqual(backfill_stamps([{"id": "x", "date": "2026-08-01", "type": "Pull", "tonnage_kg": 1}], CYCLE), {}, "nothing stamped to walk back from")
+
+    def test_the_fixes_are_registered_in_order(self):
+        from fixes_2026_09 import FIXES_2026_09
+        keys = [k for k, _ in FIXES_2026_09]
+        self.assertEqual(keys[:3], ["2026-09-25-exercise-case-variants", "2026-09-25-session-hygiene", "2026-09-25-stamp-backfill"])

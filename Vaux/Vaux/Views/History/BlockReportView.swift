@@ -73,7 +73,7 @@ struct BlockReportView: View {
             ledger
             nextBlock
             HStack {
-                Text("V").font(.system(size: 15, weight: .semibold, design: .serif))
+                Text("V").font(.display(15))
                 Text("VAUX").font(.system(size: 11, weight: .bold)).kerning(4)
                 Spacer()
                 Text(Date().formatted(.dateTime.day().month(.abbreviated).year()).uppercased()).font(.system(size: 10, weight: .bold)).kerning(1.5)

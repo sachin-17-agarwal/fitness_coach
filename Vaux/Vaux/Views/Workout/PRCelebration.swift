@@ -61,7 +61,7 @@ struct PRCelebration: View {
                         .foregroundStyle(Color.signal)
 
                     Text(exercise)
-                        .font(.serifMD)
+                        .font(.display(24))
                         .foregroundStyle(Color.fg0)
                         .multilineTextAlignment(.center)
 
