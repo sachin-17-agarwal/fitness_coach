@@ -167,7 +167,53 @@ def _group_by_exercise_and_date(rows: list[dict]) -> dict[str, dict[str, list[di
     return grouped
 
 
-def find_current_loads(rows: list[dict]) -> list[dict]:
+def ladder_position(sessions: dict[str, list[dict]]) -> dict | None:
+    """C19 (25 Sep 2026). Where the newest top load sits on the lift's
+    ladder: None when it is a whole number of steps from where most of the
+    lift's loads sit, else the load, its date, the step and the newest top
+    set that IS on the ladder — the load the programme progresses from until
+    the athlete says the odd one was real. Measured on the export: 9 of 28
+    lifts carried such a load (another machine, or a typo)."""
+    step = _load_step(sessions)
+    if not step:
+        return None
+    tops = []
+    for date in sorted(sessions.keys(), reverse=True):
+        top = _top_set(sessions[date])
+        load = _load_key(top) if top else None
+        if isinstance(load, float):
+            tops.append((date, top, load))
+    if len(tops) < 3:
+        return None
+    # A bodyweight movement's added load is a belt plate or a dumbbell, not a
+    # stack: 10, 14, 15, 17.5 on the pull-up is normal, not a stray. And a
+    # step seen only once (every gap different) is not a ladder to judge by.
+    from prescribe import is_bodyweight  # local: prescribe imports widely
+    if is_bodyweight(next(iter(sessions.values()))[0].get("exercise") or "") if sessions else False:
+        return None
+    gaps = Counter(round(b - a, 3) for a, b in zip(sorted({l for _d, _t, l in tops}), sorted({l for _d, _t, l in tops})[1:]))
+    if not gaps or max(gaps.values()) < 2:
+        return None
+    residues = Counter(round(load % step, 3) for _d, _t, load in tops)
+    common, count = residues.most_common(1)[0]
+    if count * 2 < len(tops):
+        return None   # no ladder most loads share; nothing to judge against
+
+    def on_ladder(load: float) -> bool:
+        gap = abs(round(load % step, 3) - common)
+        return gap < 1e-6 or abs(gap - step) < 1e-6
+
+    date, top, load = tops[0]
+    if on_ladder(load):
+        return None
+    anchor = next(((d, t, l) for d, t, l in tops[1:] if on_ladder(l)), None)
+    if anchor is None:
+        return None
+    return {"load": load, "date": date, "step": step,
+            "anchor_load": anchor[2], "anchor_date": anchor[0], "anchor": anchor[1]}
+
+
+def find_current_loads(rows: list[dict], ladder_answers: dict | None = None) -> list[dict]:
     """The load each exercise is currently ON — one line per exercise.
 
     This exists because the coach was getting it wrong by reading. Asked to
@@ -187,7 +233,20 @@ def find_current_loads(rows: list[dict]) -> list[dict]:
         top = _top_set(sessions[latest])
         if top is None:
             continue
+        off = ladder_position(sessions)
+        off_ladder = None
+        if off:
+            key = "".join(ch for ch in exercise.lower() if ch.isalnum())
+            verdict = ((ladder_answers or {}).get(key) or {}).get(round(off["load"], 2))
+            treated = "real" if verdict == "real" else "stray"
+            off_ladder = {k: off[k] for k in ("load", "date", "step", "anchor_load", "anchor_date")}
+            off_ladder["treated"] = treated
+            if treated == "stray":
+                # The programme default, stated on the card and asked on
+                # Home: the odd load is not progressed from.
+                latest, top = off["anchor_date"], off["anchor"]
         loads.append({
+            "off_ladder": off_ladder,
             "exercise": exercise,
             "date": latest,
             "load": _load_key(top),
@@ -575,7 +634,8 @@ def get_current_loads(days: int = 42) -> list[dict] | None:
     rows = _fetch_sets_before_today(days)
     if rows is None:
         return None
-    return find_current_loads(rows)
+    from decisions import ladder_answers  # local: keeps import order flat
+    return find_current_loads(rows, ladder_answers())
 
 
 def get_peak_week_loads(days: int = PEAK_WINDOW_DAYS, peak_week: int | None = None) -> list[dict] | None:

@@ -279,3 +279,11 @@ def advance_mesocycle(memory: dict):
     memory["mesocycle_day"] = fresh_memory["mesocycle_day"]
     memory["mesocycle_week"] = fresh_memory["mesocycle_week"]
     print(f"Mesocycle advanced: day {current_day} -> {next_day}")
+    if current_day == len(CYCLE) and int(fresh_memory.get("mesocycle_week", 1) or 1) == 1:
+        # E7: the block rolled over; the review is prepared now, not when
+        # Home first asks tomorrow morning.
+        try:
+            from block_review import prepare_at_rollover  # local: keeps import order flat
+            prepare_at_rollover(fresh_memory)
+        except Exception:
+            log.exception("Could not start the block review at rollover")

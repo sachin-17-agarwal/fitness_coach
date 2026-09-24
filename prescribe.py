@@ -290,8 +290,15 @@ def _increment(kind: str, bodyweight: bool, step: float | None = None) -> float:
 # the band whichever way the gym's stack rounds.
 BACKOFF_DROP = 0.20
 
-# :391 "Rest stays 2min on compounds, 90s on isolations."
-REST_SECONDS = {COMPOUND: 120, ISOLATION: 90}
+# Rest between working sets. Was "2min on compounds, 90s on isolations"
+# (:391); reprogrammed 25 Sep 2026 (C13) to what the evidence and the
+# athlete's own rests say. Measured on the export (logged_at gaps between
+# consecutive working sets of one lift, June–23 Sep): compounds median
+# 211 s (p25 177), isolations 190 s (p25 162), abs and calves 171 s — he
+# already rests longer than the card asked, and the app's timer rang
+# early every set. Longer rests favour hypertrophy over one minute
+# (Schoenfeld 2016; Longo 2022 — inferred from summaries).
+REST_SECONDS = {COMPOUND: 180, ISOLATION: 150}
 
 # :64 "RPE follows the weekly wave (7 in weeks 1-2, 8 in week 3, 6 on deload)"
 # :177-186 for the top-set targets.

@@ -231,6 +231,15 @@ def run_if_due(memory: dict) -> dict | None:
     from memory import set_memory_value
     set_memory_value(PREFLIGHT_DATE_KEY, today)
     set_memory_value(PREFLIGHT_LAST_KEY, json.dumps(record))
+    try:
+        # F4/C19: a finding that needs the athlete becomes a Home card, once.
+        from decisions import propose_ladder_questions  # local: keeps import order flat
+        from progression import get_current_loads
+        asked = propose_ladder_questions(get_current_loads() or [])
+        if asked:
+            record["questions"] = asked
+    except Exception:
+        log.exception("Pre-flight questions could not be written")
     return record
 
 

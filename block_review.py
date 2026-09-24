@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 import math
 import re
 import time
@@ -692,6 +694,38 @@ def prepare_if_due(memory: dict, prompt: str, client) -> dict | None:
     if latest and start and str(latest.get("block_start")) >= str(start):
         return None   # already reviewed at or after this boundary
     return prepare_block_review(memory, prompt, client)
+
+
+ROLLOVER_GRACE_SECONDS = 20
+
+
+def prepare_at_rollover(memory: dict, grace: float = ROLLOVER_GRACE_SECONDS):
+    """E7 (25 Sep 2026): the session that ended has rolled the block over to
+    week 1 day 1. Prepare the review now, in the background, so Home finds it
+    ready in the morning instead of preparing it while the athlete waits
+    (24 s median, up to 36 s, with retries — measured in the 23 Sep report).
+    The same guards as the Home path apply inside prepare_if_due: once per
+    block, never while a session is active. Returns the thread, or None when
+    there is nothing to do."""
+    if int(memory.get("mesocycle_week", 1) or 1) != 1 or int(memory.get("mesocycle_day", 1) or 1) != 1:
+        return None
+    if not get_supabase():
+        return None
+
+    def run():
+        try:
+            time.sleep(grace)   # the session row settles; workout_mode leaves "active"
+            from memory import load_memory  # local: keeps import order flat
+            from coach import get_anthropic_client  # local
+            from webhook import load_system_prompt_for_review  # local: webhook imports this module
+            row = prepare_if_due(load_memory(), load_system_prompt_for_review(), get_anthropic_client())
+            log.info("Block review at rollover: %s", "prepared" if row else "nothing to prepare")
+        except Exception:
+            log.exception("Block review at rollover failed; Home will prepare it")
+
+    thread = threading.Thread(target=run, name="block-review-rollover", daemon=True)
+    thread.start()
+    return thread
 
 
 def render_review(row: dict) -> str:
