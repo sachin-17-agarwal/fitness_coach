@@ -166,17 +166,17 @@ class UnloadableBodyweightTests(unittest.TestCase):
         self.assertTrue(is_unloadable("Ab Wheel Rollout"))
         self.assertFalse(is_unloadable("Hanging Leg Raises"))   # a dumbbell between the feet
         self.assertFalse(is_unloadable("Pull-Ups"))
-        top = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 12, 8.0, bodyweight=True), set()).working[0]
+        top = prescribe_exercise("Plank", 2, ISOLATION, 2, PriorSet(None, 12, 8.0, bodyweight=True), set()).working[0]
         self.assertEqual((top.weight_kg, top.bodyweight, top.reps_low, top.reps_high), (None, True, 11, 15))
         mid = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 9, 8.0, bodyweight=True), set()).working[0]
         self.assertEqual((mid.weight_kg, mid.reps_low, mid.reps_high), (None, 10, 12))
-        p = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 1, PriorSet(None, 12, 8.0, bodyweight=True, week=3), set())
+        p = prescribe_exercise("Plank", 2, ISOLATION, 1, PriorSet(None, 12, 8.0, bodyweight=True, week=3), set())
         self.assertIsNone(p.working[0].weight_kg, "week 1 opens without inventing a plate")
         self.assertTrue(any("No load to add" in r for r in p.reasons))
 
     def test_past_the_cap_a_variation_is_the_coachs_call(self):
         from prescribe import ISOLATION, PriorSet, prescribe_exercise
-        p = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 20, 8.0, bodyweight=True), set(), rep_range=(17, 20))
+        p = prescribe_exercise("Plank", 2, ISOLATION, 2, PriorSet(None, 20, 8.0, bodyweight=True), set(), rep_range=(17, 20))
         self.assertIsNone(p.working[0].weight_kg)
         self.assertTrue(any("harder variation" in d for d in p.deferred))
 
@@ -266,3 +266,65 @@ class StepFromTheCommonGapTests(unittest.TestCase):
         from progression import _load_step
         self.assertEqual(_load_step(self._sessions([100.0, 102.5, 105.0, 107.5])), 2.5)
         self.assertEqual(_load_step(self._sessions([10.0, 12.5, 17.5])), 2.5)
+
+
+class RolloutLadderTests(unittest.TestCase):
+    """The rollout progresses by lever, never by reps (the programme's rule;
+    athlete's decision 25 Sep 2026: standing now, no vest available)."""
+
+    def test_at_the_top_of_the_range_the_next_rung_is_named_not_more_reps(self):
+        from prescribe import prescribe_exercise, PriorSet, ISOLATION
+        p = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 12, 7.0, bodyweight=True), set())
+        self.assertIsNone(p.working[0].weight_kg)
+        self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (8, 12))
+        self.assertTrue(any("Standing Ab Wheel Rollout" in d and "NOT progress by reps" in d for d in p.deferred))
+
+    def test_the_standing_rollout_runs_six_to_ten_and_names_the_rung_after(self):
+        from prescribe import prescribe_exercise, PriorSet, ISOLATION
+        p = prescribe_exercise("Standing Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 8, 8.0, bodyweight=True), set())
+        self.assertEqual((p.working[0].reps_low, p.working[0].reps_high), (9, 10))
+        p = prescribe_exercise("Standing Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 10, 7.0, bodyweight=True), set())
+        self.assertTrue(any("farther out" in d and "full standing" in d for d in p.deferred))
+        self.assertIsNone(p.working[0].weight_kg)
+
+    def test_the_recorded_line_is_a_substitution_the_shape_applies(self):
+        import shape
+        from decisions import RECORDABLE_RE
+        from fixes_2026_09 import ROLLOUT_STANDING_LINE
+        m = RECORDABLE_RE.match(ROLLOUT_STANDING_LINE)
+        self.assertIsNotNone(m)
+        self.assertEqual((m.group("sub_from"), m.group("sub_to"), m.group("horizon")),
+                         ("Ab Wheel Rollout", "Standing Ab Wheel Rollout", "standing"))
+        recorded = {"substitutes": [{"from": "Ab Wheel Rollout", "to": "Standing Ab Wheel Rollout",
+                                     "horizon": "standing", "why": "lever"}], "orders": {}}
+        pairs = shape.apply([("Cable Crunch", 3), ("Ab Wheel Rollout", 2)], "Cardio+Abs", recorded)
+        self.assertEqual(pairs, [("Cable Crunch", 3), ("Standing Ab Wheel Rollout", 2)])
+
+    def test_the_fix_writes_once(self):
+        from unittest.mock import patch
+        from fixes_2026_09 import _fix_2026_09_25_rollout_standing, FIXES_2026_09
+
+        class Q:
+            def __init__(self, store, table): self.store, self.table_name = store, table
+            def select(self, *a): return self
+            def eq(self, *a): return self
+            def execute(self):
+                class R: pass
+                r = R(); r.data = list(self.store[self.table_name]); return r
+            def insert(self, row):
+                self.store[self.table_name].append(row); return self
+
+        class Fake:
+            def __init__(self): self.store = {"decision_captures": []}
+            def table(self, name): return Q(self.store, name)
+
+        fake = Fake()
+        with patch("data.get_supabase", return_value=fake):
+            first = _fix_2026_09_25_rollout_standing()
+            second = _fix_2026_09_25_rollout_standing()
+        self.assertIn("recorded", first)
+        self.assertIn("already exists", second)
+        rows = fake.store["decision_captures"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["kind"], rows[0]["status"]), ("substitute", "recorded"))
+        self.assertIn("2026-09-25-rollout-standing", [k for k, _ in FIXES_2026_09])
