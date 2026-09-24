@@ -40,15 +40,22 @@ still unreliable at the end of it.
 
 ## The commitments this record is judged against
 
+*Rewritten 25 Sep after the athlete's objection: a cap of four PRs a month
+rationed HIS fixes to flatter the developer's churn count. It measured the
+wrong party and is withdrawn. These measure the developer.*
+
 1. **"Done" means the athlete has trained on it.** A merged change is *merged,
-   unverified* until then. (The backlog's own definition since 20 Sep; not
-   applied by the developer until 24 Sep.)
-2. **At most 4 pull requests in the 4 weeks from 25 Sep to 22 Oct 2026**, each
-   citing the flag (`coach_flags`) or scorecard verdict (`decision_outcomes`)
-   it answers. Bugs are collected daily and treated weekly, together, for
-   their common cause.
-3. **Every claim carries its basis** — measured / inferred / assumed — and an
-   assumed claim unverified after 14 days fails CI (`tests/test_claims_ledger.py`).
+   unverified* until then.
+2. **Rework rate.** A PR that a later PR has to fix again is a rework. Baseline
+   38% over April–September (123 of 325). Counted from the PR record each
+   Sunday; recorded here. The block's question is whether it falls.
+3. **Regressions the developer introduces**, each with its cause, in
+   `docs/CLAIMS.md`. One so far this week (the 110 s first message, #324).
+4. **Measured before built.** No change to how the coach or the programme
+   decides without the count first.
+5. **No cap on fixing the athlete's bugs.** A bug he finds gets fixed. Grouping
+   related bugs into one change is suggested when it is obviously right; it is
+   never a reason for him to wait.
 
 ## Method
 

@@ -60,3 +60,11 @@ athlete said, and decides. Guards bound it; they do not replace it. The
 scorecard (`scorecard.py`) measures whether its decisions and the
 programme's were right; that count, not an impression, decides how much
 room each gets.
+
+## No cap on the athlete's fixes
+
+A limit on pull requests per month was tried on 24 Sep and withdrawn on 25
+Sep: it rationed the athlete's fixes to flatter the developer's churn. The
+measures of the developer are the rework rate and the regression count in
+`docs/RELIABILITY.md`. A bug the athlete finds is fixed; related bugs may be
+grouped when that is obviously right, never as a reason to wait.
