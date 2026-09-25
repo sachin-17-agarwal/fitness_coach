@@ -48,6 +48,20 @@ class RestTests(unittest.TestCase):
         self.assertEqual(e.rest_seconds, 180)
 
 
+class RestFloorTests(unittest.TestCase):
+    """Rest is the programme's number: the coach may go longer, never shorter."""
+
+    def test_a_coach_rest_under_the_floor_is_raised_and_a_longer_one_kept(self):
+        from plan import ExercisePlan, SessionPlan, SetPlan, rest_floor
+        plan = SessionPlan(opening="", exercises=[
+            ExercisePlan(exercise="Pull-Ups", decision="accept", reason="", working=[SetPlan(17.5, 7, 10, 8.0)], backoff=[], rest_seconds=120),
+            ExercisePlan(exercise="Hammer Curl", decision="accept", reason="", working=[SetPlan(20.0, 9, 13, 8.0)], backoff=[], rest_seconds=240),
+        ])
+        notes = rest_floor(plan)
+        self.assertEqual([e.rest_seconds for e in plan.exercises], [180, 240])
+        self.assertEqual(notes, ["Pull-Ups: rest 120s raised to the programme's 180s"])
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 

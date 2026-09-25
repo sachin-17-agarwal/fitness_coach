@@ -372,6 +372,22 @@ def _backoff_problems(e: ExercisePlan) -> list[str]:
     return out
 
 
+def rest_floor(plan: SessionPlan) -> list[str]:
+    """Rest is the programme's number, not the coach's (C13, 26 Sep 2026):
+    the first Pull after the 3-minute rest merged showed a 2:00 timer,
+    because the coach's plan JSON carries `rest_seconds` and nothing held
+    it to the kind's floor. A coach may rest LONGER (a heavy top set), never
+    shorter. Returns one note per exercise raised."""
+    from prescribe import REST_SECONDS, classify  # local: keeps import order flat
+    notes = []
+    for e in plan.exercises:
+        floor = REST_SECONDS[classify(e.exercise)]
+        if (e.rest_seconds or 0) < floor:
+            notes.append(f"{e.exercise}: rest {e.rest_seconds or 0}s raised to the programme's {floor}s")
+            e.rest_seconds = floor
+    return notes
+
+
 def validate(plan: SessionPlan, session_type: str, prompt: str,
              proposal: dict | None = None, weak_points: list | None = None,
              ceilings: dict | None = None, steps: dict | None = None,
@@ -399,6 +415,7 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
     filled_slots = 0
     proposal = proposal or {}
     proposal_by_key = {_normalise_exercise(k): v for k, v in proposal.items()}
+    rest_floor(plan)
 
     for e in plan.exercises:
         key = _normalise_exercise(e.exercise)
