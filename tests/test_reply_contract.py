@@ -55,8 +55,8 @@ class ContractTests(unittest.TestCase):
     def test_the_weak_point_lifts_take_the_programmes_block_whatever_the_switch(self):
         import os
         os.environ.pop("PROGRAMME_SUBSTITUTION", None)
-        reply = "*Overhead Cable Extension*\nWorking Set: 20kg x8-12 RPE8 | Rest: 90s\n"
-        computed = {"Overhead Cable Extension": "*Overhead Cable Extension*\nWorking Set: 25kg x10-15 RPE8 | Rest: 90s\n"}
+        reply = "*Overhead Cable Extension*\nWorking Set: 20kg x8-12 RPE8 | Rest: 150s\n"
+        computed = {"Overhead Cable Extension": "*Overhead Cable Extension*\nWorking Set: 25kg x10-15 RPE8 | Rest: 150s\n"}
         ctx = ReplyContext(reply=reply, reply_kind="prose", system_prompt="", today_type="Cardio+Abs",
                            programme_out={"computed": computed, "weak_point_exercises": ["Overhead Cable Extension"]})
         with _quiet():
@@ -78,7 +78,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn(("decisions", "failed"), [(r["step"], r["action"]) for r in ctx.record])
 
     def test_the_order_and_the_editing_set_are_fixed(self):
-        self.assertEqual([n for n, _ in STEPS], ["truncation", "numbers", "set_counts", "plan_follows", "revise_claim",
+        self.assertEqual([n for n, _ in STEPS], ["truncation", "numbers", "set_counts", "rest_floor", "plan_follows", "revise_claim",
                                                  "weak_points", "programme_live", "decisions", "captures"])
         self.assertTrue(set(EDITING_STEPS) <= {n for n, _ in STEPS})
 

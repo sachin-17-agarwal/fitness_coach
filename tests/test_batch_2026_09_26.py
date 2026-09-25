@@ -264,6 +264,25 @@ class HomeAskTests(unittest.TestCase):
         self.assertIn("Opens at 12.5kg, the cut you recorded on Home (was 15kg)", notes["reversecablefly"])
 
 
+class RestFloorTextTests(unittest.TestCase):
+    """The card reads the reply's blocks: their Rest is floored whichever path wrote them."""
+
+    def test_rest_lines_under_the_floor_are_raised_per_lift_kind(self):
+        from reply_contract import floor_rest_text
+        reply = ("*Machine Chest Press*\nWarm-up: 93kg x10\nWorking Set: 149kg x6-10 RPE8 | Tempo: 3-1-2 | Rest: 2min\n"
+                 "Back-off: 133kg x10-12 RPE8\n\n*Cable Lateral Raise*\nWorking Set: 12.5kg x15-17 RPE8 | Rest: 90s\n\n"
+                 "*Face Pulls*\nWorking Set: 47.5kg x11-12 RPE8 | Rest: 3min\n")
+        out, notes = floor_rest_text(reply)
+        self.assertIn("149kg x6-10 RPE8 | Tempo: 3-1-2 | Rest: 3min", out)
+        self.assertIn("12.5kg x15-17 RPE8 | Rest: 150s", out)
+        self.assertIn("47.5kg x11-12 RPE8 | Rest: 3min", out)
+        self.assertEqual(notes, ["Machine Chest Press: rest 120s → 180s", "Cable Lateral Raise: rest 90s → 150s"])
+
+    def test_prose_without_blocks_is_untouched(self):
+        from reply_contract import floor_rest_text
+        self.assertEqual(floor_rest_text("Rest: 2min is plenty between sets of chat."), ("Rest: 2min is plenty between sets of chat.", []))
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 

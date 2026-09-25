@@ -188,6 +188,47 @@ def truncation(ctx: ReplyContext) -> None:
         ctx.note("truncation", "logged", f"{len(ctx.reply)} chars")
 
 
+_REST_LINE_RE = re.compile(r"(\|\s*Rest:\s*)(\d+)\s*(min|s)\b", re.IGNORECASE)
+_BLOCK_HEAD_RE = re.compile(r"^\*([^*\n]+)\*\s*$", re.MULTILINE)
+
+
+def floor_rest_text(reply: str) -> tuple[str, list[str]]:
+    """Every `Rest:` in a prescription block is at least the programme's rest
+    for the lift's kind (C13). The plan path floors the typed plan before it
+    is rendered; a prose reply carries the coach's own blocks, and on 26 Sep
+    2026 the athlete's card read REST 2:00 with the 3-minute floor merged.
+    This floors the text the card reads, whichever path wrote it."""
+    from prescribe import REST_SECONDS, classify  # local: keeps import order flat
+    heads = list(_BLOCK_HEAD_RE.finditer(reply or ""))
+    if not heads:
+        return reply, []
+    out, notes, pos = [], [], 0
+    for i, m in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(reply)
+        exercise = m.group(1).strip()
+        floor = REST_SECONDS[classify(exercise)]
+
+        def fix(rm, exercise=exercise, floor=floor):
+            seconds = int(rm.group(2)) * (60 if rm.group(3).lower() == "min" else 1)
+            if seconds >= floor:
+                return rm.group(0)
+            notes.append(f"{exercise}: rest {seconds}s → {floor}s")
+            text = f"{floor // 60}min" if floor % 60 == 0 else f"{floor}s"
+            return f"{rm.group(1)}{text}"
+
+        out.append(reply[pos:m.start()])
+        out.append(_REST_LINE_RE.sub(fix, reply[m.start():end]))
+        pos = end
+    out.append(reply[pos:])
+    return "".join(out), notes
+
+
+def rest_floor(ctx: ReplyContext) -> None:
+    ctx.reply, notes = floor_rest_text(ctx.reply)
+    for note in notes:
+        ctx.note("rest_floor", "raised", note)
+
+
 def set_counts(ctx: ReplyContext) -> None:
     ctx.reply, fixes = enforce_set_counts(ctx.reply, ctx.system_prompt, ctx.today_type, _week(ctx))
     for fix in fixes:
@@ -319,6 +360,7 @@ STEPS = (
     ("truncation", truncation),
     ("numbers", numbers),
     ("set_counts", set_counts),
+    ("rest_floor", rest_floor),
     ("plan_follows", plan_follows),
     ("revise_claim", revise_claim),
     ("weak_points", weak_points),
@@ -326,7 +368,7 @@ STEPS = (
     ("decisions", decisions),
     ("captures", captures),
 )
-EDITING_STEPS = ("numbers", "set_counts", "revise_claim", "weak_points", "programme_live")
+EDITING_STEPS = ("numbers", "set_counts", "rest_floor", "revise_claim", "weak_points", "programme_live")
 
 
 def apply_contract(ctx: ReplyContext) -> str:
