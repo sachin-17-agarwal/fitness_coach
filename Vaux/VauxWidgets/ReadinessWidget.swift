@@ -182,13 +182,26 @@ private struct Ink {
 
 // MARK: - Glass
 
-/// Liquid Glass under a group of metrics, only when the widget draws its own
-/// surface (full colour). A no-op in the tinted and clear styles.
+/// A raised, translucent pane under a group of metrics, only when the widget
+/// draws its own surface (full colour). A no-op in the tinted and clear
+/// styles, where iOS owns the surface.
+///
+/// Not `glassEffect`: on 26 Sep 2026 the athlete's widget rendered with the
+/// whole metric column missing — WidgetKit dropped the view carrying the
+/// effect (screenshot, Saturday Sep 26). Liquid Glass proper is the system's
+/// to apply around a widget; inside one, a pane is a fill and a hairline.
 private struct GlassPane: ViewModifier {
     let on: Bool
     func body(content: Content) -> some View {
         if on {
-            content.glassEffect(.regular.tint(Color.wSignal.opacity(0.10)), in: .rect(cornerRadius: 14))
+            content.background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5)
+                    )
+            )
         } else {
             content
         }
