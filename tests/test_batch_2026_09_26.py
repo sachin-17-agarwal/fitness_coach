@@ -81,6 +81,36 @@ class NoChangeAdjustTests(unittest.TestCase):
         self.assertNotIn("Changed from the programme", render_plan(plan, proposal))
 
 
+class BackoffSizingTests(unittest.TestCase):
+    """C23: the back-off's own last result sizes the drop inside 15-25%."""
+
+    def test_over_its_range_shrinks_the_drop_and_under_widens_it(self):
+        from prescribe import COMPOUND, PriorSet, SetSpec, backoff_sets
+        top = SetSpec(100.0, 8, 8, 8.0, grid=5.0)
+        self.assertEqual(backoff_sets(top, COMPOUND, 1, 2, [], PriorSet(100.0, 8, 8.0, backoff_reps=15))[0].weight_kg, 85.0)
+        self.assertEqual(backoff_sets(top, COMPOUND, 1, 2, [], PriorSet(100.0, 8, 8.0, backoff_reps=8))[0].weight_kg, 75.0)
+        self.assertEqual(backoff_sets(top, COMPOUND, 1, 2, [], PriorSet(100.0, 8, 8.0, backoff_reps=11))[0].weight_kg, 80.0)
+        self.assertEqual(backoff_sets(top, COMPOUND, 1, 2, [], None)[0].weight_kg, 80.0)
+
+    def test_the_reason_says_why(self):
+        from prescribe import COMPOUND, PriorSet, SetSpec, backoff_sets
+        reasons = []
+        backoff_sets(SetSpec(95.0, 8, 10, 8.0, grid=5.0), COMPOUND, 1, 2, reasons, PriorSet(90.0, 10, 8.0, backoff_reps=15))
+        self.assertIn("ran 15 against 10-12, over the top, so the drop shrinks to 15%", reasons[0])
+
+    def test_progression_carries_the_first_back_off(self):
+        from progression import find_current_loads
+        rows = [
+            {"exercise": "Lat Pulldown", "date": "2026-09-20", "is_warmup": False, "set_number": 1, "phase": "working", "actual_weight_kg": "90", "actual_reps": "7", "actual_rpe": "7"},
+            {"exercise": "Lat Pulldown", "date": "2026-09-20", "is_warmup": False, "set_number": 2, "phase": "backoff", "actual_weight_kg": "70", "actual_reps": "13", "actual_rpe": "6"},
+            {"exercise": "Cable Row", "date": "2026-09-20", "is_warmup": False, "set_number": 1, "phase": None, "actual_weight_kg": "94.5", "actual_reps": "6", "actual_rpe": "7"},
+            {"exercise": "Cable Row", "date": "2026-09-20", "is_warmup": False, "set_number": 2, "phase": None, "actual_weight_kg": "74.5", "actual_reps": "11", "actual_rpe": "6"},
+        ]
+        by = {r["exercise"]: r for r in find_current_loads(rows)}
+        self.assertEqual(by["Lat Pulldown"]["backoff_reps"], 13)
+        self.assertEqual(by["Cable Row"]["backoff_reps"], 11)
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 
