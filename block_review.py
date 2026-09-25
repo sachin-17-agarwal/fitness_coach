@@ -182,6 +182,57 @@ def weigh_ins(supabase, days: int = 200) -> list[tuple]:
     return sorted((r["date"], float(r["weight_kg"])) for r in rows if r.get("date") and r.get("weight_kg"))
 
 
+BULK_RATE_GUIDE_PCT = 0.5   # %/week; above it more of the gain is fat (inferred: lean-bulk guidance)
+
+
+def bulk_rate(weigh: list[tuple], weeks: int = 6) -> dict | None:
+    """The weight trend over the last `weeks` of weigh-ins: kg and % of
+    bodyweight per week, by least squares over the dates (C16, 26 Sep 2026).
+    None with fewer than four weigh-ins spanning at least two weeks."""
+    from datetime import date as _date
+    if not weigh:
+        return None
+    last_day = _date.fromisoformat(weigh[-1][0])
+    since = (last_day - timedelta(weeks=weeks)).isoformat()
+    pts = [(_date.fromisoformat(d), kg) for d, kg in weigh if d >= since]
+    if len(pts) < 4 or (pts[-1][0] - pts[0][0]).days < 14:
+        return None
+    xs = [(d - pts[0][0]).days / 7.0 for d, _ in pts]
+    ys = [kg for _, kg in pts]
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx == 0:
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    return {"kg_per_week": slope, "pct_per_week": slope / my * 100, "weeks": (pts[-1][0] - pts[0][0]).days / 7.0,
+            "first": (pts[0][0].isoformat(), pts[0][1]), "last": (pts[-1][0].isoformat(), pts[-1][1]), "n": len(pts)}
+
+
+def format_bulk_rate(rate: dict | None) -> str:
+    """The Sunday report's bulk-rate section."""
+    lines = ["", "## Bulk rate", ""]
+    if not rate:
+        lines.append("Fewer than four weigh-ins in the window, or under two weeks between them.")
+        return "\n".join(lines)
+    verdict = ("above the ~%.1f%%/week guide — more of the gain is fat; ease the surplus" % BULK_RATE_GUIDE_PCT
+               if rate["pct_per_week"] > BULK_RATE_GUIDE_PCT else
+               "inside the guide" if rate["pct_per_week"] > 0 else "not gaining — the surplus is not there")
+    lines.append(f"{rate['first'][1]:.1f} kg on {rate['first'][0]} → {rate['last'][1]:.1f} kg on {rate['last'][0]} "
+                 f"({rate['n']} weigh-ins over {rate['weeks']:.1f} weeks): {rate['kg_per_week']:+.2f} kg/week, "
+                 f"{rate['pct_per_week']:+.2f}%/week — {verdict}.")
+    return "\n".join(lines)
+
+
+def bulk_rate_line(rate: dict | None) -> str | None:
+    """One line for the coach's context, only when the rate is above the
+    guide; None otherwise so the block stays quiet on a normal week."""
+    if not rate or rate["pct_per_week"] <= BULK_RATE_GUIDE_PCT:
+        return None
+    return (f"BULK RATE: {rate['kg_per_week']:+.2f} kg/week ({rate['pct_per_week']:+.2f}%/week) over the last "
+            f"{rate['weeks']:.0f} weeks — above the ~{BULK_RATE_GUIDE_PCT:g}%/week guide, so more of the gain is fat. "
+            f"Say it once when he asks about weight or food; do not change today's loads for it.")
+
+
 def kg_on(weigh: list[tuple], day: str | None) -> float | None:
     """Weight on or before `day`; the earliest weigh-in when `day` precedes
     them all; None with no weigh-ins. Mirrors WeighInRecord.kg(on:)."""

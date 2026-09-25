@@ -457,6 +457,12 @@ def main() -> None:
     text += "\n" + format_captures(None if captures is None else summarise_captures(captures), args.report)
     import scorecard  # local: import order
     text += "\n" + scorecard.format_report(scorecard.recent_outcomes(args.report), args.report)
+    try:
+        import block_review  # local: import order
+        from data import get_supabase
+        text += "\n" + block_review.format_bulk_rate(block_review.bulk_rate(block_review.weigh_ins(get_supabase(), days=56)))
+    except Exception:
+        log.warning("Bulk rate section unavailable", exc_info=True)
     print(text)
     if args.out:
         import os

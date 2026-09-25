@@ -280,10 +280,23 @@ BODYWEIGHT_INCREMENT = 2.5
 STALL_SESSIONS = 3
 
 
-def _increment(kind: str, bodyweight: bool, step: float | None = None) -> float:
+def _increment(kind: str, bodyweight: bool, step: float | None = None,
+               lifted: float | None = None) -> float:
     """The smallest step the load can actually take: the programme's guide
-    for the kind of lift, or the lift's own stack step when that is larger."""
-    base = BODYWEIGHT_INCREMENT if bodyweight else INCREMENT[kind]
+    for the kind of lift, or the lift's own stack step when that is larger.
+
+    C14 (26 Sep 2026): on a bodyweight-plus lift the load is the athlete plus
+    the plate, so one 2.5kg plate on ~92kg of dips is under 3% — half the
+    step the 6% rule allows a stack lift. With the lifted load known the
+    step is the largest whole number of plates inside STEP_CAP, never under
+    one plate. Measured: Dips 15 vs 20 lifted and Pull-Ups 14 vs 17.5 twice
+    were among the eight replay outliers of 24 Sep — the programme trailing
+    the athlete a plate at a time."""
+    if bodyweight and lifted and lifted > 0:
+        plates = int((lifted * STEP_CAP) // BODYWEIGHT_INCREMENT)
+        base = max(BODYWEIGHT_INCREMENT, plates * BODYWEIGHT_INCREMENT)
+    else:
+        base = BODYWEIGHT_INCREMENT if bodyweight else INCREMENT[kind]
     return max(base, step) if step else base
 
 # :64 "Drop weight 15-25% immediately." Midpoint, so the result lands inside
@@ -835,6 +848,13 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     # half-kilo default put 151.5kg on a chest press whose stack had never
     # been read (22 Sep 2026); 2.5 is at least a load a compound can take.
     grid = step or _increment(kind, bodyweight)
+    # The load a bodyweight-plus lift actually moves: plate plus the
+    # athlete's share (C14). None when the fraction or the weigh-in is unknown.
+    lifted_bw = None
+    if bodyweight and athlete_kg:
+        _fraction = bodyweight_fraction(exercise)
+        if _fraction:
+            lifted_bw = (load or 0.0) + float(athlete_kg) * _fraction
 
     if not bodyweight and rep_range is None and load and step:
         # A machine step above 6% of the load: the range stretches before the
@@ -903,7 +923,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             load, why = sized
             reasons.append(f"Week 1 opens ABOVE last cycle, sized to the miss. {why} Reps reset to the bottom.")
         elif prior.reps is not None and prior.reps >= high:
-            step = _increment(kind, bodyweight, step)
+            step = _increment(kind, bodyweight, step, lifted_bw)
             load = _round_load(load + step, grid, load)
             reasons.append(
                 f"Week 1 opens ~{step:g}kg ABOVE last cycle: week 3 finished at "
@@ -971,7 +991,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 load, why = sized
                 reasons.append(f"OVERDUE and sized to the miss. {why} Reps reset to the bottom.")
             else:
-                step = _increment(kind, bodyweight, step)
+                step = _increment(kind, bodyweight, step, lifted_bw)
                 load = _round_load(load + step, grid, load)
                 reasons.append(
                     f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the "
@@ -980,7 +1000,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 )
             return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
         if _met_top_of_range(prior, kind, targets["top"], high):
-            step = _increment(kind, bodyweight, step)
+            step = _increment(kind, bodyweight, step, lifted_bw)
             load = _round_load(load + step, grid, load)
             reasons.append(
                 f"Week 2 adds ~{step:g}kg: week 1 already reached the top of the "
@@ -989,7 +1009,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             )
             return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
         if prior.ready and not bodyweight:
-            step = _increment(kind, bodyweight, step)
+            step = _increment(kind, bodyweight, step, lifted_bw)
             load = _round_load(load + step, grid, load)
             reasons.append(
                 f"READY TO LOAD, ~{step:g}kg up: a session at this load already reached the top of "
@@ -1014,7 +1034,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 load, why = sized
                 reasons.append(f"Week 3 peak via LOAD, sized to the miss. {why}")
             else:
-                step = _increment(kind, bodyweight, step)
+                step = _increment(kind, bodyweight, step, lifted_bw)
                 load = _round_load(load + step, grid, load)
                 reasons.append(
                     f"Week 3 peak via LOAD, ~{step:g}kg up: week 2 finished at "
@@ -1023,7 +1043,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 )
             return SetSpec(load, low, high, targets["top"], bodyweight=bodyweight, grid=grid)
         if prior.ready and not bodyweight:
-            step = _increment(kind, bodyweight, step)
+            step = _increment(kind, bodyweight, step, lifted_bw)
             load = _round_load(load + step, grid, load)
             reasons.append(
                 f"Peak via LOAD, ~{step:g}kg up — READY TO LOAD: a session at this load already "
@@ -1097,7 +1117,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             load, why = sized
             reasons.append(f"OVERDUE and sized to the miss. {why}")
         else:
-            step = _increment(kind, bodyweight, step)
+            step = _increment(kind, bodyweight, step, lifted_bw)
             load = _round_load(load + step, grid, load)
             reasons.append(
                 f"Load up ~{step:g}kg and OVERDUE: {prior.reps} reps is above the top "
@@ -1108,7 +1128,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
 
     if _met_top_of_range(prior, kind, targets["top"], high):
         # :203 rep progression is exhausted, so the load moves.
-        step = _increment(kind, bodyweight, step)
+        step = _increment(kind, bodyweight, step, lifted_bw)
         load = _round_load(load + step, grid, load)
         reasons.append(
             f"Load up ~{step:g}kg: last session hit {prior.reps} reps, the top of "

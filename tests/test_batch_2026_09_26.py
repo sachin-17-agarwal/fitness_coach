@@ -128,6 +128,65 @@ class MissingRevisionNoteTests(unittest.TestCase):
         self.assertIn("No revised block came through", note)
 
 
+class HistoryCacheTests(unittest.TestCase):
+    """E3: a cache breakpoint under the older turns of today's history."""
+
+    def test_the_breakpoint_sits_before_the_recent_tail_and_the_tail_stays_live(self):
+        from coach_context import cache_older_turns
+        msgs = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"turn {i}"} for i in range(10)]
+        out = cache_older_turns(msgs, keep_recent=6)
+        self.assertEqual(out[3]["content"], [{"type": "text", "text": "turn 3", "cache_control": {"type": "ephemeral", "ttl": "1h"}}])
+        self.assertTrue(all(isinstance(m["content"], str) for m in out[4:]))
+        self.assertTrue(all(isinstance(m["content"], str) for m in out[:3]))
+        self.assertEqual(msgs[3]["content"], "turn 3", "the input is not mutated")
+
+    def test_a_short_conversation_is_left_alone(self):
+        from coach_context import cache_older_turns
+        msgs = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+        self.assertEqual(cache_older_turns(msgs, keep_recent=6), msgs)
+
+
+class BodyweightStepTests(unittest.TestCase):
+    """C14: a bodyweight-plus lift's step is sized on the athlete plus the plate."""
+
+    def test_the_step_is_the_plates_inside_six_percent_of_the_lifted_load(self):
+        from prescribe import COMPOUND, _increment
+        self.assertEqual(_increment(COMPOUND, True, None, lifted=92.0), 5.0)    # 5.52 -> two plates
+        self.assertEqual(_increment(COMPOUND, True, None, lifted=40.0), 2.5)    # 2.4 -> one plate floor
+        self.assertEqual(_increment(COMPOUND, True, None, lifted=None), 2.5)
+        self.assertEqual(_increment(COMPOUND, True, 5.0, lifted=40.0), 5.0)     # the lift's own step still wins
+
+    def test_dips_step_two_plates_when_the_athlete_is_known(self):
+        from prescribe import COMPOUND, PriorSet, prescribe_exercise
+        with_kg = prescribe_exercise("Dips", 2, COMPOUND, 2, PriorSet(20.0, 10, 8.0, bodyweight=True), set(), athlete_kg=82.0)
+        without = prescribe_exercise("Dips", 2, COMPOUND, 2, PriorSet(20.0, 10, 8.0, bodyweight=True), set())
+        self.assertEqual(with_kg.working[0].weight_kg, 25.0)
+        self.assertEqual(without.working[0].weight_kg, 22.5)
+
+
+class BulkRateTests(unittest.TestCase):
+    """C16: the bulk rate in the Sunday report and, above the guide, one line to the coach."""
+
+    WEIGH = [("2026-08-11", 80.8), ("2026-08-18", 81.1), ("2026-08-25", 81.4), ("2026-09-01", 81.8),
+             ("2026-09-08", 82.1), ("2026-09-15", 82.4), ("2026-09-22", 82.6)]
+
+    def test_the_rate_is_the_slope_over_the_window(self):
+        from block_review import bulk_rate
+        r = bulk_rate(self.WEIGH, weeks=6)
+        self.assertAlmostEqual(r["kg_per_week"], 0.3, delta=0.02)
+        self.assertAlmostEqual(r["pct_per_week"], 0.37, delta=0.03)
+        self.assertIsNone(bulk_rate(self.WEIGH[:3]))
+
+    def test_the_report_and_the_coach_line(self):
+        from block_review import bulk_rate, bulk_rate_line, format_bulk_rate
+        r = bulk_rate(self.WEIGH, weeks=6)
+        self.assertIn("inside the guide", format_bulk_rate(r))
+        self.assertIsNone(bulk_rate_line(r))
+        fast = bulk_rate([("2026-08-11", 80.0), ("2026-08-18", 80.8), ("2026-08-25", 81.6), ("2026-09-01", 82.4), ("2026-09-08", 83.2)], weeks=6)
+        self.assertIn("above the ~0.5%/week guide", format_bulk_rate(fast))
+        self.assertIn("BULK RATE: +0.80 kg/week", bulk_rate_line(fast))
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 

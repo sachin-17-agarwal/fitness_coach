@@ -467,6 +467,16 @@ def build_context_block(memory: dict, athlete_name: str,
     except Exception:
         log.exception("Recovery read failed; the percentage rules apply")
         recovery_read_text = "TODAY'S RECOVERY READ: unavailable."
+    try:
+        # C16: one line when the bulk is running fast; silent otherwise.
+        from block_review import bulk_rate, bulk_rate_line  # local: keeps import order flat
+        weigh = sorted((r["date"], float(r["weight_kg"])) for r in (results.get("recovery_rows") or [])
+                       if r.get("date") and r.get("weight_kg"))
+        line = bulk_rate_line(bulk_rate(weigh))
+        if line:
+            recovery_read_text += "\n" + line
+    except Exception:
+        log.warning("Bulk rate line unavailable", exc_info=True)
 
     score = data.get("recovery_score")
     zone = data.get("recovery_zone") or ""
@@ -742,6 +752,35 @@ def _states_a_constraint(message: dict) -> bool:
         return False
     text = (message.get("content") or "").lower()
     return any(marker in text for marker in _CONSTRAINT_MARKERS)
+
+
+RECENT_TURNS_UNCACHED = 6
+
+
+def cache_older_turns(messages: list, keep_recent: int = RECENT_TURNS_UNCACHED) -> list:
+    """E3 (26 Sep 2026): the conversation's older turns are the same on every
+    set reply of a session, and were re-sent uncached each time — ~6k of the
+    ~8.9k uncached tokens per call (20 Sep report). A cache breakpoint on the
+    last message before the recent tail lets the API serve everything up to
+    it from cache; the tail (the newest exchanges) stays live. Nothing about
+    the content changes. Caching is a prefix match, so this is the third
+    breakpoint after the stable and day blocks; the limit is four."""
+    if len(messages) <= keep_recent:
+        return messages
+    out = [dict(m) for m in messages]
+    idx = len(out) - keep_recent - 1
+    m = out[idx]
+    content = m.get("content")
+    marker = {"type": "ephemeral", "ttl": "1h"}
+    if isinstance(content, str):
+        m["content"] = [{"type": "text", "text": content, "cache_control": marker}]
+    elif isinstance(content, list) and content:
+        blocks = [dict(b) if isinstance(b, dict) else b for b in content]
+        last = blocks[-1]
+        if isinstance(last, dict) and last.get("type") == "text":
+            last["cache_control"] = marker
+        m["content"] = blocks
+    return out
 
 
 def truncate_history(history: list) -> list:
