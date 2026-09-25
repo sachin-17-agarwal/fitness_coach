@@ -261,7 +261,7 @@ final class StrengthViewModel {
         // week is lifted its best is a build-week load. Week 1 of this block
         // read quads and hamstrings as "dropping" against last block's week 3,
         // with the header saying "judged at peak week" two weeks early.
-        let peakLifted = calendar.current.week >= Config.peakWeek
+        let peakLifted = calendar.current.week >= calendar.peakWeek(in: calendar.current.block)
         // Per LIFT, not per calendar: a lift in the current block is judged
         // only once it has a set in the peak week. The week beginning on a
         // Friday says nothing about a Legs day that falls on the Wednesday.
@@ -281,7 +281,7 @@ final class StrengthViewModel {
                                              setsSoFar: setsByBlock[b] ?? [:], currentBlock: b == calendar.current.block,
                                              weeksInBlock: weeksSpanned(b))
             let deltas = lifts.compactMap { $0.state == StrengthState.none ? nil : $0.deltaPct }
-            snaps.append(BlockSnapshot(judged: BlockPosition(block: b, week: Config.peakWeek), lifts: lifts, muscles: muscles,
+            snaps.append(BlockSnapshot(judged: calendar.position(block: b, week: calendar.peakWeek(in: b)), lifts: lifts, muscles: muscles,
                                        medianGainPct: lifted ? ChartMath.median(deltas) : nil,
                                        dateRange: calendar.dateRange(ofBlock: b).map(BlockCalendar.shortRange), peakLifted: lifted,
                                        weekInProgress: lifted ? nil : calendar.current.week, peakInProgress: waiting))
@@ -398,7 +398,11 @@ final class StrengthViewModel {
         // A standing decision outranks the verdict: the lift is flat because
         // it was told to be. A PR still reads PR — the hold did not stop it.
         if held != nil, peak != nil, state != .pr { state = .held }
-        return LiftReport(name: name, muscle: muscle, muscles: muscles, sessionType: sessionType, weekly: byPos, judged: BlockPosition(block: block, week: Config.peakWeek),
+        // The block's shape travels on its points (BlockPosition.weeks), so a
+        // four-week block is judged at its week 3 and a five-week one at 4.
+        let weeksInBlock = byPos.keys.first { $0.block == block }?.weeks ?? Config.weeksPerBlock
+        return LiftReport(name: name, muscle: muscle, muscles: muscles, sessionType: sessionType, weekly: byPos,
+                          judged: BlockPosition(block: block, week: BlockPosition.peakWeek(weeks: weeksInBlock), weeks: weeksInBlock),
                           peak: peak, priorPeak: priorPeak, allTimeBest: allTime, deltaPct: delta, blocksSincePR: sincePR, state: state, held: held)
     }
 

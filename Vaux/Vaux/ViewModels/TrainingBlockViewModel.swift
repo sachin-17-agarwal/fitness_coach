@@ -125,12 +125,15 @@ final class TrainingBlockViewModel {
     private(set) var previousBlockTonnage: Double = 0
     private(set) var heaviestWeekEver: Double = 0
     private(set) var current: BlockPosition = BlockPosition(block: 0, week: 1)
+    /// Last block's peak week, by that block's own shape (U6).
+    private(set) var previousPeak: BlockPosition = BlockPosition(block: -1, week: 3)
 
     static let windowDays = 90
 
     func rebuild(sets: [WorkoutSet], sessions: [WorkoutSession], calendar: BlockCalendar,
                  weighIns: WeighInRecord = .empty) {
         current = calendar.current
+        previousPeak = calendar.position(block: calendar.current.block - 1, week: calendar.peakWeek(in: calendar.current.block - 1))
         let setsBySession: [UUID: [WorkoutSet]] = Dictionary(grouping: sets.filter { $0.workoutSessionId != nil }, by: { $0.workoutSessionId! })
 
         // One entry per training day + type, newest first.
@@ -152,8 +155,8 @@ final class TrainingBlockViewModel {
         }
 
         func wave(_ block: Int) -> [WeekTonnage] {
-            (1...Config.weeksPerBlock).map { w in
-                let pos = BlockPosition(block: block, week: w)
+            (1...calendar.weeks(in: block)).map { w in
+                let pos = calendar.position(block: block, week: w)
                 let mine = entries.filter { $0.position == pos }
                 return WeekTonnage(position: pos, tonnage: mine.reduce(0) { $0 + $1.tonnage }, sessions: mine.count)
             }
@@ -216,7 +219,7 @@ final class TrainingBlockViewModel {
             }
         } else {
             let n = vm.blockSessions
-            parts.append(("Week \(vm.current.week) of \(Config.weeksPerBlock), \(n) session\(n == 1 ? "" : "s") in. ", false))
+            parts.append(("Week \(vm.current.week) of \(vm.current.weeks), \(n) session\(n == 1 ? "" : "s") in. ", false))
             if let d = vm.blockDeltaPct {
                 parts.append(("Running ", false)); parts.append((Editorial.signedPct(d, decimals: 0), true))
                 parts.append((" against the same \(n == 1 ? "session" : "\(n) sessions") of last block — the week's total settles once the week is done.", false))
@@ -262,8 +265,8 @@ extension TrainingBlockViewModel {
             against = BlockPosition(block: now.block, week: now.week - 1)
             label = "W\(now.week - 1)"
         } else {
-            against = BlockPosition(block: now.block - 1, week: Config.peakWeek)
-            label = "last block W\(Config.peakWeek)"
+            against = previousPeak
+            label = "last block W\(previousPeak.week)"
         }
         let mine = entries.filter { $0.position == now }
         let theirs = entries.filter { $0.position == against }

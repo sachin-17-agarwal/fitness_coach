@@ -100,7 +100,7 @@ struct StrengthTabView: View {
         guard let s = snap else { return [.init(text: "NO READ YET", color: Editorial.muted)] }
         if !s.peakLifted {
             return [
-                .init(text: "WEEK \(s.weekInProgress ?? s.judged.week) OF \(Config.peakWeek) · BUILDING"),
+                .init(text: "WEEK \(s.weekInProgress ?? s.judged.week) OF \(s.judged.week) · BUILDING"),
                 .init(text: "BEST SO FAR VS LAST PEAK WEEK", color: Editorial.mid),
                 .init(text: "VERDICTS AT PEAK WEEK", color: Editorial.mid),
             ]
@@ -232,7 +232,7 @@ struct StrengthTabView: View {
     private func liftRow(_ lift: LiftReport) -> some View {
         let endOrd = calendar.current.ordinal
         let ords = Array((endOrd - 11)...endOrd)
-        let positions = ords.map { BlockPosition.from(ordinal: $0) }
+        let positions = ords.map { calendar.position(ordinal: $0) }
         let values: [Double?] = positions.map { lift.weekly[$0]?.e1rm }
         let mean = ChartMath.mean(values.compactMap { $0 })
         let shaded = Set(positions.enumerated().filter { $0.element.isDeload }.map(\.offset))

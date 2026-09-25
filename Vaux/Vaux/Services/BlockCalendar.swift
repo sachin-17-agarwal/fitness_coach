@@ -18,15 +18,33 @@ import Foundation
 struct BlockPosition: Hashable, Comparable, Sendable {
     /// 0 is the block in progress, -1 the previous one, and so on.
     let block: Int
-    /// 1...4 within the block.
+    /// 1...weeks within the block.
     let week: Int
+    /// Weeks in this position's block: from the block's own stamps when the
+    /// calendar placed it (U6, 26 Sep 2026), the setting otherwise. Blocks
+    /// differ — four weeks to 1 Sep 2026, five from 2 Sep — and reading every
+    /// block through the current setting labelled last block's deload PEAK.
+    /// Not part of equality or hashing: a position is a block and a week.
+    let weeks: Int
+
+    init(block: Int, week: Int, weeks: Int = Config.weeksPerBlock) {
+        self.block = block
+        self.week = week
+        self.weeks = weeks
+    }
+
+    static func == (a: BlockPosition, b: BlockPosition) -> Bool { a.block == b.block && a.week == b.week }
+    func hash(into hasher: inout Hasher) { hasher.combine(block); hasher.combine(week) }
 
     static func < (a: BlockPosition, b: BlockPosition) -> Bool {
         a.block != b.block ? a.block < b.block : a.week < b.week
     }
 
-    var isDeload: Bool { week == Config.deloadWeek }
-    var isPeak: Bool { week == Config.peakWeek }
+    /// The peak is the week before the deload once a block has one.
+    static func peakWeek(weeks: Int) -> Int { weeks >= 4 ? weeks - 1 : weeks }
+    var peakWeek: Int { Self.peakWeek(weeks: weeks) }
+    var isDeload: Bool { week == weeks }
+    var isPeak: Bool { week == peakWeek }
 
     /// Sequential index for charts: block -1 week 4 is one before block 0 week 1.
     var ordinal: Int { block * Config.weeksPerBlock + (week - 1) }
@@ -51,11 +69,9 @@ struct BlockPosition: Hashable, Comparable, Sendable {
     var shortBlockLabel: String { block == 0 ? "NOW" : "B\(block)" }
 
     var phaseLabel: String {
-        switch week {
-        case Config.peakWeek: return "PEAK"
-        case Config.deloadWeek: return "DELOAD"
-        default: return "BUILD"
-        }
+        if week == peakWeek { return "PEAK" }
+        if week == weeks { return "DELOAD" }
+        return "BUILD"
     }
 }
 
@@ -95,14 +111,30 @@ struct BlockCalendar: Sendable {
     private let byDate: [String: BlockPosition]
     /// Training dates ascending, for nearest-previous lookups.
     private let orderedDates: [String]
+    /// Weeks in each placed block, from its own stamps (U6).
+    private let weeksInBlock: [Int: Int]
 
-    static let empty = BlockCalendar(current: BlockPosition(block: 0, week: 1), bySession: [:], byDate: [:], orderedDates: [])
+    static let empty = BlockCalendar(current: BlockPosition(block: 0, week: 1), bySession: [:], byDate: [:], orderedDates: [], weeksInBlock: [:])
 
-    private init(current: BlockPosition, bySession: [UUID: BlockPosition], byDate: [String: BlockPosition], orderedDates: [String]) {
+    /// Weeks in `block`: its last stamped week when the window shows four or
+    /// more, else the setting (a block cut off by the window, or the one in
+    /// progress).
+    func weeks(in block: Int) -> Int { weeksInBlock[block] ?? Config.weeksPerBlock }
+    func peakWeek(in block: Int) -> Int { BlockPosition.peakWeek(weeks: weeks(in: block)) }
+    /// A position carrying its block's real shape.
+    func position(block: Int, week: Int) -> BlockPosition { BlockPosition(block: block, week: week, weeks: weeks(in: block)) }
+    func position(ordinal: Int) -> BlockPosition {
+        let p = BlockPosition.from(ordinal: ordinal)
+        return position(block: p.block, week: p.week)
+    }
+
+    private init(current: BlockPosition, bySession: [UUID: BlockPosition], byDate: [String: BlockPosition], orderedDates: [String],
+                 weeksInBlock: [Int: Int]) {
         self.current = current
         self.bySession = bySession
         self.byDate = byDate
         self.orderedDates = orderedDates
+        self.weeksInBlock = weeksInBlock
     }
 
     /// Builds the calendar from the session rows in a window plus the live
@@ -175,9 +207,22 @@ struct BlockCalendar: Sendable {
             if dateMap[d.date] == nil || inRotation { dateMap[d.date] = carry }
         }
 
+        // Each block's shape from what was placed in it: the highest week
+        // seen. Fewer than four weeks means the window cut the block off (or
+        // it is the one in progress), and the setting stands for it.
+        var seen: [Int: Int] = [:]
+        for p in sessionMap.values { seen[p.block] = max(seen[p.block] ?? 0, p.week) }
+        for p in dateMap.values { seen[p.block] = max(seen[p.block] ?? 0, p.week) }
+        seen[0] = max(seen[0] ?? 0, week0)
+        var shapes: [Int: Int] = [:]
+        for (b, w) in seen where b < 0 && w >= 4 { shapes[b] = w }
+        func shaped(_ p: BlockPosition) -> BlockPosition {
+            BlockPosition(block: p.block, week: p.week, weeks: shapes[p.block] ?? Config.weeksPerBlock)
+        }
+        self.weeksInBlock = shapes
         self.current = BlockPosition(block: 0, week: week0)
-        self.bySession = sessionMap
-        self.byDate = dateMap
+        self.bySession = sessionMap.mapValues(shaped)
+        self.byDate = dateMap.mapValues(shaped)
         self.orderedDates = dateMap.keys.sorted()
     }
 

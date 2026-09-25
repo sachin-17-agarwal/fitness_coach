@@ -187,6 +187,20 @@ class BulkRateTests(unittest.TestCase):
         self.assertIn("BULK RATE: +0.80 kg/week", bulk_rate_line(fast))
 
 
+class BlockSlotsTests(unittest.TestCase):
+    """U6: the review window follows the block length."""
+
+    def test_a_five_week_block_is_twenty_sessions(self):
+        import blocks
+        with patch("data.block_weeks", return_value=5):
+            self.assertEqual(blocks.block_slots(), 20)
+            sessions = [{"date": f"2026-09-{d:02d}", "mesocycle_week": None, "mesocycle_day": None} for d in range(1, 26)]
+            since, until = blocks.ended_block_range(sessions, "2026-09-25")
+            self.assertEqual((since, until), ("2026-09-06", "2026-09-25"))
+        with patch("data.block_weeks", return_value=4):
+            self.assertEqual(blocks.block_slots(), 16)
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 
