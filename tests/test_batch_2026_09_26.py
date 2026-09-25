@@ -111,6 +111,23 @@ class BackoffSizingTests(unittest.TestCase):
         self.assertEqual(by["Cable Row"]["backoff_reps"], 11)
 
 
+class MissingRevisionNoteTests(unittest.TestCase):
+    """The no-revised-block note is owed only when no block came at all."""
+
+    STORED = {"working": [{"weight": 20, "reps": 9, "reps_high": 13, "rpe": 8}], "backoff": []}
+
+    def test_a_block_for_the_next_lift_is_not_a_missing_revision(self):
+        from plan import missing_revision_note
+        fly = [{"exercise": "Reverse Cable Fly", "working": [{"weight": 12.5, "reps": 8, "reps_high": 16, "rpe": 8}], "backoff": []}]
+        self.assertIsNone(missing_revision_note("Moving down to 12.5 on the fly after last session ran under range.", fly, "Hammer Curl", self.STORED))
+
+    def test_a_claim_with_no_block_at_all_is_still_owed(self):
+        from plan import missing_revision_note
+        note = missing_revision_note("Revising the back-off up.", [], "Hammer Curl", self.STORED)
+        self.assertIsNotNone(note)
+        self.assertIn("No revised block came through", note)
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 

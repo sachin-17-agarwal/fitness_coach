@@ -1730,5 +1730,12 @@ def missing_revision_note(reply: str, blocks: list[dict], card_exercise: str, ca
         name = "".join(ch for ch in (block.get("exercise") or "").lower() if ch.isalnum())
         if name and (name == wanted or name in wanted or wanted in name) and (block.get("working") or block.get("backoff")):
             return None
+    # A reply that carries a block for ANOTHER lift is the coach moving on
+    # — "dropping to 12.5" on the Reverse Cable Fly with the fly's block —
+    # and the claim is about that lift, not the card still showing the last
+    # one. On 26 Sep 2026 the note quoted the Hammer Curl's numbers under
+    # the fly's card. A revision claim with no block at all is still owed.
+    if any(b.get("working") or b.get("backoff") for b in blocks or []):
+        return None
     return (f"(No revised block came through, so the card still reads {card_line(card_stored)}. "
             f"Say the number you want and I'll send the block.)")
