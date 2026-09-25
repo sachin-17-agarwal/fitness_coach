@@ -250,6 +250,83 @@ def track_record(rows: list[dict]) -> dict:
     return {"coach": dict(coach), "programme": dict(programme)}
 
 
+# ── parity: the programme against the coach, lift by lift ───────────────────
+# The athlete's aim (26 Sep 2026): the programme's numbers reach the coach's,
+# and the coach becomes the guard. Parity is measured, not felt: on every
+# lift the two agreed on, the verdict is the programme's; on every override,
+# the verdict is the coach's, and the programme's number is judged by
+# direction — a LIGHT card with the programme higher means the programme
+# was closer, a HEAVY card with the programme lower likewise. The athlete
+# lifted the coach's number, so the programme's own verdict on an override
+# is never known; direction is the honest limit.
+COACH_RIGHT, PROGRAMME_CLOSER, BOTH_WRONG, UNJUDGED = "coach right", "programme closer", "both wrong", "unjudged"
+
+
+def judge_override(row: dict) -> str:
+    """Who was nearer the truth on an overridden lift."""
+    v = row.get("verdict")
+    prog, coach = row.get("programme_load_kg"), row.get("coach_load_kg")
+    if v == RIGHT:
+        return COACH_RIGHT
+    if v not in (LIGHT, HEAVY) or prog is None or coach is None or abs(prog - coach) < 1e-6:
+        return UNJUDGED
+    if v == LIGHT:
+        return PROGRAMME_CLOSER if prog > coach else BOTH_WRONG
+    return PROGRAMME_CLOSER if prog < coach else BOTH_WRONG
+
+
+def head_to_head(rows: list[dict]) -> dict:
+    """{agreed, agreed_right, overrides, judged: Counter, rows: [override rows newest first]}."""
+    scored = [r for r in rows if r.get("verdict") in (RIGHT, LIGHT, HEAVY)]
+    agreed = [r for r in scored if not r.get("overrode")]
+    overrides = [r for r in scored if r.get("overrode")]
+    judged = Counter(judge_override(r) for r in overrides)
+    return {"scored": len(scored), "agreed": len(agreed),
+            "agreed_right": sum(1 for r in agreed if r["verdict"] == RIGHT),
+            "overrides": len(overrides), "judged": dict(judged),
+            "rows": sorted(overrides, key=lambda r: r.get("date") or "", reverse=True)}
+
+
+def format_head_to_head(rows: list[dict], days: int, limit: int = 20) -> str:
+    """The Sunday report's parity section: how often the two agreed, how the
+    programme's number did when they agreed, and who was nearer when they
+    did not — then the overrides themselves, one line each."""
+    h = head_to_head(rows)
+    lines = ["", "## Programme vs coach — parity", ""]
+    if not h["scored"]:
+        lines.append("Nothing scored in the window.")
+        return "\n".join(lines)
+    agree_pct = h["agreed"] / h["scored"] * 100
+    lines.append(f"{h['scored']} lifts scored over {days} days. Agreed on {h['agreed']} ({agree_pct:.0f}%); "
+                 f"of those the programme's number was right {h['agreed_right']} times "
+                 f"({(h['agreed_right'] / h['agreed'] * 100) if h['agreed'] else 0:.0f}%).")
+    j = h["judged"]
+    if h["overrides"]:
+        lines.append(f"The coach overrode {h['overrides']}: coach right {j.get(COACH_RIGHT, 0)} · programme would have been "
+                     f"closer {j.get(PROGRAMME_CLOSER, 0)} · both wrong {j.get(BOTH_WRONG, 0)} · unjudged {j.get(UNJUDGED, 0)}.")
+        cr, pc = j.get(COACH_RIGHT, 0), j.get(PROGRAMME_CLOSER, 0)
+        if cr + pc:
+            if pc >= cr:
+                lines.append("Parity: on the lifts where they disagreed, the programme's number was at least as good as "
+                             "the coach's. The coach's room to override can shrink.")
+            else:
+                lines.append(f"Not at parity: the coach was right on {cr} of the {cr + pc} judged overrides. "
+                             f"Each 'coach right' names a rule the programme lacks — read the reasons below.")
+        lines += ["", "| date | lift | programme | coach | lifted | verdict | judged | coach's reason |", "|---|---|---|---|---|---|---|---|"]
+        for r in h["rows"][:limit]:
+            lifted = f"{r['lifted_load_kg']:g}x{r['lifted_reps']}" if r.get("lifted_load_kg") and r.get("lifted_reps") is not None else "?"
+            prog = f"{r['programme_load_kg']:g}" if r.get("programme_load_kg") is not None else "—"
+            coach = f"{r['coach_load_kg']:g}" if r.get("coach_load_kg") is not None else "—"
+            reason = " ".join((r.get("reason") or "").split())[:70]
+            lines.append(f"| {r.get('date')} | {r.get('exercise')} | {prog} | {coach} | {lifted} | {r['verdict']} | {judge_override(r)} | {reason} |")
+    else:
+        lines.append("No overrides in the window: every card was the programme's number.")
+    lines += ["", "Reading it: the aim is a programme whose numbers need no override. Agreement rising and "
+              "'programme closer' at or above 'coach right' is the measure; when it holds for a block, the coach "
+              "keeps the guard duties (recovery, a niggle, a substitution) and loses the number."]
+    return "\n".join(lines)
+
+
 def _counts(c: dict) -> str:
     n = sum(c.values())
     if not n:
@@ -306,4 +383,5 @@ def format_report(rows: list[dict], days: int) -> str:
     lines += ["", "Reading it: light means the range said the load was under and nobody moved it; heavy means "
               "the opposite. A coach that adjusts and comes out right more often than the programme's number "
               "has earned more room; one that does not has not."]
+    lines.append(format_head_to_head(rows, days))
     return "\n".join(lines)
