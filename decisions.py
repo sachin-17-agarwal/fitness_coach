@@ -38,10 +38,14 @@ RECORDABLE_RE = re.compile(
     # machine, or a typo — questioned rather than progressed from. `stray`
     # ignores it; `real` accepts it. The recorded row IS the store
     # (progression reads it through ladder_answers).
-    r"|Ladder: (?P<ladder_exercise>[^|\n]+?) \| (?P<ladder_load>\d+(?:\.\d+)?)kg (?P<ladder_verdict>stray|real) \| (?P<ladder_why>.+))$"
+    r"|Ladder: (?P<ladder_exercise>[^|\n]+?) \| (?P<ladder_load>\d+(?:\.\d+)?)kg (?P<ladder_verdict>stray|real) \| (?P<ladder_why>.+)"
+    # F4 (26 Sep 2026): a one-off cut the programme proposes when a lift ran
+    # under its range or stalled; recorded, the next session of that lift
+    # opens at the named load and the row is spent once a session follows.
+    r"|Cut: (?P<cut_exercise>[^|\n]+?) \| to (?P<cut_load>\d+(?:\.\d+)?)kg \| (?P<cut_why>.+))$"
 )
 PROPOSED_RE = re.compile(r"^\s*Proposed:\s*(?P<line>.+?)\s*$", re.IGNORECASE | re.MULTILINE)
-_ANY_RECORDABLE_RE = re.compile(r"^\s*(Decision|Emphasis-next|Proposed|Substitute|Order|Ladder):", re.IGNORECASE | re.MULTILINE)
+_ANY_RECORDABLE_RE = re.compile(r"^\s*(Decision|Emphasis-next|Proposed|Substitute|Order|Ladder|Cut):", re.IGNORECASE | re.MULTILINE)
 
 # What the athlete says when something is meant to outlive today. Kept to
 # phrases that carry a number or a horizon so ordinary set talk ("max
@@ -69,7 +73,7 @@ def kind_of(line: str) -> str | None:
         return None
     head = m.group("line").split(":", 1)[0]
     return {"Decision": "constraint", "Emphasis-next": "emphasis", "Substitute": "substitute", "Order": "order",
-            "Ladder": "ladder"}[head]
+            "Ladder": "ladder", "Cut": "cut"}[head]
 
 
 def subject_of(line: str) -> str:
@@ -79,7 +83,7 @@ def subject_of(line: str) -> str:
     if not m:
         return ""
     subject = (m.group("exercise") or m.group("muscle") or m.group("sub_from") or m.group("order_session")
-               or m.group("ladder_exercise") or "")
+               or m.group("ladder_exercise") or m.group("cut_exercise") or "")
     return "".join(ch for ch in subject.lower() if ch.isalnum())
 
 
@@ -90,6 +94,9 @@ def describe(line: str) -> str:
         return line
     if m.group("muscle"):
         return f"Next block's emphasis: {m.group('muscle').strip()} — {m.group('note').strip()}"
+    if m.group("cut_exercise"):
+        return (f"{m.group('cut_exercise').strip()}: open the next session at {float(m.group('cut_load')):g} kg, one step down — "
+                f"{m.group('cut_why').strip()}. Record = cut it. Not now = keep the current load and let the coach decide on the day.")
     if m.group("ladder_exercise"):
         load = float(m.group("ladder_load"))
         if m.group("ladder_verdict") == "stray":
@@ -217,9 +224,75 @@ def apply_line(line: str, prompt: str) -> bool:
         import shape  # local: keeps import order flat
         shape.invalidate()
         return True
-    if kind == "ladder":
+    if kind in ("ladder", "cut"):
         return True   # the row is the store: progression.get_current_loads reads it
     return False
+
+
+def cut_answers() -> dict:
+    """{folded exercise: {"to": kg, "answered_at": iso}} from recorded Cut
+    rows, newest per lift. progression spends one once a session of that
+    lift follows the answer."""
+    supabase = get_supabase()
+    if not supabase:
+        return {}
+    try:
+        rows = (supabase.table("decision_captures").select("line, status, answered_at")
+                .eq("kind", "cut").eq("status", "recorded").order("answered_at", desc=True).execute()).data or []
+    except Exception:
+        log.warning("decision_captures could not be read for cut answers")
+        return {}
+    out: dict = {}
+    for r in rows:
+        if r.get("status") != "recorded":
+            continue
+        m = RECORDABLE_RE.match((r.get("line") or "").strip())
+        if not m or not m.group("cut_exercise"):
+            continue
+        key = subject_of(r["line"])
+        if key not in out:
+            out[key] = {"to": float(m.group("cut_load")), "answered_at": str(r.get("answered_at") or "")}
+    return out
+
+
+def ask_line(ask: dict) -> str | None:
+    """A prescription ask as the recordable line Home shows."""
+    kind, exercise = ask.get("kind"), (ask.get("exercise") or "").strip()
+    if not exercise:
+        return None
+    why = " ".join(str(ask.get("why") or "").split()) or "the programme's own default"
+    if kind == "cut" and ask.get("to") is not None:
+        return f"Cut: {exercise} | to {float(ask['to']):g}kg | {why}"
+    if kind == "rung" and ask.get("to"):
+        return f"Substitute: {exercise} -> {ask['to']} | standing | {why}"
+    return None
+
+
+def propose_asks(asks: list[dict], source: str = "preflight") -> int:
+    """F4: every ask the programme raised becomes one proposed row on Home,
+    once per line. Returns rows written."""
+    supabase = get_supabase()
+    if not supabase or not asks:
+        return 0
+    written = 0
+    try:
+        rows = (supabase.table("decision_captures").select("id, line, status")
+                .in_("kind", ["cut", "substitute"]).execute()).data or []
+        seen = {(r.get("line") or "").strip() for r in rows}
+        for ask in asks:
+            line = ask_line(ask)
+            if not line or line in seen:
+                continue
+            supabase.table("decision_captures").insert({
+                "line": line, "kind": kind_of(line), "source": source, "status": "proposed",
+                "rationale": f"pre-flight: {ask.get('why') or ''}"[:300],
+            }).execute()
+            seen.add(line)
+            written += 1
+            log.info("PRE-FLIGHT ASK: %s", line)
+    except Exception:
+        log.warning("Pre-flight asks could not be written (migration 009?)", exc_info=True)
+    return written
 
 
 def ladder_answers() -> dict:

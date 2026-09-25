@@ -203,8 +203,28 @@ def _next_rung(exercise: str) -> str:
     return f"{ROLLOUT_LADDER[1]} — log it as `Standing Ab Wheel Rollout`, 6-10 reps, so it carries its own history"
 
 
+def _one_step_down(load, grid, bodyweight: bool) -> float | None:
+    """The load one step under `load` for a Home cut card: the lift's own
+    step on a stack, one plate off the added load on a bodyweight movement
+    (never below bodyweight). None when there is no load to cut."""
+    if load is None:
+        return None
+    if bodyweight:
+        return max(0.0, round(float(load) - BODYWEIGHT_INCREMENT, 2))
+    if float(load) <= 0:
+        return None
+    step = grid or _LOAD_GRID
+    return _round_load(max(0.0, float(load) - step), grid, float(load))
+
+
+def _fmt_added(load, bodyweight: bool) -> str:
+    if bodyweight:
+        return f"BW + {float(load or 0):g}kg" if load else "bodyweight"
+    return f"{float(load):g}kg"
+
+
 def _unloadable_top(exercise: str, prior: "PriorSet", low: int, high: int, targets: dict, grid,
-                    reasons: list, deferred: list, week_one: bool = False) -> "SetSpec":
+                    reasons: list, deferred: list, week_one: bool = False, asks: list | None = None) -> "SetSpec":
     """The top set of a movement with nothing to load: reps within the range,
     the range moved up when its top is reached, a variation past the cap.
     The rollout is the exception: its lever moves at the top, never its reps."""
@@ -213,6 +233,10 @@ def _unloadable_top(exercise: str, prior: "PriorSet", low: int, high: int, targe
             f"{exercise}: {prior.reps} reps at the top of {low}-{high} at bodyweight. This movement does "
             f"NOT progress by reps — lengthen the lever. Next rung: {_next_rung(exercise)}."
         )
+        if asks is not None and "standing" not in exercise.lower():
+            # The one rung that is a new exercise name; farther stops are the same lift.
+            asks.append({"kind": "rung", "exercise": exercise, "to": "Standing Ab Wheel Rollout",
+                         "why": f"{prior.reps} reps at the top of {low}-{high} kneeling; the rollout progresses by lever, not reps"})
         return SetSpec(None, low, high, targets["top"], bodyweight=True, grid=grid)
     if prior.reps is not None and prior.reps >= high:
         if high + UNLOADABLE_RANGE_STEP > UNLOADABLE_RANGE_CAP:
@@ -463,6 +487,11 @@ class Proposal:
     rest_seconds: int = 120
     reasons: list[str] = field(default_factory=list)
     deferred: list[str] = field(default_factory=list)
+    # F4 (26 Sep 2026): a deferral the athlete can answer on Home, as data —
+    # {"kind": "cut", "exercise", "to", "why"} or {"kind": "rung", ...}. The
+    # nightly pre-flight turns each into a proposed decision row; unanswered,
+    # the programme's default stands and the card says so.
+    asks: list = field(default_factory=list)
     # Today's readings call for a different session, not a lighter version of
     # this one (:316). Nothing may render a block for it.
     recovery_session: bool = False
@@ -811,7 +840,7 @@ WEAK_POINT_RANGE = (10, 15)
 def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                  reasons: list[str], deferred: list[str],
                  athlete_kg: float | None = None,
-                 rep_range: tuple | None = None) -> SetSpec:
+                 rep_range: tuple | None = None, asks: list | None = None) -> SetSpec:
     """The top set for today, from the wave and what was logged last time.
 
     When the load moves, the reps are prescribed as the whole band with the
@@ -892,6 +921,10 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             f"this is expected and not a fault — the log does not record which "
             f"week it was.)"
         )
+        cut_to = _one_step_down(load, grid, bodyweight)
+        if asks is not None and cut_to is not None:
+            asks.append({"kind": "cut", "exercise": exercise, "to": cut_to,
+                         "why": f"ran {prior.reps} against {low}-{high} at {_fmt_added(load, bodyweight)}"})
 
     if week == 1:
         # :181 — Week 1 anchors to LAST CYCLE'S WEEK 3, not to the most recent
@@ -917,7 +950,7 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
                 f"cannot be verified."
             )
         if bodyweight and is_unloadable(exercise) and not (prior.load or 0):
-            return _unloadable_top(exercise, prior, low, high, targets, grid, reasons, deferred, week_one=True)
+            return _unloadable_top(exercise, prior, low, high, targets, grid, reasons, deferred, week_one=True, asks=asks)
         sized = _sized_overshoot(prior, load, low, high, kind, exercise, athlete_kg) if prior.reps is not None else None
         if sized:
             load, why = sized
@@ -971,10 +1004,14 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
             f"is a coaching decision, not arithmetic; the programme repeats the rep "
             f"prescription below until one is made."
         )
+        cut_to = _one_step_down(load, grid, bodyweight)
+        if asks is not None and cut_to is not None:
+            asks.append({"kind": "cut", "exercise": exercise, "to": cut_to,
+                         "why": f"stalled {prior.held} sessions at {held_at.rsplit(' RPE', 1)[0]}, the last logged harder than the card"})
 
     if bodyweight and is_unloadable(exercise) and not (prior.load or 0) and week != deload_week():
         # Nothing to load (a rollout): reps, then a variation — never "BW+2.5kg".
-        return _unloadable_top(exercise, prior, low, high, targets, grid, reasons, deferred)
+        return _unloadable_top(exercise, prior, low, high, targets, grid, reasons, deferred, asks=asks)
 
     if week == 2:
         # :182 — "Keep the Week 1 weight and reach RPE 8 by adding reps toward
@@ -1324,7 +1361,8 @@ def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
                        f"the load is held. The volume comes down; the weight does not.")
         sets = kept
 
-    top = next_top_set(exercise, kind, week, prior, reasons, deferred, athlete_kg, rep_range=rep_range)
+    asks: list = []
+    top = next_top_set(exercise, kind, week, prior, reasons, deferred, athlete_kg, rep_range=rep_range, asks=asks)
     if (top.bodyweight and top.weight_kg and prior is not None and not prior.load
             and bodyweight_fraction(exercise) is None):
         # The first added load on a movement that lifts no share of the body:
@@ -1344,7 +1382,7 @@ def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
     return Proposal(
         exercise=exercise, kind=kind, warmup=warm, working=[top],
         backoff=backoffs, rest_seconds=REST_SECONDS[kind],
-        reasons=reasons, deferred=deferred, straight=straight,
+        reasons=reasons, deferred=deferred, straight=straight, asks=asks,
     )
 
 

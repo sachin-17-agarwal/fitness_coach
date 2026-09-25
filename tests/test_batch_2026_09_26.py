@@ -201,6 +201,69 @@ class BlockSlotsTests(unittest.TestCase):
             self.assertEqual(blocks.block_slots(), 16)
 
 
+class HomeAskTests(unittest.TestCase):
+    """F4: the programme's deferrals become Home cards with the default stated."""
+
+    def test_a_below_range_lift_asks_for_a_one_step_cut(self):
+        from prescribe import ISOLATION, PriorSet, prescribe_exercise
+        p = prescribe_exercise("Reverse Cable Fly", 2, ISOLATION, 2, PriorSet(15.0, 7, 8.0, step=2.5), set())
+        self.assertEqual(p.asks, [{"kind": "cut", "exercise": "Reverse Cable Fly", "to": 12.5, "why": "ran 7 against 8-16 at 15kg"}])
+
+    def test_a_stall_logged_harder_than_the_card_asks_for_a_cut(self):
+        from prescribe import ISOLATION, PriorSet, prescribe_exercise, targets_for
+        over = targets_for(2)["top"] + 1
+        p = prescribe_exercise("Hammer Curl", 3, ISOLATION, 2, PriorSet(20.0, 9, over, held=4, step=2.0), set())
+        self.assertEqual(len(p.asks), 1)
+        self.assertEqual((p.asks[0]["kind"], p.asks[0]["to"]), ("cut", 18.0))
+
+    def test_the_rollout_at_its_top_asks_for_the_standing_rung(self):
+        from prescribe import ISOLATION, PriorSet, prescribe_exercise
+        p = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 12, 7.0, bodyweight=True), set())
+        self.assertEqual(p.asks[0]["kind"], "rung")
+        self.assertEqual(p.asks[0]["to"], "Standing Ab Wheel Rollout")
+        standing = prescribe_exercise("Standing Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 10, 7.0, bodyweight=True), set())
+        self.assertEqual(standing.asks, [], "a farther stop is the same lift: no card")
+
+    def test_the_lines_and_the_card_text(self):
+        from decisions import RECORDABLE_RE, ask_line, describe, kind_of, subject_of
+        cut = ask_line({"kind": "cut", "exercise": "Reverse Cable Fly", "to": 12.5, "why": "ran 7 against 8-16 at 15kg"})
+        self.assertEqual(cut, "Cut: Reverse Cable Fly | to 12.5kg | ran 7 against 8-16 at 15kg")
+        self.assertIsNotNone(RECORDABLE_RE.match(cut))
+        self.assertEqual((kind_of(cut), subject_of(cut)), ("cut", "reversecablefly"))
+        self.assertIn("open the next session at 12.5 kg", describe(cut))
+        rung = ask_line({"kind": "rung", "exercise": "Ab Wheel Rollout", "to": "Standing Ab Wheel Rollout", "why": "lever"})
+        self.assertEqual(kind_of(rung), "substitute")
+
+    def test_asks_are_written_once(self):
+        import decisions
+        asks = [{"kind": "cut", "exercise": "Reverse Cable Fly", "to": 12.5, "why": "ran 7 against 8-16 at 15kg"},
+                {"kind": "rung", "exercise": "Ab Wheel Rollout", "to": "Standing Ab Wheel Rollout", "why": "lever"}]
+        fake = _Fake()
+        with patch("decisions.get_supabase", return_value=fake):
+            self.assertEqual(decisions.propose_asks(asks), 2)
+            self.assertEqual(decisions.propose_asks(asks), 0)
+        kinds = sorted(r["kind"] for r in fake.store["decision_captures"])
+        self.assertEqual(kinds, ["cut", "substitute"])
+
+    def test_a_recorded_cut_opens_the_next_session_at_the_named_load_then_is_spent(self):
+        from progression import find_current_loads
+        rows = [r for s in _sessions("Reverse Cable Fly", [12.5, 15.0, 15.0], reps=7).values() for r in s]
+        answers = {"reversecablefly": {"to": 12.5, "answered_at": "2026-09-03T20:00:00+00:00"}}
+        [row] = find_current_loads(rows, None, answers)
+        self.assertEqual((row["load"], row["reps"], row["cut"]["from"]), (12.5, None, 15.0))
+        # A session logged after the answer spends it.
+        rows2 = rows + [r for r in _sessions("Reverse Cable Fly", [12.5]).values() for r in s] if False else rows + [
+            {"exercise": "Reverse Cable Fly", "actual_weight_kg": "12.5", "actual_reps": "10", "is_warmup": False, "set_number": "1", "date": "2026-09-04"}]
+        [row2] = find_current_loads(rows2, None, answers)
+        self.assertEqual((row2["load"], row2["cut"]), (12.5, None))
+
+    def test_the_card_names_the_recorded_cut(self):
+        from programme import _ladder_notes
+        notes = _ladder_notes((("Reverse Cable Fly", 2, "isolation"),),
+                              [{"exercise": "Reverse Cable Fly", "cut": {"to": 12.5, "from": 15.0}, "off_ladder": None}])
+        self.assertIn("Opens at 12.5kg, the cut you recorded on Home (was 15kg)", notes["reversecablefly"])
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 

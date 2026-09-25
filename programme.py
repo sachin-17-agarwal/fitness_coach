@@ -151,14 +151,23 @@ def _ladder_notes(plan, current_loads: list[dict]) -> dict:
     rows = {}
     for row in current_loads or []:
         name = (row.get("exercise") or "").strip()
-        if name and row.get("off_ladder"):
+        if name and (row.get("off_ladder") or row.get("cut")):
             rows[name] = row
     if not rows:
         return {}
     matches, _ambiguous = match_logged_names([e for e, _, _ in plan], rows)
     notes = {}
     for exercise, logged_name in matches.items():
-        off = rows[logged_name]["off_ladder"]
+        off = rows[logged_name].get("off_ladder")
+        cut = rows[logged_name].get("cut")
+        if cut:
+            notes[norm_name(exercise)] = (
+                f"Opens at {cut['to']:g}kg, the cut you recorded on Home (was {cut['from']:g}kg); reps reset to the bottom. "
+                f"The record is spent once this session is logged."
+            )
+            continue
+        if not off:
+            continue
         if off.get("treated") == "stray":
             notes[norm_name(exercise)] = (
                 f"{off['load']:g}kg on {off['date']} is not a whole number of {off['step']:g}kg steps from this "

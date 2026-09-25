@@ -235,7 +235,8 @@ def first_backoff(sets: list[dict], top: dict | None) -> dict | None:
     return None
 
 
-def find_current_loads(rows: list[dict], ladder_answers: dict | None = None) -> list[dict]:
+def find_current_loads(rows: list[dict], ladder_answers: dict | None = None,
+                       cut_answers: dict | None = None) -> list[dict]:
     """The load each exercise is currently ON — one line per exercise.
 
     This exists because the coach was getting it wrong by reading. Asked to
@@ -268,14 +269,23 @@ def find_current_loads(rows: list[dict], ladder_answers: dict | None = None) -> 
                 # Home: the odd load is not progressed from.
                 latest, top = off["anchor_date"], off["anchor"]
         backoff = first_backoff(sessions[latest], top)
+        # F4: a cut the athlete recorded on Home, not yet followed by a
+        # session of this lift, opens the next one at the named load with the
+        # reps reset (the old set's reps no longer describe this load).
+        cut = None
+        cut_key = "".join(ch for ch in exercise.lower() if ch.isalnum())
+        answer = (cut_answers or {}).get(cut_key)
+        if answer and str(answer.get("answered_at") or "")[:10] >= str(latest):
+            cut = {"to": float(answer["to"]), "from": _load_key(top), "answered_at": answer.get("answered_at")}
         loads.append({
             "off_ladder": off_ladder,
+            "cut": cut,
             "backoff_reps": _as_int(backoff.get("actual_reps")) if backoff else None,
             "exercise": exercise,
             "date": latest,
-            "load": _load_key(top),
-            "reps": _as_int(top.get("actual_reps")),
-            "rpe": _as_float(top.get("actual_rpe")),
+            "load": cut["to"] if cut else _load_key(top),
+            "reps": None if cut else _as_int(top.get("actual_reps")),
+            "rpe": None if cut else _as_float(top.get("actual_rpe")),
             "met_target": _met_target(top),
             "held": _held_sessions(sessions, top),
             "step": _load_step(sessions),
@@ -658,8 +668,8 @@ def get_current_loads(days: int = 42) -> list[dict] | None:
     rows = _fetch_sets_before_today(days)
     if rows is None:
         return None
-    from decisions import ladder_answers  # local: keeps import order flat
-    return find_current_loads(rows, ladder_answers())
+    from decisions import cut_answers, ladder_answers  # local: keeps import order flat
+    return find_current_loads(rows, ladder_answers(), cut_answers())
 
 
 def get_peak_week_loads(days: int = PEAK_WINDOW_DAYS, peak_week: int | None = None) -> list[dict] | None:
