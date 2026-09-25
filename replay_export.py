@@ -273,11 +273,19 @@ class _FrozenDateTime(datetime):
         return base.astimezone(tz) if tz else base.replace(tzinfo=None)
 
 
-def stamped_sessions(export: dict) -> list[dict]:
-    """Resistance sessions with a mesocycle stamp, oldest first."""
+def stamped_sessions(export: dict, include_backfilled: bool = False) -> list[dict]:
+    """Resistance sessions with a mesocycle stamp, oldest first.
+
+    Sessions the 25 Sep 2026 backfill stamped by rotation inference (S4)
+    are left out by default: their weeks are inferred and they predate the
+    programme, so replaying them under today's rules measures neither the
+    rules nor the log — 105 such sessions put 37 lifts "far from logged"
+    for reasons that were the coach's numbers in July. The harness judges
+    the sessions the programme actually ran."""
     out = [r for r in export["workout_sessions"]
            if r.get("mesocycle_week") and r.get("type") in ("Pull", "Push", "Legs", "Cardio+Abs")
-           and r.get("status") == "completed" and (r.get("tonnage_kg") or 0) > 0]
+           and r.get("status") == "completed" and (r.get("tonnage_kg") or 0) > 0
+           and (include_backfilled or "backfilled" not in (r.get("notes") or ""))]
     return sorted(out, key=lambda r: _iso(r.get("start_time")))
 
 
