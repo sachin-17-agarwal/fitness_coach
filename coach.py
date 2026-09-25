@@ -38,6 +38,7 @@ from coach_context import (
     get_full_session_history,
     get_recovery_history,
     truncate_history as _truncate_history,
+    cache_older_turns as _cache_older_turns,
 )
 from coach_parsing import (
     BRIEF_COMPLETION_ACKS,
@@ -379,7 +380,7 @@ def chat_with_coach(user_message: str, conversation_history: list, memory: dict,
         if save_user:
             save_conversation_message("user", user_message, client_id=client_id)
 
-    messages_to_send = _truncate_history(conversation_history)
+    messages_to_send = _cache_older_turns(_truncate_history(conversation_history))
 
     # Split system into two blocks so the static prompt is cached across calls
     # but the per-request context (recovery, sessions, workout state) stays live.

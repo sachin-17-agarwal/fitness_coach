@@ -233,9 +233,9 @@ def run_if_due(memory: dict) -> dict | None:
     set_memory_value(PREFLIGHT_LAST_KEY, json.dumps(record))
     try:
         # F4/C19: a finding that needs the athlete becomes a Home card, once.
-        from decisions import propose_ladder_questions  # local: keeps import order flat
+        from decisions import propose_asks, propose_ladder_questions  # local: keeps import order flat
         from progression import get_current_loads
-        asked = propose_ladder_questions(get_current_loads() or [])
+        asked = propose_ladder_questions(get_current_loads() or []) + propose_asks(record.get("asks") or [])
         if asked:
             record["questions"] = asked
     except Exception:
@@ -267,6 +267,7 @@ def run_for_next_session(memory: dict) -> dict:
         "ran_at": now_local().isoformat(), "session": session_type, "week": week, "day": day,
         "lifts": [{"exercise": p.exercise, "top": p.working[0].render() if p.working else None} for p in proposals],
         "findings": findings,
+        "asks": [a for p in proposals for a in (getattr(p, "asks", None) or [])],
     }
     if findings:
         log.warning("PRE-FLIGHT %s wk%s: %s", session_type, week, summarise(findings))

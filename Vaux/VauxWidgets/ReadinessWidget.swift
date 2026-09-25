@@ -180,6 +180,21 @@ private struct Ink {
     func verdict(_ level: String) -> Color { full ? WidgetStyle.verdictColor(level) : .primary }
 }
 
+// MARK: - Glass
+
+/// Liquid Glass under a group of metrics, only when the widget draws its own
+/// surface (full colour). A no-op in the tinted and clear styles.
+private struct GlassPane: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on {
+            content.glassEffect(.regular.tint(Color.wSignal.opacity(0.10)), in: .rect(cornerRadius: 14))
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Pieces
 
 private struct VauxMark: View {
@@ -293,6 +308,10 @@ private struct MediumView: View {
                         .minimumScaleFactor(0.7)
                 }
                 Spacer(minLength: 0)
+                // U2 (26 Sep 2026): the metric column sits on Liquid Glass in
+                // full colour — one raised pane over the hero gradient. In the
+                // tinted and clear styles iOS owns the surface, so the pane is
+                // left out there (Ink decides, as for the palette).
                 VStack(alignment: .trailing, spacing: 7) {
                     MetricLine(label: "WEEK \(p.week)", value: p.phase)
                     if let w = p.weekLine {
@@ -308,7 +327,9 @@ private struct MediumView: View {
                         MetricLine(label: "SLEEP", value: WidgetStyle.clock(sleep))
                     }
                 }
-                .padding(.bottom, 3)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .modifier(GlassPane(on: Ink(mode: mode).full))
             }
         }
     }

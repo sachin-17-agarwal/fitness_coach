@@ -128,6 +128,142 @@ class MissingRevisionNoteTests(unittest.TestCase):
         self.assertIn("No revised block came through", note)
 
 
+class HistoryCacheTests(unittest.TestCase):
+    """E3: a cache breakpoint under the older turns of today's history."""
+
+    def test_the_breakpoint_sits_before_the_recent_tail_and_the_tail_stays_live(self):
+        from coach_context import cache_older_turns
+        msgs = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"turn {i}"} for i in range(10)]
+        out = cache_older_turns(msgs, keep_recent=6)
+        self.assertEqual(out[3]["content"], [{"type": "text", "text": "turn 3", "cache_control": {"type": "ephemeral", "ttl": "1h"}}])
+        self.assertTrue(all(isinstance(m["content"], str) for m in out[4:]))
+        self.assertTrue(all(isinstance(m["content"], str) for m in out[:3]))
+        self.assertEqual(msgs[3]["content"], "turn 3", "the input is not mutated")
+
+    def test_a_short_conversation_is_left_alone(self):
+        from coach_context import cache_older_turns
+        msgs = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+        self.assertEqual(cache_older_turns(msgs, keep_recent=6), msgs)
+
+
+class BodyweightStepTests(unittest.TestCase):
+    """C14: a bodyweight-plus lift's step is sized on the athlete plus the plate."""
+
+    def test_the_step_is_the_plates_inside_six_percent_of_the_lifted_load(self):
+        from prescribe import COMPOUND, _increment
+        self.assertEqual(_increment(COMPOUND, True, None, lifted=92.0), 5.0)    # 5.52 -> two plates
+        self.assertEqual(_increment(COMPOUND, True, None, lifted=40.0), 2.5)    # 2.4 -> one plate floor
+        self.assertEqual(_increment(COMPOUND, True, None, lifted=None), 2.5)
+        self.assertEqual(_increment(COMPOUND, True, 5.0, lifted=40.0), 5.0)     # the lift's own step still wins
+
+    def test_dips_step_two_plates_when_the_athlete_is_known(self):
+        from prescribe import COMPOUND, PriorSet, prescribe_exercise
+        with_kg = prescribe_exercise("Dips", 2, COMPOUND, 2, PriorSet(20.0, 10, 8.0, bodyweight=True), set(), athlete_kg=82.0)
+        without = prescribe_exercise("Dips", 2, COMPOUND, 2, PriorSet(20.0, 10, 8.0, bodyweight=True), set())
+        self.assertEqual(with_kg.working[0].weight_kg, 25.0)
+        self.assertEqual(without.working[0].weight_kg, 22.5)
+
+
+class BulkRateTests(unittest.TestCase):
+    """C16: the bulk rate in the Sunday report and, above the guide, one line to the coach."""
+
+    WEIGH = [("2026-08-11", 80.8), ("2026-08-18", 81.1), ("2026-08-25", 81.4), ("2026-09-01", 81.8),
+             ("2026-09-08", 82.1), ("2026-09-15", 82.4), ("2026-09-22", 82.6)]
+
+    def test_the_rate_is_the_slope_over_the_window(self):
+        from block_review import bulk_rate
+        r = bulk_rate(self.WEIGH, weeks=6)
+        self.assertAlmostEqual(r["kg_per_week"], 0.3, delta=0.02)
+        self.assertAlmostEqual(r["pct_per_week"], 0.37, delta=0.03)
+        self.assertIsNone(bulk_rate(self.WEIGH[:3]))
+
+    def test_the_report_and_the_coach_line(self):
+        from block_review import bulk_rate, bulk_rate_line, format_bulk_rate
+        r = bulk_rate(self.WEIGH, weeks=6)
+        self.assertIn("inside the guide", format_bulk_rate(r))
+        self.assertIsNone(bulk_rate_line(r))
+        fast = bulk_rate([("2026-08-11", 80.0), ("2026-08-18", 80.8), ("2026-08-25", 81.6), ("2026-09-01", 82.4), ("2026-09-08", 83.2)], weeks=6)
+        self.assertIn("above the ~0.5%/week guide", format_bulk_rate(fast))
+        self.assertIn("BULK RATE: +0.80 kg/week", bulk_rate_line(fast))
+
+
+class BlockSlotsTests(unittest.TestCase):
+    """U6: the review window follows the block length."""
+
+    def test_a_five_week_block_is_twenty_sessions(self):
+        import blocks
+        with patch("data.block_weeks", return_value=5):
+            self.assertEqual(blocks.block_slots(), 20)
+            sessions = [{"date": f"2026-09-{d:02d}", "mesocycle_week": None, "mesocycle_day": None} for d in range(1, 26)]
+            since, until = blocks.ended_block_range(sessions, "2026-09-25")
+            self.assertEqual((since, until), ("2026-09-06", "2026-09-25"))
+        with patch("data.block_weeks", return_value=4):
+            self.assertEqual(blocks.block_slots(), 16)
+
+
+class HomeAskTests(unittest.TestCase):
+    """F4: the programme's deferrals become Home cards with the default stated."""
+
+    def test_a_below_range_lift_asks_for_a_one_step_cut(self):
+        from prescribe import ISOLATION, PriorSet, prescribe_exercise
+        p = prescribe_exercise("Reverse Cable Fly", 2, ISOLATION, 2, PriorSet(15.0, 7, 8.0, step=2.5), set())
+        self.assertEqual(p.asks, [{"kind": "cut", "exercise": "Reverse Cable Fly", "to": 12.5, "why": "ran 7 against 8-16 at 15kg"}])
+
+    def test_a_stall_logged_harder_than_the_card_asks_for_a_cut(self):
+        from prescribe import ISOLATION, PriorSet, prescribe_exercise, targets_for
+        over = targets_for(2)["top"] + 1
+        p = prescribe_exercise("Hammer Curl", 3, ISOLATION, 2, PriorSet(20.0, 9, over, held=4, step=2.0), set())
+        self.assertEqual(len(p.asks), 1)
+        self.assertEqual((p.asks[0]["kind"], p.asks[0]["to"]), ("cut", 18.0))
+
+    def test_the_rollout_at_its_top_asks_for_the_standing_rung(self):
+        from prescribe import ISOLATION, PriorSet, prescribe_exercise
+        p = prescribe_exercise("Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 12, 7.0, bodyweight=True), set())
+        self.assertEqual(p.asks[0]["kind"], "rung")
+        self.assertEqual(p.asks[0]["to"], "Standing Ab Wheel Rollout")
+        standing = prescribe_exercise("Standing Ab Wheel Rollout", 2, ISOLATION, 2, PriorSet(None, 10, 7.0, bodyweight=True), set())
+        self.assertEqual(standing.asks, [], "a farther stop is the same lift: no card")
+
+    def test_the_lines_and_the_card_text(self):
+        from decisions import RECORDABLE_RE, ask_line, describe, kind_of, subject_of
+        cut = ask_line({"kind": "cut", "exercise": "Reverse Cable Fly", "to": 12.5, "why": "ran 7 against 8-16 at 15kg"})
+        self.assertEqual(cut, "Cut: Reverse Cable Fly | to 12.5kg | ran 7 against 8-16 at 15kg")
+        self.assertIsNotNone(RECORDABLE_RE.match(cut))
+        self.assertEqual((kind_of(cut), subject_of(cut)), ("cut", "reversecablefly"))
+        self.assertIn("open the next session at 12.5 kg", describe(cut))
+        rung = ask_line({"kind": "rung", "exercise": "Ab Wheel Rollout", "to": "Standing Ab Wheel Rollout", "why": "lever"})
+        self.assertEqual(kind_of(rung), "substitute")
+
+    def test_asks_are_written_once(self):
+        import decisions
+        asks = [{"kind": "cut", "exercise": "Reverse Cable Fly", "to": 12.5, "why": "ran 7 against 8-16 at 15kg"},
+                {"kind": "rung", "exercise": "Ab Wheel Rollout", "to": "Standing Ab Wheel Rollout", "why": "lever"}]
+        fake = _Fake()
+        with patch("decisions.get_supabase", return_value=fake):
+            self.assertEqual(decisions.propose_asks(asks), 2)
+            self.assertEqual(decisions.propose_asks(asks), 0)
+        kinds = sorted(r["kind"] for r in fake.store["decision_captures"])
+        self.assertEqual(kinds, ["cut", "substitute"])
+
+    def test_a_recorded_cut_opens_the_next_session_at_the_named_load_then_is_spent(self):
+        from progression import find_current_loads
+        rows = [r for s in _sessions("Reverse Cable Fly", [12.5, 15.0, 15.0], reps=7).values() for r in s]
+        answers = {"reversecablefly": {"to": 12.5, "answered_at": "2026-09-03T20:00:00+00:00"}}
+        [row] = find_current_loads(rows, None, answers)
+        self.assertEqual((row["load"], row["reps"], row["cut"]["from"]), (12.5, None, 15.0))
+        # A session logged after the answer spends it.
+        rows2 = rows + [r for r in _sessions("Reverse Cable Fly", [12.5]).values() for r in s] if False else rows + [
+            {"exercise": "Reverse Cable Fly", "actual_weight_kg": "12.5", "actual_reps": "10", "is_warmup": False, "set_number": "1", "date": "2026-09-04"}]
+        [row2] = find_current_loads(rows2, None, answers)
+        self.assertEqual((row2["load"], row2["cut"]), (12.5, None))
+
+    def test_the_card_names_the_recorded_cut(self):
+        from programme import _ladder_notes
+        notes = _ladder_notes((("Reverse Cable Fly", 2, "isolation"),),
+                              [{"exercise": "Reverse Cable Fly", "cut": {"to": 12.5, "from": 15.0}, "off_ladder": None}])
+        self.assertIn("Opens at 12.5kg, the cut you recorded on Home (was 15kg)", notes["reversecablefly"])
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 

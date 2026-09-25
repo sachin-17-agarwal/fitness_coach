@@ -33,7 +33,15 @@ log = logging.getLogger(__name__)
 
 SLOTS = 2
 ROTATION = len(CYCLE)                 # sessions per week of the block
-BLOCK_SLOTS = ROTATION * 4            # sessions per block
+BLOCK_SLOTS = ROTATION * 4            # sessions per four-week block (kept for importers)
+
+
+def block_slots() -> int:
+    """Sessions in a block of the length in force (U6, 26 Sep 2026): a
+    five-week block is twenty sessions, and a sixteen-session window started
+    the just-ended block's review at its week 2."""
+    from data import block_weeks  # local: keeps import order flat
+    return ROTATION * block_weeks()
 DECISION_PREFIX = "Weak-point: "
 NONE = "none"                          # stored when no muscle was under its band
 # A muscle the athlete has named for the NEXT block's emphasis, waiting to be
@@ -86,7 +94,7 @@ def block_boundary(sessions: list[dict], start: str) -> str | None:
 
 def ended_block_range(sessions: list[dict], today: str) -> tuple | None:
     """(since, until) of the block that has just ended, for the morning-after
-    review: the last BLOCK_SLOTS sessions up to today, or from the most recent
+    review: the last block_slots() sessions up to today, or from the most recent
     stamped week-1/day-1 session among them when the block ran short. None
     when no session exists. Sessions on today count: the deload's last day is
     the day the review is read.
@@ -97,7 +105,7 @@ def ended_block_range(sessions: list[dict], today: str) -> tuple | None:
     done = [s for s in sessions if (s.get("date") or "") <= today]
     if not done:
         return None
-    block = done[-BLOCK_SLOTS:]
+    block = done[-block_slots():]
     for i in range(len(block) - 1, 0, -1):
         if block[i].get("mesocycle_week") == 1 and block[i].get("mesocycle_day") == 1:
             block = block[i:]
@@ -111,7 +119,7 @@ def previous_block_range(sessions: list[dict], start: str) -> tuple | None:
     before = [s for s in sessions if s["date"] < start]
     if not before:
         return None
-    previous = before[-BLOCK_SLOTS:]
+    previous = before[-block_slots():]
     return previous[0]["date"], before[-1]["date"]
 
 
