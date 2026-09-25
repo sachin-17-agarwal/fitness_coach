@@ -503,6 +503,19 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
                                     f"at {cap:g}kg, or clear the decision if the machine has changed.")
         computed = _proposal_numbers(proposal_by_key.get(key, ""))
         if e.decision == "adjust" and computed.get("working") and e.working:
+            # An "adjust" that carries the programme's own numbers is an
+            # accept with a comment. Left as adjust it inflated the adjust
+            # rate and the card showed "Coach changed 90kg x8-10 / 70kg
+            # x10-12" over the programme's exact numbers (Lat Pulldown,
+            # 26 Sep 2026, screenshot). The reason is kept as the note.
+            same = _same_set(e.working[0], computed["working"][0]) and \
+                len(e.backoff) == len(computed.get("backoff", [])) and \
+                all(_same_set(b, c) for b, c in zip(e.backoff, computed.get("backoff", [])))
+            if same:
+                e.decision = "accept"
+                if e.reason and not e.note:
+                    e.note = e.reason
+        if e.decision == "adjust" and computed.get("working") and e.working:
             programme_top = float(computed["working"][0].get("weight") or 0)
             if programme_top > 0 and e.working[0].load_kg < programme_top * 0.95 \
                     and not _CAUSE_RE.search(e.reason):

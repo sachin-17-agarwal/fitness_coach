@@ -62,6 +62,25 @@ class RestFloorTests(unittest.TestCase):
         self.assertEqual(notes, ["Pull-Ups: rest 120s raised to the programme's 180s"])
 
 
+class NoChangeAdjustTests(unittest.TestCase):
+    """An 'adjust' with the programme's own numbers is an accept with a note."""
+
+    PROMPT = "Session template:\nPull: Lat Pulldown 2\n"
+
+    def test_identical_numbers_flip_to_accept_and_the_card_shows_no_change(self):
+        from plan import ExercisePlan, SessionPlan, SetPlan, render_plan, validate
+        proposal = {"Lat Pulldown": "*Lat Pulldown*\nWorking Set: 90kg x8-10 RPE8 | Rest: 3min\nBack-off: 70kg x10-12 RPE8"}
+        plan = SessionPlan(opening="", exercises=[
+            ExercisePlan(exercise="Lat Pulldown", decision="adjust", reason="holding the programme's number after the pull-ups",
+                         working=[SetPlan(90.0, 8, 10, 8.0)], backoff=[SetPlan(70.0, 10, 12, 8.0)], rest_seconds=180)])
+        with patch("plan.parse_session_template", return_value=([("Lat Pulldown", 2)], 2)):
+            validate(plan, "Pull", self.PROMPT, proposal)
+        e = plan.exercises[0]
+        self.assertEqual(e.decision, "accept")
+        self.assertEqual(e.note, "holding the programme's number after the pull-ups")
+        self.assertNotIn("Changed from the programme", render_plan(plan, proposal))
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 
