@@ -372,6 +372,22 @@ def _backoff_problems(e: ExercisePlan) -> list[str]:
     return out
 
 
+def rest_floor(plan: SessionPlan) -> list[str]:
+    """Rest is the programme's number, not the coach's (C13, 26 Sep 2026):
+    the first Pull after the 3-minute rest merged showed a 2:00 timer,
+    because the coach's plan JSON carries `rest_seconds` and nothing held
+    it to the kind's floor. A coach may rest LONGER (a heavy top set), never
+    shorter. Returns one note per exercise raised."""
+    from prescribe import REST_SECONDS, classify  # local: keeps import order flat
+    notes = []
+    for e in plan.exercises:
+        floor = REST_SECONDS[classify(e.exercise)]
+        if (e.rest_seconds or 0) < floor:
+            notes.append(f"{e.exercise}: rest {e.rest_seconds or 0}s raised to the programme's {floor}s")
+            e.rest_seconds = floor
+    return notes
+
+
 def validate(plan: SessionPlan, session_type: str, prompt: str,
              proposal: dict | None = None, weak_points: list | None = None,
              ceilings: dict | None = None, steps: dict | None = None,
@@ -399,6 +415,7 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
     filled_slots = 0
     proposal = proposal or {}
     proposal_by_key = {_normalise_exercise(k): v for k, v in proposal.items()}
+    rest_floor(plan)
 
     for e in plan.exercises:
         key = _normalise_exercise(e.exercise)
@@ -485,6 +502,19 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
                                     f"{cap:g}kg you recorded for this machine — progress by reps and tempo "
                                     f"at {cap:g}kg, or clear the decision if the machine has changed.")
         computed = _proposal_numbers(proposal_by_key.get(key, ""))
+        if e.decision == "adjust" and computed.get("working") and e.working:
+            # An "adjust" that carries the programme's own numbers is an
+            # accept with a comment. Left as adjust it inflated the adjust
+            # rate and the card showed "Coach changed 90kg x8-10 / 70kg
+            # x10-12" over the programme's exact numbers (Lat Pulldown,
+            # 26 Sep 2026, screenshot). The reason is kept as the note.
+            same = _same_set(e.working[0], computed["working"][0]) and \
+                len(e.backoff) == len(computed.get("backoff", [])) and \
+                all(_same_set(b, c) for b, c in zip(e.backoff, computed.get("backoff", [])))
+            if same:
+                e.decision = "accept"
+                if e.reason and not e.note:
+                    e.note = e.reason
         if e.decision == "adjust" and computed.get("working") and e.working:
             programme_top = float(computed["working"][0].get("weight") or 0)
             if programme_top > 0 and e.working[0].load_kg < programme_top * 0.95 \
@@ -1700,5 +1730,12 @@ def missing_revision_note(reply: str, blocks: list[dict], card_exercise: str, ca
         name = "".join(ch for ch in (block.get("exercise") or "").lower() if ch.isalnum())
         if name and (name == wanted or name in wanted or wanted in name) and (block.get("working") or block.get("backoff")):
             return None
+    # A reply that carries a block for ANOTHER lift is the coach moving on
+    # — "dropping to 12.5" on the Reverse Cable Fly with the fly's block —
+    # and the claim is about that lift, not the card still showing the last
+    # one. On 26 Sep 2026 the note quoted the Hammer Curl's numbers under
+    # the fly's card. A revision claim with no block at all is still owed.
+    if any(b.get("working") or b.get("backoff") for b in blocks or []):
+        return None
     return (f"(No revised block came through, so the card still reads {card_line(card_stored)}. "
             f"Say the number you want and I'll send the block.)")

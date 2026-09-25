@@ -768,7 +768,12 @@ final class WorkoutViewModel {
         } else {
             phaseProgress = label
         }
-        let actual = "\(ExerciseCatalog.setWeightLabel(loggedWeight, exercise: exercise)) × \(loggedReps)" + (isWarmup ? "" : " @ RPE \(loggedRPE.wholeOrOne)")
+        // Load × reps only. The RPE the app stores is the card's target
+        // carried through (the slider was retired 25 Sep 2026), and sending
+        // it as "@ RPE 8" had the coach quoting it as a reading on the first
+        // Pull after the change ("8 at RPE8 is right in range"). Effort is
+        // read from reps against the range; the target stays in the suffix.
+        let actual = "\(ExerciseCatalog.setWeightLabel(loggedWeight, exercise: exercise)) × \(loggedReps)"
         let targetSuffix = formatTargetSuffix(
             phase: loggedPhase,
             phaseSetIndex: loggedPhaseSetIndex,

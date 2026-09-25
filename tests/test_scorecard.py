@@ -231,3 +231,56 @@ class ParityTests(unittest.TestCase):
         rows[2]["verdict"] = RIGHT   # the leg curl cut was right after all
         text = scorecard.format_head_to_head(rows, 28)
         self.assertIn("Not at parity: the coach was right on 2 of the 3 judged overrides", text)
+
+
+class BackoffScoringTests(unittest.TestCase):
+    """C24: the first back-off is scored beside the top set."""
+
+    SESSION = {"id": "s2", "date": "2026-09-26", "type": "Pull", "mesocycle_week": 2, "status": "completed"}
+
+    def test_the_back_off_gets_its_own_verdict(self):
+        plan = json.dumps({"working": [{"load_kg": 90, "reps_low": 8, "reps_high": 10, "rpe": 8.0}],
+                           "backoff": [{"load_kg": 70, "reps_low": 10, "reps_high": 12, "rpe": 8.0}]})
+        decisions = [{"exercise": "Lat Pulldown", "decision": "accept", "top_load_kg": 90, "top_reps": 8, "top_rpe": 8,
+                      "programme_load_kg": 90, "plan": plan, "reason": "programme", "created_at": "1"}]
+        sets = [{"exercise": "Lat Pulldown", "is_warmup": False, "actual_weight_kg": 90, "actual_reps": 10, "actual_rpe": 8, "set_number": 1, "phase": "working"},
+                {"exercise": "Lat Pulldown", "is_warmup": False, "actual_weight_kg": 70, "actual_reps": 15, "actual_rpe": 8, "set_number": 2, "phase": "backoff"}]
+        sb = _supabase(decisions, sets, self.SESSION)
+        with patch("scorecard.get_supabase", return_value=sb):
+            [row] = scorecard.score_session("s2")
+        self.assertEqual((row["verdict"], row["backoff_verdict"], row["backoff_lifted_reps"], row["backoff_reps_high"]), (RIGHT, LIGHT, 15, 12))
+
+    def test_a_store_without_the_columns_takes_the_row_without_them(self):
+        plan = json.dumps({"working": [{"load_kg": 90, "reps_low": 8, "reps_high": 10, "rpe": 8.0}],
+                           "backoff": [{"load_kg": 70, "reps_low": 10, "reps_high": 12, "rpe": 8.0}]})
+        decisions = [{"exercise": "Lat Pulldown", "decision": "accept", "top_load_kg": 90, "top_reps": 8, "top_rpe": 8,
+                      "programme_load_kg": 90, "plan": plan, "reason": "programme", "created_at": "1"}]
+        sets = [{"exercise": "Lat Pulldown", "is_warmup": False, "actual_weight_kg": 90, "actual_reps": 10, "actual_rpe": 8, "set_number": 1, "phase": "working"},
+                {"exercise": "Lat Pulldown", "is_warmup": False, "actual_weight_kg": 70, "actual_reps": 15, "actual_rpe": 8, "set_number": 2, "phase": "backoff"}]
+        sb = _supabase(decisions, sets, self.SESSION)
+        calls = {"n": 0}
+        def upsert(row, on_conflict=None):
+            calls["n"] += 1
+            m = MagicMock()
+            if any(k.startswith("backoff_") for k in row):
+                m.execute.side_effect = RuntimeError("column does not exist")
+            return m
+        orig = sb.table.side_effect
+        def table(name):
+            t = orig(name)
+            if name == "decision_outcomes":
+                t.upsert.side_effect = upsert
+            return t
+        sb.table.side_effect = table
+        with patch("scorecard.get_supabase", return_value=sb):
+            [row] = scorecard.score_session("s2")
+        self.assertNotIn("backoff_verdict", row)
+        self.assertEqual(calls["n"], 2)
+
+    def test_the_report_counts_back_offs(self):
+        rows = [{"date": "2026-09-26", "exercise": "Lat Pulldown", "overrode": False, "verdict": RIGHT, "backoff_verdict": LIGHT,
+                 "programme_load_kg": 90.0, "coach_load_kg": 90.0, "lifted_load_kg": 90.0, "lifted_reps": 10},
+                {"date": "2026-09-26", "exercise": "Cable Row", "overrode": False, "verdict": RIGHT, "backoff_verdict": HEAVY,
+                 "programme_load_kg": 94.5, "coach_load_kg": 94.5, "lifted_load_kg": 94.5, "lifted_reps": 7}]
+        text = scorecard.format_report(rows, 7)
+        self.assertIn("Back-offs, scored the same way (C24): 0 right · 1 light · 1 heavy (n=2) — 50% came in under their range, 50% over.", text)

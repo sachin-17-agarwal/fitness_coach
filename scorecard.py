@@ -84,7 +84,36 @@ def _card_rows(supabase, session_id: str) -> dict[str, dict]:
     return out
 
 
-def _top_sets(supabase, session_id: str) -> dict[str, dict]:
+def _first_backoffs(rows: list[dict], tops: dict[str, dict]) -> dict[str, dict]:
+    """The first back-off per lift (C24): the first row stamped `backoff`,
+    else the first set after the top at a lower load."""
+    by: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        if r.get("is_warmup") or r.get("actual_weight_kg") is None or r.get("actual_reps") is None:
+            continue
+        by[_fold(r.get("exercise") or "")].append(r)
+    out: dict[str, dict] = {}
+    for key, sets in by.items():
+        top = tops.get(key)
+        if top is None:
+            continue
+        ordered = sorted(sets, key=lambda r: int(r.get("set_number") or 0))
+        stamped = [r for r in ordered if (r.get("phase") or "") == "backoff"]
+        if stamped:
+            out[key] = stamped[0]
+            continue
+        after = False
+        for r in ordered:
+            if r is top:
+                after = True
+                continue
+            if after and _f(r["actual_weight_kg"]) < _f(top["actual_weight_kg"]):
+                out[key] = r
+                break
+    return out
+
+
+def _top_sets(supabase, session_id: str, backoffs: dict | None = None) -> dict[str, dict]:
     rows = (supabase.table("workout_sets")
             .select("exercise, is_warmup, actual_weight_kg, actual_reps, actual_rpe, set_number, phase")
             .eq("workout_session_id", session_id).execute()).data or []
@@ -99,6 +128,8 @@ def _top_sets(supabase, session_id: str) -> dict[str, dict]:
         if cur is None or (phase_top and (cur.get("phase") or "") != "working") or (
                 (cur.get("phase") or "") != "working" and _f(r["actual_weight_kg"]) > _f(cur["actual_weight_kg"])):
             tops[key] = r
+    if backoffs is not None:
+        backoffs.update(_first_backoffs(rows, tops))
     return tops
 
 
@@ -115,7 +146,8 @@ def score_session(session_id: str) -> list[dict]:
             return []
         session = session[0]
         cards = _card_rows(supabase, session_id)
-        tops = _top_sets(supabase, session_id)
+        backoffs: dict = {}
+        tops = _top_sets(supabase, session_id, backoffs)
     except Exception:
         log.exception("scorecard: could not read session %s", session_id)
         return []
@@ -130,6 +162,11 @@ def score_session(session_id: str) -> list[dict]:
             except ValueError:
                 plan = {}
         working = ((plan or {}).get("working") or [{}])[0] if isinstance(plan, dict) else {}
+        backoff_plan = ((plan or {}).get("backoff") or [{}])[0] if isinstance(plan, dict) else {}
+        back = backoffs.get(key)
+        back_v = (verdict(back.get("actual_reps"), back.get("actual_rpe"), backoff_plan.get("reps_low"),
+                          backoff_plan.get("reps_high"), backoff_plan.get("rpe"))
+                  if back and backoff_plan else UNKNOWN)
         lo, hi, target = working.get("reps_low", card.get("top_reps")), working.get("reps_high", card.get("top_reps")), working.get("rpe", card.get("top_rpe"))
         coach_load = _f(card.get("top_load_kg"))
         prog_load = _f(card.get("programme_load_kg"))
@@ -147,12 +184,26 @@ def score_session(session_id: str) -> list[dict]:
             "lifted_rpe": _f(top.get("actual_rpe")) if top else None,
             "verdict": v, "reason": (card.get("reason") or "")[:300],
             "scored_at": now_local().isoformat(),
+            # C24: the back-off, 45% of the sets and 48% of the tonnage
+            # (September), scored by the same rule. Columns from migration 016;
+            # a store without it takes the row without them.
+            "backoff_verdict": back_v,
+            "backoff_reps_low": _f(backoff_plan.get("reps_low")) and int(_f(backoff_plan.get("reps_low"))),
+            "backoff_reps_high": _f(backoff_plan.get("reps_high")) and int(_f(backoff_plan.get("reps_high"))),
+            "backoff_lifted_load_kg": _f(back.get("actual_weight_kg")) if back else None,
+            "backoff_lifted_reps": int(_f(back.get("actual_reps"))) if back and _f(back.get("actual_reps")) is not None else None,
         }
         try:
             supabase.table("decision_outcomes").upsert(row, on_conflict="session_id,exercise").execute()
             written.append(row)
         except Exception:
-            log.warning("scorecard: could not store %s / %s (migration 015?)", session_id, card.get("exercise"))
+            slim = {k: v_ for k, v_ in row.items() if not k.startswith("backoff_")}
+            try:
+                supabase.table("decision_outcomes").upsert(slim, on_conflict="session_id,exercise").execute()
+                written.append(slim)
+                log.warning("scorecard: back-off columns refused for %s / %s (migration 016?)", session_id, card.get("exercise"))
+            except Exception:
+                log.warning("scorecard: could not store %s / %s (migration 015?)", session_id, card.get("exercise"))
     if written:
         log.info("SCORECARD %s %s: %s", session.get("date"), session.get("type"),
                  ", ".join(f"{r['exercise']}={r['verdict']}" for r in written))
@@ -350,7 +401,8 @@ def format_outcomes(today_exercises: list[str], verdicts: dict[str, list[dict]],
         for r in rows:
             who = "coach" if r.get("overrode") else "programme"
             lifted = f"{r['lifted_load_kg']:g}x{r['lifted_reps']}" + (f"@{r['lifted_rpe']:g}" if r.get("lifted_rpe") is not None else "") if r.get("lifted_load_kg") else "?"
-            parts.append(f"{r.get('date')} {r['verdict']} ({who}'s {r.get('coach_load_kg') or 0:g}kg → {lifted})")
+            back = f", back-off {r['backoff_verdict']}" if r.get("backoff_verdict") in (RIGHT, LIGHT, HEAVY) else ""
+            parts.append(f"{r.get('date')} {r['verdict']} ({who}'s {r.get('coach_load_kg') or 0:g}kg → {lifted}{back})")
         miss = last_two_missed(verdicts, name)
         flag = f" ← {miss.upper()} twice running" if miss else ""
         lines.append(f"- {name}: " + "; ".join(parts) + flag)
@@ -380,6 +432,12 @@ def format_report(rows: list[dict], days: int) -> str:
         lines += ["", "Two of the same in a row:"]
         for ex, v in sorted(trending):
             lines.append(f"- {ex}: {' → '.join(v[-3:])}")
+    backs = Counter(r.get("backoff_verdict") for r in scored if r.get("backoff_verdict") in (RIGHT, LIGHT, HEAVY))
+    if backs:
+        n = sum(backs.values())
+        lines += ["", f"Back-offs, scored the same way (C24): {_counts(dict(backs))} — "
+                  f"{backs.get(HEAVY, 0) / n * 100:.0f}% came in under their range, {backs.get(LIGHT, 0) / n * 100:.0f}% over. "
+                  f"The drop is sized from this next time (C23): over → 15%, under → 25%."]
     lines += ["", "Reading it: light means the range said the load was under and nobody moved it; heavy means "
               "the opposite. A coach that adjusts and comes out right more often than the programme's number "
               "has earned more room; one that does not has not."]

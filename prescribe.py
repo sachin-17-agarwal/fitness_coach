@@ -287,8 +287,16 @@ def _increment(kind: str, bodyweight: bool, step: float | None = None) -> float:
     return max(base, step) if step else base
 
 # :64 "Drop weight 15-25% immediately." Midpoint, so the result lands inside
-# the band whichever way the gym's stack rounds.
+# the band whichever way the gym's stack rounds. C23 (26 Sep 2026): the
+# back-off's own last result moves the drop inside the band — over its
+# range top last time, 15%; under the bottom, 25%. Measured on 496
+# back-offs since June: 4% came in over the range, 40% under, so the
+# heavy side of the rule fires far more often than the light side. The
+# Lat Pulldown back-off did 70 x13 then 70 x15 on a 10-12 card and
+# nothing read it.
 BACKOFF_DROP = 0.20
+BACKOFF_DROP_LIGHT = 0.15
+BACKOFF_DROP_HEAVY = 0.25
 
 # Rest between working sets. Was "2min on compounds, 90s on isolations"
 # (:391); reprogrammed 25 Sep 2026 (C13) to what the evidence and the
@@ -367,6 +375,9 @@ class PriorSet:
     # 12 at RPE 9), so the rule that reads only the last set would hold;
     # this makes the programme take the step (C2).
     ready: bool = False
+    # The first back-off's reps last session (progression.first_backoff), so
+    # the drop can be sized from what the back-off actually did (C23).
+    backoff_reps: int | None = None
     # The smallest load step this lift's own history shows (2.5 on a cable
     # stack, 5 on a leg press, 1.25 with microplates), from progression's
     # find_current_loads; None when the log cannot tell. Every rounding and
@@ -1118,8 +1129,21 @@ def next_top_set(exercise: str, kind: str, week: int, prior: PriorSet | None,
     return SetSpec(load, target_low, high, targets["top"], bodyweight=bodyweight, grid=grid)
 
 
+def backoff_drop(kind: str, prior: "PriorSet | None") -> tuple[float, str]:
+    """(drop, why) sized from the back-off's own last result, inside :64's band."""
+    low, high = BACKOFF_RANGE[kind]
+    reps = getattr(prior, "backoff_reps", None) if prior else None
+    if reps is None:
+        return BACKOFF_DROP, ""
+    if reps > high:
+        return BACKOFF_DROP_LIGHT, f"the last back-off ran {reps} against {low}-{high}, over the top, so the drop shrinks to {BACKOFF_DROP_LIGHT:.0%}"
+    if reps < low:
+        return BACKOFF_DROP_HEAVY, f"the last back-off ran {reps} against {low}-{high}, under the bottom, so the drop widens to {BACKOFF_DROP_HEAVY:.0%}"
+    return BACKOFF_DROP, ""
+
+
 def backoff_sets(top: SetSpec, kind: str, count: int, week: int,
-                 reasons: list[str]) -> list[SetSpec]:
+                 reasons: list[str], prior: "PriorSet | None" = None) -> list[SetSpec]:
     """The back-off sets: 15-25% lighter, and the second one shorter.
 
     :64 "Drop weight 15-25% immediately." :65 "On a 3-set exercise prescribe TWO
@@ -1150,15 +1174,17 @@ def backoff_sets(top: SetSpec, kind: str, count: int, week: int,
     elif top.weight_kg is None:
         load = None
     else:
-        load = _round_load(top.weight_kg * (1 - BACKOFF_DROP), top.grid, top.weight_kg)
+        drop, why = backoff_drop(kind, prior)
+        load = _round_load(top.weight_kg * (1 - drop), top.grid, top.weight_kg)
         if load >= top.weight_kg:
             # A working load small enough that 20% of it rounds to nothing. A
             # back-off at the top-set load is not a back-off; take one grid
             # step down so the drop exists.
             load = max(0.0, top.weight_kg - (top.grid or _LOAD_GRID))
         reasons.append(
-            f"Back-off at {load:g}kg — {BACKOFF_DROP:.0%} below the top set, inside "
-            f"the 15-25% band (:64), at RPE {rpe:g} for week {week}."
+            f"Back-off at {load:g}kg — {drop:.0%} below the top set, inside "
+            f"the 15-25% band (:64), at RPE {rpe:g} for week {week}"
+            + (f"; {why}." if why else ".")
         )
 
     sets = [SetSpec(load, low, high, rpe, bodyweight=top.bodyweight)]
@@ -1289,7 +1315,7 @@ def prescribe_exercise(exercise: str, sets: int, kind: str, week: int,
             f"is impractical today, a harder variation is the coach's call — the "
             f"reps have already reached the top of the range at bodyweight."
         )
-    backoffs = backoff_sets(top, kind, sets - 1, week, reasons)
+    backoffs = backoff_sets(top, kind, sets - 1, week, reasons, prior)
     warm = warmup_ramp(exercise, top, muscles_warm, prior, reasons)
 
     if straight:

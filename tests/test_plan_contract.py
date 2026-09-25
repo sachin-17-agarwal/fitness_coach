@@ -420,10 +420,10 @@ class RequestTests(unittest.TestCase):
                          (220.0, 6, 10, 8.0))
         self.assertEqual([b.load_kg for b in lp.backoff], [176.0, 176.0])
         self.assertEqual(lp.warmup, [(132.0, 8)])
-        self.assertEqual(lp.rest_seconds, 120)   # the fixture's own "Rest: 2min" text, not REST_SECONDS
+        self.assertEqual(lp.rest_seconds, 180)   # the fixture's "Rest: 2min" floored to the programme's (C13, 26 Sep)
         calf = next(e for e in plan.exercises if e.exercise == "Machine Calf Raise")
         self.assertEqual(len(calf.working), 5)
-        self.assertEqual(calf.rest_seconds, 90)
+        self.assertEqual(calf.rest_seconds, 150)
 
     def test_a_slow_first_attempt_is_not_given_a_retry(self):
         import time

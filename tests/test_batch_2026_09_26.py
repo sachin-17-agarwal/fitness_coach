@@ -48,6 +48,86 @@ class RestTests(unittest.TestCase):
         self.assertEqual(e.rest_seconds, 180)
 
 
+class RestFloorTests(unittest.TestCase):
+    """Rest is the programme's number: the coach may go longer, never shorter."""
+
+    def test_a_coach_rest_under_the_floor_is_raised_and_a_longer_one_kept(self):
+        from plan import ExercisePlan, SessionPlan, SetPlan, rest_floor
+        plan = SessionPlan(opening="", exercises=[
+            ExercisePlan(exercise="Pull-Ups", decision="accept", reason="", working=[SetPlan(17.5, 7, 10, 8.0)], backoff=[], rest_seconds=120),
+            ExercisePlan(exercise="Hammer Curl", decision="accept", reason="", working=[SetPlan(20.0, 9, 13, 8.0)], backoff=[], rest_seconds=240),
+        ])
+        notes = rest_floor(plan)
+        self.assertEqual([e.rest_seconds for e in plan.exercises], [180, 240])
+        self.assertEqual(notes, ["Pull-Ups: rest 120s raised to the programme's 180s"])
+
+
+class NoChangeAdjustTests(unittest.TestCase):
+    """An 'adjust' with the programme's own numbers is an accept with a note."""
+
+    PROMPT = "Session template:\nPull: Lat Pulldown 2\n"
+
+    def test_identical_numbers_flip_to_accept_and_the_card_shows_no_change(self):
+        from plan import ExercisePlan, SessionPlan, SetPlan, render_plan, validate
+        proposal = {"Lat Pulldown": "*Lat Pulldown*\nWorking Set: 90kg x8-10 RPE8 | Rest: 3min\nBack-off: 70kg x10-12 RPE8"}
+        plan = SessionPlan(opening="", exercises=[
+            ExercisePlan(exercise="Lat Pulldown", decision="adjust", reason="holding the programme's number after the pull-ups",
+                         working=[SetPlan(90.0, 8, 10, 8.0)], backoff=[SetPlan(70.0, 10, 12, 8.0)], rest_seconds=180)])
+        with patch("plan.parse_session_template", return_value=([("Lat Pulldown", 2)], 2)):
+            validate(plan, "Pull", self.PROMPT, proposal)
+        e = plan.exercises[0]
+        self.assertEqual(e.decision, "accept")
+        self.assertEqual(e.note, "holding the programme's number after the pull-ups")
+        self.assertNotIn("Changed from the programme", render_plan(plan, proposal))
+
+
+class BackoffSizingTests(unittest.TestCase):
+    """C23: the back-off's own last result sizes the drop inside 15-25%."""
+
+    def test_over_its_range_shrinks_the_drop_and_under_widens_it(self):
+        from prescribe import COMPOUND, PriorSet, SetSpec, backoff_sets
+        top = SetSpec(100.0, 8, 8, 8.0, grid=5.0)
+        self.assertEqual(backoff_sets(top, COMPOUND, 1, 2, [], PriorSet(100.0, 8, 8.0, backoff_reps=15))[0].weight_kg, 85.0)
+        self.assertEqual(backoff_sets(top, COMPOUND, 1, 2, [], PriorSet(100.0, 8, 8.0, backoff_reps=8))[0].weight_kg, 75.0)
+        self.assertEqual(backoff_sets(top, COMPOUND, 1, 2, [], PriorSet(100.0, 8, 8.0, backoff_reps=11))[0].weight_kg, 80.0)
+        self.assertEqual(backoff_sets(top, COMPOUND, 1, 2, [], None)[0].weight_kg, 80.0)
+
+    def test_the_reason_says_why(self):
+        from prescribe import COMPOUND, PriorSet, SetSpec, backoff_sets
+        reasons = []
+        backoff_sets(SetSpec(95.0, 8, 10, 8.0, grid=5.0), COMPOUND, 1, 2, reasons, PriorSet(90.0, 10, 8.0, backoff_reps=15))
+        self.assertIn("ran 15 against 10-12, over the top, so the drop shrinks to 15%", reasons[0])
+
+    def test_progression_carries_the_first_back_off(self):
+        from progression import find_current_loads
+        rows = [
+            {"exercise": "Lat Pulldown", "date": "2026-09-20", "is_warmup": False, "set_number": 1, "phase": "working", "actual_weight_kg": "90", "actual_reps": "7", "actual_rpe": "7"},
+            {"exercise": "Lat Pulldown", "date": "2026-09-20", "is_warmup": False, "set_number": 2, "phase": "backoff", "actual_weight_kg": "70", "actual_reps": "13", "actual_rpe": "6"},
+            {"exercise": "Cable Row", "date": "2026-09-20", "is_warmup": False, "set_number": 1, "phase": None, "actual_weight_kg": "94.5", "actual_reps": "6", "actual_rpe": "7"},
+            {"exercise": "Cable Row", "date": "2026-09-20", "is_warmup": False, "set_number": 2, "phase": None, "actual_weight_kg": "74.5", "actual_reps": "11", "actual_rpe": "6"},
+        ]
+        by = {r["exercise"]: r for r in find_current_loads(rows)}
+        self.assertEqual(by["Lat Pulldown"]["backoff_reps"], 13)
+        self.assertEqual(by["Cable Row"]["backoff_reps"], 11)
+
+
+class MissingRevisionNoteTests(unittest.TestCase):
+    """The no-revised-block note is owed only when no block came at all."""
+
+    STORED = {"working": [{"weight": 20, "reps": 9, "reps_high": 13, "rpe": 8}], "backoff": []}
+
+    def test_a_block_for_the_next_lift_is_not_a_missing_revision(self):
+        from plan import missing_revision_note
+        fly = [{"exercise": "Reverse Cable Fly", "working": [{"weight": 12.5, "reps": 8, "reps_high": 16, "rpe": 8}], "backoff": []}]
+        self.assertIsNone(missing_revision_note("Moving down to 12.5 on the fly after last session ran under range.", fly, "Hammer Curl", self.STORED))
+
+    def test_a_claim_with_no_block_at_all_is_still_owed(self):
+        from plan import missing_revision_note
+        note = missing_revision_note("Revising the back-off up.", [], "Hammer Curl", self.STORED)
+        self.assertIsNotNone(note)
+        self.assertIn("No revised block came through", note)
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 

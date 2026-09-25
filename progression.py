@@ -213,6 +213,28 @@ def ladder_position(sessions: dict[str, list[dict]]) -> dict | None:
             "anchor_load": anchor[2], "anchor_date": anchor[0], "anchor": anchor[1]}
 
 
+def first_backoff(sets: list[dict], top: dict | None) -> dict | None:
+    """The session's first back-off set: the first row stamped `backoff`, else
+    the first set after the top set at a lower load. None for a session with
+    no back-off (a straight-set lift, a deload). C23, 26 Sep 2026: the
+    back-off's own result sizes the next drop."""
+    if not sets or top is None:
+        return None
+    ordered = sorted(sets, key=lambda r: _as_int(r.get("set_number")) or 0)
+    stamped = [r for r in ordered if (r.get("phase") or "") == "backoff"]
+    if stamped:
+        return stamped[0]
+    top_load = _as_float(top.get("actual_weight_kg")) or 0.0
+    after = False
+    for r in ordered:
+        if r is top:
+            after = True
+            continue
+        if after and (_as_float(r.get("actual_weight_kg")) or 0.0) < top_load:
+            return r
+    return None
+
+
 def find_current_loads(rows: list[dict], ladder_answers: dict | None = None) -> list[dict]:
     """The load each exercise is currently ON — one line per exercise.
 
@@ -245,8 +267,10 @@ def find_current_loads(rows: list[dict], ladder_answers: dict | None = None) -> 
                 # The programme default, stated on the card and asked on
                 # Home: the odd load is not progressed from.
                 latest, top = off["anchor_date"], off["anchor"]
+        backoff = first_backoff(sessions[latest], top)
         loads.append({
             "off_ladder": off_ladder,
+            "backoff_reps": _as_int(backoff.get("actual_reps")) if backoff else None,
             "exercise": exercise,
             "date": latest,
             "load": _load_key(top),
@@ -561,7 +585,7 @@ def _fetch_sets_before_today(days: int) -> list[dict] | None:
                 supabase.table("workout_sets")
                 .select("date, exercise, workout_session_id, is_warmup, notes, "
                         "actual_weight_kg, actual_reps, actual_rpe, target_reps, "
-                        "target_rpe")
+                        "target_rpe, set_number, phase")
                 .gte("date", since)
                 .lt("date", today.isoformat())
                 .order("date")

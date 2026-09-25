@@ -244,7 +244,7 @@ def decide(read: RecoveryRead) -> tuple[float, float, bool, list[str]]:
         if read.hrv_well_below:
             reasons.append(hrv_words())
         if read.sleep_very_short:
-            reasons.append(f"{read.sleep_hours:g}h sleep, under {SLEEP_FLOOR:g}")
+            reasons.append(f"{round(read.sleep_hours, 2):g}h sleep, under {SLEEP_FLOOR:g}")
         if read.readiness_low:
             reasons.append(f"readiness {read.readiness}/5")
         reasons.append("two signals agree, so today is a recovery session — it protects the block")
@@ -269,10 +269,10 @@ def decide(read: RecoveryRead) -> tuple[float, float, bool, list[str]]:
                   or read.rhr_elevated or read.two_short_nights)
         if second:
             multiplier = read.sleep_multiplier
-            reasons.append(f"{read.sleep_hours:g}h sleep with a second signal agreeing, so the top set comes "
+            reasons.append(f"{round(read.sleep_hours, 2):g}h sleep with a second signal agreeing, so the top set comes "
                            f"down {(1 - multiplier) * 100:.0f}%")
         else:
-            reasons.append(f"{read.sleep_hours:g}h sleep on its own: targets hold — the watch and how you "
+            reasons.append(f"{round(read.sleep_hours, 2):g}h sleep on its own: targets hold — the watch and how you "
                            f"feel say nothing else is off. If the first top set comes in a point hard, "
                            f"the next set comes down")
     elif read.hrv_today_flag and not read.hrv_below:
@@ -307,7 +307,7 @@ def format_read(read: RecoveryRead | None) -> str:
         lines.append(f"  Resting HR: 7-day average {read.rhr.rolling - read.rhr.baseline:+.1f} bpm vs baseline "
                      f"({read.rhr.z:+.1f} SD) — {'ELEVATED' if read.rhr_elevated else 'normal'}")
     if read.sleep_hours is not None:
-        lines.append(f"  Sleep: {read.sleep_hours:g}h last night"
+        lines.append(f"  Sleep: {round(read.sleep_hours, 2):g}h last night"
                      + (f", {read.sleep_last_two[0]:g}h the night before" if read.two_short_nights or
                         (len(read.sleep_last_two) == 2 and read.sleep_last_two[0] is not None) else "")
                      + (" — TWO SHORT NIGHTS" if read.two_short_nights else
