@@ -180,3 +180,54 @@ class OffTheRequestPathTests(unittest.TestCase):
         with patch("scorecard.score_pending", side_effect=fake):
             scorecard.score_in_background()
             self.assertTrue(done.wait(2))
+
+
+class ParityTests(unittest.TestCase):
+    """The programme against the coach, lift by lift (26 Sep 2026)."""
+
+    ROWS = [
+        {"date": "2026-09-20", "exercise": "Leg Press", "overrode": False, "verdict": RIGHT,
+         "programme_load_kg": 240.0, "coach_load_kg": 240.0, "lifted_load_kg": 240.0, "lifted_reps": 8},
+        {"date": "2026-09-20", "exercise": "Cable Row", "overrode": False, "verdict": LIGHT,
+         "programme_load_kg": 90.0, "coach_load_kg": 90.0, "lifted_load_kg": 90.0, "lifted_reps": 13},
+        # coach cut the load; the card still came out light -> the programme's higher number was closer
+        {"date": "2026-09-21", "exercise": "Seated Leg Curl", "overrode": True, "verdict": LIGHT,
+         "programme_load_kg": 115.0, "coach_load_kg": 106.0, "lifted_load_kg": 106.0, "lifted_reps": 16, "reason": "first hamstring loading"},
+        # coach raised it and the card was right
+        {"date": "2026-09-22", "exercise": "Lat Pulldown", "overrode": True, "verdict": RIGHT,
+         "programme_load_kg": 85.0, "coach_load_kg": 90.0, "lifted_load_kg": 90.0, "lifted_reps": 8, "reason": "ready to load"},
+        # coach raised it, card heavy, programme lower -> programme closer
+        {"date": "2026-09-23", "exercise": "Shoulder Press", "overrode": True, "verdict": HEAVY,
+         "programme_load_kg": 70.0, "coach_load_kg": 80.0, "lifted_load_kg": 80.0, "lifted_reps": 3, "reason": "felt strong"},
+        # coach cut it and the card was still heavy -> both wrong
+        {"date": "2026-09-23", "exercise": "Dips", "overrode": True, "verdict": HEAVY,
+         "programme_load_kg": 20.0, "coach_load_kg": 17.5, "lifted_load_kg": 17.5, "lifted_reps": 4, "reason": "shoulder"},
+        {"date": "2026-09-23", "exercise": "Plank", "overrode": True, "verdict": UNKNOWN},
+    ]
+
+    def test_each_override_is_judged_by_direction(self):
+        j = {r["exercise"]: scorecard.judge_override(r) for r in self.ROWS if r.get("overrode")}
+        self.assertEqual(j["Seated Leg Curl"], scorecard.PROGRAMME_CLOSER)
+        self.assertEqual(j["Lat Pulldown"], scorecard.COACH_RIGHT)
+        self.assertEqual(j["Shoulder Press"], scorecard.PROGRAMME_CLOSER)
+        self.assertEqual(j["Dips"], scorecard.BOTH_WRONG)
+        self.assertEqual(j["Plank"], scorecard.UNJUDGED)
+
+    def test_the_head_to_head_counts(self):
+        h = scorecard.head_to_head(self.ROWS)
+        self.assertEqual((h["scored"], h["agreed"], h["agreed_right"], h["overrides"]), (6, 2, 1, 4))
+        self.assertEqual(h["judged"], {scorecard.PROGRAMME_CLOSER: 2, scorecard.COACH_RIGHT: 1, scorecard.BOTH_WRONG: 1})
+
+    def test_the_report_section_reads_the_verdict_out(self):
+        text = scorecard.format_head_to_head(self.ROWS, 28)
+        self.assertIn("Agreed on 2 (33%)", text)
+        self.assertIn("coach right 1 · programme would have been closer 2 · both wrong 1", text)
+        self.assertIn("Parity:", text)
+        self.assertIn("| 2026-09-21 | Seated Leg Curl | 115 | 106 | 106x16 | light | programme closer | first hamstring loading |", text)
+        self.assertIn("Programme vs coach — parity", scorecard.format_report(self.ROWS, 28))
+
+    def test_not_at_parity_names_the_count(self):
+        rows = [dict(r) for r in self.ROWS]
+        rows[2]["verdict"] = RIGHT   # the leg curl cut was right after all
+        text = scorecard.format_head_to_head(rows, 28)
+        self.assertIn("Not at parity: the coach was right on 2 of the 3 judged overrides", text)
