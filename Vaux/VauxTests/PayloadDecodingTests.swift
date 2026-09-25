@@ -84,11 +84,6 @@ struct PayloadDecodingTests {
         #expect(old.weekLine == nil && old.strength == nil && old.score == nil)
     }
 
-    // P7 red-path proof, 26 Sep 2026: this test exists for one CI run only.
-    @Test func deliberateRedForTheGate() {
-        #expect(1 == 2, "the Swift gate must report this")
-    }
-
     @Test func blockLengthDrivesTheLabels() {
         let saved = Config.mesocycleWeeks
         defer { Config.mesocycleWeeks = saved }
