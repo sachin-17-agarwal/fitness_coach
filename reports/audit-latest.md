@@ -1,10 +1,10 @@
-<!-- generated 2026-09-25 · 483 prescriptions · 436 violations -->
+<!-- generated 2026-09-26 · 493 prescriptions · 436 violations -->
 
 **Protocol audit — last 90 days**
 
-- **483** prescriptions checked across **2304** replies on dated training days.
+- **493** prescriptions checked across **2332** replies on dated training days.
 - **265** of them broke at least one rule.
-- Week known for 483 prescriptions (291 from the coach's own words that day, 192 from the session stamp): every check ran. Week only reconstructed for 0: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 21 of 45 days.
+- Week known for 493 prescriptions (291 from the coach's own words that day, 202 from the session stamp): every check ran. Week only reconstructed for 0: set count and back-off shape checked, RPE and rep range not judged. Where the coach stated the week, the rotation walk agreed 21 of 45 days.
 
 **What was broken, and how often**
 
