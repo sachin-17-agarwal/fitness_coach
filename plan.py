@@ -441,6 +441,39 @@ def bound_cut(plan: SessionPlan, proposal_by_key: dict, steps: dict | None = Non
     return notes
 
 
+def hold_stretched(plan: SessionPlan, proposal_by_key: dict) -> list[str]:
+    """A stretched range is the programme refusing a step, not a loose
+    target (C15): on a stack whose smallest step is over 6% of the load the
+    range runs past the usual top and the load moves only when THAT top
+    lands. On 26 Sep 2026 the coach put the Cable Lateral Raise at 15kg x15-17
+    against the programme's 12.5kg x15-17 — the step it had been refused,
+    with the stretched reps kept on top. Held: the programme's load and
+    range, the coach's note kept. Returns one note per exercise held."""
+    from prescribe import TOP_SET_RANGE, classify  # local: keeps import order flat
+    notes = []
+    for e in plan.exercises:
+        if e.decision != "adjust" or not e.working or is_bodyweight(e.exercise):
+            continue
+        computed = _proposal_numbers(proposal_by_key.get(_normalise_exercise(e.exercise), ""))
+        if not computed.get("working"):
+            continue
+        top = computed["working"][0]
+        programme_load = float(top.get("weight") or 0)
+        high = int(top.get("reps_high") or top.get("reps") or 0)
+        if programme_load <= 0 or high <= TOP_SET_RANGE[classify(e.exercise)][1]:
+            continue
+        if e.working[0].load_kg <= programme_load + 1e-6:
+            continue
+        was = e.working[0]
+        e.working = [SetPlan(programme_load, int(top.get("reps") or was.reps_low), high, was.rpe)] + list(e.working[1:])
+        note = (f"{e.exercise}: {was.load_kg:g}kg is the step the programme refused — its {programme_load:g}kg x"
+                f"{int(top.get('reps') or was.reps_low)}-{high} is a stretched range, and the load moves only when "
+                f"{high} reps land; held at {programme_load:g}kg")
+        notes.append(note)
+        e.reason = (e.reason or "").rstrip() + f" [{note.split(': ', 1)[1]}]"
+    return notes
+
+
 def warmup_follows_top(plan: SessionPlan, steps: dict | None = None, aliases: dict | None = None) -> list[str]:
     """The ramp is a function of TODAY's working weight, whoever set it (:127).
     A ramp whose last set reaches the top set is re-derived from the top on
@@ -490,6 +523,7 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
     proposal_by_key = {_normalise_exercise(k): v for k, v in proposal.items()}
     rest_floor(plan)
     bound_cut(plan, proposal_by_key, steps)
+    hold_stretched(plan, proposal_by_key)
     warmup_follows_top(plan, steps)
 
     for e in plan.exercises:

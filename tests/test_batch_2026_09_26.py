@@ -365,6 +365,39 @@ class CutBoundTests(unittest.TestCase):
         self.assertEqual(bound_cut(plan, by_key, {"Machine Chest Press": 8.0}), [])
 
 
+class StretchedRangeHeldTests(unittest.TestCase):
+    """C15 in code: the coach may not take the step a stretched range refused."""
+
+    PROPOSAL = {"Cable Lateral Raise": ("*Cable Lateral Raise*\nWorking Set: 12.5kg x15-17 RPE8 | Rest: 150s\n"
+                                        "Back-off: 10kg x12-15 RPE7, 10kg x10-13 RPE7")}
+    TEMPLATE = "Session template:\nPush: Cable Lateral Raise 3\n"
+
+    def _plan(self, load, reason="beat its range at or under target RPE three sessions straight"):
+        from plan import ExercisePlan, SessionPlan, SetPlan
+        return SessionPlan(opening="", exercises=[
+            ExercisePlan(exercise="Cable Lateral Raise", decision="adjust", reason=reason,
+                         working=[SetPlan(load, 15, 17, 8.0)], backoff=[SetPlan(12.5, 12, 15, 8.0), SetPlan(12.5, 10, 13, 8.0)],
+                         rest_seconds=150)])
+
+    def test_the_refused_step_is_held_to_the_programmes_load_and_range(self):
+        from plan import validate
+        plan = self._plan(15.0)
+        validate(plan, "Push", self.TEMPLATE, proposal=self.PROPOSAL, steps={"Cable Lateral Raise": 2.5})
+        e = plan.exercises[0]
+        self.assertEqual((e.working[0].load_kg, e.working[0].reps_low, e.working[0].reps_high), (12.5, 15, 17))
+        self.assertIn("held at 12.5kg", e.reason)
+
+    def test_an_unstretched_range_and_a_hold_are_untouched(self):
+        from plan import _normalise_exercise, hold_stretched
+        by_key = {_normalise_exercise(k): v for k, v in self.PROPOSAL.items()}
+        self.assertEqual(hold_stretched(self._plan(12.5), by_key), [])
+        plain = {_normalise_exercise("Cable Lateral Raise"):
+                 "*Cable Lateral Raise*\nWorking Set: 12.5kg x8-12 RPE8 | Rest: 150s\nBack-off: 10kg x12-15 RPE7, 10kg x10-13 RPE7"}
+        plan = self._plan(15.0)
+        self.assertEqual(hold_stretched(plan, plain), [])
+        self.assertEqual(plan.exercises[0].working[0].load_kg, 15.0)
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 
