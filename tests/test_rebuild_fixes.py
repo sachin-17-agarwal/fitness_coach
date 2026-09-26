@@ -305,8 +305,8 @@ class GoLiveSwitchTests(unittest.TestCase):
         import os
         from unittest.mock import patch
         from reply_contract import ReplyContext, apply_contract
-        computed = {"Leg Press": "*Leg Press*\nWorking Set: 222.5kg x6-10 RPE8 | Rest: 2min\n"}
-        reply = "*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 2min\n"
+        computed = {"Leg Press": "*Leg Press*\nWorking Set: 222.5kg x6-10 RPE8 | Rest: 3min\n"}
+        reply = "*Leg Press*\nWorking Set: 220kg x5 @7 | Rest: 3min\n"
 
         def run():
             ctx = ReplyContext(reply=reply, reply_kind="prose", system_prompt="", today_type="Legs",

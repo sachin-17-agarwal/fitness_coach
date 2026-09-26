@@ -6,6 +6,7 @@ import logging
 import re
 import secrets
 import json
+import os
 import traceback
 from flask import Flask, Response, request, jsonify
 
@@ -22,6 +23,7 @@ from memory import load_memory, save_recovery_data
 from parse_health import parse_health_export
 from parse_workouts import is_workout_payload, parse_workouts, save_workouts
 
+_STARTED_AT = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(timespec='seconds')
 app = Flask(__name__)
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -696,7 +698,13 @@ def status():
     """Health, plus the two things worth checking without a token: which
     data fixes have been applied and what emphasis is queued for the next
     block. Muscle names only; nothing personal."""
-    out = {"status": "running", "service": "fitness-coach"}
+    out = {"status": "running", "service": "fitness-coach",
+           # What is actually deployed, so "did Railway pick up the merge?" is
+           # one page load, not a guess (26 Sep 2026: a 2:00 rest timer after
+           # the 3-minute floor merged, cause unknown without this).
+           "build": {"commit": (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("SOURCE_COMMIT") or "unknown")[:7],
+                     "branch": os.environ.get("RAILWAY_GIT_BRANCH") or "unknown",
+                     "started": _STARTED_AT}}
     try:
         from data_fixes import applied_keys  # local: keeps import order flat
         from blocks import _pending_emphasis  # local: keeps import order flat

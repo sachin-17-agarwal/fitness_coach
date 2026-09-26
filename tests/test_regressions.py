@@ -4500,9 +4500,9 @@ class ProgrammeShadowModeTests(unittest.TestCase):
         import reply_contract
         from reply_contract import EDITING_STEPS, ReplyContext, STEPS, apply_contract
         self.assertEqual([n for n, _ in STEPS],
-                         ["truncation", "numbers", "set_counts", "plan_follows", "revise_claim", "weak_points",
+                         ["truncation", "numbers", "set_counts", "rest_floor", "warmup_ramp", "plan_follows", "history_claim", "revise_claim", "weak_points",
                           "programme_live", "decisions", "captures"])
-        self.assertEqual(set(EDITING_STEPS), {"numbers", "set_counts", "revise_claim", "weak_points", "programme_live"})
+        self.assertEqual(set(EDITING_STEPS), {"numbers", "set_counts", "rest_floor", "warmup_ramp", "history_claim", "revise_claim", "weak_points", "programme_live"})
 
         def rogue(ctx):
             ctx.reply = "REWRITTEN"

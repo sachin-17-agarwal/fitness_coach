@@ -21,6 +21,12 @@ import Foundation
 enum SessionStatus {
     case open
     case finished
+    /// A row that never held work: the S9 hygiene fix of 25 Sep 2026 marked
+    /// 45 empty sessions `abandoned`, and this type knew only two states, so
+    /// every one of them read as open — the History tab showed a 15 Sep
+    /// Cardio+Abs day as IN PROGRESS eleven days on. Not open, not finished:
+    /// it counts for nothing and blocks nothing.
+    case abandoned
 
     /// The spelling new writes use, one per state.
     static let openStored = "in_progress"
@@ -31,6 +37,7 @@ enum SessionStatus {
     /// into this type.
     static let openRawValues = ["in_progress", "active"]
     static let finishedRawValues = ["completed", "complete"]
+    static let abandonedRawValues = ["abandoned"]
 
     /// A PostgREST `in.(…)` filter matching any open spelling.
     static var openQueryFilter: String {
@@ -43,12 +50,22 @@ enum SessionStatus {
     /// live session with no way back into it.
     init(_ raw: String?) {
         let value = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        self = Self.finishedRawValues.contains(value) ? .finished : .open
+        if Self.finishedRawValues.contains(value) { self = .finished }
+        else if Self.abandonedRawValues.contains(value) { self = .abandoned }
+        else { self = .open }
     }
 
     var isFinished: Bool { self == .finished }
+    /// Still going: the only state History and the block calendar flag.
+    var isOpen: Bool { self == .open }
 
     /// Badge text, derived from the state rather than echoed from the column —
     /// which is how "COMPLETE" and "COMPLETED" ended up on adjacent cards.
-    var label: String { isFinished ? "COMPLETED" : "IN PROGRESS" }
+    var label: String {
+        switch self {
+        case .finished: return "COMPLETED"
+        case .abandoned: return "ABANDONED"
+        case .open: return "IN PROGRESS"
+        }
+    }
 }
