@@ -306,12 +306,39 @@ def _log_drift(ctx: ReplyContext) -> None:
                  len(counts["unmatched"]), ", ".join(counts["unmatched"]))
 
 
+def render_stored_plan(exercise: str, stored: dict) -> str:
+    """The stored plan for a lift as the block the card reads."""
+    from plan import ExercisePlan, _as_set, render_exercise  # local: keeps import order flat
+    e = ExercisePlan(exercise=exercise, decision="accept", reason="",
+                     warmup=[(float(w[0] or 0), int(w[1] or 0)) for w in (stored.get("warmup") or []) if len(w) == 2],
+                     working=[_as_set(d) for d in stored.get("working") or []],
+                     backoff=[_as_set(d) for d in stored.get("backoff") or []],
+                     tempo=str(stored.get("tempo") or ""), rest_seconds=int(stored.get("rest_seconds") or 0))
+    return render_exercise(e)
+
+
+def _started(ctx: ReplyContext, exercise: str) -> bool:
+    """On the board today: the card's lift, or one with sets logged."""
+    names = [ctx.card_exercise or ""] + list((ctx.programme_out or {}).get("logged_today") or [])
+    return any(_norm(exercise) == _norm(n) for n in names if n)
+
+
 def plan_follows(ctx: ReplyContext) -> None:
-    """A prose reply carrying a block for a lift in today's plan — a Revised:
-    block, or a re-sent block with new numbers — replaces the card, and the
-    stored plan follows it so the next set reply computes from the screen."""
+    """A prose reply carrying a block for a lift ON THE BOARD today — a
+    Revised: block, or a re-sent block with new numbers for the card's lift —
+    replaces the card, and the stored plan follows it so the next set reply
+    computes from the screen.
+
+    A block for a lift NOT yet started is the other way round: the plan
+    stands and the reply's block becomes the plan's. The opening plan was
+    validated against the programme; mid-session the coach knows nothing new
+    about a lift he has not touched. On 26 Sep 2026 the prose fallback wrote
+    Face Pulls at 20kg "no logged history" with 47.5kg x10 in its own
+    context, and this step stored it as the plan — the card read 20kg over a
+    LAST TIME of 47.5. A Revised: block is still the coach's."""
     if ctx.reply_kind != "prose" or not ctx.set_log_session:
         return
+    from coach_parsing import substitute_computed_blocks  # local: keeps import order flat
     from plan import block_differs, load_today_plan, plan_from_block, record_plan_update  # local
     week = ctx.memory.get("mesocycle_week", 1)
     try:
@@ -319,12 +346,61 @@ def plan_follows(ctx: ReplyContext) -> None:
     except (TypeError, ValueError):
         week = 1
     for block in parse_all_prescriptions(ctx.reply):
-        stored = load_today_plan(block.get("exercise") or "")
-        if stored and (block.get("working") or block.get("backoff")) and block_differs(block, stored):
-            record_plan_update(plan_from_block(block, stored), ctx.today_type, week,
-                               reason="mid-session block" + (" (Revised)" if block.get("revised") else ""),
-                               session_id=ctx.set_log_session)
-            ctx.note("plan_follows", "stored", block.get("exercise") or "")
+        name = block.get("exercise") or ""
+        stored = load_today_plan(name)
+        if not (stored and (block.get("working") or block.get("backoff")) and block_differs(block, stored)):
+            continue
+        if not _started(ctx, name) and not block.get("revised"):
+            replaced, swapped = substitute_computed_blocks(ctx.reply, {name: render_stored_plan(name, stored)})
+            if swapped:
+                ctx.reply = replaced
+                log.warning("PLAN STANDS (%s): a block for a lift not yet started replaced by the plan's", name)
+                ctx.note("plan_follows", "held", name)
+            continue
+        record_plan_update(plan_from_block(block, stored), ctx.today_type, week,
+                           reason="mid-session block" + (" (Revised)" if block.get("revised") else ""),
+                           session_id=ctx.set_log_session)
+        ctx.note("plan_follows", "stored", name)
+
+
+_NO_HISTORY_RE = re.compile(
+    r"\b(?:no (?:logged |prior |previous )?(?:history|data|log|sessions?)|never (?:logged|done|trained|lifted)"
+    r"|first time (?:on|doing|for|with)|(?:brand[- ])?new (?:movement|lift|exercise)|genuine feel-out|no baseline)\b",
+    re.IGNORECASE)
+_LOAD_LINE_RE = re.compile(r"^\s+([^:\n]+?):\s+(\d+(?:\.\d+)?)kg x(\d+)[^\n]*? on (\d{4}-\d{2}-\d{2})", re.MULTILINE)
+
+
+def history_claims(reply: str, context_text: str) -> list[str]:
+    """Corrections for every lift the reply calls unlogged while CURRENT
+    WORKING LOADS in the handed context carries it. The numbers step reads
+    a number stated; this reads a number denied. 26 Sep 2026: "Face Pulls —
+    no logged history, so this is a genuine feel-out" against
+    "Face Pulls: 47.5kg x10 @RPE8 on 2026-09-22" in the same request."""
+    if not reply or not context_text or not _NO_HISTORY_RE.search(reply):
+        return []
+    head = context_text.find("CURRENT WORKING LOADS")
+    if head < 0:
+        return []
+    tail = context_text.find("PEAK WEEK REFERENCE LOADS", head)
+    loads = context_text[head:tail if tail > 0 else None]
+    out = []
+    low = reply.lower()
+    for m in _LOAD_LINE_RE.finditer(loads):
+        name = m.group(1).strip()
+        if name.lower() in low:
+            out.append(f"Correction: {name} has logged history — {m.group(2)}kg x{m.group(3)} on {m.group(4)} "
+                       f"is the load it is on. Progress from that, not from a guess.")
+    return out
+
+
+def history_claim(ctx: ReplyContext) -> None:
+    if ctx.reply_kind != "prose":
+        return
+    notes = history_claims(ctx.reply, ctx.context_text)
+    if notes:
+        ctx.reply = ctx.reply.rstrip() + "\n\n" + "\n".join(notes)
+        log.warning("HISTORY DENIED (%s): %s", ctx.today_type, "; ".join(notes))
+        ctx.note("history_claim", "corrected", "; ".join(n.split(" has ")[0].replace("Correction: ", "") for n in notes))
 
 
 def revise_claim(ctx: ReplyContext) -> None:
@@ -408,13 +484,14 @@ STEPS = (
     ("rest_floor", rest_floor),
     ("warmup_ramp", warmup_ramp),
     ("plan_follows", plan_follows),
+    ("history_claim", history_claim),
     ("revise_claim", revise_claim),
     ("weak_points", weak_points),
     ("programme_live", programme_live),
     ("decisions", decisions),
     ("captures", captures),
 )
-EDITING_STEPS = ("numbers", "set_counts", "rest_floor", "warmup_ramp", "revise_claim", "weak_points", "programme_live")
+EDITING_STEPS = ("numbers", "set_counts", "rest_floor", "warmup_ramp", "history_claim", "revise_claim", "weak_points", "programme_live")
 
 
 def apply_contract(ctx: ReplyContext) -> str:

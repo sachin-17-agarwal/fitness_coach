@@ -78,7 +78,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn(("decisions", "failed"), [(r["step"], r["action"]) for r in ctx.record])
 
     def test_the_order_and_the_editing_set_are_fixed(self):
-        self.assertEqual([n for n, _ in STEPS], ["truncation", "numbers", "set_counts", "rest_floor", "warmup_ramp", "plan_follows", "revise_claim",
+        self.assertEqual([n for n, _ in STEPS], ["truncation", "numbers", "set_counts", "rest_floor", "warmup_ramp", "plan_follows", "history_claim", "revise_claim",
                                                  "weak_points", "programme_live", "decisions", "captures"])
         self.assertTrue(set(EDITING_STEPS) <= {n for n, _ in STEPS})
 

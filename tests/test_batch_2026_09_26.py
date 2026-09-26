@@ -398,6 +398,79 @@ class StretchedRangeHeldTests(unittest.TestCase):
         self.assertEqual(plan.exercises[0].working[0].load_kg, 15.0)
 
 
+class PlanStandsForUnstartedLiftsTests(unittest.TestCase):
+    """26 Sep 2026: the prose fallback wrote Face Pulls at 20kg ("no logged
+    history") and plan_follows stored it as the plan; the card read 20kg over
+    a LAST TIME of 47.5. A block for a lift not on the board is replaced by
+    the plan's; the card's lift and Revised: blocks still move the plan."""
+
+    STORED = {"working": [{"load_kg": 47.5, "reps_low": 8, "reps_high": 12, "rpe": 8}],
+              "backoff": [{"load_kg": 37.5, "reps_low": 12, "reps_high": 15, "rpe": 7}],
+              "tempo": "2-1-2", "rest_seconds": 150, "warmup": []}
+    REPLY = ("13 reps at 12.5kg, top of range.\n\nOnto Face Pulls — no logged history, so this is a genuine feel-out.\n\n"
+             "*Face Pulls*\nWorking Set: 20kg x8-12 RPE8 | Rest: 90s\nBack-off: 15kg x12-15 RPE7\n\nTell me how it feels.")
+
+    def _ctx(self, reply, card="Cable Lateral Raise"):
+        from reply_contract import ReplyContext
+        return ReplyContext(reply=reply, reply_kind="prose", system_prompt="", today_type="Push", set_log_session="s1",
+                            card_exercise=card, programme_out={"logged_today": ["Cable Lateral Raise"]})
+
+    def test_a_block_for_a_lift_not_started_is_replaced_by_the_plans_and_not_stored(self):
+        from unittest.mock import patch
+        from reply_contract import plan_follows
+        ctx = self._ctx(self.REPLY)
+        with patch("plan.load_today_plan", return_value=self.STORED), patch("plan.record_plan_update") as rec:
+            plan_follows(ctx)
+        self.assertFalse(rec.called)
+        self.assertIn("Working Set: 47.5kg x8-12 RPE8 | Tempo: 2-1-2 | Rest: 150s", ctx.reply)
+        self.assertNotIn("20kg", ctx.reply)
+        self.assertEqual(ctx.record, [{"step": "plan_follows", "action": "held", "detail": "Face Pulls"}])
+
+    def test_the_cards_lift_and_a_revised_block_still_move_the_plan(self):
+        from unittest.mock import patch
+        from reply_contract import plan_follows
+        with patch("plan.load_today_plan", return_value=self.STORED), patch("plan.record_plan_update") as rec:
+            ctx = self._ctx(self.REPLY, card="Face Pulls")
+            plan_follows(ctx)
+            self.assertTrue(rec.called)
+            self.assertIn("20kg", ctx.reply)
+            rec.reset_mock()
+            ctx = self._ctx(self.REPLY.replace("*Face Pulls*\n", "*Face Pulls*\nRevised: rear delt niggle\n"))
+            plan_follows(ctx)
+            self.assertTrue(rec.called)
+
+
+class HistoryClaimTests(unittest.TestCase):
+    """A lift the reply calls unlogged while the handed context carries its load gets a correction line."""
+
+    CONTEXT = ("CURRENT WORKING LOADS — the load each lift is ON:\n  Face Pulls: 47.5kg x10 @RPE8 on 2026-09-22 — met target\n"
+               "  Dips: 10kg x8 @RPE8 on 2026-09-22 — met target\n\nPEAK WEEK REFERENCE LOADS — x")
+
+    def test_a_denied_history_is_corrected_from_the_context(self):
+        from reply_contract import history_claims
+        notes = history_claims("Onto Face Pulls — no logged history, so this is a genuine feel-out. 20kg's a guess.", self.CONTEXT)
+        self.assertEqual(notes, ["Correction: Face Pulls has logged history — 47.5kg x10 on 2026-09-22 is the load it is on. "
+                                 "Progress from that, not from a guess."])
+
+    def test_no_claim_or_no_load_or_another_lift_means_no_note(self):
+        from reply_contract import history_claims
+        self.assertEqual(history_claims("Onto Face Pulls at 47.5kg.", self.CONTEXT), [])
+        self.assertEqual(history_claims("Onto Face Pulls — no logged history.", "nothing here"), [])
+        self.assertEqual(history_claims("Landmine Press — no logged history, feel it out.", self.CONTEXT), [])
+
+    def test_the_step_appends_to_prose_only(self):
+        from reply_contract import ReplyContext, history_claim
+        ctx = ReplyContext(reply="Face Pulls — no logged history.", reply_kind="prose", system_prompt="", today_type="Push",
+                           context_text=self.CONTEXT)
+        history_claim(ctx)
+        self.assertTrue(ctx.reply.endswith("Progress from that, not from a guess."))
+        self.assertEqual(ctx.record[0]["action"], "corrected")
+        ctx = ReplyContext(reply="Face Pulls — no logged history.", reply_kind="set_reply", system_prompt="", today_type="Push",
+                           context_text=self.CONTEXT)
+        history_claim(ctx)
+        self.assertEqual(ctx.reply, "Face Pulls — no logged history.")
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 
