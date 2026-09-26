@@ -76,7 +76,9 @@ jobs:
             -resultBundlePath TestResults.xcresult \
             > xcodebuild.log 2>&1
           status=$?
-          grep -E "error:|Failing tests|Test Suite|Test Case.*(passed|failed)|Executed|BUILD|TEST" xcodebuild.log || true
+          grep -E "error:|Failing tests|Test Suite|Test Case.*(passed|failed)|Executed|BUILD|TEST|✘|recorded an issue|Expectation failed|Test run with|^\s+[A-Za-z]+Tests[./]" xcodebuild.log || true
+          # Swift Testing prints "✘ Test x() failed" and "recorded an issue"; XCTest prints "Test Case"; the
+          # 26 Sep 2026 run 36208222854 failed with an empty "Failing tests:" under the old pattern.
           echo "xcodebuild exit: $status"
           exit $status
 
