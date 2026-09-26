@@ -388,6 +388,79 @@ def rest_floor(plan: SessionPlan) -> list[str]:
     return notes
 
 
+# A cut deeper than one step is allowed only for pain: the athlete's call on
+# 26 Sep 2026 ("Should be 157"). Recovery is already in the programme's number
+# before the coach sees it, so it is not a cause for a second step.
+_PAIN_RE = re.compile(r"\b(?:pain\w*|hurt\w*|sore\w*|niggl\w*|tweak\w*|injur\w*|strain\w*|pinch\w*|ach(?:e|es|ing)|flare\w*)\b",
+                      re.IGNORECASE)
+
+
+def cut_allowance(exercise: str, steps: dict | None, aliases: dict | None = None) -> float:
+    """One step of this lift, the same size the reach-above bound uses."""
+    from prescribe import INCREMENT, classify  # local: keeps import order flat
+    step = lift_step(steps, exercise, aliases) or 0.0
+    return max(2 * INCREMENT[classify(exercise)], step, 2.5)
+
+
+def bound_cut(plan: SessionPlan, proposal_by_key: dict, steps: dict | None = None,
+              aliases: dict | None = None) -> list[str]:
+    """A coach cut below the programme's number is at most one step of the
+    lift unless the reason names pain (26 Sep 2026: the programme held the
+    Machine Chest Press at 165 after 165 x5 and offered the one-step cut to
+    157 on the Home card; the coach wrote 149, two steps, and the athlete
+    overruled it: "Should be 157"). The bound is the mirror of the reach
+    above, and it is applied, not reported: a second attempt that fails
+    would otherwise fall back to the programme's held 165 — worse than
+    either. Back-offs scale with the top; the ramp follows in
+    warmup_follows_top. Returns one note per exercise clamped."""
+    from prescribe import _round_load  # local: keeps import order flat
+    notes = []
+    for e in plan.exercises:
+        if e.decision != "adjust" or not e.working or is_bodyweight(e.exercise):
+            continue
+        computed = _proposal_numbers(proposal_by_key.get(_normalise_exercise(e.exercise), ""))
+        if not computed.get("working"):
+            continue
+        programme_top = float(computed["working"][0].get("weight") or 0)
+        top = e.working[0].load_kg
+        allowance = cut_allowance(e.exercise, steps, aliases)
+        if programme_top <= 0 or top >= programme_top - allowance - 1e-6 or _PAIN_RE.search(e.reason or ""):
+            continue
+        grid = lift_step(steps, e.exercise, aliases)
+        new_top = _round_load(programme_top - allowance, grid, programme_top)
+        if new_top <= top + 1e-6:
+            continue
+        ratio = new_top / top if top > 0 else 1.0
+        e.working = [SetPlan(new_top, s.reps_low, s.reps_high, s.rpe) for s in e.working]
+        e.backoff = [SetPlan(_round_load(b.load_kg * ratio, grid, new_top), b.reps_low, b.reps_high, b.rpe)
+                     for b in e.backoff]
+        note = (f"{e.exercise}: the coach's cut to {top:g}kg is more than one step ({allowance:g}kg) under the "
+                f"programme's {programme_top:g}kg and names no pain; held to one step, {new_top:g}kg")
+        notes.append(note)
+        e.reason = (e.reason or "").rstrip() + f" [{note.split(': ', 1)[1]}]"
+    return notes
+
+
+def warmup_follows_top(plan: SessionPlan, steps: dict | None = None, aliases: dict | None = None) -> list[str]:
+    """The ramp is a function of TODAY's working weight, whoever set it (:127).
+    A ramp whose last set reaches the top set is re-derived from the top on
+    the lift's own ladder. Returns one note per exercise rescaled."""
+    from prescribe import rescale_ramp  # local: keeps import order flat
+    notes = []
+    for e in plan.exercises:
+        if not e.warmup or not e.working or is_bodyweight(e.exercise):
+            continue
+        top = e.working[0].load_kg
+        fixed = rescale_ramp(e.warmup, top, lift_step(steps, e.exercise, aliases))
+        if fixed is None:
+            continue
+        before = ", ".join(f"{l:g}x{r}" for l, r in e.warmup)
+        e.warmup = fixed
+        notes.append(f"{e.exercise}: ramp {before} reached the {top:g}kg top set; now "
+                     + ", ".join(f"{l:g}x{r}" for l, r in fixed))
+    return notes
+
+
 def validate(plan: SessionPlan, session_type: str, prompt: str,
              proposal: dict | None = None, weak_points: list | None = None,
              ceilings: dict | None = None, steps: dict | None = None,
@@ -416,6 +489,8 @@ def validate(plan: SessionPlan, session_type: str, prompt: str,
     proposal = proposal or {}
     proposal_by_key = {_normalise_exercise(k): v for k, v in proposal.items()}
     rest_floor(plan)
+    bound_cut(plan, proposal_by_key, steps)
+    warmup_follows_top(plan, steps)
 
     for e in plan.exercises:
         key = _normalise_exercise(e.exercise)

@@ -229,6 +229,51 @@ def rest_floor(ctx: ReplyContext) -> None:
         ctx.note("rest_floor", "raised", note)
 
 
+_WARMUP_LINE_RE = re.compile(r"^(\s*Warm[\s-]?ups?(?:\s+sets)?:\s*)(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+_WORKING_LOAD_RE = re.compile(r"^\s*(?:Working|Top)\s+Sets?:\s*(\d+(?:\.\d+)?)\s*kg", re.IGNORECASE | re.MULTILINE)
+
+
+def rescale_ramp_text(reply: str, steps: dict | None = None, aliases: dict | None = None) -> tuple[str, list[str]]:
+    """Every Warm-up line in a prescription block ramps TO that block's top
+    set (:127): a ramp reaching the working weight is re-derived from it on
+    the lift's ladder. The plan path does this on the typed plan; this does
+    it on the text the card reads, whichever path wrote it (26 Sep 2026:
+    Machine Chest Press cut to 149 with its 165 ramp of 93, 125, 149)."""
+    from coach_parsing import _parse_set_list  # local: keeps import order flat
+    from plan import lift_step  # local: keeps import order flat
+    from prescribe import rescale_ramp  # local: keeps import order flat
+    heads = list(_BLOCK_HEAD_RE.finditer(reply or ""))
+    if not heads:
+        return reply, []
+    out, notes, pos = [], [], 0
+    for i, m in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(reply)
+        block = reply[m.start():end]
+        exercise = m.group(1).strip()
+        top_m = _WORKING_LOAD_RE.search(block)
+        warm_m = _WARMUP_LINE_RE.search(block)
+        if top_m and warm_m:
+            warmup = [(w["weight"], w["reps"]) for w in _parse_set_list(warm_m.group(2)) if w["weight"] > 0]
+            fixed = rescale_ramp(warmup, float(top_m.group(1)), lift_step(steps, exercise, aliases)) \
+                if len(warmup) == len(_parse_set_list(warm_m.group(2))) else None
+            if fixed is not None:
+                text = ", ".join(f"{l:g}kg x{r}" for l, r in fixed)
+                notes.append(f"{exercise}: ramp {warm_m.group(2)} reached the {float(top_m.group(1)):g}kg top set; now {text}")
+                block = block[:warm_m.start(2)] + text + block[warm_m.end(2):]
+        out.append(reply[pos:m.start()])
+        out.append(block)
+        pos = end
+    out.append(reply[pos:])
+    return "".join(out), notes
+
+
+def warmup_ramp(ctx: ReplyContext) -> None:
+    out = ctx.programme_out or {}
+    ctx.reply, notes = rescale_ramp_text(ctx.reply, out.get("steps"), out.get("aliases"))
+    for note in notes:
+        ctx.note("warmup_ramp", "rescaled", note)
+
+
 def set_counts(ctx: ReplyContext) -> None:
     ctx.reply, fixes = enforce_set_counts(ctx.reply, ctx.system_prompt, ctx.today_type, _week(ctx))
     for fix in fixes:
@@ -361,6 +406,7 @@ STEPS = (
     ("numbers", numbers),
     ("set_counts", set_counts),
     ("rest_floor", rest_floor),
+    ("warmup_ramp", warmup_ramp),
     ("plan_follows", plan_follows),
     ("revise_claim", revise_claim),
     ("weak_points", weak_points),
@@ -368,7 +414,7 @@ STEPS = (
     ("decisions", decisions),
     ("captures", captures),
 )
-EDITING_STEPS = ("numbers", "set_counts", "rest_floor", "revise_claim", "weak_points", "programme_live")
+EDITING_STEPS = ("numbers", "set_counts", "rest_floor", "warmup_ramp", "revise_claim", "weak_points", "programme_live")
 
 
 def apply_contract(ctx: ReplyContext) -> str:

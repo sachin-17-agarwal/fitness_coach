@@ -542,17 +542,18 @@ class DownwardAdjustTests(unittest.TestCase):
         raw["exercises"][0]["backoff"] = [dict(b, load_kg=round(load * 0.8, 1)) for b in raw["exercises"][0]["backoff"]]
         return parse_plan(json.dumps(raw), _legs_proposal())
 
-    def test_a_cut_below_the_programme_without_a_cause_is_queried(self):
-        from plan import is_soft
+    def test_a_cut_below_the_programme_without_a_cause_is_held_to_one_step(self):
+        """26 Sep 2026, the athlete's rule: a cut is one step of the lift
+        unless the reason names pain. Applied, not queried — a second attempt
+        that failed would fall back to the programme's held number."""
         plan = self._plan_with(195.0, "Week 2 is volume week, so holding last week's loads and chasing reps.")
         problems = validate(plan, "Legs", self.PROMPT, _legs_proposal())
-        self.assertTrue(any("names no cause" in p for p in problems), problems)
-        self.assertTrue(all(is_soft(p) for p in problems if "names no cause" in p))
+        self.assertFalse(any("names no cause" in p for p in problems), problems)
+        lp = next(e for e in plan.exercises if e.exercise == "Leg Press")
+        self.assertEqual(lp.working[0].load_kg, 215.0)
+        self.assertIn("held to one step, 215kg", lp.reason)
 
-    def test_a_cut_the_coach_stands_by_is_the_coachs_call(self):
-        """Asked once for the cause; the coach repeats its plan; the cut
-        stands and the programme does NOT replace it. Quality of coaching
-        outranks the rulebook."""
+    def test_a_deep_cut_is_held_in_one_attempt_not_argued_over(self):
         raw = _legs_plan()
         raw["exercises"][0]["decision"] = "adjust"
         raw["exercises"][0]["reason"] = "Week 2 is volume week, so holding last week's loads and chasing reps."
@@ -562,15 +563,19 @@ class DownwardAdjustTests(unittest.TestCase):
         plan, notes = request_session_plan(client, [], [{"role": "user", "content": "go"}],
                                            "Legs", 2, self.PROMPT, proposal=_legs_proposal())
         self.assertIsNotNone(plan, notes)
-        self.assertEqual(len(client.requests), 2)
-        self.assertIn("names no cause", client.requests[1]["messages"][-1]["content"])
+        self.assertEqual(len(client.requests), 1)
         lp = next(e for e in plan.exercises if e.exercise == "Leg Press")
-        self.assertEqual((lp.decision, lp.working[0].load_kg), ("adjust", 195.0))
-        self.assertTrue(any(n.startswith("coach's call stands") for n in notes), notes)
+        self.assertEqual((lp.decision, lp.working[0].load_kg), ("adjust", 215.0))
+        self.assertTrue(all(b.load_kg < 215.0 for b in lp.backoff))
 
-    def test_a_cut_with_a_cause_stands(self):
+    def test_a_recovery_cause_is_still_one_step_and_pain_keeps_the_deeper_cut(self):
+        # Recovery is already in the programme's number before the coach sees it.
         plan = self._plan_with(195.0, "HRV 35 against a 39 baseline and 5.8h sleep — taking 10% off the top set today.")
         self.assertEqual(validate(plan, "Legs", self.PROMPT, _legs_proposal()), [])
+        self.assertEqual(next(e for e in plan.exercises if e.exercise == "Leg Press").working[0].load_kg, 215.0)
+        plan = self._plan_with(195.0, "The right knee was painful under the last two sessions' top sets — two steps off.")
+        self.assertEqual(validate(plan, "Legs", self.PROMPT, _legs_proposal()), [])
+        self.assertEqual(next(e for e in plan.exercises if e.exercise == "Leg Press").working[0].load_kg, 195.0)
 
     def test_a_small_step_for_the_machines_increment_is_not_a_cut(self):
         plan = self._plan_with(215.0, "Nearest plate on the leg press.")

@@ -283,6 +283,88 @@ class RestFloorTextTests(unittest.TestCase):
         self.assertEqual(floor_rest_text("Rest: 2min is plenty between sets of chat."), ("Rest: 2min is plenty between sets of chat.", []))
 
 
+class RampFollowsTopTests(unittest.TestCase):
+    """The ramp is a function of TODAY's working weight, whoever set it. On 26 Sep
+    the coach cut the Machine Chest Press 165 -> 149 and the card's third warm-up
+    was 149 x3: the programme's 165 ramp, unrescaled."""
+
+    RAMP = [(93.0, 10), (125.0, 5), (149.0, 3)]
+
+    def test_a_ramp_reaching_the_top_set_is_rederived_on_the_ladder(self):
+        from prescribe import rescale_ramp
+        self.assertEqual(rescale_ramp(self.RAMP, 149.0, 8.0), [(85.0, 10), (109.0, 5), (133.0, 3)])
+        self.assertEqual(rescale_ramp(self.RAMP, 157.0, 8.0), [(85.0, 10), (117.0, 5), (141.0, 3)])
+
+    def test_a_ramp_that_stops_short_of_the_top_is_left_alone(self):
+        from prescribe import rescale_ramp
+        self.assertIsNone(rescale_ramp(self.RAMP, 165.0, 8.0))
+        self.assertIsNone(rescale_ramp([(60.0, 10), (85.0, 5)], 100.0, None))
+        self.assertIsNone(rescale_ramp([], 100.0, None))
+
+    def test_the_plan_path_rescales_the_typed_ramp(self):
+        from plan import ExercisePlan, SessionPlan, SetPlan, warmup_follows_top
+        plan = SessionPlan(opening="", exercises=[
+            ExercisePlan(exercise="Machine Chest Press", decision="adjust", reason="", working=[SetPlan(149.0, 8, 12, 8.0)],
+                         backoff=[], warmup=list(self.RAMP), rest_seconds=180)])
+        notes = warmup_follows_top(plan, {"Machine Chest Press": 8.0})
+        self.assertEqual(plan.exercises[0].warmup, [(85.0, 10), (109.0, 5), (133.0, 3)])
+        self.assertEqual(len(notes), 1)
+
+    def test_the_text_path_rescales_the_warm_up_line_of_its_own_block_only(self):
+        from reply_contract import rescale_ramp_text
+        reply = ("*Machine Chest Press*\nWarm-up: 93kg x10, 125kg x5, 149kg x3\nWorking Set: 149kg x8-12 RPE8 | Rest: 3min\n"
+                 "Back-off: 125kg x10-12 RPE7\n\n*Shoulder Press*\nWarm-up: 40kg x8\nWorking Set: 65kg x8-12 RPE8 | Rest: 3min\n")
+        out, notes = rescale_ramp_text(reply, {"Machine Chest Press": 8.0})
+        self.assertIn("Warm-up: 85kg x10, 109kg x5, 133kg x3\nWorking Set: 149kg", out)
+        self.assertIn("Warm-up: 40kg x8\nWorking Set: 65kg", out)
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(rescale_ramp_text("No blocks here, warm-up: 149kg x3.", {}), ("No blocks here, warm-up: 149kg x3.", []))
+
+
+class CutBoundTests(unittest.TestCase):
+    """A coach cut below the programme's number is one step of the lift unless
+    the reason names pain (the athlete's call, 26 Sep 2026: 165 x5 -> 157, not 149)."""
+
+    PROPOSAL = {"Machine Chest Press": ("*Machine Chest Press*\nWarm-up: 93kg x10, 125kg x5, 149kg x3\n"
+                                        "Working Set: 165kg x8-12 RPE8 | Rest: 3min\nBack-off: 141kg x10-12 RPE7, 141kg x8-10 RPE7")}
+    TEMPLATE = "Session template:\nPush: Machine Chest Press 3\n"
+
+    def _plan(self, reason):
+        from plan import ExercisePlan, SessionPlan, SetPlan
+        return SessionPlan(opening="", exercises=[
+            ExercisePlan(exercise="Machine Chest Press", decision="adjust", reason=reason,
+                         working=[SetPlan(149.0, 8, 12, 8.0)], backoff=[SetPlan(125.0, 10, 12, 7.0), SetPlan(125.0, 8, 10, 7.0)],
+                         warmup=[(93.0, 10), (125.0, 5), (149.0, 3)], rest_seconds=180)])
+
+    def test_a_two_step_cut_is_held_to_one_with_back_offs_and_ramp_following(self):
+        from plan import validate
+        plan = self._plan("last session ran 5 against 8-12 at 165, so the load comes down to bring the reps back in")
+        problems = validate(plan, "Push", self.TEMPLATE, proposal=self.PROPOSAL, steps={"Machine Chest Press": 8.0})
+        e = plan.exercises[0]
+        self.assertEqual([s.load_kg for s in e.working], [157.0])
+        self.assertEqual([b.load_kg for b in e.backoff], [133.0, 133.0])
+        self.assertEqual(e.warmup, [(85.0, 10), (117.0, 5), (141.0, 3)])
+        self.assertIn("held to one step, 157kg", e.reason)
+        self.assertEqual([p for p in problems if "under the programme" in p], [])
+
+    def test_pain_in_the_reason_keeps_the_deeper_cut(self):
+        from plan import bound_cut, _normalise_exercise
+        plan = self._plan("the left shoulder was painful on the last two presses, so two steps off today")
+        self.assertEqual(bound_cut(plan, {_normalise_exercise(k): v for k, v in self.PROPOSAL.items()},
+                                   {"Machine Chest Press": 8.0}), [])
+        self.assertEqual(plan.exercises[0].working[0].load_kg, 149.0)
+
+    def test_a_one_step_cut_and_an_accept_are_untouched(self):
+        from plan import ExercisePlan, SessionPlan, SetPlan, bound_cut, _normalise_exercise
+        by_key = {_normalise_exercise(k): v for k, v in self.PROPOSAL.items()}
+        plan = self._plan("ran 5 against 8-12, one step off")
+        plan.exercises[0].working = [SetPlan(157.0, 8, 12, 8.0)]
+        self.assertEqual(bound_cut(plan, by_key, {"Machine Chest Press": 8.0}), [])
+        plan = SessionPlan(opening="", exercises=[ExercisePlan(exercise="Machine Chest Press", decision="accept", reason="",
+                                                               working=[SetPlan(165.0, 8, 12, 8.0)], backoff=[], rest_seconds=180)])
+        self.assertEqual(bound_cut(plan, by_key, {"Machine Chest Press": 8.0}), [])
+
+
 class LadderTests(unittest.TestCase):
     """C19: a load off the machine's ladder is questioned, not progressed from."""
 

@@ -1259,6 +1259,32 @@ def backoff_sets(top: SetSpec, kind: str, count: int, week: int,
     return sets
 
 
+# The ramp's fractions of the working weight, by how many ramp sets the
+# rule gives (:128-:130), and the ceiling: a ramp set at or above 92% of the
+# top set is a working set wearing a warm-up label (:141 puts the last ramp
+# at 85-90%).
+RAMP_FRACTIONS = {3: (0.55, 0.75, 0.88), 2: (0.60, 0.85), 1: (0.65,)}
+RAMP_CEILING = 0.92
+
+
+def rescale_ramp(warmup: list, top: float | None, grid: float | None = None) -> list | None:
+    """The ramp re-derived from `top` when it no longer ramps TO it, else None.
+
+    The ramp is a function of the working weight (:127). On 26 Sep 2026 the
+    programme built the Machine Chest Press ramp against 165 (93, 125, 149)
+    and the coach cut the top set to 149; nothing rescaled the ramp, so the
+    card's third warm-up WAS the working set. `warmup` is [(load, reps)];
+    the loads come back on the lift's own ladder from the top."""
+    if not warmup or not top or top <= 0:
+        return None
+    loads = [float(w[0] or 0) for w in warmup]
+    if max(loads) < RAMP_CEILING * top:
+        return None
+    n = len(warmup)
+    fractions = RAMP_FRACTIONS.get(n) or tuple(0.55 + (0.88 - 0.55) * i / (n - 1) for i in range(n))
+    return [(_round_load(top * f, grid, top), int(w[1])) for f, w in zip(fractions, warmup)]
+
+
 def warmup_ramp(exercise: str, top: SetSpec, muscles_warm: set[str],
                 prior: PriorSet | None, reasons: list[str]) -> list[SetSpec]:
     """The ramp, as the decision table at :127-135.
@@ -1320,11 +1346,11 @@ def warmup_ramp(exercise: str, top: SetSpec, muscles_warm: set[str],
     if weight >= 100:
         reasons.append("Three ramp sets at ~55/75/88% — first movement for this "
                        "muscle and the working weight is heavy (:128).")
-        return ramp([0.55, 0.75, 0.88], [10, 5, 3])
+        return ramp(list(RAMP_FRACTIONS[3]), [10, 5, 3])
     if weight >= 50:
         reasons.append("Two ramp sets at ~60/85% — first movement for this muscle "
                        "at a moderate working weight (:129).")
-        return ramp([0.60, 0.85], [10, 5])
+        return ramp(list(RAMP_FRACTIONS[2]), [10, 5])
     reasons.append("One ramp set at ~65% — first movement for this muscle, light "
                    "working weight (:130).")
     return ramp([0.65], [8])
