@@ -21,6 +21,17 @@ struct SessionRulesTests {
         #expect(SessionStatus.openStored == "in_progress")
     }
 
+    @Test func anAbandonedRowIsNeitherOpenNorFinished() {
+        // 25 Sep 2026's hygiene fix wrote `abandoned` on 45 empty rows; History
+        // then showed a 15 Sep day as IN PROGRESS because "not finished" was "open".
+        let abandoned = SessionStatus("abandoned")
+        #expect(!abandoned.isOpen)
+        #expect(!abandoned.isFinished)
+        #expect(abandoned.label == "ABANDONED")
+        #expect(SessionStatus("in_progress").isOpen)
+        #expect(!SessionStatus("completed").isOpen)
+    }
+
     @Test func theRotationMatchesTheBackend() {
         // Must match CYCLE in data.py.
         #expect(Config.cycle == ["Pull", "Push", "Legs", "Cardio+Abs"])

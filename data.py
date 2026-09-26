@@ -117,6 +117,9 @@ NON_SLOT_TYPES = (REST_SESSION_TYPE, YOGA_SESSION_TYPE)
 # athlete's training history and are not worth a migration to tidy.
 SESSION_STATUS_OPEN = "in_progress"
 SESSION_STATUS_FINISHED = "completed"
+#: A row that never held work (S9 hygiene, 25 Sep 2026): neither open nor
+#: finished. Mirrored in the app's SessionStatus.
+SESSION_STATUS_ABANDONED = "abandoned"
 
 #: Every spelling that has ever meant each state, for queries and comparisons.
 OPEN_SESSION_STATUSES = ("in_progress", "active")

@@ -160,7 +160,7 @@ struct BlockCalendar: Sendable {
             if seenKeys.contains(key) {
                 if let idx = days.firstIndex(where: { $0.key == key }), let id = s.id {
                     days[idx].ids.append(id)
-                    if !SessionStatus(s.status).isFinished { days[idx].finished = false }
+                    if SessionStatus(s.status).isOpen { days[idx].finished = false }
                 }
                 continue
             }

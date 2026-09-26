@@ -151,7 +151,7 @@ final class TrainingBlockViewModel {
                                 position: calendar.position(of: first),
                                 tonnage: SessionEntry.workingTonnage(allSets, weighIns: weighIns),
                                 sets: allSets,
-                                isOpen: rows.contains { !SessionStatus($0.status).isFinished })
+                                isOpen: rows.contains { SessionStatus($0.status).isOpen })
         }
 
         func wave(_ block: Int) -> [WeekTonnage] {
